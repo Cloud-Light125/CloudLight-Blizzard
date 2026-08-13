@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 public sealed class AccountSwitchLog
 {

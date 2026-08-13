@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // 暴雪生涯页 HTML → 结构化数据。
 //

@@ -1,4 +1,4 @@
-<Window x:Class="BnetSwitch.Stats.QrLoginDialog"
+<Window x:Class="CloudLightBlizzard.Stats.QrLoginDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="登录网易大神" Width="330" SizeToContent="Height"

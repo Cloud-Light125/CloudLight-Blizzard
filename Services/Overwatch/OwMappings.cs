@@ -2,7 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // GUID→中文/图片 映射:英雄/地图配置从公开 CDN 下载并本地缓存;段位是静态映射(名→中文+配色key)。
 // 关键:英雄按 heroGuid(十进制)匹配 matchList;地图按 id(十六进制)匹配 matchList.mapGuid。

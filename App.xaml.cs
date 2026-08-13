@@ -3,15 +3,15 @@ using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
-using BnetSwitch.Services;
+using CloudLightBlizzard.Services;
 
-namespace BnetSwitch;
+namespace CloudLightBlizzard;
 
 public partial class App : Application
 {
     /// <summary>第二个实例用它唤起已运行的窗口。</summary>
-    public const string ShowEventName = @"Local\BnetSwitch.Show";
-    private const string MutexName = @"Local\BnetSwitch.SingleInstance";
+    public const string ShowEventName = @"Local\CloudLight Blizzard.Show";
+    private const string MutexName = @"Local\CloudLight Blizzard.SingleInstance";
     private Mutex? _singleInstance;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -200,7 +200,7 @@ public partial class App : Application
         {
             if (!long.TryParse(idStr, out var targetId))
             {
-                sb.AppendLine("用法: BnetSwitch.exe --switch <accountId>");
+                sb.AppendLine("用法: CloudLight Blizzard.exe --switch <accountId>");
             }
             else
             {

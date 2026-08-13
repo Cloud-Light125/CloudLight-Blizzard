@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>
 /// 解析战网在本机的各个存储位置,并尽力自动定位 Battle.net.exe。

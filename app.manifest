@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
-  <assemblyIdentity version="1.0.0.0" name="BnetSwitch.app" />
+  <assemblyIdentity version="1.0.1.0" name="CloudLight Blizzard.app" />
 
   <!-- 只需普通用户权限:操作的都是当前用户自己的 AppData 与自己的进程,不需要管理员 -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

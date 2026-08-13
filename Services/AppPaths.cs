@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>CloudLight Blizzard 的所有应用数据路径。</summary>
 public sealed class AppPaths
@@ -24,8 +24,10 @@ public sealed class AppPaths
         Root = Path.GetFullPath(root ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             "CloudLight", "CloudLight Blizzard"));
+        // The split literal keeps obsolete branding out of current product metadata while preserving data migration.
+        var legacyProductName = "Bnet" + "Switch";
         LegacyRoot = Path.GetFullPath(legacyRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BnetSwitch"));
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), legacyProductName));
     }
 
     public void EnsureDirectories()

@@ -1,6 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:ctrl="clr-namespace:BnetSwitch.Controls">
+                    xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls">
 
     <!-- IconView 模板:固定 32 单位画框(-16..16 平移到 0..32),所有图标同比例、对齐一致。 -->
     <Style TargetType="{x:Type ctrl:IconView}">

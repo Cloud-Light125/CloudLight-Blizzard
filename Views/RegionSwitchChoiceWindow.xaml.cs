@@ -1,7 +1,7 @@
 using System.Windows;
-using BnetSwitch.Services.OverwatchRegion;
+using CloudLightBlizzard.Services.OverwatchRegion;
 
-namespace BnetSwitch;
+namespace CloudLightBlizzard;
 
 public enum RegionSwitchChoice { Cancel, AccountOnly, Settings }
 

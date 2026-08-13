@@ -3,7 +3,7 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>托盘右键菜单:跟随亮/暗主题着色 + Win11 DWM 圆角 + 圆角悬停高亮。</summary>
 public static class TrayMenuFactory

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>运行时亮/暗主题切换:整体替换调色板字典,所有 DynamicResource 引用会自动刷新。</summary>
 public static class ThemeManager

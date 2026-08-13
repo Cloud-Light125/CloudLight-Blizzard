@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 public enum BattleNetLoginEvidence { None, LoginPage, RealAuthExpired }
 public sealed record BattleNetAuthLogCursor(IReadOnlyDictionary<string, long> Lengths);

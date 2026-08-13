@@ -1,4 +1,4 @@
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 public enum AccountSwitchVerificationState
 {

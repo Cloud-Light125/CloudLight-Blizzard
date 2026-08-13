@@ -3,7 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // --owtest 用:扫码 → 遍历本机账号库的每个 roleId,拉概览+详细并翻译,验证 C# 链路。
 // 结果由 App 写进 owtest.txt。纯验证,不写登录态到磁盘。
@@ -17,10 +17,10 @@ public static class OwProbe
         var own = await client.GetOwnRoleAsync();
         if (own is not { } o) { sb.AppendLine("拿不到自己的角色。"); return; }
         sb.AppendLine($"own roleId={o.RoleId}");
-        var svc = new BnetSwitch.Stats.StatsService(client);
+        var svc = new CloudLightBlizzard.Stats.StatsService(client);
         foreach (var gm in new[] { "sport", "leisure", "fight", "lfight" })
         {
-            var list = new List<BnetSwitch.Stats.MatchRecord>();
+            var list = new List<CloudLightBlizzard.Stats.MatchRecord>();
             try
             {
                 int p1 = await svc.LoadMoreMatchesAsync(list, o.RoleId, gm, false, 1);
@@ -39,7 +39,7 @@ public static class OwProbe
         if (client is null) { sb.AppendLine("无缓存登录态,先在 App 里扫码查一次。"); return; }
         var own = await client.GetOwnRoleAsync();
         long rid = own?.RoleId ?? 100001;
-        var svc = new BnetSwitch.Stats.StatsService(client);
+        var svc = new CloudLightBlizzard.Stats.StatsService(client);
         var fd = await svc.LoadFriendsAsync(rid, 23);
         sb.AppendLine($"聚合各模式后:{fd.Rows.Count} 个有OW数据的好友");
         foreach (var r in fd.Rows) sb.AppendLine($"   {r.Name} | {r.TierText} | {r.StatText}");

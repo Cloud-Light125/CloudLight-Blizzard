@@ -1,8 +1,8 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // 国际服/亚服 OW 战绩 —— 暴雪官方生涯页(overwatch.blizzard.com)。
 // 免 key、免登录、免 Cloudflare,拼 URL 直接拿 1.2MB 服务端渲染 HTML。

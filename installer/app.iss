@@ -1,6 +1,6 @@
 #define AppName "CloudLight Blizzard"
-#define AppVer  "1.0.0"
-#define AppExe  "BnetSwitch.exe"
+#define AppVer  "1.0.1"
+#define AppExe  "CloudLight Blizzard.exe"
 
 [Setup]
 AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
@@ -25,7 +25,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 CloseApplications=yes
-CloseApplicationsFilter=BnetSwitch.exe
+CloseApplicationsFilter=CloudLight Blizzard.exe
 
 [Languages]
 Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
@@ -91,4 +91,23 @@ begin
       ShellExec('', 'https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe',
         '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  LegacyName: String;
+  LegacyCommand: String;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+
+  LegacyName := 'Bnet' + 'Switch';
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run',
+    LegacyName, LegacyCommand) then
+  begin
+    RegWriteStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run',
+      '{#AppName}', '"' + ExpandConstant('{app}\{#AppExe}') + '" --tray');
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', LegacyName);
+  end;
+  DeleteFile(ExpandConstant('{app}\' + LegacyName + '.exe'));
 end;

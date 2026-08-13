@@ -1,8 +1,8 @@
-# CloudLight Blizzard 1.0
+# CloudLight Blizzard 1.0.1
 
-CloudLight Blizzard 的首个正式版本。
+CloudLight Blizzard 1.0.1 完成产品标识统一。
 
-本次 1.0 正式包已更新应用图标，修正已安装 .NET 8 Windows Desktop Runtime 时安装器仍可能误报的问题，让窗口标题栏正确跟随深色主题，兼容少数启动器遗漏 `WINDIR` 环境变量的情况，并将启动及区服页面的磁盘状态读取移到首帧渲染后的后台任务，避免界面卡顿。
+本次更新将项目名、程序集、命名空间、单实例标识、开机启动项和主程序文件统一为 CloudLight Blizzard。安装升级时会迁移旧版开机启动项并清理旧主程序文件，用户数据迁移保持兼容。
 
 ## 主要功能
 
@@ -17,7 +17,7 @@ CloudLight Blizzard 的首个正式版本。
 
 ## 安装
 
-下载 `CloudLight-Blizzard-1.0.0-win-x64-Setup.exe`，运行安装程序即可。
+下载 `CloudLight-Blizzard-1.0.1-win-x64-Setup.exe`，运行安装程序即可。
 
 需要 Windows 10/11 x64 和 .NET 8 Windows Desktop Runtime。
 

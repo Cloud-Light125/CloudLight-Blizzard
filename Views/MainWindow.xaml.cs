@@ -3,11 +3,11 @@ using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using BnetSwitch.Services;
-using BnetSwitch.ViewModels;
-using BnetSwitch.Views.Pages;
+using CloudLightBlizzard.Services;
+using CloudLightBlizzard.ViewModels;
+using CloudLightBlizzard.Views.Pages;
 
-namespace BnetSwitch;
+namespace CloudLightBlizzard;
 
 public partial class MainWindow : Window
 {

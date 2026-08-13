@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 public partial class FriendsWindow : Window
 {

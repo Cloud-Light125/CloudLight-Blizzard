@@ -2,9 +2,9 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using BnetSwitch.Services.Overwatch;
+using CloudLightBlizzard.Services.Overwatch;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 public partial class QrLoginDialog : Window
 {

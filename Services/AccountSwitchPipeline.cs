@@ -1,4 +1,4 @@
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>
 /// Keeps the destructive part of an account switch in one fail-fast sequence.

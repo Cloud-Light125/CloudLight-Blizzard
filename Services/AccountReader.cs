@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.Json;
-using BnetSwitch.Models;
+using CloudLightBlizzard.Models;
 using Microsoft.Data.Sqlite;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>
 /// 从战网 CachedData.db 读取账号列表,以及「当前登录的是哪个账号」。

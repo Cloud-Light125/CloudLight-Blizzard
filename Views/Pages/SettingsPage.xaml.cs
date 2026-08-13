@@ -2,11 +2,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using BnetSwitch.Services;
-using BnetSwitch.Services.Overwatch;
-using BnetSwitch.ViewModels;
+using CloudLightBlizzard.Services;
+using CloudLightBlizzard.Services.Overwatch;
+using CloudLightBlizzard.ViewModels;
 
-namespace BnetSwitch.Views.Pages;
+namespace CloudLightBlizzard.Views.Pages;
 
 public partial class SettingsPage : UserControl
 {

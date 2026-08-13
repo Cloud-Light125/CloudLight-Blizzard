@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Windows.Media;
-using BnetSwitch.Services.Overwatch;
+using CloudLightBlizzard.Services.Overwatch;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 // 把大神 API 数据映射成界面用的 PlayerStats:段位/场均/英雄/对局 + 中文翻译 + 图片本地缓存路径。
 public sealed class StatsService

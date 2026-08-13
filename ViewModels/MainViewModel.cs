@@ -5,12 +5,12 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
-using BnetSwitch.Models;
-using BnetSwitch.Services;
-using BnetSwitch.Services.OverwatchRegion;
+using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Services;
+using CloudLightBlizzard.Services.OverwatchRegion;
 using Microsoft.Win32;
 
-namespace BnetSwitch.ViewModels;
+namespace CloudLightBlizzard.ViewModels;
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {

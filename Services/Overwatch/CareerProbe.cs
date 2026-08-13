@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // --careerprobe "Player#1234"：免界面跑一遍「抓暴雪生涯页 → 解析 → 映射」，
 // 把结果打成文本落盘,人工对着 https://overwatch.blizzard.com/en-us/career/<tag>/ 逐项比。
@@ -11,7 +11,7 @@ public static class CareerProbe
     {
         if (string.IsNullOrWhiteSpace(battleTag))
         {
-            sb.AppendLine("用法: BnetSwitch.exe --careerprobe \"Name#1234\"");
+            sb.AppendLine("用法: CloudLight Blizzard.exe --careerprobe \"Name#1234\"");
             return;
         }
 

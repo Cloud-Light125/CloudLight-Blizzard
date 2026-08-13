@@ -2,9 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using BnetSwitch.Services.Overwatch;
+using CloudLightBlizzard.Services.Overwatch;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 public partial class StatsWindow : UserControl
 {
