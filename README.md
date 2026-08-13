@@ -87,7 +87,6 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 - .NET 8 Desktop Runtime（框架依赖版本）
 - 已安装 Battle.net；使用区服文件功能时需已安装《守望先锋》
 
-运行 `BnetSwitch.exe` 即可启动。EXE 文件名保留为 `BnetSwitch.exe`，用于兼容旧版开机启动和单实例标识；面向用户的产品名称统一为 CloudLight Blizzard。
 
 ## 基本使用方法
 
@@ -128,22 +127,6 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 - 区服恢复只处理已经比较、验证并记录的差异文件。
 - 数据迁移先复制或整体移动，再检查关键内容并写入迁移标记；旧小型数据默认保留为一次性备份。
 - 程序不会移动真实 Battle.net 安装目录、真实守望先锋游戏目录或用户自定义区服存储目录。
-
-## 构建方法
-
-需要 .NET 8 SDK。在项目目录运行：
-
-```powershell
-dotnet build -c Release
-```
-
-默认生成的主程序位于：
-
-```text
-bin\Release\net8.0-windows\BnetSwitch.exe
-```
-
-程序集名称和 EXE 文件名为兼容现有启动项而保留，产品显示名称为 CloudLight Blizzard。
 
 ## 许可证与第三方组件
 
