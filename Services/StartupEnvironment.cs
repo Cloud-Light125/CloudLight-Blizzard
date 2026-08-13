@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>在 WPF 初始化字体缓存前补齐少数启动器可能遗漏的进程环境变量。</summary>
 internal static class StartupEnvironment

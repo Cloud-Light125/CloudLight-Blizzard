@@ -7,7 +7,7 @@ try {
     }
 
     Write-Host '[1/2] dotnet publish' -ForegroundColor Cyan
-    & dotnet publish BnetSwitch.csproj -c Release -r win-x64 --self-contained false -o publish -v minimal
+    & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained false -o publish -v minimal
     if ($LASTEXITCODE -ne 0) {
         throw 'dotnet publish failed.'
     }

@@ -2,9 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using BnetSwitch.Services.Overwatch;
+using CloudLightBlizzard.Services.Overwatch;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 // 国际服/亚服生涯窗。数据来自暴雪官方公开生涯页,不需要登录、不需要扫码 —— 和国服那套(网易大神)
 // 完全是两条路,所以单开一个窗,不去动 StatsWindow。

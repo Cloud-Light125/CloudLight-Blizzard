@@ -1,4 +1,4 @@
-<Window x:Class="BnetSwitch.RegionSwitchChoiceWindow"
+<Window x:Class="CloudLightBlizzard.RegionSwitchChoiceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="区服文件尚未准备好" Width="500" Height="280" ResizeMode="NoResize"

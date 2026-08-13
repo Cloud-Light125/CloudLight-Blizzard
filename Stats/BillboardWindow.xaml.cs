@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 public partial class BillboardWindow : Window
 {

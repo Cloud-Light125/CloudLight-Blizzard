@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Media.Imaging;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // OW 图片本地缓存:头像/英雄图标/地图缩略图 下载一次存本机,之后走本地,不再打网易 CDN。
 // 缩略图:下载后按目标宽度降采样再存,避免把整张大图(地图1~2MB)囤在本地。

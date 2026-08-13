@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 
-namespace BnetSwitch;
+namespace CloudLightBlizzard;
 
 public partial class DeleteConfirmWindow : Window
 {

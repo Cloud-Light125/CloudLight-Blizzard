@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace BnetSwitch.Services.OverwatchRegion;
+namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 public sealed class OverwatchRegionBackupStore
 {

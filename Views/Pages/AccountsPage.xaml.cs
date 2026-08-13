@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using BnetSwitch.ViewModels;
+using CloudLightBlizzard.ViewModels;
 
-namespace BnetSwitch.Views.Pages;
+namespace CloudLightBlizzard.Views.Pages;
 
 public partial class AccountsPage : UserControl
 {

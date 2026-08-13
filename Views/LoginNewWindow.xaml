@@ -1,7 +1,7 @@
-<Window x:Class="BnetSwitch.LoginNewWindow"
+<Window x:Class="CloudLightBlizzard.LoginNewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ctrl="clr-namespace:BnetSwitch.Controls"
+        xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
         Title="登录新号" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         AllowsTransparency="True" Background="Transparent" WindowStartupLocation="CenterOwner"
         SizeToContent="Height" Width="352" FontFamily="Microsoft YaHei UI" FontSize="13">

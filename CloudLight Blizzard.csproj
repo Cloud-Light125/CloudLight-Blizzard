@@ -8,14 +8,14 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>BnetSwitch</AssemblyName>
-    <RootNamespace>BnetSwitch</RootNamespace>
+    <AssemblyName>CloudLight Blizzard</AssemblyName>
+    <RootNamespace>CloudLightBlizzard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
-    <InformationalVersion>1.0.0</InformationalVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
+    <InformationalVersion>1.0.1</InformationalVersion>
     <Authors>CloudLight</Authors>
     <Company>CloudLight</Company>
     <Product>CloudLight Blizzard</Product>

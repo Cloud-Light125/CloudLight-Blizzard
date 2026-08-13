@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
-using BnetSwitch.Models;
-using BnetSwitch.ViewModels;
+using CloudLightBlizzard.Models;
+using CloudLightBlizzard.ViewModels;
 
-namespace BnetSwitch;
+namespace CloudLightBlizzard;
 
 public partial class AccountSettingsWindow : Window
 {

@@ -77,7 +77,7 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 
 `region-switch` 可能占用较大空间。可以在“区服文件”页面将其设置到其它磁盘；已经配置的自定义存储位置会保持原位，不会被自动迁回文档目录。
 
-升级时，程序会检查旧的 `%LOCALAPPDATA%\BnetSwitch` 数据。设置、账号、日志和战绩数据会安全复制到新目录并保留旧目录作为备份。旧默认区服目录会在可安全整体移动时迁到新默认位置；如果无法整体移动，则继续使用旧位置，避免复制几十 GB 数据。自定义区服目录不会被移动。
+升级时，程序会检查旧版本的数据目录。设置、账号、日志和战绩数据会安全复制到新目录并保留旧目录作为备份。旧默认区服目录会在可安全整体移动时迁到新默认位置；如果无法整体移动，则继续使用旧位置，避免复制几十 GB 数据。自定义区服目录不会被移动。
 
 ## 安装与运行
 
@@ -87,7 +87,7 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 - .NET 8 Desktop Runtime（框架依赖版本）
 - 已安装 Battle.net；使用区服文件功能时需已安装《守望先锋》
 
-运行 `BnetSwitch.exe` 即可启动。EXE 文件名保留为 `BnetSwitch.exe`，用于兼容旧版开机启动和单实例标识；面向用户的产品名称统一为 CloudLight Blizzard。
+运行 `CloudLight Blizzard.exe` 即可启动。产品名称、程序集名称和 EXE 文件名均统一为 CloudLight Blizzard。
 
 ## 基本使用方法
 
@@ -140,10 +140,10 @@ dotnet build -c Release
 默认生成的主程序位于：
 
 ```text
-bin\Release\net8.0-windows\BnetSwitch.exe
+bin\Release\net8.0-windows\CloudLight Blizzard.exe
 ```
 
-程序集名称和 EXE 文件名为兼容现有启动项而保留，产品显示名称为 CloudLight Blizzard。
+框架依赖发布包中的主程序名称为 `CloudLight Blizzard.exe`。
 
 ## 许可证与第三方组件
 

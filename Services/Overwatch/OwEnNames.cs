@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // 暴雪官方生涯页(overwatch.blizzard.com)只有英文/繁中等语言,没有简体。
 // 这里把英文英雄名/统计项名翻成简体,用词尽量对齐国服官方译名

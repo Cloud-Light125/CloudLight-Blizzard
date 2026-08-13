@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using BnetSwitch.Services.OverwatchRegion;
-using BnetSwitch.ViewModels;
+using CloudLightBlizzard.Services.OverwatchRegion;
+using CloudLightBlizzard.ViewModels;
 
-namespace BnetSwitch.Views.Pages;
+namespace CloudLightBlizzard.Views.Pages;
 
 public partial class RegionFilesPage : UserControl
 {

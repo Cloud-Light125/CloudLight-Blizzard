@@ -1,7 +1,7 @@
-<UserControl x:Class="BnetSwitch.Stats.StatsWindow"
+<UserControl x:Class="CloudLightBlizzard.Stats.StatsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:BnetSwitch.Stats"
+        xmlns:local="clr-namespace:CloudLightBlizzard.Stats"
         Background="{DynamicResource Stats.Bg}"
         FontFamily="Segoe UI, Microsoft YaHei UI">
 

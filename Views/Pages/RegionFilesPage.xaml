@@ -1,4 +1,4 @@
-<UserControl x:Class="BnetSwitch.Views.Pages.RegionFilesPage"
+<UserControl x:Class="CloudLightBlizzard.Views.Pages.RegionFilesPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">

@@ -3,7 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace BnetSwitch.Services.OverwatchRegion;
+namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 public sealed class OverwatchRegionManager
 {
@@ -425,7 +425,7 @@ public sealed class OverwatchRegionManager
         CancellationToken token)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        var temp = destination + ".bnetswitch-" + Guid.NewGuid().ToString("N") + ".tmp";
+        var temp = destination + ".cloudlightblizzard-" + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             await CopyFileAsync(source, temp, token);

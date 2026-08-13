@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace BnetSwitch.Services.OverwatchRegion;
+namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OverwatchRegion { China, International }

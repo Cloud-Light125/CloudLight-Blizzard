@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // 网易大神登录态缓存:把会话 cookie 存到本机,免每次扫码。仅本机,不上传。
 public static class DashenAuth

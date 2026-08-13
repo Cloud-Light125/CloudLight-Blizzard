@@ -1,4 +1,4 @@
-namespace BnetSwitch.Models;
+namespace CloudLightBlizzard.Models;
 
 public enum AccountRegionOverride
 {

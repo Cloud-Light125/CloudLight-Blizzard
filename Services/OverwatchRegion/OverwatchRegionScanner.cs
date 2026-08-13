@@ -3,7 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace BnetSwitch.Services.OverwatchRegion;
+namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 public sealed class OverwatchRegionScanner
 {
@@ -169,7 +169,7 @@ public sealed class OverwatchRegionScanner
         var relative = Normalize(Path.GetRelativePath(root, path));
         return relative.StartsWith(".battle.net/", StringComparison.OrdinalIgnoreCase) ||
                relative.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
-               relative.Contains("/.bnetswitch-", StringComparison.OrdinalIgnoreCase);
+               relative.Contains("/.cloudlightblizzard-", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RegionName(OverwatchRegion region) => region == OverwatchRegion.China ? "国服" : "国际服";

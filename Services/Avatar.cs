@@ -1,6 +1,6 @@
 using System.Windows.Media;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>按账号 id 稳定地生成一对头像配色(半透明同色底 + 饱和字),亮/暗主题都能看清。</summary>
 public static class Avatar

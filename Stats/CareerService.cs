@@ -2,9 +2,9 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Windows.Media;
-using BnetSwitch.Services.Overwatch;
+using CloudLightBlizzard.Services.Overwatch;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 // 国际服/亚服生涯:抓暴雪官方生涯页 → 解析 → 灌进和国服共用的 PlayerStats。
 //

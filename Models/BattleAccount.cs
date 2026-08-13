@@ -1,4 +1,4 @@
-namespace BnetSwitch.Models;
+namespace CloudLightBlizzard.Models;
 
 /// <summary>
 /// 从战网 CachedData.db 的 login_cache 表读出的一个账号。

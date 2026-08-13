@@ -6,7 +6,7 @@ using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace BnetSwitch.Stats;
+namespace CloudLightBlizzard.Stats;
 
 // ===== 数据模型 =====
 

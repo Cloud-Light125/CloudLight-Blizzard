@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
-using BnetSwitch.Models;
+using CloudLightBlizzard.Models;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 /// <summary>
 /// CloudLight Blizzard 的本地设置。

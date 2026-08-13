@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace BnetSwitch.Services.Overwatch;
+namespace CloudLightBlizzard.Services.Overwatch;
 
 // 守望先锋战绩 —— HTTP 链路(C# 移植自 ow_query.py，另加 searchBnetAccount / getUserConfig）。
 // 链路：网易大神扫码登录 → SSO 到 ds 域 → getReportToken(roleId) 换 bigdata token → 查战绩。

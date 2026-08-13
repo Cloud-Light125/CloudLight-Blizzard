@@ -1,12 +1,12 @@
 using System.IO;
 using System.Text;
-using BnetSwitch.Models;
-using BnetSwitch.Services.OverwatchRegion;
-using BnetSwitch.ViewModels;
-using BnetSwitch.Views.Pages;
-using GameRegion = BnetSwitch.Services.OverwatchRegion.OverwatchRegion;
+using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Services.OverwatchRegion;
+using CloudLightBlizzard.ViewModels;
+using CloudLightBlizzard.Views.Pages;
+using GameRegion = CloudLightBlizzard.Services.OverwatchRegion.OverwatchRegion;
 
-namespace BnetSwitch.Services;
+namespace CloudLightBlizzard.Services;
 
 public static class FeatureSelfTest
 {

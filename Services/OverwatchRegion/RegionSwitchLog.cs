@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace BnetSwitch.Services.OverwatchRegion;
+namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 public static class RegionSwitchLog
 {

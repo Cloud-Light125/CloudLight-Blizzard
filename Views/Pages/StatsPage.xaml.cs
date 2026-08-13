@@ -1,10 +1,10 @@
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
-using BnetSwitch.Stats;
-using BnetSwitch.ViewModels;
+using CloudLightBlizzard.Stats;
+using CloudLightBlizzard.ViewModels;
 
-namespace BnetSwitch.Views.Pages;
+namespace CloudLightBlizzard.Views.Pages;
 
 public partial class StatsPage : UserControl
 {

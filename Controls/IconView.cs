@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace BnetSwitch.Controls;
+namespace CloudLightBlizzard.Controls;
 
 /// <summary>
 /// 极简矢量图标控件:把设计稿的 SVG 描边路径转成 WPF Geometry,按需描边/填充、可跟主题变色。
