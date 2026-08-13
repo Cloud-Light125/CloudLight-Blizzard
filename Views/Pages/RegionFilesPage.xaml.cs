@@ -30,6 +30,21 @@ public partial class RegionFilesPage : UserControl
         try
         {
             var s = await _vm.GetRegionStatusAsync(verifyFiles);
+            ApplyStatus(s);
+            if (!verifyFiles && s.State is RegionBackupState.Ready or RegionBackupState.Stale)
+            {
+                StatusText.Text = "页面已显示，正在后台校验本地区服文件…";
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.Background);
+                ApplyStatus(await _vm.GetRegionStatusAsync(verifyFiles: true));
+            }
+            StatusText.Text = "状态已刷新。";
+        }
+        catch (Exception ex) { StatusText.Text = "读取状态失败：" + ex.Message; }
+    }
+
+    private void ApplyStatus(RegionSnapshotStatus s)
+    {
             CurrentRegionText.Text = s.State == RegionBackupState.Stale ? "游戏已更新，需要重新准备" : RegionName(s.CurrentRegion);
             ChinaText.Text = s.ChinaBackupComplete ? "已准备" : s.ChinaCaptured ? "已保存，等待另一端" : "尚未准备";
             InternationalText.Text = s.InternationalBackupComplete ? "已准备" : s.InternationalCaptured ? "已保存，等待另一端" : "尚未准备";
@@ -37,9 +52,6 @@ public partial class RegionFilesPage : UserControl
             SizeText.Text = $"{s.DifferenceCount} 个文件 · {FormatBytes(s.BackupBytes)}";
             SwitchChinaButton.IsEnabled = s.State == RegionBackupState.Ready && s.CurrentRegion != CurrentGameRegion.China;
             SwitchInternationalButton.IsEnabled = s.State == RegionBackupState.Ready && s.CurrentRegion != CurrentGameRegion.International;
-            StatusText.Text = "状态已刷新。";
-        }
-        catch (Exception ex) { StatusText.Text = "读取状态失败：" + ex.Message; }
     }
     private async void OnSwitchChina(object sender, RoutedEventArgs e) { if (_vm != null) await _vm.SwitchGameRegionOnlyAsync(OverwatchRegion.China); await RefreshCoreAsync(); }
     private async void OnSwitchInternational(object sender, RoutedEventArgs e) { if (_vm != null) await _vm.SwitchGameRegionOnlyAsync(OverwatchRegion.International); await RefreshCoreAsync(); }
