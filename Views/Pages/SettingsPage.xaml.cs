@@ -17,12 +17,24 @@ public partial class SettingsPage : UserControl
     {
         _vm = vm; CloseToTrayBox.IsChecked = vm.Settings.CloseToTray; StartMinimizedBox.IsChecked = vm.Settings.StartMinimized;
         StartupBox.IsChecked = StartupService.IsEnabled(); DarkModeBox.IsChecked = vm.Settings.DarkMode;
-        DataPathText.Text = AppPaths.Current.Root; Refresh(); _loading = false;
+        DataPathText.Text = AppPaths.Current.Root;
+        CacheText.Text = "打开设置页后统计";
+        IsVisibleChanged += async (_, _) =>
+        {
+            if (!IsVisible) return;
+            await Task.Yield();
+            await RefreshCacheSizeAsync();
+        };
+        Refresh(); _loading = false;
     }
     private void Refresh()
     {
         if (_vm == null) return; ExePathText.Text = _vm.Settings.ClientExe ?? "自动检测（未手动指定）";
-        var bytes = OwImageCache.CacheSizeBytes(); CacheText.Text = bytes >= 1024 * 1024 ? $"当前缓存约 {bytes / 1024d / 1024:0.0} MB" : $"当前缓存约 {bytes / 1024d:0.0} KB";
+    }
+    private async Task RefreshCacheSizeAsync()
+    {
+        var bytes = await Task.Run(OwImageCache.CacheSizeBytes);
+        CacheText.Text = bytes >= 1024 * 1024 ? $"当前缓存约 {bytes / 1024d / 1024:0.0} MB" : $"当前缓存约 {bytes / 1024d:0.0} KB";
     }
     private void OnSettingChanged(object sender, RoutedEventArgs e) => Save();
     private void OnThemeChanged(object sender, RoutedEventArgs e) { if (_loading || _vm == null) return; _vm.Settings.DarkMode = DarkModeBox.IsChecked == true; _vm.Settings.Save(); ThemeManager.Apply(_vm.Settings.DarkMode); }

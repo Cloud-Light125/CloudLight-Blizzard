@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using BnetSwitch.Services;
 using BnetSwitch.ViewModels;
 using BnetSwitch.Views.Pages;
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ThemeManager.Attach(this);
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
         _showRegistration = ThreadPool.RegisterWaitForSingleObject(
             _showEvent,
@@ -55,6 +57,8 @@ public partial class MainWindow : Window
         SetupTray();
         Loaded += async (_, _) =>
         {
+            // 先让窗口完成首帧，再开始账号与区服的磁盘读取。
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             await _vm.RefreshAsync();
             var args = Environment.GetCommandLineArgs();
             var demoIndex = Array.FindIndex(args, value => string.Equals(value, "--accountlayoutdemo", StringComparison.OrdinalIgnoreCase));
@@ -88,6 +92,7 @@ public partial class MainWindow : Window
         PageHost.Content = section switch { "region" => _regionPage, "stats" => _statsPage, "settings" => _settingsPage, _ => _accountsPage };
         _vm.Settings.LastMainSection = section;
         _vm.Settings.Save();
+        await Dispatcher.Yield(DispatcherPriority.Render);
         if (section == "region") await _regionPage.RefreshAsync();
         if (section == "stats") await _statsPage.LoadSelectedAsync();
     }

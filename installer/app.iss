@@ -45,11 +45,37 @@ Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowa
 
 [Code]
 function IsDesktopRuntimeInstalled: Boolean;
+var
+  RuntimeNames: TArrayOfString;
+  I: Integer;
+  DotPosition: Integer;
+  MajorVersion: Integer;
 begin
-  Result := RegKeyExists(HKLM64,
-    'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App') or
-    RegKeyExists(HKLM,
-    'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App');
+  Result := False;
+
+  { .NET writes x64 shared-framework versions as value names under this key.
+    Depending on the installer/runtime combination the registration can be
+    visible through either registry view, so check both. }
+  if not RegGetValueNames(HKLM32,
+    'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App',
+    RuntimeNames) then
+    RegGetValueNames(HKLM64,
+      'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App',
+      RuntimeNames);
+
+  for I := 0 to GetArrayLength(RuntimeNames) - 1 do
+  begin
+    DotPosition := Pos('.', RuntimeNames[I]);
+    if DotPosition > 1 then
+      MajorVersion := StrToIntDef(Copy(RuntimeNames[I], 1, DotPosition - 1), 0)
+    else
+      MajorVersion := 0;
+    if MajorVersion >= 8 then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
 end;
 
 function InitializeSetup: Boolean;

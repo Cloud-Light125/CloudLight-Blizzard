@@ -136,6 +136,7 @@ public sealed class MainViewModel : ObservableObject
     private OverwatchRegionManager _regionManager;
     private readonly AccountSwitchLog _switchLog;
     private readonly BattleNetAuthLogProbe _authLogProbe;
+    private readonly SemaphoreSlim _regionStatusGate = new(1, 1);
 
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
@@ -217,11 +218,6 @@ public sealed class MainViewModel : ObservableObject
         _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
         _switchLog = new AccountSwitchLog();
         _authLogProbe = new BattleNetAuthLogProbe(_paths);
-        if (string.IsNullOrWhiteSpace(_settings.OverwatchGamePath))
-        {
-            _settings.OverwatchGamePath = OverwatchGameLocator.Detect(_paths);
-            if (!string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) _settings.Save();
-        }
     }
 
     private void RebuildGroups()
@@ -516,20 +512,22 @@ public sealed class MainViewModel : ObservableObject
             else
                 StatusText = $"共 {visibleTotal} 个账号，已保存 {saved} 个账号备份。";
 
-            if (!_staleNotified && !string.IsNullOrWhiteSpace(_settings.OverwatchGamePath))
+            if (string.IsNullOrWhiteSpace(_settings.OverwatchGamePath))
             {
-                var regionStatus = await _regionManager.GetStatusAsync(_settings.OverwatchGamePath);
-                if (regionStatus.State == RegionBackupState.Stale)
-                {
-                    _staleNotified = true;
-                    StatusText = "检测到守望先锋已经更新，需要重新准备区服文件。";
-                    if (MessageBox.Show(
-                        "当前游戏文件与之前记录的版本不一致。\n\n可能是 Battle.net 仍在更新，或者《守望先锋》已经发布了新版本。\n\n请等待 Battle.net 完成更新后重新准备区服文件。现在打开区服文件页面吗？",
-                        "需要重新准备区服文件", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
-                        MainSectionRequested?.Invoke("region");
-                }
+                _settings.OverwatchGamePath = await Task.Run(() => OverwatchGameLocator.Detect(_paths));
+                if (!string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) _settings.Save();
             }
-            await RefreshHomeRegionAsync();
+
+            var regionStatus = await RefreshHomeRegionAsync(verifyFiles: false);
+            if (!_staleNotified && regionStatus?.State == RegionBackupState.Stale)
+            {
+                _staleNotified = true;
+                StatusText = "检测到守望先锋已经更新，需要重新准备区服文件。";
+                if (MessageBox.Show(
+                    "当前游戏文件与之前记录的版本不一致。\n\n可能是 Battle.net 仍在更新，或者《守望先锋》已经发布了新版本。\n\n请等待 Battle.net 完成更新后重新准备区服文件。现在打开区服文件页面吗？",
+                    "需要重新准备区服文件", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                    MainSectionRequested?.Invoke("region");
+            }
         }
         catch (Exception ex)
         {
@@ -900,14 +898,25 @@ public sealed class MainViewModel : ObservableObject
         return true;
     }
 
-    public Task<RegionSnapshotStatus> GetRegionStatusAsync() =>
-        _regionManager.GetStatusAsync(_settings.OverwatchGamePath);
+    public async Task<RegionSnapshotStatus> GetRegionStatusAsync(bool verifyFiles = false)
+    {
+        await _regionStatusGate.WaitAsync();
+        try
+        {
+            return await Task.Run(() => _regionManager.GetStatusAsync(
+                _settings.OverwatchGamePath, verifyFiles: verifyFiles));
+        }
+        finally
+        {
+            _regionStatusGate.Release();
+        }
+    }
 
-    public async Task RefreshHomeRegionAsync()
+    public async Task<RegionSnapshotStatus?> RefreshHomeRegionAsync(bool verifyFiles = false)
     {
         try
         {
-            var status = await GetRegionStatusAsync();
+            var status = await GetRegionStatusAsync(verifyFiles);
             _homeRegionState = status.State;
             _homeCurrentRegion = status.CurrentRegion;
             GameRegionTitle = status.CurrentRegion switch
@@ -945,10 +954,12 @@ public sealed class MainViewModel : ObservableObject
             SwitchInternationalText = status.CurrentRegion == CurrentGameRegion.Mixed ? "恢复到国际服" :
                 status.CurrentRegion == CurrentGameRegion.International ? "当前为国际服" : "切换到国际服";
             RegionSetupVisibility = status.State == RegionBackupState.Ready ? Visibility.Collapsed : Visibility.Visible;
+            return status;
         }
         catch
         {
             GameRegionSummary = "暂时无法读取区服文件状态。";
+            return null;
         }
     }
 

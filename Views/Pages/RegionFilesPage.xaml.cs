@@ -13,16 +13,23 @@ public partial class RegionFilesPage : UserControl
     private CancellationTokenSource? _cancellation;
     public RegionFilesPage() => InitializeComponent();
     public void Initialize(MainViewModel vm) { _vm = vm; DataContext = vm; }
-    public Task RefreshAsync() => RefreshCoreAsync();
+    public Task RefreshAsync(bool verifyFiles = false) => RefreshCoreAsync(verifyFiles);
 
-    private async Task RefreshCoreAsync()
+    private async Task RefreshCoreAsync(bool verifyFiles = false)
     {
         if (_vm == null) return;
         GamePathText.Text = _vm.Settings.OverwatchGamePath ?? "尚未设置";
         StoragePathText.Text = _vm.RegionBackupRoot;
+        CurrentRegionText.Text = "正在读取…";
+        StateText.Text = "后台刷新中";
+        StatusText.Text = "正在后台读取本地区服文件状态…";
+        SwitchChinaButton.IsEnabled = false;
+        SwitchInternationalButton.IsEnabled = false;
+        await System.Windows.Threading.Dispatcher.Yield(
+            System.Windows.Threading.DispatcherPriority.Render);
         try
         {
-            var s = await _vm.GetRegionStatusAsync();
+            var s = await _vm.GetRegionStatusAsync(verifyFiles);
             CurrentRegionText.Text = s.State == RegionBackupState.Stale ? "游戏已更新，需要重新准备" : RegionName(s.CurrentRegion);
             ChinaText.Text = s.ChinaBackupComplete ? "已准备" : s.ChinaCaptured ? "已保存，等待另一端" : "尚未准备";
             InternationalText.Text = s.InternationalBackupComplete ? "已准备" : s.InternationalCaptured ? "已保存，等待另一端" : "尚未准备";
@@ -30,6 +37,7 @@ public partial class RegionFilesPage : UserControl
             SizeText.Text = $"{s.DifferenceCount} 个文件 · {FormatBytes(s.BackupBytes)}";
             SwitchChinaButton.IsEnabled = s.State == RegionBackupState.Ready && s.CurrentRegion != CurrentGameRegion.China;
             SwitchInternationalButton.IsEnabled = s.State == RegionBackupState.Ready && s.CurrentRegion != CurrentGameRegion.International;
+            StatusText.Text = "状态已刷新。";
         }
         catch (Exception ex) { StatusText.Text = "读取状态失败：" + ex.Message; }
     }
@@ -50,7 +58,11 @@ public partial class RegionFilesPage : UserControl
     private async void OnCaptureChina(object sender, RoutedEventArgs e) => await Run(token => _vm!.CaptureRegionAsync(OverwatchRegion.China, Progress(), token));
     private async void OnCaptureInternational(object sender, RoutedEventArgs e) => await Run(token => _vm!.CaptureRegionAsync(OverwatchRegion.International, Progress(), token));
     private async void OnComplete(object sender, RoutedEventArgs e) => await Run(token => _vm!.CompleteRegionBackupAsync(Progress(), token));
-    private async void OnValidate(object sender, RoutedEventArgs e) { StatusText.Text = "已重新检查本地文件。"; await RefreshCoreAsync(); }
+    private async void OnValidate(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = "正在后台完整检查本地文件…";
+        await RefreshCoreAsync(verifyFiles: true);
+    }
     private void OnClear(object sender, RoutedEventArgs e)
     {
         if (_vm == null || MessageBox.Show("清除已保存的国服和国际服文件？\n\n不会删除游戏，但以后切换前需要重新准备。", "清除区服文件备份", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;

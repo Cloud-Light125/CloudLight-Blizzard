@@ -259,7 +259,7 @@ public sealed class OverwatchRegionManager
     }
 
     public async Task<RegionSnapshotStatus> GetStatusAsync(string? gameRoot,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool verifyFiles = true)
     {
         var valid = IsValidGameRoot(gameRoot);
         var pending = _store.LoadPending();
@@ -285,17 +285,18 @@ public sealed class OverwatchRegionManager
         }
 
         var generation = active.Value.Generation;
-        var current = valid && generation.State is RegionBackupState.Ready or RegionBackupState.Stale
+        var current = verifyFiles && valid && generation.State is RegionBackupState.Ready or RegionBackupState.Stale
             ? await DetectCurrentRegionAsync(gameRoot!, generation, cancellationToken) : CurrentGameRegion.Unknown;
-        var compatibility = valid
+        var compatibility = verifyFiles && valid
             ? await EvaluateCompatibilityAsync(gameRoot!, generation, cancellationToken)
-            : new CompatibilityResult(GenerationCompatibility.Unknown, "游戏目录无效");
-        if (compatibility.Status == GenerationCompatibility.Updated && generation.State != RegionBackupState.Stale)
+            : new CompatibilityResult(GenerationCompatibility.Unknown,
+                valid ? "尚未执行完整文件校验" : "游戏目录无效");
+        if (verifyFiles && compatibility.Status == GenerationCompatibility.Updated && generation.State != RegionBackupState.Stale)
         {
             generation.State = RegionBackupState.Stale;
             _store.SaveGeneration(generation);
         }
-        else if (compatibility.Status == GenerationCompatibility.Compatible && generation.State == RegionBackupState.Stale)
+        else if (verifyFiles && compatibility.Status == GenerationCompatibility.Compatible && generation.State == RegionBackupState.Stale)
         {
             // Older builds marked every Mixed/Unknown directory stale. A positive common-baseline
             // verification safely re-enables that existing generation without rebuilding it.
