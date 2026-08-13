@@ -1,0 +1,66 @@
+<UserControl x:Class="BnetSwitch.Views.Pages.RegionFilesPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28,24,22,28">
+            <TextBlock Text="区服文件" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="使用本地文件快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。" Style="{StaticResource PageDescription}"/>
+
+            <TextBlock Text="当前状态" Style="{StaticResource SectionTitle}" Margin="0,26,0,12"/>
+            <Border Style="{StaticResource SurfaceCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="当前文件" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="国服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="国际服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="准备状态" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="本地备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="CurrentRegionText"/><TextBlock x:Name="ChinaText" Margin="0,10,0,0"/><TextBlock x:Name="InternationalText" Margin="0,10,0,0"/><TextBlock x:Name="StateText" Margin="0,10,0,0"/><TextBlock x:Name="SizeText" Margin="0,10,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="24,0,0,0">
+                        <Button x:Name="SwitchChinaButton" Content="切换到国服" Style="{StaticResource PrimaryButton}" Padding="18,0" Margin="0,0,0,8" Click="OnSwitchChina"/>
+                        <Button x:Name="SwitchInternationalButton" Content="切换到国际服" Style="{StaticResource PrimaryButton}" Padding="18,0" Click="OnSwitchInternational"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Margin="0,24,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <TextBlock Text="游戏位置" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="GamePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,12"/>
+                        <WrapPanel><Button Content="自动查找" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnDetectGame"/><Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnChooseGame"/></WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <TextBlock Text="文件存储位置" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="StoragePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,12"/>
+                        <WrapPanel><Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnChooseStorage"/><Button Content="打开文件夹" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnOpenStorage"/></WrapPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border x:Name="OperationPanel" Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
+                <StackPanel>
+                    <TextBlock Text="准备与维护" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="首次准备会保存当前完整临时副本，并让 Battle.net 只跨区一次；完成后长期仅保留两端真正不同的文件。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,14"/>
+                    <WrapPanel x:Name="IdleActions">
+                        <Button Content="当前是国服，开始准备" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnCaptureChina"/>
+                        <Button Content="当前是国际服，开始准备" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnCaptureInternational"/>
+                        <Button Content="我已完成跨区更新" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnComplete"/>
+                        <Button Content="检查本地文件" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnValidate"/>
+                        <Button Content="清除区服文件备份" Style="{StaticResource DangerButton}" Padding="14,0" Margin="0,0,0,8" Click="OnClear"/>
+                    </WrapPanel>
+                    <StackPanel x:Name="BusyActions" Visibility="Collapsed">
+                        <TextBlock x:Name="ProgressText" TextWrapping="Wrap" Margin="0,2,0,8"/>
+                        <ProgressBar x:Name="ProgressBar" Style="{StaticResource ThemeProgressBar}" Height="8" Minimum="0" Maximum="1"/>
+                        <Button Content="取消" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="15,0" Margin="0,12,0,0" Click="OnCancel"/>
+                    </StackPanel>
+                    <TextBlock x:Name="StatusText" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,9,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

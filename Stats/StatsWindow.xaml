@@ -1,0 +1,470 @@
+<UserControl x:Class="BnetSwitch.Stats.StatsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BnetSwitch.Stats"
+        Background="{DynamicResource Stats.Bg}"
+        FontFamily="Segoe UI, Microsoft YaHei UI">
+
+    <UserControl.Resources>
+        <local:PercentToWidthConverter x:Key="PctToWidth"/>
+        <local:PathToImageConverter x:Key="PathToImg"/>
+        <local:InverseBoolToVisConverter x:Key="InvBoolToVis"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- 单场对局行模板 -->
+        <DataTemplate x:Key="MatchRowTemplate" DataType="{x:Type local:MatchRecord}">
+            <Border x:Name="MatchRow" BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,1,0,0" Padding="10,7"
+                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnMatchClick" ToolTip="点击查看单局记分板">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border x:Name="ResultChip" Height="20" MinWidth="30" CornerRadius="5" Padding="6,0"
+                            Background="{DynamicResource Stats.OkSoft}" VerticalAlignment="Center">
+                        <TextBlock x:Name="ResultTxt" FontSize="11" FontWeight="Bold"
+                                   Foreground="{DynamicResource Stats.OkText}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Run Text="{Binding ResultText, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding ScoreText, Mode=OneWay}"/>
+                        </TextBlock>
+                    </Border>
+
+                    <TextBlock Grid.Column="1" Text="{Binding Mode}" FontSize="11.5" Margin="8,0,0,0"
+                               Foreground="{DynamicResource Stats.Tx3}" VerticalAlignment="Center"/>
+
+                    <!-- 地图缩略图 -->
+                    <Grid Grid.Column="2" Width="34" Height="20" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <Border CornerRadius="4" Background="{DynamicResource Stats.Divider}"/>
+                        <Border CornerRadius="4">
+                            <Border.Background>
+                                <ImageBrush ImageSource="{Binding MapIconLocal, Converter={StaticResource PathToImg}}" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                    <TextBlock Grid.Column="3" Text="{Binding Map}" FontSize="11.5" FontWeight="SemiBold" Margin="7,0,8,0"
+                               Foreground="{DynamicResource Stats.Tx1}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+
+                    <!-- 英雄小图标 + 名 -->
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <Grid Width="18" Height="18" Margin="0,0,5,0">
+                            <Border CornerRadius="4" Background="{DynamicResource Stats.Divider}"/>
+                            <Border CornerRadius="4">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding HeroIconLocal, Converter={StaticResource PathToImg}}" Stretch="UniformToFill"/>
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding Hero}" FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="5" Text="{Binding Kda}" FontSize="11.5" Margin="0,0,10,0"
+                               Foreground="{DynamicResource Stats.Tx2}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="6" Text="{Binding TimeAgo}" FontSize="11.5"
+                               Foreground="{DynamicResource Stats.Tx3}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="MatchRow" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="MatchRow" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding Result}" Value="L">
+                    <Setter TargetName="ResultChip" Property="Background" Value="{DynamicResource Stats.LossSoft}"/>
+                    <Setter TargetName="ResultTxt" Property="Foreground" Value="{DynamicResource Stats.LossText}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Result}" Value="D">
+                    <Setter TargetName="ResultChip" Property="Background" Value="{DynamicResource Stats.DrawSoft}"/>
+                    <Setter TargetName="ResultTxt" Property="Foreground" Value="{DynamicResource Stats.DrawText}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 英雄行模板 -->
+        <DataTemplate x:Key="HeroRowTemplate" DataType="{x:Type local:HeroStat}">
+            <Border x:Name="HeroRow" BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,1,0,0" Padding="12,8"
+                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnHeroClick" ToolTip="点击看该英雄场均数据">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <!-- 英雄小图标 -->
+                    <Grid Width="24" Height="24" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Border CornerRadius="6" Background="{DynamicResource Stats.Divider}"/>
+                        <Border CornerRadius="6">
+                            <Border.Background>
+                                <ImageBrush ImageSource="{Binding IconLocal, Converter={StaticResource PathToImg}}" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Stats.Tx1}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <Border Grid.Column="2" Height="6" CornerRadius="3" Background="{DynamicResource Stats.DrawSoft}"
+                            VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Border HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource Stats.Accent}"
+                                Width="{Binding PlayPercent, Converter={StaticResource PctToWidth}, ConverterParameter=999}"
+                                MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}"/>
+                    </Border>
+                    <TextBlock Grid.Column="3" Text="{Binding Detail}" FontSize="11.5"
+                               Foreground="{DynamicResource Stats.Tx2}" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="HeroRow" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="HeroRow" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                </Trigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- ===== 顶栏 ===== -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Stats.Card}"
+                BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,0,0,1" Padding="14,9">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnOpenBillboard" ToolTip="该玩家各英雄的省内排名榜">
+                        <TextBlock Text="排行榜"/>
+                    </Button>
+                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnOpenFriends" Margin="8,0,0,0"
+                            ToolTip="该玩家的守望先锋好友(可点开继续查)">
+                        <TextBlock Text="好友"/>
+                    </Button>
+                </StackPanel>
+
+                <TextBlock Grid.Column="1" Text="战绩查询" FontSize="13.5" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Stats.Tx1}" VerticalAlignment="Center" Margin="10,0,12,0"/>
+
+                <Border Grid.Column="2" Background="{DynamicResource Stats.InputBg}"
+                        BorderBrush="{DynamicResource Stats.InputBorder}" BorderThickness="1"
+                        CornerRadius="8" Height="32" Padding="10,0" Margin="0,0,10,0">
+                    <Grid VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Path Style="{StaticResource Stats.IconPath}" Data="{StaticResource Stats.Geo.Search}"
+                              Width="13" Height="13" Stroke="{DynamicResource Stats.Tx3}" Margin="0,0,7,0"/>
+                        <TextBox x:Name="SearchBox" Grid.Column="1" Background="Transparent" BorderThickness="0" Padding="0"
+                                 FontSize="12.5" Foreground="{DynamicResource Stats.Tx1}"
+                                 VerticalAlignment="Center" VerticalContentAlignment="Center" KeyDown="OnSearchKeyDown"/>
+                        <TextBlock Grid.Column="1" Text="查别人：输入 BattleTag，如 玩家#5945"
+                                   FontSize="12.5" Foreground="{DynamicResource Stats.Tx3}"
+                                   IsHitTestVisible="False" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding Text, ElementName=SearchBox}" Value=""/>
+                                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=SearchBox}" Value="False"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnSwitchAccount" Margin="0,0,8,0"
+                            ToolTip="登出当前网易大神账号,换号重新扫码">
+                        <TextBlock Text="换号"/>
+                    </Button>
+                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnRefresh">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource Stats.IconPath}" Data="{StaticResource Stats.Geo.Refresh}"
+                                  Width="12" Height="12" Stroke="{DynamicResource Stats.Accent}" Margin="0,0,5,0"/>
+                            <TextBlock Text="刷新"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 赛季 + 模式 选择器 -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Stats.Card}"
+                BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,0,0,1" Padding="14,7">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <ComboBox x:Name="SeasonBox" Width="152" Style="{StaticResource Stats.Combo}" SelectionChanged="OnSeasonChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Main}" VerticalAlignment="Center" Foreground="{DynamicResource Stats.Tx1}"/>
+                                <TextBlock Text="{Binding Sub}" Margin="7,0,0,0" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource Stats.Tx3}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Border Background="{DynamicResource Stats.InputBg}" CornerRadius="8" Padding="3" Margin="14,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton GroupName="Mode" Tag="sport" Content="竞技" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged" IsChecked="True"/>
+                        <RadioButton GroupName="Mode" Tag="leisure" Content="休闲" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged"/>
+                        <RadioButton GroupName="Mode" Tag="fight" Content="竞技角斗" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged"/>
+                        <RadioButton GroupName="Mode" Tag="lfight" Content="休闲角斗" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged"/>
+                    </StackPanel>
+                </Border>
+                <Border x:Name="QueuePanel" Background="{DynamicResource Stats.InputBg}" CornerRadius="8" Padding="3" Margin="12,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton GroupName="Queue" Tag="preset" Content="预设职责" Style="{StaticResource Stats.TabRadio}" Checked="OnQueueChanged" IsChecked="True"/>
+                        <RadioButton GroupName="Queue" Tag="open" Content="开放职责" Style="{StaticResource Stats.TabRadio}" Checked="OnQueueChanged"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- 加载 / 空状态遮罩 -->
+        <Grid>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="ContentPanel" Margin="14,12,14,14">
+
+                    <!-- 玩家头卡 -->
+                    <Border Style="{StaticResource Stats.CardStyle}" Padding="14,13">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 头像:椭圆图,加载不出时露出首字 -->
+                            <Grid Width="54" Height="54" VerticalAlignment="Center">
+                                <Border CornerRadius="27" Background="{DynamicResource Stats.AccentSoft}"/>
+                                <TextBlock Text="{Binding Initial}" FontSize="22" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Stats.Accent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Ellipse>
+                                    <Ellipse.Fill>
+                                        <ImageBrush ImageSource="{Binding AvatarLocal, Converter={StaticResource PathToImg}}" Stretch="UniformToFill"/>
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                            </Grid>
+
+                            <StackPanel Grid.Column="1" Margin="13,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontSize="15.5" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}">
+                                        <Run Text="{Binding DisplayName}"/><Run Text="{Binding TagSuffix}"
+                                             Foreground="{DynamicResource Stats.Tx3}" FontWeight="Normal"/>
+                                    </TextBlock>
+                                    <Border Background="{DynamicResource Stats.GoldBadge}" CornerRadius="11"
+                                            Padding="9,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                            Visibility="{Binding HasTitle, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Source="{Binding TitleIconLocal, Converter={StaticResource PathToImg}}" Height="12" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding TitleText}" FontSize="11" FontWeight="Bold"
+                                                       Foreground="{DynamicResource Stats.GoldText}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                    <Image Source="{Binding EndorseIconLocal, Converter={StaticResource PathToImg}}" Height="17" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                    <TextBlock FontSize="12" Foreground="{DynamicResource Stats.Tx2}" VerticalAlignment="Center">
+                                        <Run Text="赞赏 "/><Run Text="{Binding EndorseLevel}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/><Run Text=" 级"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="12" Foreground="{DynamicResource Stats.Tx2}" Margin="16,0,0,0" VerticalAlignment="Center">
+                                        <Run Text="游戏时间 "/><Run Text="{Binding TotalHours}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="12" Foreground="{DynamicResource Stats.Tx2}" Margin="16,0,0,0" VerticalAlignment="Center"
+                                               ToolTip="{Binding WeekDetail}">
+                                        <Run Text="本周 "/><Run Text="{Binding WeekPerf}" FontWeight="Bold" Foreground="{DynamicResource Stats.OkText}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                                <!-- 社交口碑 -->
+                                <StackPanel Orientation="Horizontal" Margin="0,7,0,0"
+                                            Visibility="{Binding HasRepute, Converter={StaticResource BoolToVis}}">
+                                    <Border Background="{DynamicResource Stats.AccentSoft}" CornerRadius="5" Padding="7,2" VerticalAlignment="Center">
+                                        <TextBlock FontSize="11"><Run Text="口碑 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding ReputeComment}" FontWeight="Bold" Foreground="{DynamicResource Stats.Accent}"/></TextBlock>
+                                    </Border>
+                                    <TextBlock Text="{Binding ReputeText}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" VerticalAlignment="Center" Margin="9,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <TextBlock Text="数据更新于" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{Binding UpdatedAt}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}"
+                                           HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 竞技段位(休闲无段位,隐藏;开放职责单段位)-->
+                    <StackPanel Visibility="{Binding ShowRanks, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding RankSectionTitle}" Style="{StaticResource Stats.H6}" Margin="2,14,0,7"/>
+                    <Border Style="{StaticResource Stats.CardStyle}">
+                        <Grid>
+                          <Grid Visibility="{Binding IsOpenQueue, Converter={StaticResource InvBoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="12" HorizontalAlignment="Center">
+                                <Path Data="{StaticResource Stats.Geo.Tank}" Fill="{DynamicResource Stats.TierDiamond}"
+                                      Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                <TextBlock Text="坦克" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                <Image Source="{Binding Tank.TierIconLocal, Converter={StaticResource PathToImg}}" Width="42" Height="42" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                <TextBlock Text="{Binding Tank.TierText}" FontSize="15" FontWeight="ExtraBold"
+                                           Foreground="{Binding Tank.TierBrush}" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                <TextBlock Text="{Binding Tank.ScoreText}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}"
+                                           HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding Tank.ExtraText}" FontSize="10" Foreground="{DynamicResource Stats.Tx3}"
+                                           HorizontalAlignment="Center" TextAlignment="Center" Margin="2,3,2,0"
+                                           Visibility="{Binding Tank.HasExtra, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+
+                            <Border Grid.Column="1" BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="1,0">
+                                <StackPanel Margin="12" HorizontalAlignment="Center">
+                                    <Path Data="{StaticResource Stats.Geo.Dps}" Fill="{DynamicResource Stats.LossText}"
+                                          Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="输出" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                    <Image Source="{Binding Dps.TierIconLocal, Converter={StaticResource PathToImg}}" Width="42" Height="42" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                    <TextBlock Text="{Binding Dps.TierText}" FontSize="15" FontWeight="ExtraBold"
+                                               Foreground="{Binding Dps.TierBrush}" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                    <TextBlock Text="{Binding Dps.ScoreText}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}"
+                                               HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding Dps.ExtraText}" FontSize="10" Foreground="{DynamicResource Stats.Tx3}"
+                                               HorizontalAlignment="Center" TextAlignment="Center" Margin="2,3,2,0"
+                                               Visibility="{Binding Dps.HasExtra, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Grid.Column="2" Margin="12" HorizontalAlignment="Center">
+                                <Path Data="{StaticResource Stats.Geo.Heal}" Fill="{DynamicResource Stats.OkText}"
+                                      Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                <TextBlock Text="治疗" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                <Image Source="{Binding Support.TierIconLocal, Converter={StaticResource PathToImg}}" Width="42" Height="42" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                <TextBlock Text="{Binding Support.TierText}" FontSize="15" FontWeight="ExtraBold"
+                                           Foreground="{Binding Support.TierBrush}" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                                <TextBlock Text="{Binding Support.ScoreText}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}"
+                                           HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding Support.ExtraText}" FontSize="10" Foreground="{DynamicResource Stats.Tx3}"
+                                           HorizontalAlignment="Center" TextAlignment="Center" Margin="2,3,2,0"
+                                           Visibility="{Binding Support.HasExtra, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                          </Grid>
+
+                          <!-- 开放职责:单段位 -->
+                          <StackPanel Visibility="{Binding IsOpenQueue, Converter={StaticResource BoolToVis}}" Margin="12,18" HorizontalAlignment="Center">
+                              <Image Source="{Binding OpenRank.TierIconLocal, Converter={StaticResource PathToImg}}" Width="56" Height="56" HorizontalAlignment="Center"/>
+                              <TextBlock Text="开放职责" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                              <TextBlock Text="{Binding OpenRank.TierText}" FontSize="18" FontWeight="ExtraBold" Foreground="{Binding OpenRank.TierBrush}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                              <TextBlock Text="{Binding OpenRank.ScoreText}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                              <TextBlock Text="{Binding OpenRank.ExtraText}" FontSize="10.5" Foreground="{DynamicResource Stats.Tx3}"
+                                         HorizontalAlignment="Center" TextAlignment="Center" Margin="0,3,0,0"
+                                         Visibility="{Binding OpenRank.HasExtra, Converter={StaticResource BoolToVis}}"/>
+                          </StackPanel>
+                        </Grid>
+                    </Border>
+                    </StackPanel>
+
+                    <!-- 场均表现 -->
+                    <TextBlock Text="{Binding AvgSectionTitle}" Style="{StaticResource Stats.H6}" Margin="2,14,0,7"/>
+                    <Border Style="{StaticResource Stats.CardStyle}">
+                      <StackPanel>
+                        <UniformGrid Columns="5">
+                            <StackPanel Margin="6,11" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding AvgDamage}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding AvgDamageLabel}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,11" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding AvgHeal}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding AvgHealLabel}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,11" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding AvgResist}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding AvgResistLabel}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,11" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding Kda}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding KdaLabel}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Margin="6,11" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding SeasonWinRate}" FontSize="16" FontWeight="ExtraBold" Foreground="{DynamicResource Stats.OkText}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding WinRateLabel}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding WinLossText}" FontSize="10" Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,2,0,0"
+                                           Visibility="{Binding HasWinLoss, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </UniformGrid>
+                        <Border BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,1,0,0" Margin="12,0"
+                                Visibility="{Binding HasAvgExtra, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding AvgExtra}" FontSize="11" Foreground="{DynamicResource Stats.Tx3}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,10"/>
+                        </Border>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- 底部双栏 -->
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="44*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="56*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="常用英雄" Style="{StaticResource Stats.H6}"/>
+                            <Border Style="{StaticResource Stats.CardStyle}" Padding="8,6">
+                                <ScrollViewer Height="360" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                                    <ItemsControl ItemsSource="{Binding Heroes}" ItemTemplate="{StaticResource HeroRowTemplate}"/>
+                                </ScrollViewer>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="近期对局" Style="{StaticResource Stats.H6}"/>
+                            <Border Style="{StaticResource Stats.CardStyle}" Padding="8,6">
+                                <!-- 虚拟化:只渲染可见行,滚动回收复用;拉几百条也不爆内存 -->
+                                <ItemsControl ItemsSource="{Binding Matches}" ItemTemplate="{StaticResource MatchRowTemplate}" Height="360"
+                                              VirtualizingStackPanel.IsVirtualizing="True"
+                                              VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                              VirtualizingPanel.ScrollUnit="Pixel"
+                                              ScrollViewer.CanContentScroll="True" ScrollViewer.ScrollChanged="OnMatchScroll">
+                                    <ItemsControl.Template>
+                                        <ControlTemplate TargetType="ItemsControl">
+                                            <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                                                <ItemsPresenter/>
+                                            </ScrollViewer>
+                                        </ControlTemplate>
+                                    </ItemsControl.Template>
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 覆盖态:加载 / 空 / 错误 -->
+            <Border x:Name="OverlayPanel" Background="{DynamicResource Stats.Bg}" Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock x:Name="OverlayTitle" Text="正在加载战绩…" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="OverlayHint" Text="" FontSize="12" Foreground="{DynamicResource Stats.Tx3}"
+                               HorizontalAlignment="Center" Margin="0,6,0,0" TextAlignment="Center" MaxWidth="360" TextWrapping="Wrap"/>
+                    <Button x:Name="OverlayRetry" Content="重试" Style="{StaticResource Stats.BtnPrimary}"
+                            Margin="0,12,0,0" Padding="20,0" HorizontalAlignment="Center" Visibility="Collapsed" Click="OnRefresh"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

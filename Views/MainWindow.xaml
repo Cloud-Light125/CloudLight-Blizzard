@@ -1,0 +1,42 @@
+<Window x:Class="BnetSwitch.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CloudLight Blizzard"
+        Width="1200" Height="760" MinWidth="1000" MinHeight="660"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource App.Background}"
+        Foreground="{DynamicResource Text.Primary}">
+    <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="204"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border Background="{DynamicResource Nav.Background}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <StackPanel Margin="24,26,18,22">
+                    <TextBlock Text="CloudLight" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock Text="Blizzard" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/>
+                    <TextBlock Text="战网与守望先锋工具" FontSize="10.5" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Row="1">
+                    <RadioButton x:Name="AccountsNav" GroupName="MainNavigation" Content="账号" Tag="accounts" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="RegionNav" GroupName="MainNavigation" Content="区服文件" Tag="region" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="StatsNav" GroupName="MainNavigation" Content="战绩" Tag="stats" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="SettingsNav" GroupName="MainNavigation" Content="设置" Tag="settings" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                </StackPanel>
+                <StackPanel Grid.Row="2" Margin="24,0,18,22">
+                    <TextBlock Text="1.0" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
+                    <TextBlock Text="CloudLight Blizzard" Foreground="{DynamicResource Text.Muted}" FontSize="10" Margin="0,3,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <ContentControl x:Name="PageHost"/>
+            <Border Grid.Row="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="18,9">
+                <DockPanel>
+                    <Button Content="刷新账号" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="28" Padding="11,0" Click="OnRefresh"/>
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

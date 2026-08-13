@@ -1,0 +1,200 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 战绩模块通用样式(依赖 StatsColors.*.xaml 中的画刷 key) -->
+
+    <!-- 卡片容器 -->
+    <Style x:Key="Stats.CardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Stats.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Stats.CardBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- 分区小标题 -->
+    <Style x:Key="Stats.H6" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Stats.DrawText}"/>
+        <Setter Property="Margin" Value="2,0,0,7"/>
+    </Style>
+
+    <!-- 主按钮 -->
+    <Style x:Key="Stats.BtnPrimary" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource Stats.Accent}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Stats.AccentHover}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 浅底强调按钮(如「刷新」) -->
+    <Style x:Key="Stats.BtnSoft" TargetType="Button" BasedOn="{StaticResource Stats.BtnPrimary}">
+        <Setter Property="Background" Value="{DynamicResource Stats.AccentSoft}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Stats.Accent}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 无底图标按钮(返回箭头等) -->
+    <Style x:Key="Stats.BtnIcon" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 下拉框(赛季)主题化 -->
+    <Style x:Key="Stats.ComboItem" TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource Stats.Tx1}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="bd" Background="Transparent" CornerRadius="6" Margin="3,1" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                        </Trigger>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Stats.AccentSoft}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Stats.Accent}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Stats.Combo" TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{DynamicResource Stats.Tx1}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="MaxDropDownHeight" Value="340"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource Stats.ComboItem}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="{DynamicResource Stats.InputBg}" BorderBrush="{DynamicResource Stats.InputBorder}"
+                                            BorderThickness="1" CornerRadius="8"/>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          IsHitTestVisible="False" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="11,0,26,0"/>
+                        <Path Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource Stats.Tx3}" StrokeThickness="1.6"
+                              HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0" IsHitTestVisible="False"/>
+                        <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource Stats.Card}" BorderBrush="{DynamicResource Stats.CardBorder}" BorderThickness="1"
+                                    CornerRadius="8" Margin="0,4,0,6" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter Margin="0,3"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- tab 单选(赛季/模式切换):选中=强调色药丸 -->
+    <Style x:Key="Stats.TabRadio" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource Stats.Tx2}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Padding" Value="12,5"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="bd" CornerRadius="7" Background="Transparent" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Stats.Accent}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 描边线条图标 -->
+    <Style x:Key="Stats.IconPath" TargetType="Path">
+        <Setter Property="Stroke" Value="{DynamicResource Stats.Tx2}"/>
+        <Setter Property="StrokeThickness" Value="1.8"/>
+        <Setter Property="StrokeStartLineCap" Value="Round"/>
+        <Setter Property="StrokeEndLineCap" Value="Round"/>
+        <Setter Property="StrokeLineJoin" Value="Round"/>
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="Fill" Value="Transparent"/>
+    </Style>
+
+    <!-- 常用图标几何 -->
+    <Geometry x:Key="Stats.Geo.Back">M14,5 L7,12 L14,19</Geometry>
+    <Geometry x:Key="Stats.Geo.Search">M10.5,4 A6.5,6.5 0 1 0 10.5,17 A6.5,6.5 0 1 0 10.5,4 M15.5,15.5 L20,20</Geometry>
+    <Geometry x:Key="Stats.Geo.Refresh">M18,9 A7.5,7.5 0 1 0 18.4,13.5 M18.5,4.5 L18.5,9 L14,9</Geometry>
+    <!-- 角色图标(用户提供的 SVG 转填充几何,evenodd) -->
+    <Geometry x:Key="Stats.Geo.Tank">F0 M12,2 L20.5,4.6 V11 C20.5,16.8 17,20.2 12,22.5 C7,20.2 3.5,16.8 3.5,11 V4.6 Z M12,5.2 L6.5,6.9 V11 C6.5,15.2 8.9,17.7 12,19.4 C15.1,17.7 17.5,15.2 17.5,11 V6.9 Z</Geometry>
+    <Geometry x:Key="Stats.Geo.Dps">F0 M12,6.2 A5.8,5.8 0 1 0 12,17.8 A5.8,5.8 0 1 0 12,6.2 M12,9 A3,3 0 1 1 12,15 A3,3 0 1 1 12,9 Z M10.4,12 A1.6,1.6 0 1 0 13.6,12 A1.6,1.6 0 1 0 10.4,12 Z M10.8,1.5 H13.2 V5 H10.8 Z M10.8,19 H13.2 V22.5 H10.8 Z M1.5,10.8 H5 V13.2 H1.5 Z M19,10.8 H22.5 V13.2 H19 Z</Geometry>
+    <Geometry x:Key="Stats.Geo.Heal">F0 M7,2.5 H17 L21.5,7 V17 L17,21.5 H7 L2.5,17 V7 Z M10.4,6 V10.4 H6 V13.6 H10.4 V18 H13.6 V13.6 H18 V10.4 H13.6 V6 Z</Geometry>
+</ResourceDictionary>

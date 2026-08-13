@@ -1,0 +1,67 @@
+<Window x:Class="BnetSwitch.Stats.QrLoginDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="登录网易大神" Width="330" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="{DynamicResource Stats.Card}"
+        FontFamily="Segoe UI, Microsoft YaHei UI">
+
+    <StackPanel Margin="16,14,16,16">
+
+        <!-- 标题行 -->
+        <Grid>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="登录网易大神" FontSize="13.5" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Stats.Tx1}"/>
+            </StackPanel>
+            <TextBlock Text="首次使用战绩查询需授权 · 之后免扫码" FontSize="11"
+                       Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- 二维码区(三态叠放) -->
+        <Border Width="180" Height="180" Margin="0,14,0,0" CornerRadius="10"
+                Background="White" BorderBrush="{DynamicResource Stats.CardBorder}" BorderThickness="1"
+                HorizontalAlignment="Center">
+            <Grid>
+                <Image x:Name="QrImage" Margin="10" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                <TextBlock x:Name="QrPlaceholder" Text="QR" FontSize="34" FontWeight="Bold" Foreground="#D8DCE4"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                <Border x:Name="SuccessOverlay" Background="#F2FFFFFF" CornerRadius="10" Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border Width="46" Height="46" CornerRadius="23" Background="{DynamicResource Stats.OkSoft}">
+                            <TextBlock Text="✓" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource Stats.Ok}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="已确认" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Stats.OkText}"
+                                   HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ExpiredOverlay" Background="#F5FFFFFF" CornerRadius="10" Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="二维码已过期" FontSize="12" Foreground="{DynamicResource Stats.Tx3}"
+                                   HorizontalAlignment="Center"/>
+                        <Button Style="{StaticResource Stats.BtnPrimary}" Margin="0,10,0,0" Click="OnRefreshQr" Padding="16,0">
+                            <TextBlock Text="点击刷新"/>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 状态文案 -->
+        <TextBlock x:Name="StatusText" Text="等待扫码…" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+        <TextBlock x:Name="HintText" Text="打开「网易大神」App，首页右上角 扫一扫" FontSize="11.5"
+                   Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Center" Margin="0,4,0,0"
+                   TextAlignment="Center"/>
+
+        <!-- 隐私说明 -->
+        <Border Background="{DynamicResource Stats.Bg}" CornerRadius="8" Padding="10,8" Margin="0,14,0,0">
+            <TextBlock FontSize="11" Foreground="{DynamicResource Stats.Tx2}" TextWrapping="Wrap"
+                       Text="授权凭据仅保存在本机，只用于查询战绩；可在设置中随时退出大神登录。"/>
+        </Border>
+
+    </StackPanel>
+</Window>

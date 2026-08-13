@@ -1,0 +1,81 @@
+<Window x:Class="BnetSwitch.Stats.FriendsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BnetSwitch.Stats"
+        Title="我的好友" Width="480" Height="600"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Stats.Bg}"
+        FontFamily="Segoe UI, Microsoft YaHei UI">
+
+    <Window.Resources>
+        <local:PathToImageConverter x:Key="PathToImg"/>
+
+        <DataTemplate x:Key="FriendRowT" DataType="{x:Type local:FriendRow}">
+            <Border x:Name="Row" Background="Transparent" Cursor="Hand" Padding="12,10"
+                    BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,1,0,0"
+                    MouseLeftButtonUp="OnFriendClick" ToolTip="点击查该好友战绩">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 头像 -->
+                    <Grid Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Ellipse Fill="{DynamicResource Stats.Divider}"/>
+                        <Ellipse>
+                            <Ellipse.Fill>
+                                <ImageBrush ImageSource="{Binding AvatarLocal, Converter={StaticResource PathToImg}}" Stretch="UniformToFill"/>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                    </Grid>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Stats.Tx1}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding StatText}" FontSize="11" Margin="0,3,0,0" Foreground="{DynamicResource Stats.Tx3}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Image Source="{Binding TierIconLocal, Converter={StaticResource PathToImg}}" Height="24" Margin="0,0,5,0"/>
+                        <TextBlock Text="{Binding TierText}" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Stats.Tx2}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource Stats.Hover}"/>
+                </Trigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <DockPanel>
+            <Border DockPanel.Dock="Top" Background="{DynamicResource Stats.Card}"
+                    BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,0,0,1" Padding="18,13">
+                <StackPanel>
+                    <TextBlock x:Name="TitleText" Text="好友" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/>
+                    <TextBlock x:Name="SubText" FontSize="11.5" Margin="0,3,0,0" Foreground="{DynamicResource Stats.Tx3}"/>
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+                <Border Style="{StaticResource Stats.CardStyle}" Margin="16" Padding="4,2">
+                    <ItemsControl x:Name="FriendList" ItemTemplate="{StaticResource FriendRowT}"/>
+                </Border>
+            </ScrollViewer>
+        </DockPanel>
+
+        <Border x:Name="OverlayPanel" Background="{DynamicResource Stats.Bg}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock x:Name="OverlayTitle" Text="正在加载好友…" FontSize="14" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Foreground="{DynamicResource Stats.Tx1}"/>
+                <TextBlock x:Name="OverlayHint" Text="该玩家的守望先锋好友" FontSize="11.5" Margin="0,6,0,0"
+                           HorizontalAlignment="Center" Foreground="{DynamicResource Stats.Tx3}"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

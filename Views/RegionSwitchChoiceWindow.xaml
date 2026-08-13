@@ -1,0 +1,20 @@
+<Window x:Class="BnetSwitch.RegionSwitchChoiceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="区服文件尚未准备好" Width="500" Height="280" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource App.Background}" Foreground="{DynamicResource Text.Primary}">
+    <Grid Margin="22">
+        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock x:Name="TitleText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Margin="0,14,0,0" TextWrapping="Wrap"
+                       Text="请先准备国服和国际服文件。也可以仅切换账号，让 Battle.net 自行检查并下载目标区服文件。"/>
+            <TextBlock x:Name="StateText" Margin="0,12,0,0" Opacity="0.65"/>
+        </StackPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="取消" Style="{StaticResource SecondaryButton}" Padding="13,7" Margin="0,0,8,0" Click="OnCancel"/>
+            <Button Content="仅切换账号" Style="{StaticResource SecondaryButton}" Padding="13,7" Margin="0,0,8,0" Click="OnAccountOnly"/>
+            <Button Content="前往区服文件" Style="{StaticResource PrimaryButton}" Padding="13,7" Click="OnSettings"/>
+        </StackPanel>
+    </Grid>
+</Window>

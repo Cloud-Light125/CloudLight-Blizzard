@@ -1,0 +1,16 @@
+<Application x:Class="BnetSwitch.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="Views/MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Themes/Palette.Light.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Themes/Icons.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Themes/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Stats/Theme/StatsColors.Light.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Stats/Theme/StatsStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

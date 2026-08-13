@@ -1,0 +1,95 @@
+<UserControl x:Class="BnetSwitch.Views.Pages.AccountsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="28,24,22,28">
+            <TextBlock Text="账号" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="管理 Battle.net 账号并快速切换。" Style="{StaticResource PageDescription}"/>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="当前账号" Foreground="{DynamicResource Text.Secondary}"/>
+                        <StackPanel Visibility="{Binding HasCurrentVisibility}" Margin="0,7,0,0">
+                            <TextBlock Text="{Binding CurrentAccount.DisplayName}" FontSize="21" FontWeight="SemiBold"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                <TextBlock Text="{Binding CurrentAccount.BattleTag}" Foreground="{DynamicResource Text.Secondary}"/>
+                                <TextBlock Text="  ·  " Foreground="{DynamicResource Text.Muted}"/>
+                                <TextBlock Text="{Binding CurrentAccount.RegionText}" Foreground="{DynamicResource Accent.Primary}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="当前未检测到登录账号。" Visibility="{Binding NoCurrentVisibility}" Margin="0,7,0,0" Foreground="{DynamicResource Text.Secondary}"/>
+                    </StackPanel>
+                    <WrapPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0,0,0">
+                        <Button Content="打开 Battle.net" Style="{StaticResource PrimaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnLaunchClient"/>
+                        <Button Content="更新账号备份" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnSaveCurrent"/>
+                        <Button Content="登录新账号" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,0,8" Click="OnAddAccount"/>
+                    </WrapPanel>
+                </Grid>
+            </Border>
+
+            <DockPanel Margin="0,28,0,12">
+                <TextBlock Text="已保存账号" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="{Binding ReadyCountText}" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource Text.Muted}"/>
+            </DockPanel>
+
+            <ItemsControl ItemsSource="{Binding SavedAccounts}" HorizontalAlignment="Stretch">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="276" MinHeight="190" Style="{StaticResource SurfaceCard}" Padding="16" Margin="0,0,12,12">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource Badge}" DockPanel.Dock="Right" Margin="8,0,0,0">
+                                            <TextBlock Text="{Binding RegionText}" Foreground="{DynamicResource Accent.Primary}" FontSize="11" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding BattleTag}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <Border Background="{DynamicResource OkSoft}" CornerRadius="9" Padding="7,2" HorizontalAlignment="Left" Visibility="{Binding CurrentVisibility}" Margin="0,8,0,0">
+                                        <TextBlock Text="当前账号" Foreground="{DynamicResource OkTx}" FontSize="11" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <TextBlock Text="{Binding Remark}" Visibility="{Binding RemarkVisibility}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" MaxHeight="38" Margin="0,8,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" VerticalAlignment="Bottom">
+                                    <TextBlock Text="{Binding SavedRelative}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,8,0,0"/>
+                                    <TextBlock Text="需要重新登录 Battle.net" Foreground="{DynamicResource Status.Error}" Visibility="{Binding ExpiredVisibility}" FontSize="11" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <Grid Grid.Row="2" Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <Button Content="{Binding SwitchText}" Style="{StaticResource PrimaryButton}" Height="32" IsEnabled="{Binding CanSwitch}" Padding="14,0" Click="OnSwitchCard"/>
+                                    <Button Grid.Column="1" Content="战绩" Style="{StaticResource SecondaryButton}" Height="32" Padding="10,0" Margin="6,0,0,0" Click="OnStats"/>
+                                    <Button Grid.Column="2" Content="编辑" Style="{StaticResource SecondaryButton}" Height="32" Padding="9,0" Margin="6,0,0,0" Click="OnEdit"/>
+                                    <Button Grid.Column="3" Content="删除" Style="{StaticResource DangerButton}" Height="32" Padding="9,0" Margin="6,0,0,0" Click="OnDelete"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Visibility="{Binding UnsavedVisibility}" Margin="0,16,0,0">
+                <TextBlock Text="检测到但尚未保存" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="{Binding UnsavedCountText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,10"/>
+                <ItemsControl ItemsSource="{Binding UnsavedAccounts}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource SurfaceCard}" Margin="0,0,0,8" Padding="14">
+                                <DockPanel>
+                                    <Button Content="隐藏" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="32" Padding="12,0" Click="OnHide"/>
+                                    <StackPanel><TextBlock Text="{Binding BattleTag}" FontWeight="SemiBold"/><TextBlock Text="尚未保存账号备份" Foreground="{DynamicResource Text.Muted}"/></StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

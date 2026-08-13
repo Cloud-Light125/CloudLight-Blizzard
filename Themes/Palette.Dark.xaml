@@ -1,0 +1,70 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 暗色主题调色板(键名与亮色一致)。 -->
+    <SolidColorBrush x:Key="Win" Color="#262933" />
+    <SolidColorBrush x:Key="Body" Color="#1D1F26" />
+    <SolidColorBrush x:Key="Card" Color="#2C303C" />
+    <SolidColorBrush x:Key="Card2" Color="#272B35" />
+
+    <SolidColorBrush x:Key="Tx1" Color="#EEF0F5" />
+    <SolidColorBrush x:Key="Tx2" Color="#C2C7D4" />
+    <SolidColorBrush x:Key="Tx3" Color="#7C8393" />
+
+    <SolidColorBrush x:Key="Bd" Color="#363B48" />
+    <SolidColorBrush x:Key="Bd2" Color="#31353F" />
+    <SolidColorBrush x:Key="Bd3" Color="#3A3F4D" />
+
+    <SolidColorBrush x:Key="Acc" Color="#6B8AF8" />
+    <SolidColorBrush x:Key="AccH" Color="#829BF9" />
+    <SolidColorBrush x:Key="AccSoft" Color="#2B3350" />
+    <SolidColorBrush x:Key="AccBd" Color="#4A5A94" />
+
+    <SolidColorBrush x:Key="Ok" Color="#4CAF2F" />
+    <SolidColorBrush x:Key="OkSoft" Color="#22331F" />
+    <SolidColorBrush x:Key="OkTx" Color="#7BC95A" />
+    <SolidColorBrush x:Key="Fresh" Color="#5CC65C" />
+
+    <SolidColorBrush x:Key="WarnBg" Color="#3A3320" />
+    <SolidColorBrush x:Key="WarnBd" Color="#5A4D24" />
+    <SolidColorBrush x:Key="WarnTx" Color="#E6CF8A" />
+    <SolidColorBrush x:Key="WarnIc" Color="#E0B84A" />
+
+    <SolidColorBrush x:Key="OffAv" Color="#333845" />
+    <SolidColorBrush x:Key="OffAvTx" Color="#6F7686" />
+    <SolidColorBrush x:Key="OffTx" Color="#8A909C" />
+
+    <SolidColorBrush x:Key="BtnBd" Color="#414656" />
+    <SolidColorBrush x:Key="Hover" Color="#333845" />
+    <SolidColorBrush x:Key="Input" Color="#20232C" />
+    <SolidColorBrush x:Key="InputBd" Color="#414656" />
+
+    <SolidColorBrush x:Key="TagBg" Color="#3A3F4D" />
+    <SolidColorBrush x:Key="TagTx" Color="#9AA1AD" />
+    <SolidColorBrush x:Key="TgOff" Color="#4A4F5E" />
+    <SolidColorBrush x:Key="Mask" Color="#99000000" />
+    <SolidColorBrush x:Key="OnAcc" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Danger" Color="#F16B6B" />
+    <SolidColorBrush x:Key="DangerH" Color="#E9585B" />
+    <SolidColorBrush x:Key="DangerSoft" Color="#43222A" />
+
+    <!-- 产品级语义资源。旧键继续保留，避免影响稳定业务视图。 -->
+    <SolidColorBrush x:Key="App.Background" Color="#1D1F26" />
+    <SolidColorBrush x:Key="App.Surface" Color="#2C303C" />
+    <SolidColorBrush x:Key="App.SurfaceAlt" Color="#272B35" />
+    <SolidColorBrush x:Key="App.SurfaceElevated" Color="#343946" />
+    <SolidColorBrush x:Key="App.Border" Color="#363B48" />
+    <SolidColorBrush x:Key="Text.Primary" Color="#EEF0F5" />
+    <SolidColorBrush x:Key="Text.Secondary" Color="#C2C7D4" />
+    <SolidColorBrush x:Key="Text.Muted" Color="#7C8393" />
+    <SolidColorBrush x:Key="Accent.Primary" Color="#6B8AF8" />
+    <SolidColorBrush x:Key="Accent.Hover" Color="#829BF9" />
+    <SolidColorBrush x:Key="Status.Success" Color="#4CAF2F" />
+    <SolidColorBrush x:Key="Status.Warning" Color="#E0B84A" />
+    <SolidColorBrush x:Key="Status.Error" Color="#F16B6B" />
+    <SolidColorBrush x:Key="Nav.Background" Color="#171920" />
+    <SolidColorBrush x:Key="Nav.Selected" Color="#2C303C" />
+    <SolidColorBrush x:Key="Button.Primary.Background" Color="#6B8AF8" />
+    <SolidColorBrush x:Key="Button.Primary.Foreground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Button.Secondary.Background" Color="#2C303C" />
+    <SolidColorBrush x:Key="Button.Secondary.Foreground" Color="#EEF0F5" />
+</ResourceDictionary>

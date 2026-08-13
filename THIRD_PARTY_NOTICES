@@ -1,0 +1,20 @@
+CloudLight Blizzard - Third-Party Notices
+==========================================
+
+This distribution includes third-party components whose licenses remain in
+effect independently of the CloudLight Blizzard project license.
+
+Microsoft.Data.Sqlite and transitive .NET packages
+--------------------------------------------------
+Copyright (c) .NET Foundation and Contributors.
+Licensed under the MIT License. Package license files and notices distributed
+by the respective NuGet packages remain applicable.
+
+Inno Setup Simplified Chinese translation
+-----------------------------------------
+The installer includes the Simplified Chinese language file maintained by its
+translator. The translator attribution and project URL are retained verbatim
+inside installer/ChineseSimplified.isl as required by that component.
+
+Inno Setup itself is used as a build tool and is not included in this source
+repository or application installation payload.
