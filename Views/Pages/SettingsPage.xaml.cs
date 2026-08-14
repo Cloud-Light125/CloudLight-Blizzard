@@ -25,7 +25,20 @@ public partial class SettingsPage : UserControl
             await Task.Yield();
             await RefreshCacheSizeAsync();
         };
+        vm.UpdateChecks.CheckingChanged += OnUpdateCheckingChanged;
+        RefreshUpdateInfo();
         Refresh(); _loading = false;
+    }
+
+    public void RefreshUpdateInfo()
+    {
+        if (_vm == null) return;
+        CurrentVersionText.Text = _vm.UpdateChecks.CurrentVersion;
+        var skipped = UpdateService.NormalizeVersion(_vm.Settings.SkippedUpdateVersion);
+        SkippedUpdatePanel.Visibility = string.IsNullOrWhiteSpace(skipped)
+            ? Visibility.Collapsed : Visibility.Visible;
+        SkippedVersionText.Text = skipped ?? "";
+        UpdateCheckingState();
     }
     private void Refresh()
     {
@@ -46,4 +59,31 @@ public partial class SettingsPage : UserControl
     private void OnAutoDetect(object sender, RoutedEventArgs e) { if (_vm == null) return; _vm.Settings.ClientExe = null; _vm.Settings.Save(); Refresh(); }
     private void OnOpenData(object sender, RoutedEventArgs e) { Directory.CreateDirectory(AppPaths.Current.Root); Process.Start(new ProcessStartInfo { FileName = AppPaths.Current.Root, UseShellExecute = true }); }
     private void OnClearCache(object sender, RoutedEventArgs e) { OwImageCache.ClearCache(); Refresh(); }
+
+    private async void OnCheckUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || _vm.UpdateChecks.IsChecking) return;
+        if (Window.GetWindow(this) is MainWindow mainWindow)
+            await mainWindow.CheckForUpdatesManuallyAsync();
+        RefreshUpdateInfo();
+    }
+
+    private void OnRestoreSkippedUpdate(object sender, RoutedEventArgs e)
+    {
+        _vm?.UpdateChecks.RestoreSkippedVersion();
+        RefreshUpdateInfo();
+    }
+
+    private void OnUpdateCheckingChanged()
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        Dispatcher.BeginInvoke(UpdateCheckingState);
+    }
+
+    private void UpdateCheckingState()
+    {
+        if (_vm == null) return;
+        CheckUpdateButton.IsEnabled = !_vm.UpdateChecks.IsChecking;
+        CheckUpdateButton.Content = _vm.UpdateChecks.IsChecking ? "正在检查…" : "检查更新";
+    }
 }

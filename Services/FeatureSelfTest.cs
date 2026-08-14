@@ -1,6 +1,9 @@
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Text;
 using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Stats;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.ViewModels;
 using CloudLightBlizzard.Views.Pages;
@@ -23,6 +26,9 @@ public static class FeatureSelfTest
         {
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
+            RunStatsExplicitQueryWorkflowTest(report).GetAwaiter().GetResult();
+            RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
+            RunRegionPreparationGuideTest(report);
             RunRegionGenerationTest(workspace, report).GetAwaiter().GetResult();
             RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
             RunAccountPreferenceTest(workspace, report);
@@ -65,6 +71,9 @@ public static class FeatureSelfTest
         File.WriteAllText(Path.Combine(roaming, "nested", "account.config"), "B nested");
         store.Save(2, "B#2");
 
+        var accountABefore = CaptureBackupFiles(Path.Combine(profiles, "1"));
+        var accountBBefore = CaptureBackupFiles(Path.Combine(profiles, "2"));
+
         store.Restore(1);
         Assert(File.Exists(Path.Combine(roaming, "a-only.config")), "A-only restored");
         Assert(!File.Exists(Path.Combine(roaming, "b-only.config")), "B-only removed when restoring A");
@@ -77,7 +86,11 @@ public static class FeatureSelfTest
         Assert(File.Exists(Path.Combine(roaming, "Overlay", "logs", "runtime.log")), "excluded live file untouched");
         Assert(store.ReadManifest(2)?.Entries.Any(entry => entry.RelativePath == "nested/account.config") == true,
             "manifest records relative nested path");
-        report.AppendLine("TEST 1 account controlled mirror: PASS (recursive/manifest/A-B cleanup/exclusions)");
+        store.Restore(1);
+        store.Restore(2);
+        AssertBackupFilesUnchanged(Path.Combine(profiles, "1"), accountABefore, "A backup after A-B-A-B switches");
+        AssertBackupFilesUnchanged(Path.Combine(profiles, "2"), accountBBefore, "B backup after A-B-A-B switches");
+        report.AppendLine("TEST 1 account controlled mirror: PASS (recursive/manifest/A-B cleanup/exclusions; A-B-A-B leaves backup contents/timestamps unchanged)");
     }
 
     private static void RunLoginVerificationTest(StringBuilder report)
@@ -94,6 +107,283 @@ public static class FeatureSelfTest
         Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired)
                == AccountSwitchVerificationState.LoggedIn, "confirmed target wins");
         report.AppendLine("TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)");
+    }
+
+    private static async Task RunStatsExplicitQueryWorkflowTest(StringBuilder report)
+    {
+        var loginChecks = 0;
+        var loginDialogs = 0;
+        var chinaRequests = 0;
+        var internationalRequests = 0;
+        var loggedIn = false;
+        var workflow = new StatsQueryWorkflow();
+
+        workflow.PageOpened();
+        Assert(loginChecks == 0 && loginDialogs == 0 && chinaRequests == 0 && internationalRequests == 0,
+            "startup/page open performs no stats or login work");
+
+        var china = new StatsAccountSelection("1:cn", true);
+        workflow.SelectAccount(china);
+        workflow.SelectAccount(new StatsAccountSelection("2:global", false));
+        workflow.SelectAccount(china);
+        Assert(workflow.State == StatsQueryState.Idle && loginChecks == 0 && chinaRequests == 0 && internationalRequests == 0,
+            "account switch/dropdown selection performs no request");
+
+        async Task<bool> CheckLogin()
+        {
+            loginChecks++;
+            await Task.Yield();
+            return loggedIn;
+        }
+        async Task<object> QueryChina()
+        {
+            chinaRequests++;
+            await Task.Yield();
+            return new object();
+        }
+        async Task<object> QueryInternational()
+        {
+            internationalRequests++;
+            await Task.Yield();
+            return new object();
+        }
+
+        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
+        Assert(workflow.State == StatsQueryState.LoginRequired && loginChecks == 1 &&
+               loginDialogs == 0 && chinaRequests == 0,
+            "China query without login only enters LoginRequired");
+
+        await workflow.LoginAsync(async () =>
+        {
+            loginDialogs++;
+            loggedIn = true;
+            await Task.Yield();
+            return true;
+        });
+        Assert(workflow.State == StatsQueryState.ReadyToQuery && loginDialogs == 1 && chinaRequests == 0,
+            "explicit login succeeds without auto query");
+
+        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
+        Assert(workflow.State == StatsQueryState.Loaded && chinaRequests == 1 && internationalRequests == 0,
+            "explicit China query calls China service once");
+
+        workflow.SelectAccount(new StatsAccountSelection("2:global", false));
+        Assert(workflow.State == StatsQueryState.Idle && internationalRequests == 0,
+            "international selection remains idle");
+        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
+        Assert(workflow.State == StatsQueryState.Loaded && internationalRequests == 1 && loginChecks == 2,
+            "explicit international query calls career service without China login check");
+
+        workflow.SelectAccount(china);
+        Assert(workflow.State == StatsQueryState.Loaded && chinaRequests == 1 && internationalRequests == 1,
+            "returning to an account displays memory cache without refreshing");
+        report.AppendLine("TEST 3 stats explicit workflow: PASS (startup/navigation/account switch/selection=0; login and China/global queries are button-only)");
+    }
+
+    private static async Task RunUpdateCheckTest(string workspace, StringBuilder report)
+    {
+        Assert(UpdateService.IsNewerVersion("1.0.0", "v1.0.1"), "1.0.0 < v1.0.1");
+        Assert(UpdateService.IsNewerVersion("1.0.9", "v1.1.0"), "1.0.9 < v1.1.0");
+        Assert(UpdateService.IsNewerVersion("1.9.9", "v2.0.0"), "1.9.9 < v2.0.0");
+        Assert(!UpdateService.IsNewerVersion("1.1.0", "v1.0.9"), "1.1.0 > v1.0.9");
+        Assert(!UpdateService.IsNewerVersion("1.0.0", "v1.0.0"), "1.0.0 == v1.0.0");
+        Assert(UpdateService.NormalizeVersion("v1.0.1") == "1.0.1", "leading v is normalized");
+        Assert(UpdateService.NormalizeVersion("v1.0.1-rc.1") is null, "prerelease tag is not a stable version");
+
+        HttpRequestMessage? capturedRequest = null;
+        var releaseJson = """
+            {
+              "tag_name": "v1.0.1",
+              "name": "CloudLight Blizzard 1.0.1",
+              "body": "修复与改进",
+              "html_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v1.0.1",
+              "published_at": "2026-08-14T08:00:00Z",
+              "draft": false,
+              "prerelease": false,
+              "assets": [
+                {
+                  "name": "CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
+                  "browser_download_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe"
+                }
+              ]
+            }
+            """;
+        using (var client = new HttpClient(new StubHttpHandler(request =>
+               {
+                   capturedRequest = request;
+                   return JsonResponse(releaseJson);
+               })))
+        using (var service = new UpdateService(client, "1.0.0"))
+        {
+            var result = await service.CheckAsync();
+            Assert(result.Status == UpdateCheckResultStatus.Success && result.HasUpdate &&
+                   result.LatestVersion == "1.0.1", "formal GitHub release is parsed and compared");
+            Assert(result.ReleaseUrl.EndsWith("/releases/tag/v1.0.1", StringComparison.Ordinal),
+                "release html_url is retained");
+            Assert(result.ReleaseNotes == "修复与改进" && result.PublishedAt.HasValue,
+                "release notes and publish time are retained");
+            Assert(result.InstallerDownloadUrl?.EndsWith("Setup.exe", StringComparison.Ordinal) == true,
+                "conventional installer asset is parsed without downloading");
+            Assert(capturedRequest?.RequestUri?.AbsoluteUri == UpdateService.LatestReleaseApiUrl,
+                "only the fixed latest-release API is requested");
+            Assert(capturedRequest?.Headers.UserAgent.ToString().Contains("CloudLight-Blizzard", StringComparison.Ordinal) == true &&
+                   capturedRequest.Headers.Accept.Any(value => value.MediaType == "application/vnd.github+json"),
+                "GitHub request headers are present");
+        }
+
+        var prereleaseJson = releaseJson.Replace("\"prerelease\": false", "\"prerelease\": true");
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(prereleaseJson))))
+        using (var service = new UpdateService(client, "1.0.0"))
+            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
+                "prerelease response is ignored");
+        var draftJson = releaseJson.Replace("\"draft\": false", "\"draft\": true");
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(draftJson))))
+        using (var service = new UpdateService(client, "1.0.0"))
+            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
+                "draft response is ignored");
+
+        var updateLog = new UpdateLog(Path.Combine(workspace, "update-test.log"));
+        var skippedSettings = new AppSettings { SkippedUpdateVersion = "1.0.1" };
+        var skipped = new UpdateCheckCoordinator(
+            new StubUpdateService(UpdateResult("1.0.1", hasUpdate: true)), skippedSettings, updateLog);
+        Assert((await skipped.CheckAsync(UpdateCheckMode.Automatic)).Kind == UpdateCheckOutcomeKind.Suppressed,
+            "automatic check suppresses exactly skipped 1.0.1");
+
+        var newer = new UpdateCheckCoordinator(
+            new StubUpdateService(UpdateResult("1.0.2", hasUpdate: true)), skippedSettings, updateLog);
+        Assert((await newer.CheckAsync(UpdateCheckMode.Automatic)).Kind == UpdateCheckOutcomeKind.UpdateAvailable,
+            "1.0.2 breaks through skipped 1.0.1");
+
+        var manual = new UpdateCheckCoordinator(
+            new StubUpdateService(UpdateResult("1.0.1", hasUpdate: true)), skippedSettings, updateLog);
+        Assert((await manual.CheckAsync(UpdateCheckMode.Manual)).Kind == UpdateCheckOutcomeKind.UpdateAvailable,
+            "manual check ignores skipped version");
+
+        using (var client = new HttpClient(new ThrowingHttpHandler()))
+        using (var failedService = new UpdateService(client, "1.0.0"))
+        {
+            var failedResult = await failedService.CheckAsync();
+            Assert(failedResult.Status == UpdateCheckResultStatus.Failed, "network failure becomes a result");
+            var automaticFailure = new UpdateCheckCoordinator(
+                new StubUpdateService(failedResult), new AppSettings(), updateLog);
+            var manualFailure = new UpdateCheckCoordinator(
+                new StubUpdateService(failedResult), new AppSettings(), updateLog);
+            Assert((await automaticFailure.CheckAsync(UpdateCheckMode.Automatic)).Kind == UpdateCheckOutcomeKind.Suppressed,
+                "automatic network failure is silent");
+            Assert((await manualFailure.CheckAsync(UpdateCheckMode.Manual)).Kind == UpdateCheckOutcomeKind.Failed,
+                "manual network failure requests user feedback");
+        }
+
+        var delayedService = new StubUpdateService(UpdateResult("1.0.0", hasUpdate: false));
+        var delayedCoordinator = new UpdateCheckCoordinator(delayedService, new AppSettings(), updateLog);
+        var delayedTask = delayedCoordinator.CheckAfterDelayAsync(TimeSpan.FromMilliseconds(40));
+        Assert(delayedService.Calls == 0 && !delayedTask.IsCompleted,
+            "startup scheduling returns before the delayed HTTP check starts");
+        await delayedTask;
+        Assert(delayedService.Calls == 1, "startup performs one automatic request after delay");
+        Assert((await delayedCoordinator.CheckAsync(UpdateCheckMode.Automatic)).Kind == UpdateCheckOutcomeKind.AlreadyChecked &&
+               delayedService.Calls == 1, "automatic check runs at most once per process");
+
+        var concurrentService = new GatedUpdateService(UpdateResult("1.0.1", hasUpdate: true));
+        var concurrentCoordinator = new UpdateCheckCoordinator(concurrentService, new AppSettings(), updateLog);
+        var automaticTask = concurrentCoordinator.CheckAsync(UpdateCheckMode.Automatic);
+        var manualTask = concurrentCoordinator.CheckAsync(UpdateCheckMode.Manual);
+        await Task.Yield();
+        Assert(concurrentService.Calls == 1, "automatic and manual checks share one in-flight request");
+        concurrentService.Release();
+        await Task.WhenAll(automaticTask, manualTask);
+        Assert(concurrentService.Calls == 1, "shared check does not send a duplicate HTTP request");
+
+        report.AppendLine("TEST 4 GitHub updates: PASS (semantic versions/stable release/assets/skip/manual/failure/delay/single-flight)");
+    }
+
+    private static void RunRegionPreparationGuideTest(StringBuilder report)
+    {
+        const string backupRoot = @"D:\RegionBackup";
+        var empty = new RegionSnapshotStatus { State = RegionBackupState.Empty, GamePathValid = true };
+        var notPrepared = RegionPreparationGuide.Create(empty, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(notPrepared.State == RegionPreparationState.NotPrepared, "empty maps to NotPrepared");
+        AssertActions(notPrepared, RegionPreparationAction.ChooseChina, RegionPreparationAction.ChooseInternational);
+
+        var preparingCurrent = RegionPreparationGuide.Create(empty, RegionOperationPhase.PreparingCurrentRegion,
+            false, true, new RegionProgress("copying", 1, 2), backupRoot);
+        Assert(preparingCurrent.State == RegionPreparationState.PreparingCurrentRegion && preparingCurrent.CanCancel,
+            "PreparingCurrentRegion only allows cancellation");
+        AssertActions(preparingCurrent, RegionPreparationAction.Cancel);
+
+        var waitingStatus = new RegionSnapshotStatus
+        {
+            State = RegionBackupState.Preparing,
+            GamePathValid = true,
+            PendingSourceRegion = GameRegion.China,
+            PendingTargetRegion = GameRegion.International,
+            ChinaCaptured = true,
+        };
+        var waiting = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(waiting.State == RegionPreparationState.WaitingForOtherRegion &&
+               waiting.ContinueButtonText == "我已完成国际服更新", "waiting names the target region");
+        AssertActions(waiting, RegionPreparationAction.ContinueOtherRegion);
+        waitingStatus.PendingSourceRegion = GameRegion.International;
+        waitingStatus.PendingTargetRegion = GameRegion.China;
+        var waitingForChina = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.None,
+            false, false, null, backupRoot);
+        Assert(waitingForChina.ContinueButtonText == "我已完成国服更新",
+            "international source explicitly names China in step two");
+        waitingStatus.PendingSourceRegion = GameRegion.China;
+        waitingStatus.PendingTargetRegion = GameRegion.International;
+
+        var building = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.BuildingBackup,
+            false, true, new RegionProgress("building", 1, 3), backupRoot);
+        Assert(building.State == RegionPreparationState.BuildingBackup && building.CanCancel,
+            "BuildingBackup only allows cancellation");
+        AssertActions(building, RegionPreparationAction.Cancel);
+
+        var readyStatus = new RegionSnapshotStatus
+        {
+            State = RegionBackupState.Ready,
+            GamePathValid = true,
+            CurrentRegion = CurrentGameRegion.China,
+            GenerationCompatibility = GenerationCompatibility.Compatible,
+            ChinaBackupComplete = true,
+            InternationalBackupComplete = true,
+            ActiveGenerationId = "existing-active",
+        };
+        var ready = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(ready.State == RegionPreparationState.Ready && !ready.ShowNotPrepared,
+            "Ready hides first preparation choices");
+        AssertActions(ready, RegionPreparationAction.Validate, RegionPreparationAction.Restart);
+
+        var restartStep = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, true, false, null, backupRoot);
+        Assert(restartStep.State == RegionPreparationState.NotPrepared && readyStatus.ActiveGenerationId == "existing-active",
+            "reprepare returns to step one without mutating active generation status");
+
+        var outdatedStatus = new RegionSnapshotStatus
+        {
+            State = RegionBackupState.Stale,
+            GamePathValid = true,
+            GenerationCompatibility = GenerationCompatibility.Updated,
+            ActiveGenerationId = "existing-active",
+        };
+        var outdated = RegionPreparationGuide.Create(outdatedStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(outdated.State == RegionPreparationState.Outdated, "updated generation maps to Outdated");
+        AssertActions(outdated, RegionPreparationAction.Restart);
+
+        readyStatus.CurrentRegion = CurrentGameRegion.Mixed;
+        var mixed = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(mixed.State == RegionPreparationState.Mixed && mixed.CanRestore, "Mixed offers local recovery");
+        AssertActions(mixed, RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational);
+
+        var error = RegionPreparationGuide.Create(empty, RegionOperationPhase.None, false, false, null,
+            backupRoot, error: "simulated read error");
+        Assert(error.State == RegionPreparationState.Error && error.CanRetry, "Error offers retry only");
+        AssertActions(error, RegionPreparationAction.Retry);
+
+        readyStatus.CurrentRegion = CurrentGameRegion.China;
+        var busy = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, true, null, backupRoot);
+        Assert(!busy.CanChangePaths && !busy.CanClear && !busy.CanRestart && !busy.CanValidate &&
+               !busy.CanSwitchChina && !busy.CanSwitchInternational,
+            "Busy disables path changes, clear, reprepare, validation, and region switching");
+        report.AppendLine("TEST 5 region preparation guide: PASS (NotPrepared/Preparing/Waiting/Building/Ready/Outdated/Mixed/Error and Busy gates)");
     }
 
     private static async Task RunRegionGenerationTest(string workspace, StringBuilder report)
@@ -199,7 +489,7 @@ public static class FeatureSelfTest
         var legacyManager = new OverwatchRegionManager(legacyRoot, () => false, 0);
         Assert((await legacyManager.GetStatusAsync(game)).State == RegionBackupState.Legacy,
             "old schema is rejected");
-        report.AppendLine("TEST 3 Generation/Staging: PASS (Mixed->International/China, full hash, .build.info tolerance, common update rejection, 256MB copies)");
+        report.AppendLine("TEST 6 Generation/Staging: PASS (Mixed->International/China, full hash, .build.info tolerance, common update rejection, 256MB copies)");
     }
 
     private static async Task RunAccountSwitchOrderTest(StringBuilder report)
@@ -208,20 +498,18 @@ public static class FeatureSelfTest
         static Task Done() => Task.CompletedTask;
         await AccountSwitchPipeline.ExecuteAsync(
             () => { calls.Add("Quit BattleNet"); return Done(); },
-            () => { calls.Add("Save Source Account"); return Done(); },
             () => { calls.Add("Normalize Game -> International"); return Done(); },
             () => { calls.Add("Restore Target Account"); return Done(); },
             () => { calls.Add("Launch BattleNet"); return Done(); });
         Assert(string.Join(" > ", calls) ==
-               "Quit BattleNet > Save Source Account > Normalize Game -> International > Restore Target Account > Launch BattleNet",
-            "account switch ordering");
+               "Quit BattleNet > Normalize Game -> International > Restore Target Account > Launch BattleNet",
+            "account switch ordering has no backup write step");
 
         calls.Clear();
         try
         {
             await AccountSwitchPipeline.ExecuteAsync(
                 () => { calls.Add("Quit BattleNet"); return Done(); },
-                () => { calls.Add("Save Source Account"); return Done(); },
                 () => { calls.Add("Normalize Failed"); throw new IOException("simulated failure"); },
                 () => { calls.Add("Restore Target Account"); return Done(); },
                 () => { calls.Add("Launch BattleNet"); return Done(); });
@@ -229,13 +517,13 @@ public static class FeatureSelfTest
         catch (IOException) { }
         Assert(!calls.Contains("Restore Target Account") && !calls.Contains("Launch BattleNet"),
             "normalize failure prevents target restore and Battle.net launch");
-        report.AppendLine("TEST 4 account switch pipeline: PASS (strict order/fail-fast/no launch after region failure)");
+        report.AppendLine("TEST 7 account switch pipeline: PASS (strict read-only-backup order/fail-fast/no launch after region failure)");
     }
 
     private static void RunAccountPreferenceTest(string workspace, StringBuilder report)
     {
         var settingsPath = Path.Combine(workspace, "settings.json");
-        var settings = new AppSettings { RegionStoragePath = @"D:\Region Data" };
+        var settings = new AppSettings { RegionStoragePath = @"D:\Region Data", SkippedUpdateVersion = "1.0.1" };
         var preference = settings.PreferenceFor(123456);
         preference.CustomName = "主号";
         preference.Remark = "常用账号";
@@ -243,6 +531,7 @@ public static class FeatureSelfTest
         settings.SaveTo(settingsPath);
         var loaded = AppSettings.LoadFrom(settingsPath);
         Assert(loaded.RegionStoragePath == @"D:\Region Data", "custom region storage persisted");
+        Assert(loaded.SkippedUpdateVersion == "1.0.1", "skipped update version persists in settings.json");
         Assert(loaded.PreferenceFor(123456).Region == AccountRegionOverride.China, "account preference persisted");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
@@ -250,7 +539,7 @@ public static class FeatureSelfTest
         var international = new AccountRow { BattleTag = "Global#1", RegionOverride = AccountRegionOverride.International };
         Assert(StatsPage.DataSourceFor(china) == "ChinaStats", "china account routes to china stats");
         Assert(StatsPage.DataSourceFor(international) == "BlizzardCareer", "international account routes to career");
-        report.AppendLine("TEST 5 settings/account list: PASS");
+        report.AppendLine("TEST 8 settings/account list: PASS");
     }
 
     private static void RunAppPathsMigrationTest(string workspace, StringBuilder report)
@@ -290,7 +579,7 @@ public static class FeatureSelfTest
         Assert(!customResult.DefaultRegionMoved, "custom region setting prevents default region move");
         Assert(File.Exists(Path.Combine(externalRegion, "custom.bin")), "custom region store remains in place");
         Assert(File.Exists(Path.Combine(customOld, "region-switch", "sentinel.bin")), "legacy default remains untouched when custom path is set");
-        report.AppendLine("TEST 6 app paths migration: PASS (settings/accounts/logs/ow/default move/custom preserved)");
+        report.AppendLine("TEST 9 app paths migration: PASS (settings/accounts/logs/ow/default move/custom preserved)");
     }
 
     private static void CreateLargeFile(string path, long length, byte firstByte)
@@ -305,6 +594,91 @@ public static class FeatureSelfTest
     {
         using var stream = File.OpenRead(path);
         return (byte)stream.ReadByte();
+    }
+
+    private sealed record BackupFileState(byte[] Content, DateTime LastWriteTimeUtc);
+
+    private static Dictionary<string, BackupFileState> CaptureBackupFiles(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToDictionary(
+            file => Path.GetRelativePath(root, file).Replace('\\', '/'),
+            file => new BackupFileState(File.ReadAllBytes(file), File.GetLastWriteTimeUtc(file)),
+            StringComparer.OrdinalIgnoreCase);
+
+    private static void AssertBackupFilesUnchanged(
+        string root, IReadOnlyDictionary<string, BackupFileState> expected, string message)
+    {
+        var actual = CaptureBackupFiles(root);
+        Assert(actual.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).SequenceEqual(
+                expected.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase),
+            message + " file list");
+        foreach (var (path, before) in expected)
+        {
+            Assert(actual[path].Content.AsSpan().SequenceEqual(before.Content), message + " content: " + path);
+            Assert(actual[path].LastWriteTimeUtc == before.LastWriteTimeUtc, message + " timestamp: " + path);
+        }
+    }
+
+    private static void AssertActions(RegionPreparationGuide guide, params RegionPreparationAction[] expected)
+    {
+        Assert(guide.VisibleActions.SequenceEqual(expected),
+            $"{guide.State} actions: expected {string.Join(",", expected)}, actual {string.Join(",", guide.VisibleActions)}");
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, Encoding.UTF8, "application/json"),
+    };
+
+    private static UpdateCheckResult UpdateResult(string latestVersion, bool hasUpdate) => new()
+    {
+        Status = UpdateCheckResultStatus.Success,
+        CurrentVersion = "1.0.0",
+        LatestVersion = latestVersion,
+        HasUpdate = hasUpdate,
+        ReleaseUrl = $"https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v{latestVersion}",
+    };
+
+    private sealed class StubHttpHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _response;
+        public StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> response) => _response = response;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(_response(request));
+    }
+
+    private sealed class ThrowingHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(new HttpRequestException("simulated network failure"));
+    }
+
+    private sealed class StubUpdateService : IUpdateService
+    {
+        private readonly UpdateCheckResult _result;
+        public StubUpdateService(UpdateCheckResult result) => _result = result;
+        public int Calls { get; private set; }
+        public string CurrentVersion => _result.CurrentVersion;
+        public Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class GatedUpdateService : IUpdateService
+    {
+        private readonly UpdateCheckResult _result;
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public GatedUpdateService(UpdateCheckResult result) => _result = result;
+        public int Calls { get; private set; }
+        public string CurrentVersion => _result.CurrentVersion;
+        public void Release() => _release.TrySetResult();
+        public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            await _release.Task.WaitAsync(cancellationToken);
+            return _result;
+        }
     }
 
     private static void Assert(bool condition, string message)

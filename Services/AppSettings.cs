@@ -19,9 +19,11 @@ public sealed class AppSettings
     public double WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
     public List<long> HiddenAccountIds { get; set; } = new();
+    public List<long> ExpiredAccountIds { get; set; } = new();
     public string? OverwatchGamePath { get; set; }
     public string? RegionStoragePath { get; set; }
     public bool MigrationCompleted { get; set; }
+    public string? SkippedUpdateVersion { get; set; }
     public string LastMainSection { get; set; } = "accounts";
     public Dictionary<string, AccountPreference> AccountPreferences { get; set; } = new();
 
@@ -73,6 +75,7 @@ public sealed class AppSettings
         }
 
         s.HiddenAccountIds ??= new();
+        s.ExpiredAccountIds ??= new();
         s.AccountPreferences ??= new();
 
         // 重写时会丢弃旧版本不再识别的字段。

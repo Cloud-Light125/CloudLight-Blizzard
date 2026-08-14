@@ -147,13 +147,6 @@ public sealed class AppDataStore
         RemoveEmptyManagedDirectories(_paths.RoamingDir, manifest);
     }
 
-    public void SetExpired(long accountId, bool expired)
-    {
-        var meta = ReadMeta(accountId);
-        if (meta is null || meta.Expired == expired) return;
-        File.WriteAllText(MetaFile(accountId), JsonSerializer.Serialize(meta with { Expired = expired }, JsonOptions));
-    }
-
     public void Delete(long accountId)
     {
         var dir = Dir(accountId);

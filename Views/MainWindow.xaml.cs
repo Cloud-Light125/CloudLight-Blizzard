@@ -1,10 +1,13 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services;
 using CloudLightBlizzard.ViewModels;
+using CloudLightBlizzard.Views;
 using CloudLightBlizzard.Views.Pages;
 
 namespace CloudLightBlizzard;
@@ -22,6 +25,7 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _tray;
     private bool _reallyExit;
     private bool _pagesReady;
+    private readonly CancellationTokenSource _updateCancellation = new();
 
     public MainWindow()
     {
@@ -67,12 +71,70 @@ public partial class MainWindow : Window
                 _vm.ApplyAccountLayoutDemo(demoCount);
                 AccountsNav.IsChecked = true;
             }
-            if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault(), false);
+            if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault());
             if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
             _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
             _watchTimer.Start();
             if (ShouldStartHidden()) HideToTray();
+            _ = RunAutomaticUpdateCheckAsync();
         };
+    }
+
+    private async Task RunAutomaticUpdateCheckAsync()
+    {
+        try
+        {
+            var outcome = await _vm.UpdateChecks.CheckAfterDelayAsync(
+                TimeSpan.FromSeconds(3), _updateCancellation.Token);
+            PresentUpdateOutcome(outcome, automatic: true);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    internal async Task CheckForUpdatesManuallyAsync()
+    {
+        try
+        {
+            var outcome = await _vm.UpdateChecks.CheckAsync(UpdateCheckMode.Manual, _updateCancellation.Token);
+            PresentUpdateOutcome(outcome, automatic: false);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void PresentUpdateOutcome(UpdateCheckOutcome outcome, bool automatic)
+    {
+        if (outcome.Kind == UpdateCheckOutcomeKind.UpdateAvailable && outcome.Result is { } result)
+        {
+            var dialog = new UpdateDialog(result) { Owner = this };
+            dialog.ShowDialog();
+            if (dialog.SkipVersion) _vm.UpdateChecks.SkipVersion(result.LatestVersion);
+            _settingsPage.RefreshUpdateInfo();
+            if (dialog.Action == UpdateDialogAction.OpenRelease && !string.IsNullOrWhiteSpace(result.ReleaseUrl))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = result.ReleaseUrl, UseShellExecute = true });
+                }
+                catch
+                {
+                    MessageBox.Show("无法打开系统浏览器，请稍后重试。", "前往更新",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            return;
+        }
+
+        if (automatic || outcome.Kind is UpdateCheckOutcomeKind.Suppressed or UpdateCheckOutcomeKind.AlreadyChecked)
+            return;
+        if (outcome.Kind == UpdateCheckOutcomeKind.UpToDate)
+            MessageBox.Show($"当前版本：{_vm.UpdateChecks.CurrentVersion}", "已是最新版本",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        else if (outcome.Kind == UpdateCheckOutcomeKind.NoRelease)
+            MessageBox.Show("当前没有可用的正式更新。", "软件更新",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        else if (outcome.Kind == UpdateCheckOutcomeKind.Failed)
+            MessageBox.Show("请检查网络连接后重试。", "暂时无法检查更新",
+                MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void SelectSavedSection()
@@ -94,7 +156,7 @@ public partial class MainWindow : Window
         _vm.Settings.Save();
         await Dispatcher.Yield(DispatcherPriority.Render);
         if (section == "region") await _regionPage.RefreshAsync();
-        if (section == "stats") await _statsPage.LoadSelectedAsync();
+        if (section == "stats") _statsPage.OnPageOpened();
     }
 
     private bool ShouldStartHidden()
@@ -110,7 +172,7 @@ public partial class MainWindow : Window
         StatsNav.IsChecked = true;
         var saved = _vm.SavedAccounts.FirstOrDefault(account => account.AccountId == accountId);
         if (saved != null) _statsPage.SelectAccount(saved);
-        else _statsPage.LoadChinaRoleId(accountId);
+        else _statsPage.SelectAccount(null);
     }
 
     private void SetupTray()
@@ -132,6 +194,8 @@ public partial class MainWindow : Window
     {
         if (!_reallyExit && _vm.Settings.CloseToTray) { e.Cancel = true; HideToTray(); return; }
         _watchTimer.Stop();
+        _updateCancellation.Cancel();
+        _updateCancellation.Dispose();
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }
         _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized; _vm.Settings.Save();
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }

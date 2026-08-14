@@ -184,11 +184,7 @@
                 </Border>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal">
-                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnSwitchAccount" Margin="0,0,8,0"
-                            ToolTip="登出当前网易大神账号,换号重新扫码">
-                        <TextBlock Text="换号"/>
-                    </Button>
-                    <Button Style="{StaticResource Stats.BtnSoft}" Click="OnRefresh">
+                    <Button x:Name="RefreshButton" Style="{StaticResource Stats.BtnSoft}" Click="OnRefresh">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource Stats.IconPath}" Data="{StaticResource Stats.Geo.Refresh}"
                                   Width="12" Height="12" Stroke="{DynamicResource Stats.Accent}" Margin="0,0,5,0"/>
@@ -215,7 +211,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
                 <Border Background="{DynamicResource Stats.InputBg}" CornerRadius="8" Padding="3" Margin="14,0,0,0">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel x:Name="ModePanel" Orientation="Horizontal">
                         <RadioButton GroupName="Mode" Tag="sport" Content="竞技" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged" IsChecked="True"/>
                         <RadioButton GroupName="Mode" Tag="leisure" Content="休闲" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged"/>
                         <RadioButton GroupName="Mode" Tag="fight" Content="竞技角斗" Style="{StaticResource Stats.TabRadio}" Checked="OnModeChanged"/>

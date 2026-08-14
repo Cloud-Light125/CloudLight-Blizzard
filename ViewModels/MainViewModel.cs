@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
@@ -138,6 +137,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly BattleNetAuthLogProbe _authLogProbe;
     private readonly SemaphoreSlim _regionStatusGate = new(1, 1);
 
+    public UpdateCheckCoordinator UpdateChecks { get; }
+
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
     public ObservableCollection<AccountRow> UnsavedAccounts { get; } = new();
@@ -167,7 +168,17 @@ public sealed class MainViewModel : ObservableObject
     public string StatusText { get => _statusText; set => Set(ref _statusText, value); }
 
     private bool _busy;
-    public bool Busy { get => _busy; set { Set(ref _busy, value); Raise(nameof(NotBusy)); } }
+    public bool Busy
+    {
+        get => _busy;
+        set
+        {
+            if (_busy == value) return;
+            Set(ref _busy, value);
+            Raise(nameof(NotBusy));
+            UpdateRegionGuide();
+        }
+    }
     public bool NotBusy => !_busy;
 
     private bool _clientRunning;
@@ -178,7 +189,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public string LaunchText => _clientRunning ? "打开战网窗口" : "启动战网";
-    public string AppVersion => "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0");
+    public string AppVersion => "v" + UpdateChecks.CurrentVersion;
     public AppSettings Settings => _settings;
     public string RegionBackupRoot => _regionManager.BackupRoot;
 
@@ -204,10 +215,22 @@ public sealed class MainViewModel : ObservableObject
     public Visibility RegionSetupVisibility { get => _regionSetupVisibility; set => Set(ref _regionSetupVisibility, value); }
     private RegionBackupState _homeRegionState;
     private CurrentGameRegion _homeCurrentRegion;
+    private RegionSnapshotStatus _regionPageStatus = new();
+    private RegionPreparationGuide _regionGuide = new();
+    public RegionPreparationGuide RegionGuide { get => _regionGuide; private set => Set(ref _regionGuide, value); }
+    private RegionOperationPhase _regionOperationPhase;
+    private RegionProgress? _regionOperationProgress;
+    private OverwatchRegion? _regionOperationSource;
+    private CancellationTokenSource? _regionOperationCancellation;
+    private bool _regionRestartRequested;
+    private string _regionOperationNotice = "";
+    private string _regionOperationError = "";
+    public bool IsRegionOperationBusy => _regionOperationPhase != RegionOperationPhase.None;
 
     public MainViewModel()
     {
         _settings = AppSettings.Load();
+        UpdateChecks = new UpdateCheckCoordinator(new UpdateService(), _settings);
         _paths = new BattleNetPaths();
         if (!string.IsNullOrEmpty(_settings.ClientExe) && File.Exists(_settings.ClientExe))
             _paths.ClientExe = _settings.ClientExe;
@@ -218,6 +241,9 @@ public sealed class MainViewModel : ObservableObject
         _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
         _switchLog = new AccountSwitchLog();
         _authLogProbe = new BattleNetAuthLogProbe(_paths);
+        _regionPageStatus.GamePath = _settings.OverwatchGamePath ?? "";
+        _regionPageStatus.GamePathValid = OverwatchRegionManager.IsValidGameRoot(_settings.OverwatchGamePath);
+        UpdateRegionGuide();
     }
 
     private void RebuildGroups()
@@ -320,7 +346,7 @@ public sealed class MainViewModel : ObservableObject
                 IsActive = activeId.HasValue && a.AccountId == activeId.Value,
                 HasProfile = meta != null,
                 SavedAtUtc = meta?.SavedAtUtc,
-                IsExpired = meta?.Expired == true,
+                IsExpired = meta?.Expired == true || _settings.ExpiredAccountIds.Contains(a.AccountId),
                 CustomName = _settings.PreferenceFor(a.AccountId).CustomName,
                 Remark = _settings.PreferenceFor(a.AccountId).Remark,
                 RegionOverride = _settings.PreferenceFor(a.AccountId).Region,
@@ -337,7 +363,7 @@ public sealed class MainViewModel : ObservableObject
                 IsActive = activeId == meta.AccountId,
                 HasProfile = true,
                 SavedAtUtc = meta.SavedAtUtc,
-                IsExpired = meta.Expired,
+                IsExpired = meta.Expired || _settings.ExpiredAccountIds.Contains(meta.AccountId),
                 CustomName = pref.CustomName,
                 Remark = pref.Remark,
                 RegionOverride = pref.Region,
@@ -354,7 +380,7 @@ public sealed class MainViewModel : ObservableObject
                 IsActive = true,
                 HasProfile = meta != null,
                 SavedAtUtc = meta?.SavedAtUtc,
-                IsExpired = meta?.Expired == true,
+                IsExpired = meta?.Expired == true || _settings.ExpiredAccountIds.Contains(id),
                 CustomName = _settings.PreferenceFor(id).CustomName,
                 Remark = _settings.PreferenceFor(id).Remark,
                 RegionOverride = _settings.PreferenceFor(id).Region,
@@ -392,13 +418,9 @@ public sealed class MainViewModel : ObservableObject
         {
             _pendingSwitchId = null;
             var row = Accounts.FirstOrDefault(a => a.AccountId == targetId);
-            if (row is { IsExpired: true })
-            {
-                await Task.Run(() => _profiles.SetExpired(targetId, false));
-                row.IsExpired = false;
-                RebuildGroups();
-            }
-            StatusText = $"已切换到「{row?.BattleTag ?? targetId.ToString()}」。";
+            StatusText = row is { IsExpired: true }
+                ? $"「{row.BattleTag}」已经重新登录，建议更新账号备份。"
+                : $"已切换到「{row?.BattleTag ?? targetId.ToString()}」。";
             _switchLog.Write("Success", targetAccountId: targetId);
             return;
         }
@@ -407,7 +429,11 @@ public sealed class MainViewModel : ObservableObject
         {
             _pendingSwitchId = null;
             var expiredTarget = Accounts.FirstOrDefault(a => a.AccountId == targetId);
-            await Task.Run(() => _profiles.SetExpired(targetId, true));
+            if (!_settings.ExpiredAccountIds.Contains(targetId))
+            {
+                _settings.ExpiredAccountIds.Add(targetId);
+                _settings.Save();
+            }
             if (expiredTarget is not null) expiredTarget.IsExpired = true;
             RebuildGroups();
             StatusText = $"「{expiredTarget?.BattleTag ?? targetId.ToString()}」需要重新登录 Battle.net。";
@@ -472,7 +498,7 @@ public sealed class MainViewModel : ObservableObject
             var knownBefore = new HashSet<long>(Accounts.Select(r => r.AccountId));
             ApplyAccounts(list, activeId);
             if (CurrentAccount is { IsExpired: true } exp)
-                StatusText = $"「{exp.BattleTag}」已经重新登录，建议更新本地账号备份。";
+                StatusText = $"「{exp.BattleTag}」已经重新登录，建议更新账号备份。";
             else if (CurrentAccount is { } cur && !knownBefore.Contains(cur.AccountId))
                 StatusText = $"检测到新登录的账号「{cur.BattleTag}」，可以保存为账号备份。";
             else if (CurrentAccount is { } c2)
@@ -587,6 +613,7 @@ public sealed class MainViewModel : ObservableObject
 
             StatusText = $"正在更新「{active.BattleTag}」的账号备份…";
             await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag));
+            if (_settings.ExpiredAccountIds.Remove(active.AccountId)) _settings.Save();
             active.HasProfile = true;
             active.SavedAtUtc = DateTime.UtcNow;
             active.IsExpired = false;
@@ -681,19 +708,6 @@ public sealed class MainViewModel : ObservableObject
                 },
                 async () =>
                 {
-                    if (currentId is not long cur || cur == target.AccountId) return;
-                    stage = "账号备份";
-                    var curRow = Accounts.FirstOrDefault(a => a.AccountId == cur);
-                    if (curRow is not { HasProfile: true }) return;
-                    StatusText = $"正在更新当前账号「{curRow.BattleTag}」的本地备份…";
-                    _switchLog.Write("SourceBackupStarted", currentId, target.AccountId);
-                    await Task.Run(() => _profiles.Save(cur, curRow.BattleTag));
-                    _switchLog.Write("SourceBackupCompleted", currentId, target.AccountId);
-                    curRow.SavedAtUtc = DateTime.UtcNow;
-                    curRow.IsExpired = false;
-                },
-                async () =>
-                {
                     if (skipGameFiles) return;
                     stage = "区服文件";
                     var currentRegion = await _regionManager.DetectCurrentRegionAsync(_settings.OverwatchGamePath!);
@@ -753,22 +767,9 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             StatusText = "正在关闭战网…";
-            var currentId = await Task.Run(() => _reader.ReadActiveAccountId());
             var stopped = await Task.Run(() => _controller.GracefulQuit());
             if (!stopped)
                 throw new InvalidOperationException("战网未能完全退出,请从托盘右键『退出』战网后重试。");
-
-            if (currentId is long cur && cur != row.AccountId)
-            {
-                var curRow = Accounts.FirstOrDefault(a => a.AccountId == cur);
-                if (curRow is { HasProfile: true })
-                {
-                    StatusText = $"正在保存当前号「{curRow.BattleTag}」…";
-                    await Task.Run(() => _profiles.Save(cur, curRow.BattleTag));
-                    curRow.SavedAtUtc = DateTime.UtcNow;
-                    curRow.IsExpired = false;
-                }
-            }
 
             StatusText = "正在回到登录页(未登出)…";
             await Task.Run(() => _profiles.ClearCurrentPointer());
@@ -823,8 +824,10 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             await Task.Run(() => _profiles.Delete(row.AccountId));
+            if (_settings.ExpiredAccountIds.Remove(row.AccountId)) _settings.Save();
             row.HasProfile = false;
             row.SavedAtUtc = null;
+            row.IsExpired = false;
             RebuildGroups();
             StatusText = $"已删除「{row.BattleTag}」的账号备份。";
         }
@@ -871,6 +874,7 @@ public sealed class MainViewModel : ObservableObject
 
     public void SetOverwatchGamePath()
     {
+        if (!RegionGuide.CanChangePaths) return;
         using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "选择《守望先锋》安装根目录（包含 Overwatch.exe）",
@@ -886,16 +890,58 @@ public sealed class MainViewModel : ObservableObject
         }
         _settings.OverwatchGamePath = Path.GetFullPath(dialog.SelectedPath);
         _settings.Save();
+        _regionOperationError = "";
+        _regionOperationNotice = "";
         StatusText = "已设置守望先锋游戏目录：" + _settings.OverwatchGamePath;
+        _ = RefreshHomeRegionAsync();
     }
 
     public bool AutoDetectOverwatchGamePath()
     {
+        if (!RegionGuide.CanChangePaths) return false;
         var path = OverwatchGameLocator.Detect(_paths);
         if (string.IsNullOrWhiteSpace(path)) return false;
         _settings.OverwatchGamePath = path;
         _settings.Save();
+        _regionOperationError = "";
+        _regionOperationNotice = "";
+        _ = RefreshHomeRegionAsync();
         return true;
+    }
+
+    private void UpdateRegionGuide()
+    {
+        RegionGuide = RegionPreparationGuide.Create(
+            _regionPageStatus,
+            _regionOperationPhase,
+            _regionRestartRequested,
+            Busy,
+            _regionOperationProgress,
+            _regionManager.BackupRoot,
+            _regionOperationNotice,
+            _regionOperationError,
+            _regionOperationSource);
+        Raise(nameof(IsRegionOperationBusy));
+    }
+
+    private void SetRegionOperation(RegionOperationPhase phase, RegionProgress? progress = null)
+    {
+        _regionOperationPhase = phase;
+        _regionOperationProgress = progress;
+        UpdateRegionGuide();
+    }
+
+    private void UpdateRegionProgress(RegionProgress progress)
+    {
+        _regionOperationProgress = progress;
+        UpdateRegionGuide();
+    }
+
+    public async Task RefreshRegionPageAsync()
+    {
+        var status = await RefreshHomeRegionAsync(verifyFiles: false);
+        if (status?.State is RegionBackupState.Ready or RegionBackupState.Stale)
+            await RefreshHomeRegionAsync(verifyFiles: true);
     }
 
     public async Task<RegionSnapshotStatus> GetRegionStatusAsync(bool verifyFiles = false)
@@ -917,6 +963,8 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             var status = await GetRegionStatusAsync(verifyFiles);
+            _regionPageStatus = status;
+            UpdateRegionGuide();
             _homeRegionState = status.State;
             _homeCurrentRegion = status.CurrentRegion;
             GameRegionTitle = status.CurrentRegion switch
@@ -959,13 +1007,24 @@ public sealed class MainViewModel : ObservableObject
         catch
         {
             GameRegionSummary = "暂时无法读取区服文件状态。";
+            if (_regionOperationPhase == RegionOperationPhase.None)
+            {
+                _regionOperationError = "暂时无法读取区服文件状态，请检查游戏位置和备份位置后重试。";
+                UpdateRegionGuide();
+            }
             return null;
         }
     }
 
     public async Task SwitchGameRegionOnlyAsync(OverwatchRegion target)
     {
-        if (Busy) return;
+        if (Busy || IsRegionOperationBusy ||
+            (target == OverwatchRegion.China && !RegionGuide.CanSwitchChina) ||
+            (target == OverwatchRegion.International && !RegionGuide.CanSwitchInternational)) return;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        SetRegionOperation(RegionOperationPhase.SwitchingRegion,
+            new RegionProgress($"正在恢复到{RegionName(target)}…"));
         Busy = true;
         var restartClient = false;
         try
@@ -981,8 +1040,8 @@ public sealed class MainViewModel : ObservableObject
                     throw new InvalidOperationException("Battle.net 未能完全退出，请从托盘退出后重试。");
                 RegionSwitchLog.Write("Battle.net quit end", target);
             }
-            StatusText = $"正在切换守望先锋到{(target == OverwatchRegion.China ? "国服" : "国际服")}…";
-            var progress = new Progress<RegionProgress>(p => StatusText = p.Message);
+            StatusText = "正在切换区服文件…";
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
             await _regionManager.NormalizeToRegionAsync(_settings.OverwatchGamePath!, target, progress);
             if (restartClient)
             {
@@ -1001,6 +1060,7 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
             await RefreshHomeRegionAsync();
         }
     }
@@ -1008,56 +1068,172 @@ public sealed class MainViewModel : ObservableObject
     public static string FormatBytes(long bytes) => bytes < 1024 * 1024
         ? $"{bytes / 1024.0:0.0} KB" : $"{bytes / 1024.0 / 1024.0:0.0} MB";
 
-    public async Task CaptureRegionAsync(OverwatchRegion region, IProgress<RegionProgress> progress,
-        CancellationToken cancellationToken = default)
+    public async Task BeginRegionPreparationAsync(OverwatchRegion region)
     {
+        if (!RegionGuide.CanChooseCurrentRegion) return;
+        _regionRestartRequested = false;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        _regionPageStatus.PendingSourceRegion = region;
+        _regionPageStatus.PendingTargetRegion = region == OverwatchRegion.China
+            ? OverwatchRegion.International : OverwatchRegion.China;
+        _regionOperationCancellation = new CancellationTokenSource();
+        _regionOperationSource = region;
+        SetRegionOperation(RegionOperationPhase.PreparingCurrentRegion,
+            new RegionProgress($"正在保存当前{RegionName(region)}文件…"));
         Busy = true;
         try
         {
-            var state = await _regionManager.CaptureAsync(_settings.OverwatchGamePath!, region, progress, cancellationToken);
-            StatusText = state switch
-            {
-                RegionBackupState.Preparing => $"{RegionName(region)}文件已经保存在本地。请在 Battle.net 中切换到{RegionName(region == OverwatchRegion.China ? OverwatchRegion.International : OverwatchRegion.China)}并等待更新完成。",
-                RegionBackupState.Ready => "国服和国际服文件都已准备好，可以直接切换。",
-                _ => "区服文件状态已更新。",
-            };
+            StatusText = "正在准备区服文件…";
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
+            await _regionManager.CaptureAsync(
+                _settings.OverwatchGamePath!, region, progress, _regionOperationCancellation.Token);
+            StatusText = "区服文件准备已进入下一步。";
         }
-        finally { Busy = false; await RefreshHomeRegionAsync(); }
+        catch (OperationCanceledException)
+        {
+            _regionOperationNotice = "已取消本次准备，现有可用区服备份没有改变。";
+            StatusText = "已取消区服文件准备。";
+        }
+        catch (IOException ex) when (GameFilesStillChanging(ex))
+        {
+            _regionOperationNotice = UpdatingFilesNotice;
+            StatusText = "游戏文件仍在更新，请稍后重试。";
+        }
+        catch (Exception)
+        {
+            _regionOperationError = "当前区服文件未能保存完成。请确认游戏可以正常启动、磁盘空间充足，然后重试。";
+            StatusText = "区服文件准备未完成。";
+        }
+        finally
+        {
+            _regionOperationCancellation.Dispose();
+            _regionOperationCancellation = null;
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            _regionOperationSource = null;
+            await RefreshHomeRegionAsync(verifyFiles: true);
+        }
     }
 
-    public async Task CompleteRegionBackupAsync(IProgress<RegionProgress> progress,
-        CancellationToken cancellationToken = default)
+    public async Task CompleteRegionBackupAsync()
     {
+        if (!RegionGuide.CanContinueOtherRegion) return;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        _regionOperationCancellation = new CancellationTokenSource();
+        SetRegionOperation(RegionOperationPhase.BuildingBackup,
+            new RegionProgress("正在确认 Battle.net 已完成游戏文件更新…"));
         Busy = true;
         try
         {
-            var state = await _regionManager.CompleteAsync(_settings.OverwatchGamePath!, progress, cancellationToken);
+            StatusText = "正在准备区服文件…";
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
+            var state = await _regionManager.CompleteAsync(
+                _settings.OverwatchGamePath!, progress, _regionOperationCancellation.Token);
             StatusText = state == RegionBackupState.Ready
-                ? "国服和国际服文件都已准备好，可以随账号自动切换。"
-                : "区服文件还需要完成最后一步。";
+                ? "区服文件已经准备完成。"
+                : "区服文件准备已更新。";
         }
-        finally { Busy = false; await RefreshHomeRegionAsync(); }
+        catch (OperationCanceledException)
+        {
+            _regionOperationNotice = "已取消本次准备，现有可用区服备份没有改变。";
+            StatusText = "已取消区服文件准备。";
+        }
+        catch (IOException ex) when (GameFilesStillChanging(ex))
+        {
+            _regionOperationNotice = UpdatingFilesNotice;
+            StatusText = "游戏文件仍在更新，请稍后重试。";
+        }
+        catch (Exception)
+        {
+            _regionOperationError = "区服备份未能建立完成。现有可用备份没有被替换，请重新检查后再试。";
+            StatusText = "区服文件准备未完成。";
+        }
+        finally
+        {
+            _regionOperationCancellation.Dispose();
+            _regionOperationCancellation = null;
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            await RefreshHomeRegionAsync(verifyFiles: true);
+        }
+    }
+
+    public async Task ValidateRegionBackupAsync()
+    {
+        if (!RegionGuide.CanValidate) return;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        SetRegionOperation(RegionOperationPhase.ValidatingBackup,
+            new RegionProgress("正在检查区服备份…"));
+        Busy = true;
+        try
+        {
+            StatusText = "正在检查区服备份…";
+            var status = await GetRegionStatusAsync(verifyFiles: true);
+            _regionPageStatus = status;
+            _regionOperationNotice = status.State == RegionBackupState.Ready &&
+                                     status.ChinaBackupComplete && status.InternationalBackupComplete &&
+                                     status.GenerationCompatibility == GenerationCompatibility.Compatible
+                ? "区服备份完整，可以正常使用。"
+                : "部分区服备份文件缺失或损坏，需要重新准备。";
+            StatusText = "区服备份检查完成。";
+        }
+        catch
+        {
+            _regionOperationNotice = "部分区服备份文件缺失或损坏，需要重新准备。";
+            StatusText = "区服备份检查未通过。";
+        }
+        finally
+        {
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            UpdateRegionGuide();
+        }
+    }
+
+    public void RequestRegionReprepare()
+    {
+        if (!RegionGuide.CanRestart) return;
+        _regionRestartRequested = true;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        UpdateRegionGuide();
     }
 
     public void ResetRegionBackup()
     {
+        if (!RegionGuide.CanClear) return;
         _regionManager.Reset();
-        StatusText = "已清除国服和国际服文件备份。";
+        _regionRestartRequested = false;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        StatusText = "已清除区服备份。";
         _ = RefreshHomeRegionAsync();
     }
 
-    public void CancelRegionPreparation()
+    public void CancelRegionOperation()
     {
-        _regionManager.CancelPreparation();
-        StatusText = "已取消本次准备，现有可用区服文件没有改变。";
-        _ = RefreshHomeRegionAsync();
+        if (!IsRegionOperationBusy || _regionOperationCancellation is null) return;
+        _regionOperationCancellation.Cancel();
+    }
+
+    public async Task RetryRegionStatusAsync()
+    {
+        if (Busy || IsRegionOperationBusy) return;
+        _regionOperationError = "";
+        _regionOperationNotice = "";
+        UpdateRegionGuide();
+        await RefreshRegionPageAsync();
     }
 
     public void SetRegionStoragePath()
     {
+        if (!RegionGuide.CanChangePaths) return;
         using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
-            Description = "选择区服文件存储位置（建议选择空间充足的磁盘）",
+            Description = "选择区服备份位置（建议选择空间充足的磁盘）",
             UseDescriptionForTitle = true,
             InitialDirectory = _settings.RegionStoragePath ?? _regionManager.BackupRoot,
         };
@@ -1065,8 +1241,20 @@ public sealed class MainViewModel : ObservableObject
         _settings.RegionStoragePath = Path.GetFullPath(dialog.SelectedPath);
         _settings.Save();
         _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
-        StatusText = "已设置区服文件存储位置：" + _settings.RegionStoragePath;
+        _regionOperationError = "";
+        _regionOperationNotice = "";
+        StatusText = "已设置区服备份位置：" + _settings.RegionStoragePath;
+        _ = RefreshHomeRegionAsync();
     }
+
+    private const string UpdatingFilesNotice =
+        "游戏文件似乎还在更新\n\nBattle.net 可能仍在写入守望先锋文件。\n\n请等待 Battle.net 完成更新，确认可以正常启动游戏后再试一次。";
+
+    private static bool GameFilesStillChanging(IOException ex) =>
+        ex.Message.Contains("仍在更新", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("仍在变化", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("写入", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("扫描期间", StringComparison.OrdinalIgnoreCase);
 
     private static string RegionName(OverwatchRegion? region) => region == OverwatchRegion.China ? "国服" : "国际服";
 }

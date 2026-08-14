@@ -2,24 +2,38 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVisibility" />
+    </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
             <TextBlock Text="区服文件" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="使用本地文件快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。" Style="{StaticResource PageDescription}"/>
+            <TextBlock Text="使用本地备份快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。" Style="{StaticResource PageDescription}"/>
 
             <TextBlock Text="当前状态" Style="{StaticResource SectionTitle}" Margin="0,26,0,12"/>
             <Border Style="{StaticResource SurfaceCard}">
                 <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="当前文件" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="国服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="国际服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="准备状态" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/><TextBlock Text="本地备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                        <TextBlock Text="当前文件" Foreground="{DynamicResource Text.Secondary}"/>
+                        <TextBlock Text="国服备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                        <TextBlock Text="国际服备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                        <TextBlock Text="备份状态" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                        <TextBlock Text="备份大小" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1">
-                        <TextBlock x:Name="CurrentRegionText"/><TextBlock x:Name="ChinaText" Margin="0,10,0,0"/><TextBlock x:Name="InternationalText" Margin="0,10,0,0"/><TextBlock x:Name="StateText" Margin="0,10,0,0"/><TextBlock x:Name="SizeText" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.CurrentFileText}"/>
+                        <TextBlock Text="{Binding RegionGuide.ChinaBackupText}" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.InternationalBackupText}" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.BackupStateText}" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.BackupSizeText}" Margin="0,10,0,0"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Margin="24,0,0,0">
-                        <Button x:Name="SwitchChinaButton" Content="切换到国服" Style="{StaticResource PrimaryButton}" Padding="18,0" Margin="0,0,0,8" Click="OnSwitchChina"/>
-                        <Button x:Name="SwitchInternationalButton" Content="切换到国际服" Style="{StaticResource PrimaryButton}" Padding="18,0" Click="OnSwitchInternational"/>
+                    <StackPanel Grid.Column="2" Margin="24,0,0,0"
+                                Visibility="{Binding RegionGuide.ShowTopRegionActions, Converter={StaticResource BoolVisibility}}">
+                        <Button Content="{Binding RegionGuide.SwitchChinaText}" IsEnabled="{Binding RegionGuide.CanSwitchChina}"
+                                Style="{StaticResource PrimaryButton}" Padding="18,0" Margin="0,0,0,8" Click="OnSwitchChina"/>
+                        <Button Content="{Binding RegionGuide.SwitchInternationalText}" IsEnabled="{Binding RegionGuide.CanSwitchInternational}"
+                                Style="{StaticResource PrimaryButton}" Padding="18,0" Click="OnSwitchInternational"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -29,38 +43,150 @@
                 <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <TextBlock Text="游戏位置" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock x:Name="GamePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,12"/>
-                        <WrapPanel><Button Content="自动查找" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnDetectGame"/><Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnChooseGame"/></WrapPanel>
+                        <TextBlock Text="守望先锋安装目录" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.GamePathText}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,12"/>
+                        <WrapPanel>
+                            <Button Content="自动查找" IsEnabled="{Binding RegionGuide.CanChangePaths}" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnDetectGame"/>
+                            <Button Content="更改位置" IsEnabled="{Binding RegionGuide.CanChangePaths}" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnChooseGame"/>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
                 <Border Grid.Column="2" Style="{StaticResource SurfaceCard}">
                     <StackPanel>
-                        <TextBlock Text="文件存储位置" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock x:Name="StoragePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,12"/>
-                        <WrapPanel><Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnChooseStorage"/><Button Content="打开文件夹" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnOpenStorage"/></WrapPanel>
+                        <TextBlock Text="区服备份位置" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="{Binding RegionGuide.BackupPathText}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,8"/>
+                        <TextBlock Text="用于保存国服和国际服之间不同的文件，以及首次准备时需要的临时文件。建议选择空间充足的磁盘。"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" LineHeight="18" Margin="0,0,0,12"/>
+                        <WrapPanel>
+                            <Button Content="更改位置" IsEnabled="{Binding RegionGuide.CanChangePaths}" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="0,0,8,0" Click="OnChooseStorage"/>
+                            <Button Content="打开备份文件夹" Style="{StaticResource SecondaryButton}" Padding="13,0" Click="OnOpenStorage"/>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <Border x:Name="OperationPanel" Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
                 <StackPanel>
-                    <TextBlock Text="准备与维护" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="首次准备会保存当前完整临时副本，并让 Battle.net 只跨区一次；完成后长期仅保留两端真正不同的文件。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,14"/>
-                    <WrapPanel x:Name="IdleActions">
-                        <Button Content="当前是国服，开始准备" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnCaptureChina"/>
-                        <Button Content="当前是国际服，开始准备" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnCaptureInternational"/>
-                        <Button Content="我已完成跨区更新" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnComplete"/>
-                        <Button Content="检查本地文件" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnValidate"/>
-                        <Button Content="清除区服文件备份" Style="{StaticResource DangerButton}" Padding="14,0" Margin="0,0,0,8" Click="OnClear"/>
-                    </WrapPanel>
-                    <StackPanel x:Name="BusyActions" Visibility="Collapsed">
-                        <TextBlock x:Name="ProgressText" TextWrapping="Wrap" Margin="0,2,0,8"/>
-                        <ProgressBar x:Name="ProgressBar" Style="{StaticResource ThemeProgressBar}" Height="8" Minimum="0" Maximum="1"/>
-                        <Button Content="取消" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="15,0" Margin="0,12,0,0" Click="OnCancel"/>
+                    <TextBlock Text="区服文件准备" Style="{StaticResource SectionTitle}"/>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowNotPrepared, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,14"/>
+                        <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="11,9" Margin="0,0,0,12"
+                                Visibility="{Binding RegionGuide.ShowGamePathRequired, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Text="请先在上方设置正确的守望先锋安装目录。" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap"/>
+                        </Border>
+                        <TextBlock Text="当前电脑上的守望先锋是：" FontWeight="SemiBold" Margin="0,0,0,9"/>
+                        <WrapPanel>
+                            <Button Content="当前游戏是国服" IsEnabled="{Binding RegionGuide.CanChooseCurrentRegion}" Style="{StaticResource PrimaryButton}" Padding="17,0" Margin="0,0,9,0" Click="OnCaptureChina"/>
+                            <Button Content="当前游戏是国际服" IsEnabled="{Binding RegionGuide.CanChooseCurrentRegion}" Style="{StaticResource PrimaryButton}" Padding="17,0" Click="OnCaptureInternational"/>
+                        </WrapPanel>
                     </StackPanel>
-                    <TextBlock x:Name="StatusText" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,9,0,0"/>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowWaiting, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding RegionGuide.FirstStepCompleteText}" Foreground="{DynamicResource Status.Success}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                        <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.PreparationRouteText}" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="22" Margin="0,10,0,13"/>
+                        <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="请不要提前点击继续" Foreground="{DynamicResource WarnTx}" FontWeight="SemiBold"/>
+                                <TextBlock Text="只有 Battle.net 已经完成更新，并显示可以正常启动游戏以后，再点击下面的按钮。" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Button Content="{Binding RegionGuide.ContinueButtonText}" IsEnabled="{Binding RegionGuide.CanContinueOtherRegion}"
+                                Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="18,0" Click="OnComplete"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowProgress, Converter={StaticResource BoolVisibility}}">
+                        <StackPanel Visibility="{Binding RegionGuide.ShowCompletedPreparationSteps, Converter={StaticResource BoolVisibility}}">
+                            <TextBlock Text="{Binding RegionGuide.FirstStepCompleteText}" Foreground="{DynamicResource Status.Success}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding RegionGuide.SecondStepCompleteText}" Foreground="{DynamicResource Status.Success}" FontWeight="SemiBold" Margin="0,5,0,8"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
+                        <TextBlock Text="{Binding RegionGuide.ProgressText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <ProgressBar Style="{StaticResource ThemeProgressBar}" Height="9" Minimum="0"
+                                     Maximum="{Binding RegionGuide.ProgressTotal}" Value="{Binding RegionGuide.ProgressCurrent}"
+                                     IsIndeterminate="{Binding RegionGuide.ProgressIndeterminate}"/>
+                        <Button Content="取消" IsEnabled="{Binding RegionGuide.CanCancel}"
+                                Visibility="{Binding RegionGuide.CanCancel, Converter={StaticResource BoolVisibility}}"
+                                Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="15,0" Margin="0,13,0,0" Click="OnCancel"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowReady, Converter={StaticResource BoolVisibility}}">
+                        <Border Style="{StaticResource Badge}" HorizontalAlignment="Left">
+                            <TextBlock Text="✓ 准备完成" Foreground="{DynamicResource Status.Success}" FontWeight="SemiBold"/>
+                        </Border>
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,9,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,8,0,13"/>
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="国服文件" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="国际服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/><TextBlock Text="区服差异" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/><TextBlock Text="本地备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/></StackPanel>
+                            <StackPanel Grid.Column="1"><TextBlock Text="{Binding RegionGuide.ChinaBackupText}"/><TextBlock Text="{Binding RegionGuide.InternationalBackupText}" Margin="0,7,0,0"/><TextBlock Text="{Binding RegionGuide.DifferenceText}" Margin="0,7,0,0"/><TextBlock Text="{Binding RegionGuide.BackupBytesText}" Margin="0,7,0,0"/></StackPanel>
+                        </Grid>
+                        <WrapPanel>
+                            <Button Content="检查备份完整性" IsEnabled="{Binding RegionGuide.CanValidate}" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,0" Click="OnValidate"/>
+                            <Button Content="重新准备区服文件" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource SecondaryButton}" Padding="15,0" Click="OnReprepare"/>
+                        </WrapPanel>
+                        <Expander Header="高级操作" Margin="0,14,0,0" Foreground="{DynamicResource Text.Secondary}">
+                            <StackPanel Margin="0,10,0,0">
+                                <Button Content="打开备份文件夹" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,0,0,9" Click="OnOpenStorage"/>
+                                <Button Content="清除区服备份" IsEnabled="{Binding RegionGuide.CanClear}" Style="{StaticResource DangerButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnClear"/>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowOutdated, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Status.Warning}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
+                        <Button Content="重新准备区服文件" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="18,0" Click="OnReprepare"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowMixed, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
+                        <WrapPanel>
+                            <Button Content="恢复到国服" IsEnabled="{Binding RegionGuide.CanRestore}" Style="{StaticResource PrimaryButton}" Padding="17,0" Margin="0,0,9,0" Click="OnSwitchChina"/>
+                            <Button Content="恢复到国际服" IsEnabled="{Binding RegionGuide.CanRestore}" Style="{StaticResource PrimaryButton}" Padding="17,0" Click="OnSwitchInternational"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowError, Converter={StaticResource BoolVisibility}}">
+                        <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
+                        <Button Content="重新检查" IsEnabled="{Binding RegionGuide.CanRetry}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="16,0" Click="OnRetry"/>
+                    </StackPanel>
+
+                    <Border BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,14,0,0"
+                            Visibility="{Binding RegionGuide.ShowNotice, Converter={StaticResource BoolVisibility}}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource WarnBg}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource WarnBd}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RegionGuide.ShowSuccessNotice}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource OkSoft}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Status.Success}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding RegionGuide.Notice}" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap" LineHeight="20"/>
+                    </Border>
                 </StackPanel>
             </Border>
+
+            <Expander Header="为什么需要准备？" Margin="0,18,0,0" Foreground="{DynamicResource Text.Secondary}">
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,10,0,0">
+                    <TextBlock Text="国服和国际服的大部分游戏文件相同，但仍有一部分文件存在差异。&#10;&#10;首次准备时，CloudLight Blizzard 会记录两个区服的完整状态，然后只长期保存真正不同的文件。&#10;&#10;以后切换区服时，就可以直接从本地恢复这些文件，减少 Battle.net 重复下载。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21"/>
+                </Border>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

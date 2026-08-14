@@ -39,14 +39,6 @@ public partial class App : Application
             return;
         }
 
-        // 无界面保存当前号:--save。关战网 → 干净保存当前登录号 → 重启。结果写到 save.txt。
-        if (e.Args.Contains("--save"))
-        {
-            RunSaveCurrent();
-            Shutdown(0);
-            return;
-        }
-
         // 登录新号:--addaccount。优雅退出 → 清空本地令牌(非登出)→ 启动到登录页,供手动登录新号。
         if (e.Args.Contains("--addaccount"))
         {
@@ -249,50 +241,6 @@ public partial class App : Application
             var dir = AppPaths.Current.Root;
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, "switch.txt"), sb.ToString(), Encoding.UTF8);
-        }
-        catch { /* ignore */ }
-    }
-
-    private static void RunSaveCurrent()
-    {
-        var sb = new StringBuilder();
-        try
-        {
-            var paths = new BattleNetPaths();
-            var reader = new AccountReader(paths);
-            var profiles = new AppDataStore(paths);
-            var controller = new BattleNetController(paths);
-
-            var accounts = reader.ReadAccounts(out var activeId);
-            if (activeId is not long id)
-            {
-                sb.AppendLine("未检测到当前登录账号,无法保存。");
-            }
-            else
-            {
-                var tag = accounts.FirstOrDefault(a => a.AccountId == id)?.BattleTag ?? id.ToString();
-                sb.AppendLine($"当前账号: {id} {tag}");
-                var stopped = controller.GracefulQuit();
-                sb.AppendLine($"战网已关闭:{stopped}");
-                if (stopped)
-                {
-                    profiles.Save(id, tag);
-                    sb.AppendLine($"已保存快照 {id} {tag}");
-                    controller.LaunchClient();
-                    sb.AppendLine("已重启战网。");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            sb.AppendLine("保存异常: " + ex);
-        }
-
-        try
-        {
-            var dir = AppPaths.Current.Root;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "save.txt"), sb.ToString(), Encoding.UTF8);
         }
         catch { /* ignore */ }
     }

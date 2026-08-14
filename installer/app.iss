@@ -1,6 +1,9 @@
 #define AppName "CloudLight Blizzard"
-#define AppVer  "1.0.1"
+#define AppVer  "1.0.2"
 #define AppExe  "CloudLight Blizzard.exe"
+#ifndef PublishDir
+  #define PublishDir "..\publish"
+#endif
 
 [Setup]
 AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
@@ -34,7 +37,7 @@ Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式:"
 
 [Files]
-Source: "..\publish\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"

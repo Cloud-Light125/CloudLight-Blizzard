@@ -15,15 +15,17 @@ public partial class StatsWindow : UserControl
     private bool _useOpen;              // 开放职责 / 预设职责
     private int _matchPage = 1;         // 对局已加载页(初始12条=第1页)
     private bool _loadingMore;          // 正在翻页
+    private bool _loading;
     private bool _noMoreMatches;        // 已到底
     private int _currentSeasonNum = 23; // 当前赛季号(好友列表用)
 
     private bool _suppressSeason;   // 程序化填充赛季下拉时,别触发重载
+    private bool _seasonMetadataLoaded;
 
     public StatsWindow()
     {
         InitializeComponent();
-        _ = PopulateSeasonsAsync();
+        ApplySeasons(new List<int> { 23, 22 });
     }
 
     // 赛季下拉:从 AIEvaluateConfig 动态生成(本赛季=最大号 + 灰字标号,其余为可查赛季)。纯配置,无需登录。
@@ -33,6 +35,12 @@ public partial class StatsWindow : UserControl
         try { seasons = (await OwMappings.LoadSeasonMetaAsync()).Seasons; }
         catch { seasons = new(); }
         if (seasons.Count == 0) seasons = new List<int> { 23, 22 };   // 配置拉不到时兜底
+        ApplySeasons(seasons);
+        _seasonMetadataLoaded = true;
+    }
+
+    private void ApplySeasons(List<int> seasons)
+    {
         int cur = seasons[0];   // 已降序,最大即本赛季
         _currentSeasonNum = cur;
         var opts = new List<SeasonOpt> { new("本赛季", $"第{cur}赛季", "") };
@@ -58,30 +66,25 @@ public partial class StatsWindow : UserControl
     {
         var view = new StatsWindow();
         ShowInTestHost(view, "国服战绩", owner);
-        _ = view.LoadAccountAsync(roleId);
+        view.ShowOverlay("尚未查询战绩", "请从主窗口选择账号并点击“查询国服战绩”", retry: false);
     }
 
-    public Task LoadAccountAsync(long roleId) => EnsureAuthThenLoad(roleId);
-
-    // 需要大神授权:有缓存直接用,否则弹扫码窗;授权成功后加载。
-    private async Task EnsureAuthThenLoad(long roleId)
+    public async Task LoadAccountAsync(long roleId, DashenClient client)
     {
-        ShowOverlay("正在准备…", "检查网易大神登录态", retry: false);
-        var client = await DashenAuth.GetAliveAsync();
-        if (client is null)
-        {
-            var dlg = new QrLoginDialog { Owner = Window.GetWindow(this) };
-            var ok = dlg.ShowDialog();
-            client = DashenAuth.Current;
-            if (ok != true || client is null) return;
-        }
+        if (!_seasonMetadataLoaded) await PopulateSeasonsAsync();
         _svc = new StatsService(client);
         await LoadAsync(roleId);
     }
 
     private async Task LoadAsync(long roleId)
     {
-        if (_svc is null) return;
+        if (_svc is null || _loading) return;
+        _loading = true;
+        RefreshButton.IsEnabled = false;
+        SearchBox.IsEnabled = false;
+        SeasonBox.IsEnabled = false;
+        ModePanel.IsEnabled = false;
+        QueuePanel.IsEnabled = false;
         _currentRoleId = roleId;
         ShowOverlay("正在加载战绩…", "拉取账号资料与赛季战绩,约需 2-5 秒", retry: false);
         try
@@ -107,6 +110,15 @@ public partial class StatsWindow : UserControl
         catch
         {
             ShowOverlay("网络开小差", "点「重试」再来一次", retry: true);
+        }
+        finally
+        {
+            _loading = false;
+            RefreshButton.IsEnabled = true;
+            SearchBox.IsEnabled = true;
+            SeasonBox.IsEnabled = true;
+            ModePanel.IsEnabled = true;
+            QueuePanel.IsEnabled = true;
         }
     }
 
@@ -153,19 +165,6 @@ public partial class StatsWindow : UserControl
     private async void OnRefresh(object sender, RoutedEventArgs e)
     {
         if (_currentRoleId is long id) await LoadAsync(id);
-    }
-
-    // 换网易大神号:登出当前会话 → 重新扫码 → 用新号重载当前玩家
-    private async void OnSwitchAccount(object sender, RoutedEventArgs e)
-    {
-        DashenAuth.Logout();
-        _svc = null;
-        var dlg = new QrLoginDialog { Owner = Window.GetWindow(this) };
-        bool? ok = dlg.ShowDialog();
-        var client = DashenAuth.Current;
-        if (ok != true || client is null) return;
-        _svc = new StatsService(client);
-        if (_currentRoleId is long rid) await LoadAsync(rid);
     }
 
     private async void OnSeasonChanged(object sender, SelectionChangedEventArgs e)

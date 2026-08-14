@@ -28,6 +28,24 @@
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                 <StackPanel>
+                    <TextBlock Text="软件更新" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="当前版本" FontWeight="SemiBold" Margin="0,14,0,0" />
+                    <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
+                    <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。"
+                               Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" />
+                    <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left"
+                            Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
+                    <StackPanel x:Name="SkippedUpdatePanel" Margin="0,15,0,0" Visibility="Collapsed">
+                        <TextBlock Text="已忽略更新" FontWeight="SemiBold" />
+                        <TextBlock x:Name="SkippedVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,9" />
+                        <Button Content="恢复此版本提示" HorizontalAlignment="Left"
+                                Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRestoreSkippedUpdate" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
+                <StackPanel>
                     <TextBlock Text="数据" Style="{StaticResource SectionTitle}"/>
                     <TextBlock Text="数据位置" FontWeight="SemiBold" Margin="0,14,0,0"/>
                     <TextBlock x:Name="DataPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>

@@ -27,7 +27,8 @@ public partial class CareerWindow : UserControl
     {
         var view = new CareerWindow();
         ShowInTestHost(view, "国际服生涯", owner);
-        _ = view.LoadAccountAsync(battleTag);
+        view.SearchBox.Text = battleTag;
+        view.ShowOverlay(OverlayKind.Empty, "尚未查询战绩", "点击“查询”后才会读取国际服公开生涯。");
     }
 
     /// <summary>无主窗打开(--careerdemo 调试用):空 tag 就停在搜索态,自己敲一个查。</summary>
@@ -35,10 +36,8 @@ public partial class CareerWindow : UserControl
     {
         var view = new CareerWindow();
         ShowInTestHost(view, "国际服生涯演示");
-        if (string.IsNullOrWhiteSpace(battleTag))
-            view.ShowOverlay(OverlayKind.Empty, "先查一个账号", "在右上角输入战网昵称#编号,回车或点「查询」。");
-        else
-            _ = view.LoadAccountAsync(battleTag);
+        view.SearchBox.Text = battleTag;
+        view.ShowOverlay(OverlayKind.Empty, "尚未查询战绩", "在右上角输入战网昵称#编号，回车或点击“查询”。");
     }
 
     public Task LoadAccountAsync(string battleTag, bool force = false) => LoadAsync(battleTag, force);
