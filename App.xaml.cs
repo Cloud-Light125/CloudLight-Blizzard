@@ -150,6 +150,11 @@ public partial class App : Application
             WriteCrash(args.ExceptionObject as Exception);
 
         base.OnStartup(e);
+        var settings = AppSettings.Load();
+        var startHidden = global::CloudLightBlizzard.MainWindow.ShouldStartHidden(e.Args, settings.StartMinimized);
+        var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden);
+        MainWindow = mainWindow;
+        if (!startHidden) mainWindow.Show();
     }
 
     private static void RunSelfTest()

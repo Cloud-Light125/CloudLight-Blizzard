@@ -544,7 +544,8 @@ public sealed class MainViewModel : ObservableObject
                 if (!string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) _settings.Save();
             }
 
-            var regionStatus = await RefreshHomeRegionAsync(verifyFiles: false);
+            // Startup must not let a remembered region mask an updated game generation.
+            var regionStatus = await RefreshHomeRegionAsync(verifyFiles: true);
             if (!_staleNotified && regionStatus?.State == RegionBackupState.Stale)
             {
                 _staleNotified = true;

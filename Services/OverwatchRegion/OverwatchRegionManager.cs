@@ -127,7 +127,8 @@ public sealed class OverwatchRegionManager
             _store.SaveGenerationManifest(generation.GenerationId, international);
             _store.SaveGeneration(generation);
             WriteDiagnostic(generation, china, international);
-            _store.Activate(generation.GenerationId);
+            // The second captured region is still the live on-disk region when this generation becomes active.
+            _store.Activate(generation.GenerationId, pending.TargetRegion);
             _store.DeleteStaging(generation.GenerationId);
             return RegionBackupState.Ready;
         }
@@ -154,8 +155,12 @@ public sealed class OverwatchRegionManager
         var active = _store.LoadActive() ?? throw new InvalidOperationException(
             _store.HasLegacyData ? "区服文件功能已经升级，需要重新准备一次本地文件。" : "尚未准备国服和国际服文件。");
         var generation = active.Generation;
-        var current = await DetectCurrentRegionAsync(gameRoot, generation, cancellationToken);
         var compatibility = await EvaluateCompatibilityAsync(gameRoot, generation, cancellationToken);
+        var detection = compatibility.Status == GenerationCompatibility.Compatible
+            ? await DetectCurrentRegionAsync(gameRoot, active.Pointer, generation, compatibility,
+                persistStrongCorrection: false, cancellationToken)
+            : DetectionResult.Unknown;
+        var current = detection.DetectedRegion;
         RegionSwitchLog.Write("NormalizeBegin", target, current, compatibility.Status, generation.GenerationId,
             compatibility.Reason);
         if (compatibility.Status != GenerationCompatibility.Compatible)
@@ -168,6 +173,13 @@ public sealed class OverwatchRegionManager
         }
         if (current == ToCurrent(target))
         {
+            var targetEvidence = target == OverwatchRegion.China
+                ? RegionEvidenceResult.StrongChina : RegionEvidenceResult.StrongInternational;
+            if (detection.Evidence == targetEvidence &&
+                (active.Pointer.LastSuccessfulRegion != target ||
+                 !string.Equals(active.Pointer.LastSuccessfulGenerationId, generation.GenerationId,
+                     StringComparison.OrdinalIgnoreCase)))
+                _store.SaveLastSuccessfulRegion(generation.GenerationId, target);
             RegionSwitchLog.Write("NormalizeAlreadyTarget", target, current, compatibility.Status,
                 generation.GenerationId, "Verification result=already matched");
             return new RegionSwitchResult(0, 0, Verified: true);
@@ -224,9 +236,10 @@ public sealed class OverwatchRegionManager
             if (!FileMatches(destination, expected, hash: true, cancellationToken))
                 throw new InvalidDataException("区服文件恢复后的完整校验失败：" + difference.RelativePath);
         }
-        var verifiedRegion = await DetectCurrentRegionAsync(gameRoot, generation, cancellationToken);
-        if (verifiedRegion != ToCurrent(target))
-            throw new InvalidDataException("区服文件恢复后未能完整匹配目标 Manifest，已停止后续操作。");
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_store.SaveLastSuccessfulRegion(generation.GenerationId, target))
+            throw new InvalidDataException("目标文件已经恢复，但 Active Generation 已变化，未更新当前区服状态。");
+        var verifiedRegion = ToCurrent(target);
 
         var result = new RegionSwitchResult(restored, deleted, chinaOnly, internationalOnly, different, true);
         RegionSwitchLog.Write("NormalizeCompleted", target, verifiedRegion, compatibility.Status,
@@ -254,8 +267,18 @@ public sealed class OverwatchRegionManager
         CancellationToken cancellationToken = default)
     {
         var active = _store.LoadActive();
-        return active is null ? CurrentGameRegion.Unknown :
-            await DetectCurrentRegionAsync(gameRoot, active.Value.Generation, cancellationToken);
+        if (active is null) return CurrentGameRegion.Unknown;
+        var compatibility = await EvaluateCompatibilityAsync(gameRoot, active.Value.Generation, cancellationToken);
+        if (compatibility.Status != GenerationCompatibility.Compatible)
+        {
+            RegionSwitchLog.Write("RegionDetected", current: CurrentGameRegion.Unknown,
+                compatibility: compatibility.Status, generationId: active.Value.Generation.GenerationId,
+                detail: $"LastSuccessfulRegion={active.Value.Pointer.LastSuccessfulRegion?.ToString() ?? "Unknown"}; " +
+                        $"LastSuccessfulGenerationId={active.Value.Pointer.LastSuccessfulGenerationId ?? "-"}; {compatibility.Reason}");
+            return CurrentGameRegion.Unknown;
+        }
+        return (await DetectCurrentRegionAsync(gameRoot, active.Value.Pointer, active.Value.Generation,
+            compatibility, persistStrongCorrection: true, cancellationToken)).DetectedRegion;
     }
 
     public async Task<RegionSnapshotStatus> GetStatusAsync(string? gameRoot,
@@ -285,12 +308,18 @@ public sealed class OverwatchRegionManager
         }
 
         var generation = active.Value.Generation;
-        var current = verifyFiles && valid && generation.State is RegionBackupState.Ready or RegionBackupState.Stale
-            ? await DetectCurrentRegionAsync(gameRoot!, generation, cancellationToken) : CurrentGameRegion.Unknown;
+        var pointer = active.Value.Pointer;
         var compatibility = verifyFiles && valid
             ? await EvaluateCompatibilityAsync(gameRoot!, generation, cancellationToken)
             : new CompatibilityResult(GenerationCompatibility.Unknown,
                 valid ? "尚未执行完整文件校验" : "游戏目录无效");
+        var detection = verifyFiles && valid && compatibility.Status == GenerationCompatibility.Compatible &&
+                        generation.State is RegionBackupState.Ready or RegionBackupState.Stale
+            ? await DetectCurrentRegionAsync(gameRoot!, pointer, generation, compatibility,
+                persistStrongCorrection: true, cancellationToken)
+            : DetectionResult.FromLastSuccessful(pointer, generation.GenerationId);
+        if (verifyFiles && compatibility.Status != GenerationCompatibility.Compatible)
+            detection = DetectionResult.Unknown;
         if (verifyFiles && compatibility.Status == GenerationCompatibility.Updated && generation.State != RegionBackupState.Stale)
         {
             generation.State = RegionBackupState.Stale;
@@ -307,7 +336,7 @@ public sealed class OverwatchRegionManager
         return new RegionSnapshotStatus
         {
             GamePath = gameRoot ?? "", GamePathValid = valid, State = generation.State,
-            CurrentRegion = current, ChinaCaptured = true, InternationalCaptured = true,
+            CurrentRegion = detection.DetectedRegion, ChinaCaptured = true, InternationalCaptured = true,
             GenerationCompatibility = compatibility.Status,
             CompatibilityReason = compatibility.Reason,
             ChinaBackupComplete = generation.ChinaBackupComplete,
@@ -316,6 +345,10 @@ public sealed class OverwatchRegionManager
             BackupBytes = Directory.Exists(backups)
                 ? Directory.EnumerateFiles(backups, "*", SearchOption.AllDirectories).Sum(path => new FileInfo(path).Length) : 0,
             ActiveGenerationId = generation.GenerationId,
+            LastSuccessfulRegion = pointer.LastSuccessfulRegion,
+            LastSuccessfulGenerationId = pointer.LastSuccessfulGenerationId,
+            RegionEvidence = detection.Evidence,
+            ExactSnapshotMatch = detection.ExactSnapshotMatch,
         };
     }
 
@@ -438,29 +471,145 @@ public sealed class OverwatchRegionManager
         finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
     }
 
-    private static async Task<CurrentGameRegion> DetectCurrentRegionAsync(string root,
-        OverwatchRegionGeneration generation, CancellationToken token)
+    private async Task<DetectionResult> DetectCurrentRegionAsync(string root, ActiveGenerationPointer pointer,
+        OverwatchRegionGeneration generation, CompatibilityResult compatibility, bool persistStrongCorrection,
+        CancellationToken token)
     {
-        if (generation.State is not (RegionBackupState.Ready or RegionBackupState.Stale)) return CurrentGameRegion.Unknown;
-        var chinaMatches = 0;
-        var internationalMatches = 0;
-        var unmatched = 0;
+        if (generation.State is not (RegionBackupState.Ready or RegionBackupState.Stale))
+            return DetectionResult.Unknown;
+        var chinaOnlyPresent = 0;
+        var internationalOnlyPresent = 0;
+        var differentChinaMatches = 0;
+        var differentInternationalMatches = 0;
+        var chinaSnapshotMatches = 0;
+        var internationalSnapshotMatches = 0;
+        var differentMismatches = new List<string>();
+        var chinaSnapshotMismatches = new List<string>();
+        var internationalSnapshotMismatches = new List<string>();
         foreach (var difference in generation.Differences)
         {
             token.ThrowIfCancellationRequested();
             var path = OverwatchRegionBackupStore.SafeCombine(root, difference.RelativePath);
-            var china = FileMatches(path, difference.China, true, token);
-            var international = FileMatches(path, difference.International, true, token);
-            if (china && !international) chinaMatches++;
-            else if (international && !china) internationalMatches++;
-            else unmatched++;
+            if (difference.Kind == RegionDifferenceKind.ChinaOnly && File.Exists(path)) chinaOnlyPresent++;
+            if (difference.Kind == RegionDifferenceKind.InternationalOnly && File.Exists(path)) internationalOnlyPresent++;
+
+            // Snapshot diagnostics remain byte-exact even though region classification no longer requires
+            // every file to match one side.
+            var china = FileMatches(path, difference.China, hash: true, token);
+            var international = FileMatches(path, difference.International, hash: true, token);
+            if (china) chinaSnapshotMatches++;
+            else chinaSnapshotMismatches.Add(difference.RelativePath);
+            if (international) internationalSnapshotMatches++;
+            else internationalSnapshotMismatches.Add(difference.RelativePath);
+            if (difference.Kind == RegionDifferenceKind.Different)
+            {
+                if (china && !international) differentChinaMatches++;
+                else if (international && !china) differentInternationalMatches++;
+                else if (!china && !international) differentMismatches.Add(difference.RelativePath);
+            }
             await Task.Yield();
         }
-        if (generation.Differences.Count == 0) return CurrentGameRegion.Unknown;
-        if (chinaMatches == generation.Differences.Count) return CurrentGameRegion.China;
-        if (internationalMatches == generation.Differences.Count) return CurrentGameRegion.International;
-        return chinaMatches > 0 || internationalMatches > 0 || unmatched > 0
-            ? CurrentGameRegion.Mixed : CurrentGameRegion.Unknown;
+
+        var evidence = ClassifyEvidence(chinaOnlyPresent, internationalOnlyPresent,
+            differentChinaMatches, differentInternationalMatches);
+        var lastMatchesGeneration = pointer.LastSuccessfulRegion is not null &&
+                                    string.Equals(pointer.LastSuccessfulGenerationId, generation.GenerationId,
+                                        StringComparison.OrdinalIgnoreCase);
+        var rememberedSnapshotMatches = pointer.LastSuccessfulRegion switch
+        {
+            OverwatchRegion.China => chinaSnapshotMatches,
+            OverwatchRegion.International => internationalSnapshotMatches,
+            _ => 0,
+        };
+        var severeSnapshotDamage = lastMatchesGeneration && generation.Differences.Count >= 4 &&
+                                   rememberedSnapshotMatches * 2 < generation.Differences.Count;
+        var detected = evidence switch
+        {
+            RegionEvidenceResult.StrongChina => CurrentGameRegion.China,
+            RegionEvidenceResult.StrongInternational => CurrentGameRegion.International,
+            RegionEvidenceResult.StrongConflict => CurrentGameRegion.Mixed,
+            _ when lastMatchesGeneration && !severeSnapshotDamage => ToCurrent(pointer.LastSuccessfulRegion!.Value),
+            _ => CurrentGameRegion.Unknown,
+        };
+        var exact = detected switch
+        {
+            CurrentGameRegion.China => chinaSnapshotMatches == generation.Differences.Count,
+            CurrentGameRegion.International => internationalSnapshotMatches == generation.Differences.Count,
+            _ => false,
+        };
+
+        var stronglyDetectedRegion = evidence switch
+        {
+            RegionEvidenceResult.StrongChina => OverwatchRegion.China,
+            RegionEvidenceResult.StrongInternational => OverwatchRegion.International,
+            _ => (OverwatchRegion?)null,
+        };
+        if (persistStrongCorrection && stronglyDetectedRegion is not null &&
+            (!lastMatchesGeneration || pointer.LastSuccessfulRegion != stronglyDetectedRegion))
+        {
+            if (_store.SaveLastSuccessfulRegion(generation.GenerationId, stronglyDetectedRegion.Value))
+            {
+                pointer.LastSuccessfulRegion = stronglyDetectedRegion;
+                pointer.LastSuccessfulGenerationId = generation.GenerationId;
+            }
+        }
+
+        var snapshotMismatches = detected switch
+        {
+            CurrentGameRegion.China => chinaSnapshotMismatches,
+            CurrentGameRegion.International => internationalSnapshotMismatches,
+            _ when lastMatchesGeneration && pointer.LastSuccessfulRegion == OverwatchRegion.China =>
+                chinaSnapshotMismatches,
+            _ when lastMatchesGeneration && pointer.LastSuccessfulRegion == OverwatchRegion.International =>
+                internationalSnapshotMismatches,
+            _ => new List<string>(),
+        };
+
+        RegionSwitchLog.Write("RegionDetected", current: detected, compatibility: compatibility.Status,
+            generationId: generation.GenerationId,
+            detail: $"LastSuccessfulRegion={pointer.LastSuccessfulRegion?.ToString() ?? "Unknown"}; " +
+                    $"LastSuccessfulGenerationId={pointer.LastSuccessfulGenerationId ?? "-"}; " +
+                    $"StrongEvidence={evidence}; StrongChinaEvidenceCount={chinaOnlyPresent + differentChinaMatches}; " +
+                    $"StrongInternationalEvidenceCount={internationalOnlyPresent + differentInternationalMatches}; " +
+                    $"ChinaOnlyPresentCount={chinaOnlyPresent}; InternationalOnlyPresentCount={internationalOnlyPresent}; " +
+                    $"DifferentMismatchCount={differentMismatches.Count}; " +
+                    $"DifferentMismatchFiles={(differentMismatches.Count == 0 ? "-" : string.Join(", ", differentMismatches))}; " +
+                    $"DetectedSnapshotMismatchCount={snapshotMismatches.Count}; " +
+                    $"DetectedSnapshotMismatchFiles={(snapshotMismatches.Count == 0 ? "-" : string.Join(", ", snapshotMismatches))}; " +
+                    $"SevereSnapshotDamage={severeSnapshotDamage}; " +
+                    $"ExactSnapshotMatch={exact}");
+        return new DetectionResult(detected, evidence, exact);
+    }
+
+    internal static RegionEvidenceResult ClassifyEvidence(int chinaOnlyPresent, int internationalOnlyPresent,
+        int differentChinaMatches, int differentInternationalMatches)
+    {
+        if (chinaOnlyPresent > 0 && internationalOnlyPresent > 0)
+        {
+            // A few stale files from the opposite side are common after Battle.net maintenance. Only a
+            // clear numerical advantage may override that residue; close counts remain a real conflict.
+            const int minimumExclusiveLead = 2;
+            if (chinaOnlyPresent >= internationalOnlyPresent * 2 &&
+                chinaOnlyPresent - internationalOnlyPresent >= minimumExclusiveLead)
+                return RegionEvidenceResult.StrongChina;
+            if (internationalOnlyPresent >= chinaOnlyPresent * 2 &&
+                internationalOnlyPresent - chinaOnlyPresent >= minimumExclusiveLead)
+                return RegionEvidenceResult.StrongInternational;
+            return RegionEvidenceResult.StrongConflict;
+        }
+        if (chinaOnlyPresent > 0) return RegionEvidenceResult.StrongChina;
+        if (internationalOnlyPresent > 0) return RegionEvidenceResult.StrongInternational;
+
+        // Difference files are supporting evidence only. One ordinary match/mismatch is never enough to
+        // establish or correct the region; multiple unopposed exact matches are required.
+        const int minimumSupportingMatches = 2;
+        if (differentChinaMatches >= minimumSupportingMatches && differentInternationalMatches >= minimumSupportingMatches)
+            return RegionEvidenceResult.StrongConflict;
+        if (differentChinaMatches >= minimumSupportingMatches && differentInternationalMatches == 0)
+            return RegionEvidenceResult.StrongChina;
+        if (differentInternationalMatches >= minimumSupportingMatches && differentChinaMatches == 0)
+            return RegionEvidenceResult.StrongInternational;
+        return RegionEvidenceResult.NoStrongConflict;
     }
 
     private static bool FileMatches(string path, RegionFileEntry? expected, bool hash, CancellationToken token)
@@ -520,6 +669,20 @@ public sealed class OverwatchRegionManager
          string.Equals(actual.ExecutableProductVersion, expected.ExecutableProductVersion, StringComparison.Ordinal));
 
     private sealed record CompatibilityResult(GenerationCompatibility Status, string Reason);
+
+    private sealed record DetectionResult(CurrentGameRegion DetectedRegion, RegionEvidenceResult Evidence,
+        bool ExactSnapshotMatch)
+    {
+        public static DetectionResult Unknown { get; } = new(CurrentGameRegion.Unknown,
+            RegionEvidenceResult.NoStrongConflict, false);
+
+        public static DetectionResult FromLastSuccessful(ActiveGenerationPointer pointer, string generationId) =>
+            pointer.LastSuccessfulRegion is not null &&
+            string.Equals(pointer.LastSuccessfulGenerationId, generationId, StringComparison.OrdinalIgnoreCase)
+                ? new DetectionResult(ToCurrent(pointer.LastSuccessfulRegion.Value),
+                    RegionEvidenceResult.NoStrongConflict, false)
+                : Unknown;
+    }
 
     private static bool FilesEqual(RegionFileEntry left, RegionFileEntry right) =>
         left.Size == right.Size && !string.IsNullOrEmpty(left.Sha256) &&

@@ -299,6 +299,13 @@ public static class FeatureSelfTest
 
     private static void RunRegionPreparationGuideTest(StringBuilder report)
     {
+        Assert(MainWindow.ShouldStartHidden(new[] { "--tray" }, startMinimized: false),
+            "--tray starts without showing the main window");
+        Assert(MainWindow.ShouldStartHidden(Array.Empty<string>(), startMinimized: true),
+            "StartMinimized starts without showing the main window");
+        Assert(!MainWindow.ShouldStartHidden(new[] { "--tray", "--visible" }, startMinimized: true),
+            "--visible explicitly overrides hidden startup");
+
         const string backupRoot = @"D:\RegionBackup";
         var empty = new RegionSnapshotStatus { State = RegionBackupState.Empty, GamePathValid = true };
         var notPrepared = RegionPreparationGuide.Create(empty, RegionOperationPhase.None, false, false, null, backupRoot);
@@ -388,6 +395,14 @@ public static class FeatureSelfTest
 
     private static async Task RunRegionGenerationTest(string workspace, StringBuilder report)
     {
+        Assert(OverwatchRegionManager.ClassifyEvidence(5, 1, 0, 0) == RegionEvidenceResult.StrongChina,
+            "ChinaOnly evidence with a clear numerical lead resolves China despite a small opposite residue");
+        Assert(OverwatchRegionManager.ClassifyEvidence(1, 5, 0, 0) == RegionEvidenceResult.StrongInternational,
+            "InternationalOnly evidence with a clear numerical lead resolves International despite a small opposite residue");
+        Assert(OverwatchRegionManager.ClassifyEvidence(2, 1, 0, 0) == RegionEvidenceResult.StrongConflict &&
+               OverwatchRegionManager.ClassifyEvidence(2, 2, 0, 0) == RegionEvidenceResult.StrongConflict,
+            "close or equal exclusive evidence remains a strong conflict");
+
         var game = Path.Combine(workspace, "game");
         var store = Path.Combine(workspace, "region-store");
         Directory.CreateDirectory(game);
@@ -415,6 +430,11 @@ public static class FeatureSelfTest
         var status = await manager.GetStatusAsync(game);
         Assert(status.State == RegionBackupState.Ready && status.ChinaBackupComplete && status.InternationalBackupComplete,
             "generation is ready for both regions");
+        Assert(status.CurrentRegion == CurrentGameRegion.International && status.ExactSnapshotMatch,
+            "activation records the second captured region as the exact current snapshot");
+        Assert(status.LastSuccessfulRegion == GameRegion.International &&
+               status.LastSuccessfulGenerationId == status.ActiveGenerationId,
+            "generation activation persists LastSuccessfulRegion and generation id");
         var generationRoot = Path.Combine(store, "generations", status.ActiveGenerationId!);
         var generation = OverwatchRegionBackupStore.ReadJson<OverwatchRegionGeneration>(Path.Combine(generationRoot, "pair.json"))!;
         var kinds = generation.Differences.ToDictionary(item => item.RelativePath, item => item.Kind, StringComparer.OrdinalIgnoreCase);
@@ -431,6 +451,33 @@ public static class FeatureSelfTest
         // Build metadata may be partially changed by Battle.net and must not by itself stale the generation.
         File.WriteAllText(Path.Combine(game, ".build.info"), "partial Battle.net metadata");
 
+        // A normal runtime drift in Different must not turn a usable International directory into Mixed.
+        File.WriteAllText(Path.Combine(game, "different.txt"), "International runtime drift");
+        var internationalDrift = await manager.GetStatusAsync(game);
+        Assert(internationalDrift.CurrentRegion == CurrentGameRegion.International &&
+               !internationalDrift.ExactSnapshotMatch,
+            "International + ordinary Different drift remains International");
+
+        await manager.NormalizeToRegionAsync(game, GameRegion.China);
+        File.WriteAllText(Path.Combine(game, "different.txt"), "China runtime drift");
+        var chinaDrift = await manager.GetStatusAsync(game);
+        Assert(chinaDrift.CurrentRegion == CurrentGameRegion.China && !chinaDrift.ExactSnapshotMatch,
+            "China + ordinary Different drift remains China");
+
+        File.Delete(Path.Combine(game, "china-only.txt"));
+        File.WriteAllText(Path.Combine(game, ".build.info"), "runtime metadata drift after China normalize");
+        var extensivelyDamaged = await manager.GetStatusAsync(game);
+        Assert(extensivelyDamaged.CurrentRegion == CurrentGameRegion.Unknown,
+            "widespread target snapshot damage is not hidden by LastSuccessfulRegion");
+
+        // Clear China-only evidence and establish the opposite exclusive evidence. This is strong enough
+        // to correct a stale LastSuccessfulRegion without requiring a full snapshot match.
+        File.WriteAllText(Path.Combine(game, "international-only.txt"), "international only");
+        var corrected = await manager.GetStatusAsync(game);
+        Assert(corrected.CurrentRegion == CurrentGameRegion.International &&
+               corrected.LastSuccessfulRegion == GameRegion.International,
+            "strong opposite evidence corrects LastSuccessfulRegion");
+
         // Construct a true mixed directory while preserving the common baseline.
         File.WriteAllText(Path.Combine(game, "china-only.txt"), "china only");
         File.WriteAllText(Path.Combine(game, "international-only.txt"), "international only");
@@ -442,6 +489,11 @@ public static class FeatureSelfTest
 
         var internationalResult = await manager.NormalizeToRegionAsync(game, GameRegion.International);
         Assert(internationalResult.Verified, "Mixed -> International completes full hash verification");
+        var pointerAfterInternational = OverwatchRegionBackupStore.ReadJson<ActiveGenerationPointer>(
+            Path.Combine(store, "active-generation.json"))!;
+        Assert(pointerAfterInternational.LastSuccessfulRegion == GameRegion.International &&
+               pointerAfterInternational.LastSuccessfulGenerationId == generation.GenerationId,
+            "successful International normalize persists successful region and active generation");
         Assert(!File.Exists(Path.Combine(game, "china-only.txt")), "Mixed -> International removes ChinaOnly");
         Assert(File.ReadAllText(Path.Combine(game, "international-only.txt")) == "international only",
             "Mixed -> International restores InternationalOnly");
@@ -460,6 +512,23 @@ public static class FeatureSelfTest
         Assert(!File.Exists(Path.Combine(game, "china-only.txt")), "ChinaOnly removed for International");
         Assert(File.Exists(Path.Combine(game, "international-only.txt")), "InternationalOnly restored");
         Assert(FirstByte(Path.Combine(game, "large.bin")) == 0x49, "International large file restored exactly");
+
+        // A failed normalize must leave the last successful state untouched. Backup validation fails before
+        // any live game file is changed.
+        var stalePointer = OverwatchRegionBackupStore.ReadJson<ActiveGenerationPointer>(
+            Path.Combine(store, "active-generation.json"))!;
+        stalePointer.LastSuccessfulRegion = GameRegion.China;
+        OverwatchRegionBackupStore.WriteJson(Path.Combine(store, "active-generation.json"), stalePointer);
+        var pointerBeforeFailedNormalize = File.ReadAllText(Path.Combine(store, "active-generation.json"));
+        File.WriteAllText(Path.Combine(generationRoot, "backups", "china", "different.txt"), "corrupt backup");
+        try
+        {
+            await manager.NormalizeToRegionAsync(game, GameRegion.China);
+            throw new InvalidOperationException("corrupt target backup should have rejected normalize");
+        }
+        catch (InvalidDataException) { }
+        Assert(File.ReadAllText(Path.Combine(store, "active-generation.json")) == pointerBeforeFailedNormalize,
+            "failed normalize does not update LastSuccessfulRegion even when strong evidence is opposite");
 
         File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch_loader.dll"), "new game version");
         var updatedStatus = await manager.GetStatusAsync(game);
@@ -489,7 +558,7 @@ public static class FeatureSelfTest
         var legacyManager = new OverwatchRegionManager(legacyRoot, () => false, 0);
         Assert((await legacyManager.GetStatusAsync(game)).State == RegionBackupState.Legacy,
             "old schema is rejected");
-        report.AppendLine("TEST 6 Generation/Staging: PASS (Mixed->International/China, full hash, .build.info tolerance, common update rejection, 256MB copies)");
+        report.AppendLine("TEST 6 Generation/Staging: PASS (drift-tolerant China/International detection, strong correction/conflict, successful/failed normalize state, update rejection, strict restore hash, 256MB copies)");
     }
 
     private static async Task RunAccountSwitchOrderTest(StringBuilder report)

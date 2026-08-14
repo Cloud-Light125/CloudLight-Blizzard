@@ -89,14 +89,27 @@ public sealed class OverwatchRegionBackupStore
             ? (pointer, generation) : null;
     }
 
-    public void Activate(string generationId)
+    public void Activate(string generationId, OverwatchRegion currentRegion)
     {
         var previous = LoadPointer()?.GenerationId;
         WriteJson(ActiveGenerationFile, new ActiveGenerationPointer
         {
             GenerationId = generationId,
             PreviousGenerationId = previous == generationId ? null : previous,
+            LastSuccessfulRegion = currentRegion,
+            LastSuccessfulGenerationId = generationId,
         });
+    }
+
+    public bool SaveLastSuccessfulRegion(string generationId, OverwatchRegion region)
+    {
+        var pointer = LoadPointer();
+        if (pointer is null || !string.Equals(pointer.GenerationId, generationId, StringComparison.OrdinalIgnoreCase))
+            return false;
+        pointer.LastSuccessfulRegion = region;
+        pointer.LastSuccessfulGenerationId = generationId;
+        WriteJson(ActiveGenerationFile, pointer);
+        return true;
     }
 
     public void DeleteStaging(string id)

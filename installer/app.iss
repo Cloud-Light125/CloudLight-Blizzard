@@ -1,5 +1,5 @@
 #define AppName "CloudLight Blizzard"
-#define AppVer  "1.0.2"
+#define AppVer  "1.1.0"
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"

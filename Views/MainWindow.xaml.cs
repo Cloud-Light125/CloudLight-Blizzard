@@ -25,9 +25,10 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _tray;
     private bool _reallyExit;
     private bool _pagesReady;
+    private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
 
-    public MainWindow()
+    public MainWindow(bool startHidden = false)
     {
         InitializeComponent();
         ThemeManager.Attach(this);
@@ -59,25 +60,35 @@ public partial class MainWindow : Window
         SelectSavedSection();
 
         SetupTray();
-        Loaded += async (_, _) =>
+        if (startHidden)
         {
-            // 先让窗口完成首帧，再开始账号与区服的磁盘读取。
-            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            await _vm.RefreshAsync();
-            var args = Environment.GetCommandLineArgs();
-            var demoIndex = Array.FindIndex(args, value => string.Equals(value, "--accountlayoutdemo", StringComparison.OrdinalIgnoreCase));
-            if (demoIndex >= 0 && demoIndex + 1 < args.Length && int.TryParse(args[demoIndex + 1], out var demoCount))
-            {
-                _vm.ApplyAccountLayoutDemo(demoCount);
-                AccountsNav.IsChecked = true;
-            }
-            if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault());
-            if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
-            _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
-            _watchTimer.Start();
-            if (ShouldStartHidden()) HideToTray();
-            _ = RunAutomaticUpdateCheckAsync();
-        };
+            ShowInTaskbar = false;
+            Dispatcher.BeginInvoke(new Action(() => _ = InitializeAsync()), DispatcherPriority.ApplicationIdle);
+        }
+        else
+        {
+            Loaded += async (_, _) => await InitializeAsync();
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        await _vm.RefreshAsync();
+        var args = Environment.GetCommandLineArgs();
+        var demoIndex = Array.FindIndex(args, value => string.Equals(value, "--accountlayoutdemo", StringComparison.OrdinalIgnoreCase));
+        if (demoIndex >= 0 && demoIndex + 1 < args.Length && int.TryParse(args[demoIndex + 1], out var demoCount))
+        {
+            _vm.ApplyAccountLayoutDemo(demoCount);
+            AccountsNav.IsChecked = true;
+        }
+        if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault());
+        if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
+        _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
+        _watchTimer.Start();
+        _ = RunAutomaticUpdateCheckAsync();
     }
 
     private async Task RunAutomaticUpdateCheckAsync()
@@ -103,6 +114,7 @@ public partial class MainWindow : Window
 
     private void PresentUpdateOutcome(UpdateCheckOutcome outcome, bool automatic)
     {
+        if (automatic && !IsVisible) return;
         if (outcome.Kind == UpdateCheckOutcomeKind.UpdateAvailable && outcome.Result is { } result)
         {
             var dialog = new UpdateDialog(result) { Owner = this };
@@ -159,11 +171,10 @@ public partial class MainWindow : Window
         if (section == "stats") _statsPage.OnPageOpened();
     }
 
-    private bool ShouldStartHidden()
+    internal static bool ShouldStartHidden(IEnumerable<string> args, bool startMinimized)
     {
-        var args = Environment.GetCommandLineArgs();
         if (args.Any(a => string.Equals(a, "--visible", StringComparison.OrdinalIgnoreCase))) return false;
-        return args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)) || _vm.Settings.StartMinimized;
+        return args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)) || startMinimized;
     }
     private async void OnRefresh(object sender, RoutedEventArgs e) => await _vm.RefreshAsync();
 

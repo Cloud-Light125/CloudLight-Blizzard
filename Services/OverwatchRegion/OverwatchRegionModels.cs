@@ -12,6 +12,9 @@ public enum CurrentGameRegion { Unknown, China, International, Mixed }
 public enum GenerationCompatibility { Compatible, Updated, Unknown }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionEvidenceResult { NoStrongConflict, StrongChina, StrongInternational, StrongConflict }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RegionBackupState
 {
     Empty,
@@ -93,6 +96,8 @@ public sealed class ActiveGenerationPointer
     public string GenerationId { get; set; } = "";
     public string? PreviousGenerationId { get; set; }
     public DateTime ActivatedAtUtc { get; set; } = DateTime.UtcNow;
+    public OverwatchRegion? LastSuccessfulRegion { get; set; }
+    public string? LastSuccessfulGenerationId { get; set; }
 }
 
 public sealed record RegionProgress(string Message, int Current = 0, int Total = 0, long BytesCurrent = 0, long BytesTotal = 0);
@@ -121,4 +126,8 @@ public sealed class RegionSnapshotStatus
     public int DifferenceCount { get; set; }
     public long BackupBytes { get; set; }
     public string? ActiveGenerationId { get; set; }
+    public OverwatchRegion? LastSuccessfulRegion { get; set; }
+    public string? LastSuccessfulGenerationId { get; set; }
+    public RegionEvidenceResult RegionEvidence { get; set; } = RegionEvidenceResult.NoStrongConflict;
+    public bool ExactSnapshotMatch { get; set; }
 }
