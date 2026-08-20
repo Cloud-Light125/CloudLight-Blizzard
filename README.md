@@ -4,9 +4,7 @@ CloudLight Blizzard 是一款面向 Windows 的战网多账号与《守望先锋
 
 ## 项目起源
 
-CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com/qiyh99/BnetSwitch)，最初是在其 GPLv3 开源代码基础上开始开发的。
-
-最开始，我只是打算在 BnetSwitch 的基础上移除与核心功能无关的内容（如展示广告、提交用户机器码等）后自己使用，而不上传仓库。
+CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com/qiyh99/BnetSwitch)，最开始，我只是打算在 BnetSwitch 的基础上移除与核心功能无关的内容（如展示广告、提交用户机器码等）并添加守望先锋国服/国际服文件切换功能后自己使用，而不上传仓库。
 
 但实际修改过程中发现原有实现存在非常多的基础逻辑问题，修复范围很快超过了最初的预期。
 
@@ -25,9 +23,9 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 
 其中许多基础逻辑已经完全重构，部分功能也进行了新增或重新实现。
 
-随着 BUG 修复、逻辑调整、结构调整和新增开发不断增加，后续的实际工作量已经接近甚至超过了重新开发一个新的软件！
+实际工作量已经接近甚至超过了重新开发一个新的软件！
 
-当前的 CloudLight Blizzard 在程序架构、界面、数据管理、账号管理、区服文件机制以及大量核心流程上，已经与最初的 BnetSwitch 存在明显差异。
+当前的 CloudLight Blizzard 在程序架构、界面、数据管理、账号管理以及大量核心流程上，已经与最初的 BnetSwitch 存在明显差异，并且新增了国服 / 国际服文件切换功能，修复了大量的逻辑错误和安全隐患。因此，我决定开源此修改后的版本供更多的人使用。
 
 尽管如此，仍然感谢原项目公开源码，使本项目能够从已有实现开始研究和继续开发。
 
