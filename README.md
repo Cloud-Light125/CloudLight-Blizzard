@@ -36,7 +36,19 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 - 切换账号时自动联动目标区服文件
 - 使用本地文件快速恢复守望先锋国服或国际服版本
 - 查询国服战绩与国际服公开生涯数据
+- 在统一“掉宝”页面管理 SOOP、YouTube 与 Twitch Worker
+- 共用全局 HTTP/HTTPS 代理、托盘生命周期、日志和 Documents 数据目录
 - 支持深色模式、托盘运行和开机自动启动
+
+## 掉宝与观赛整合
+
+“掉宝”是单一一级导航，页面内切换 SOOP、YouTube 和 Twitch。三个平台的网络业务运行在独立无窗口 Worker 中，通过 UTF-8 JSON Lines 与 WPF 交换结构化状态；Worker 异常不会结束主程序，退出 CloudLight Blizzard 时会先请求 Worker 正常停止。
+
+- SOOP：多账号 Session 隔离、自动/手动/仅 owesports 选台、优先任务、固定/抽奖/随机任务、背包、自动领取和低流量轮询设置。
+- YouTube：Chrome/Brave 独立 Profile、自动频道/手动 URL、Headless、静音、播放恢复、实际观看时间与历史。Chrome DevTools 的 `127.0.0.1` 连接始终直连。
+- Twitch：Device OAuth、cookies session、Campaign/Inventory/Channel、Priority/Exclude/PriorityMode、连接质量、通知、徽章表情、可用 Drop 检查和自动领取开关。
+
+三个平台都提供“导入旧版数据”，执行 Copy → SHA-256 Verify，保留原目录；同名数据由用户选择跳过、覆盖或取消。
 
 ## Battle.net 多账号管理
 
@@ -93,6 +105,10 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 ├─ settings.json
 ├─ accounts\
 ├─ logs\
+├─ drops\
+│  ├─ soop\
+│  ├─ youtube\
+│  └─ twitch\
 ├─ overwatch\
 │  ├─ cache\
 │  └─ session\
@@ -159,3 +175,5 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 CloudLight Blizzard 起源于 GPLv3 开源项目 BnetSwitch，并继续按照 GNU GPL v3.0 开源。
 
 项目许可证见 `LICENSE`。第三方组件仍分别受其原始许可证约束；依法需要保留的许可证、翻译署名和声明不会作为产品宣传显示在程序 UI 或本 README 中。
+
+掉宝整合的来源、上游许可证状态、Worker 边界和完整 Twitch MIT notice 见 `THIRD_PARTY_NOTICES.md` 与 `docs/DROPS_INTEGRATION_AUDIT.md`。SOOP 直接上游和 YouTube 直接上游目前未声明许可证，不能通过删除 attribution 或套用本项目 GPLv3 来解决再分发授权问题。

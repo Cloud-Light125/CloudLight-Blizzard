@@ -7,6 +7,7 @@ using System.Windows.Media;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services;
 using CloudLightBlizzard.Services.OverwatchRegion;
+using CloudLightBlizzard.Services.Drops;
 using Microsoft.Win32;
 
 namespace CloudLightBlizzard.ViewModels;
@@ -138,6 +139,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly SemaphoreSlim _regionStatusGate = new(1, 1);
 
     public UpdateCheckCoordinator UpdateChecks { get; }
+    public DropsHostService DropsHost { get; } = new();
 
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
@@ -230,6 +232,18 @@ public sealed class MainViewModel : ObservableObject
     public MainViewModel()
     {
         _settings = AppSettings.Load();
+        DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
+        DropsHost.EventReceived += (sender, message) =>
+        {
+            if (message.Name != "legacy_proxy" || _settings.EnableProxy || !string.IsNullOrWhiteSpace(_settings.ProxyUrl)) return;
+            if (!message.Payload.TryGetProperty("url", out var value) ||
+                !ProxyValidator.TryNormalize(value.GetString(), out var url, out _)) return;
+            _settings.EnableProxy = message.Payload.TryGetProperty("enabled", out var enabled) && enabled.GetBoolean();
+            _settings.ProxyUrl = url;
+            _settings.FallbackDirect = message.Payload.TryGetProperty("fallbackDirect", out var fallback) && fallback.GetBoolean();
+            _settings.Save();
+            DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
+        };
         UpdateChecks = new UpdateCheckCoordinator(new UpdateService(), _settings);
         _paths = new BattleNetPaths();
         if (!string.IsNullOrEmpty(_settings.ClientExe) && File.Exists(_settings.ClientExe))

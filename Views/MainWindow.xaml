@@ -20,10 +20,11 @@
                     <RadioButton x:Name="AccountsNav" GroupName="MainNavigation" Content="账号" Tag="accounts" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="RegionNav" GroupName="MainNavigation" Content="区服文件" Tag="region" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="StatsNav" GroupName="MainNavigation" Content="战绩" Tag="stats" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="DropsNav" GroupName="MainNavigation" Content="掉宝" Tag="drops" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="SettingsNav" GroupName="MainNavigation" Content="设置" Tag="settings" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                 </StackPanel>
                 <StackPanel Grid.Row="2" Margin="24,0,18,22">
-                    <TextBlock Text="1.0" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
+                    <TextBlock Text="{Binding AppVersion}" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
                     <TextBlock Text="CloudLight Blizzard" Foreground="{DynamicResource Text.Muted}" FontSize="10" Margin="0,3,0,0"/>
                 </StackPanel>
             </Grid>
@@ -31,7 +32,7 @@
         <Grid Grid.Column="1">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <ContentControl x:Name="PageHost"/>
-            <Border Grid.Row="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="18,9">
+            <Border x:Name="AccountFooter" Grid.Row="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="18,9">
                 <DockPanel>
                     <Button Content="刷新账号" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="28" Padding="11,0" Click="OnRefresh"/>
                     <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis"/>

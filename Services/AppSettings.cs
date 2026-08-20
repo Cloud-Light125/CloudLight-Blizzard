@@ -15,6 +15,9 @@ public sealed class AppSettings
     public bool CloseChoiceMade { get; set; }
     public bool StartMinimized { get; set; }
     public bool DarkMode { get; set; }
+    public bool EnableProxy { get; set; }
+    public string ProxyUrl { get; set; } = "";
+    public bool FallbackDirect { get; set; }
     public double WindowWidth { get; set; }
     public double WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
@@ -77,6 +80,7 @@ public sealed class AppSettings
         s.HiddenAccountIds ??= new();
         s.ExpiredAccountIds ??= new();
         s.AccountPreferences ??= new();
+        s.ProxyUrl ??= "";
 
         // 重写时会丢弃旧版本不再识别的字段。
         if (rewrite) s.SaveTo(path);

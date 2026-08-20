@@ -32,6 +32,10 @@ _*.png
 _symbols.txt
 _widths.txt
 *.exe
+.worker-build-venv/
+artifacts/drops/
+__pycache__/
+*.py[cod]
 _lab/
 _tool/
 *.pfx

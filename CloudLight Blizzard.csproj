@@ -12,10 +12,11 @@
     <RootNamespace>CloudLightBlizzard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.1.1</Version>
-    <AssemblyVersion>1.1.1.0</AssemblyVersion>
-    <FileVersion>1.1.1.0</FileVersion>
-    <InformationalVersion>1.1.1</InformationalVersion>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <InformationalVersion>2.0.0</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>CloudLight</Authors>
     <Company>CloudLight</Company>
     <Product>CloudLight Blizzard</Product>
@@ -37,6 +38,21 @@
 
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <Compile Remove="test-output\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Integrations\Drops\twitch\core\LICENSE">
+      <Link>THIRD_PARTY_LICENSES\TwitchDropsMiner-MIT.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="artifacts\drops\**\*" Condition="Exists('artifacts\drops')">
+      <Link>_internal\drops\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

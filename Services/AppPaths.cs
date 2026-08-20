@@ -12,6 +12,10 @@ public sealed class AppPaths
     public string SettingsFile => Path.Combine(Root, "settings.json");
     public string AccountsDir => Path.Combine(Root, "accounts");
     public string LogsDir => Path.Combine(Root, "logs");
+    public string DropsDir => Path.Combine(Root, "drops");
+    public string SoopDropsDir => Path.Combine(DropsDir, "soop");
+    public string YouTubeDropsDir => Path.Combine(DropsDir, "youtube");
+    public string TwitchDropsDir => Path.Combine(DropsDir, "twitch");
     public string OverwatchDataDir => Path.Combine(Root, "overwatch");
     public string OverwatchCacheDir => Path.Combine(OverwatchDataDir, "cache");
     public string OverwatchSessionDir => Path.Combine(OverwatchDataDir, "session");
@@ -35,6 +39,9 @@ public sealed class AppPaths
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(AccountsDir);
         Directory.CreateDirectory(LogsDir);
+        Directory.CreateDirectory(SoopDropsDir);
+        Directory.CreateDirectory(YouTubeDropsDir);
+        Directory.CreateDirectory(TwitchDropsDir);
         Directory.CreateDirectory(OverwatchCacheDir);
         Directory.CreateDirectory(OverwatchSessionDir);
     }

@@ -18,12 +18,18 @@ public partial class MainWindow : Window
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
     private readonly StatsPage _statsPage = new();
+    private readonly DropsPage _dropsPage = new();
     private readonly SettingsPage _settingsPage = new();
     private readonly System.Windows.Threading.DispatcherTimer _watchTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly EventWaitHandle _showEvent;
     private readonly RegisteredWaitHandle _showRegistration;
     private System.Windows.Forms.NotifyIcon? _tray;
-    private bool _reallyExit;
+    private System.Windows.Forms.ContextMenuStrip? _trayMenu;
+    private volatile bool _isClosing;
+    private volatile bool _isExiting;
+    private bool _exitRequested;
+    private bool _showSignalDisposed;
+    private bool _exitCleanupStarted;
     private bool _pagesReady;
     private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
@@ -35,7 +41,7 @@ public partial class MainWindow : Window
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
         _showRegistration = ThreadPool.RegisterWaitForSingleObject(
             _showEvent,
-            (_, _) => Dispatcher.BeginInvoke(new Action(ShowFromTray)),
+            OnShowSignal,
             null,
             Timeout.Infinite,
             false);
@@ -47,12 +53,14 @@ public partial class MainWindow : Window
         _accountsPage.Initialize(_vm);
         _regionPage.Initialize(_vm);
         _statsPage.Initialize(_vm);
+        _dropsPage.Initialize(_vm);
         _settingsPage.Initialize(_vm);
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _vm.MainSectionRequested += section => Dispatcher.Invoke(() =>
         {
             if (section == "region") RegionNav.IsChecked = true;
             else if (section == "stats") StatsNav.IsChecked = true;
+            else if (section == "drops") DropsNav.IsChecked = true;
             else if (section == "settings") SettingsNav.IsChecked = true;
             else AccountsNav.IsChecked = true;
         });
@@ -155,6 +163,7 @@ public partial class MainWindow : Window
         {
             case "region": RegionNav.IsChecked = true; break;
             case "stats": StatsNav.IsChecked = true; break;
+            case "drops": DropsNav.IsChecked = true; break;
             case "settings": SettingsNav.IsChecked = true; break;
             default: AccountsNav.IsChecked = true; break;
         }
@@ -163,12 +172,14 @@ public partial class MainWindow : Window
     private async void OnNavigate(object sender, RoutedEventArgs e)
     {
         if (!_pagesReady || sender is not RadioButton { Tag: string section }) return;
-        PageHost.Content = section switch { "region" => _regionPage, "stats" => _statsPage, "settings" => _settingsPage, _ => _accountsPage };
+        PageHost.Content = section switch { "region" => _regionPage, "stats" => _statsPage, "drops" => _dropsPage, "settings" => _settingsPage, _ => _accountsPage };
+        AccountFooter.Visibility = section == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         _vm.Settings.LastMainSection = section;
         _vm.Settings.Save();
         await Dispatcher.Yield(DispatcherPriority.Render);
         if (section == "region") await _regionPage.RefreshAsync();
         if (section == "stats") _statsPage.OnPageOpened();
+        if (section == "drops") await _dropsPage.RefreshAsync();
     }
 
     internal static bool ShouldStartHidden(IEnumerable<string> args, bool startMinimized)
@@ -176,7 +187,10 @@ public partial class MainWindow : Window
         if (args.Any(a => string.Equals(a, "--visible", StringComparison.OrdinalIgnoreCase))) return false;
         return args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)) || startMinimized;
     }
-    private async void OnRefresh(object sender, RoutedEventArgs e) => await _vm.RefreshAsync();
+    private async void OnRefresh(object sender, RoutedEventArgs e)
+    {
+        if (DropsNav.IsChecked == true) await _dropsPage.RefreshAsync(); else await _vm.RefreshAsync();
+    }
 
     public void OpenStatsAccount(long accountId)
     {
@@ -189,29 +203,167 @@ public partial class MainWindow : Window
     private void SetupTray()
     {
         _tray = new System.Windows.Forms.NotifyIcon { Text = "CloudLight Blizzard", Visible = true, Icon = LoadTrayIcon() };
-        _tray.DoubleClick += (_, _) => ShowFromTray();
-        _tray.ContextMenuStrip = TrayMenuFactory.Create(("打开 CloudLight Blizzard", (_, _) => ShowFromTray()), ("-", null), ("退出", (_, _) => ExitApp()));
+        _tray.DoubleClick += OnTrayDoubleClick;
+        _trayMenu = TrayMenuFactory.Create(
+            ("打开 CloudLight Blizzard", OnTrayOpen),
+            ("-", null),
+            ("退出", OnTrayExit));
+        _tray.ContextMenuStrip = _trayMenu;
     }
     private static Icon? LoadTrayIcon()
     {
         try { var info = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")); return info?.Stream is { } stream ? new Icon(stream) : null; }
         catch { return null; }
     }
-    private void ShowFromTray() { Show(); ShowInTaskbar = true; WindowState = WindowState.Normal; Activate(); }
-    private void HideToTray() { Hide(); ShowInTaskbar = false; }
-    private void ExitApp() { _reallyExit = true; Close(); }
+    private void OnShowSignal(object? state, bool timedOut)
+    {
+        if (_isClosing || _isExiting || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        Dispatcher.BeginInvoke(new Action(ShowFromTray));
+    }
+
+    private void OnTrayDoubleClick(object? sender, EventArgs e) => ShowFromTray();
+    private void OnTrayOpen(object? sender, EventArgs e) => ShowFromTray();
+    private void OnTrayExit(object? sender, EventArgs e) => ExitApp();
+
+    private void ShowFromTray()
+    {
+        if (_isClosing || _isExiting || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(ShowFromTray));
+            return;
+        }
+        if (_isClosing || _isExiting) return;
+        if (!IsVisible) Show();
+        ShowInTaskbar = true;
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void HideToTray()
+    {
+        if (_isExiting) return;
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void ExitApp()
+    {
+        if (_isClosing || _isExiting) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(ExitApp));
+            return;
+        }
+        if (_isClosing || _isExiting) return;
+        _exitRequested = true;
+        Close();
+    }
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (!_reallyExit && _vm.Settings.CloseToTray) { e.Cancel = true; HideToTray(); return; }
+        if (_isExiting)
+        {
+            CompleteExitCleanup();
+            base.OnClosing(e);
+            return;
+        }
+        if (_isClosing)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        _isClosing = true;
+        if (_vm.DropsHost.AnyRunning)
+        {
+            var dialog = new ExitConfirmationDialog { Owner = this };
+            dialog.ShowDialog();
+            if (dialog.Choice == ExitChoice.Cancel)
+            {
+                CancelClosing(e);
+                return;
+            }
+            if (dialog.Choice == ExitChoice.MinimizeToTray)
+            {
+                CancelClosing(e);
+                HideToTray();
+                return;
+            }
+            BeginExit();
+            CompleteExitCleanup();
+            base.OnClosing(e);
+            return;
+        }
+
+        if (!_exitRequested && _vm.Settings.CloseToTray)
+        {
+            CancelClosing(e);
+            HideToTray();
+            return;
+        }
+
+        BeginExit();
+        CompleteExitCleanup();
+        base.OnClosing(e);
+    }
+
+    private void CancelClosing(CancelEventArgs e)
+    {
+        e.Cancel = true;
+        _exitRequested = false;
+        _isClosing = false;
+    }
+
+    private void BeginExit()
+    {
+        _isExiting = true;
         _watchTimer.Stop();
         _updateCancellation.Cancel();
+        DisposeTray();
+        DisposeShowSignal();
+    }
+
+    private void CompleteExitCleanup()
+    {
+        if (_exitCleanupStarted) return;
+        _exitCleanupStarted = true;
+        try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
         _updateCancellation.Dispose();
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }
         _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized; _vm.Settings.Save();
-        if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
+    }
+
+    private void DisposeTray()
+    {
+        var tray = _tray;
+        var menu = _trayMenu;
+        _tray = null;
+        _trayMenu = null;
+        if (tray is not null)
+        {
+            tray.DoubleClick -= OnTrayDoubleClick;
+            tray.ContextMenuStrip = null;
+            tray.Visible = false;
+            tray.Dispose();
+        }
+        if (menu is not null)
+        {
+            foreach (var item in menu.Items.OfType<System.Windows.Forms.ToolStripMenuItem>())
+            {
+                item.Click -= OnTrayOpen;
+                item.Click -= OnTrayExit;
+            }
+            menu.Dispose();
+        }
+    }
+
+    private void DisposeShowSignal()
+    {
+        if (_showSignalDisposed) return;
+        _showSignalDisposed = true;
         _showRegistration.Unregister(null);
         _showEvent.Dispose();
-        base.OnClosing(e);
     }
 }
