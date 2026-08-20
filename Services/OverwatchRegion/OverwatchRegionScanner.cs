@@ -8,6 +8,16 @@ namespace CloudLightBlizzard.Services.OverwatchRegion;
 public sealed class OverwatchRegionScanner
 {
     private const int ScanRetryCount = 2;
+    private static readonly string[] IgnoredRuntimePrefixes =
+    {
+        "cache/", "logs/", "log/", "temp/", "tmp/", "shadercache/", "shader-cache/",
+        "crash/", "crashes/", "crashdumps/", "crash-reports/", "telemetry/",
+        // ecache is the mutable CASC encoding cache. Keep data/config/indices/pro and all packaged CASC data.
+        "data/casc/ecache/",
+        "_retail_/cache/", "_retail_/logs/", "_retail_/log/", "_retail_/temp/", "_retail_/tmp/",
+        "_retail_/shadercache/", "_retail_/shader-cache/", "_retail_/crash/", "_retail_/crashes/",
+        "_retail_/crashdumps/", "_retail_/crash-reports/", "_retail_/telemetry/",
+    };
 
     public Task WaitForQuiescenceAsync(string gameRoot, IProgress<RegionProgress>? progress = null,
         CancellationToken cancellationToken = default, int observationMilliseconds = 6000) =>
@@ -167,9 +177,33 @@ public sealed class OverwatchRegionScanner
     private static bool IsIgnored(string path, string root)
     {
         var relative = Normalize(Path.GetRelativePath(root, path));
-        return relative.StartsWith(".battle.net/", StringComparison.OrdinalIgnoreCase) ||
-               relative.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
-               relative.Contains("/.cloudlightblizzard-", StringComparison.OrdinalIgnoreCase);
+        return IsIgnoredRelativePath(relative);
+    }
+
+    public static bool IsIgnoredRelativePath(string relativePath)
+    {
+        var relative = Normalize(relativePath);
+        if (relative.StartsWith(".battle.net/", StringComparison.OrdinalIgnoreCase) ||
+            relative.Contains("/.cloudlightblizzard-", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (IgnoredRuntimePrefixes.Any(prefix => relative.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        var fileName = Path.GetFileName(relative);
+        if (fileName.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".temp", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".mdmp", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".etl", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".pid", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".lock", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return relative.StartsWith("data/casc/", StringComparison.OrdinalIgnoreCase) &&
+               (fileName.Equals("shmem", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith("shmem.", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string RegionName(OverwatchRegion region) => region == OverwatchRegion.China ? "国服" : "国际服";

@@ -652,33 +652,25 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var targetRegion = target.IsCnRegion ? OverwatchRegion.China : OverwatchRegion.International;
-        var skipGameFiles = false;
         try
         {
             var regionStatus = await _regionManager.GetStatusAsync(_settings.OverwatchGamePath);
-            if (regionStatus.CurrentRegion != (targetRegion == OverwatchRegion.China
-                    ? CurrentGameRegion.China : CurrentGameRegion.International))
+            var canNormalize = regionStatus.SwitchEligibility is
+                RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
+            if (!regionStatus.GamePathValid || !canNormalize)
             {
-                if (!regionStatus.GamePathValid || regionStatus.State != RegionBackupState.Ready)
-                {
-                    var choice = new RegionSwitchChoiceWindow(target.RegionText, regionStatus.State)
-                    {
-                        Owner = Application.Current.MainWindow
-                    }.ShowDialogChoice();
-                    if (choice == RegionSwitchChoice.Settings)
-                    {
-                        MainSectionRequested?.Invoke("region");
-                        return;
-                    }
-                    if (choice != RegionSwitchChoice.AccountOnly) return;
-                    skipGameFiles = true;
-                }
-                else if (OverwatchRegionManager.IsGameRunning())
-                {
-                    MessageBox.Show("守望先锋正在运行，请先退出游戏后再切换区服。",
-                        "无法切换游戏文件", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
+                MessageBox.Show(regionStatus.SwitchEligibility == RegionSwitchEligibility.GameUpdated
+                        ? "检测到游戏已经更新。当前区服备份基于旧版本，请先重新准备区服文件。"
+                        : "当前区服备份缺失或损坏，无法安全切换目标账号。请先检查或重新准备区服文件。",
+                    "无法切换账号", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MainSectionRequested?.Invoke("region");
+                return;
+            }
+            if (OverwatchRegionManager.IsGameRunning())
+            {
+                MessageBox.Show("守望先锋正在运行，请先退出游戏后再切换区服。",
+                    "无法切换游戏文件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
         }
         catch (Exception ex)
@@ -709,15 +701,10 @@ public sealed class MainViewModel : ObservableObject
                 },
                 async () =>
                 {
-                    if (skipGameFiles) return;
                     stage = "区服文件";
-                    var currentRegion = await _regionManager.DetectCurrentRegionAsync(_settings.OverwatchGamePath!);
-                    var expectedRegion = targetRegion == OverwatchRegion.China
-                        ? CurrentGameRegion.China : CurrentGameRegion.International;
-                    if (currentRegion == expectedRegion) return;
                     var progress = new Progress<RegionProgress>(p => StatusText = p.Message);
                     _switchLog.Write("RegionFilesSwitchStarted", currentId, target.AccountId,
-                        sourceRegion: currentRegion.ToString(), targetRegion: target.RegionText);
+                        sourceRegion: "NormalizeCurrentKnownDifferences", targetRegion: target.RegionText);
                     var result = await _regionManager.NormalizeToRegionAsync(
                         _settings.OverwatchGamePath!, targetRegion, progress);
                     _switchLog.Write("RegionFilesSwitchCompleted", currentId, target.AccountId,
@@ -945,13 +932,15 @@ public sealed class MainViewModel : ObservableObject
             await RefreshHomeRegionAsync(verifyFiles: true);
     }
 
-    public async Task<RegionSnapshotStatus> GetRegionStatusAsync(bool verifyFiles = false)
+    public async Task<RegionSnapshotStatus> GetRegionStatusAsync(bool verifyFiles = false,
+        bool verifyBackupHashes = false)
     {
         await _regionStatusGate.WaitAsync();
         try
         {
             return await Task.Run(() => _regionManager.GetStatusAsync(
-                _settings.OverwatchGamePath, verifyFiles: verifyFiles));
+                _settings.OverwatchGamePath, verifyFiles: verifyFiles,
+                verifyBackupHashes: verifyBackupHashes));
         }
         finally
         {
@@ -973,7 +962,7 @@ public sealed class MainViewModel : ObservableObject
                 CurrentGameRegion.China => "当前文件：国服",
                 CurrentGameRegion.International => "当前文件：国际服",
                 CurrentGameRegion.Mixed => "当前文件：正在切换 / 状态不完整",
-                _ => "当前文件：尚未识别",
+                _ => "当前文件：无法确认",
             };
             GameRegionFilesText = $"国服文件：{(status.ChinaBackupComplete ? "已准备" : status.ChinaCaptured ? "已保存在本地" : "尚未准备")}  ·  " +
                                   $"国际服文件：{(status.InternationalBackupComplete ? "已准备" : status.InternationalCaptured ? "已保存在本地" : "尚未准备")}";
@@ -982,6 +971,10 @@ public sealed class MainViewModel : ObservableObject
             {
                 RegionBackupState.Empty => "首次设置只需要让 Battle.net 完成一次跨区更新。",
                 RegionBackupState.Preparing => $"{RegionName(status.PendingSourceRegion)}文件已经保存在本地。请在 Battle.net 中切换到{RegionName(status.PendingTargetRegion)}并等待更新完成，然后回来继续。",
+                RegionBackupState.Ready when status.SwitchEligibility == RegionSwitchEligibility.BestEffort =>
+                    "当前版本无法确认，但区服备份可以使用。切换时只会修改已知的国服 / 国际服差异文件，当前目录中的其它文件不会参与处理。",
+                RegionBackupState.Ready when status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable =>
+                    "区服备份文件缺失或损坏，当前不能切换。请检查备份或重新准备。",
                 RegionBackupState.Ready when status.CurrentRegion == CurrentGameRegion.Mixed =>
                     $"当前游戏文件处于未完成的区服切换状态，可以直接使用本地备份恢复到国服或国际服。已保存 {status.DifferenceCount} 个差异文件 · {FormatBytes(status.BackupBytes)}",
                 RegionBackupState.Ready => $"已保存 {status.DifferenceCount} 个区服差异文件 · {FormatBytes(status.BackupBytes)}",
@@ -996,11 +989,16 @@ public sealed class MainViewModel : ObservableObject
                 RegionBackupState.Ready => status.CurrentRegion == CurrentGameRegion.China ? "切换到国际服" : "切换到国服",
                 _ => "重新准备区服文件",
             };
-            CanSwitchChina = status.GamePathValid && status.State == RegionBackupState.Ready && status.CurrentRegion != CurrentGameRegion.China;
-            CanSwitchInternational = status.GamePathValid && status.State == RegionBackupState.Ready && status.CurrentRegion != CurrentGameRegion.International;
-            SwitchChinaText = status.CurrentRegion == CurrentGameRegion.Mixed ? "恢复到国服" :
+            var switchEligible = status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
+            CanSwitchChina = status.GamePathValid && status.State == RegionBackupState.Ready && switchEligible &&
+                             (status.CurrentRegion != CurrentGameRegion.China || !status.ExactSnapshotMatch);
+            CanSwitchInternational = status.GamePathValid && status.State == RegionBackupState.Ready && switchEligible &&
+                                     (status.CurrentRegion != CurrentGameRegion.International || !status.ExactSnapshotMatch);
+            SwitchChinaText = status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown ||
+                              status.CurrentRegion == CurrentGameRegion.China && !status.ExactSnapshotMatch ? "恢复到国服" :
                 status.CurrentRegion == CurrentGameRegion.China ? "当前为国服" : "切换到国服";
-            SwitchInternationalText = status.CurrentRegion == CurrentGameRegion.Mixed ? "恢复到国际服" :
+            SwitchInternationalText = status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown ||
+                                      status.CurrentRegion == CurrentGameRegion.International && !status.ExactSnapshotMatch ? "恢复到国际服" :
                 status.CurrentRegion == CurrentGameRegion.International ? "当前为国际服" : "切换到国际服";
             RegionSetupVisibility = status.State == RegionBackupState.Ready ? Visibility.Collapsed : Visibility.Visible;
             return status;
@@ -1120,6 +1118,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task CompleteRegionBackupAsync()
     {
         if (!RegionGuide.CanContinueOtherRegion) return;
+        var hadActiveGeneration = _regionManager.HasActiveGeneration;
         _regionOperationNotice = "";
         _regionOperationError = "";
         _regionOperationCancellation = new CancellationTokenSource();
@@ -1143,13 +1142,21 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (IOException ex) when (GameFilesStillChanging(ex))
         {
-            _regionOperationNotice = UpdatingFilesNotice;
-            StatusText = "游戏文件仍在更新，请稍后重试。";
+            RegionSwitchLog.Write("RegionPreparationFailed", detail: ex.ToString());
+            _regionOperationError = "区服文件准备失败\n\n原因：" + ex.Message +
+                                    (hadActiveGeneration
+                                        ? "\n\n现有可用备份没有被替换。"
+                                        : "");
+            StatusText = "区服文件准备失败：" + ex.Message;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _regionOperationError = "区服备份未能建立完成。现有可用备份没有被替换，请重新检查后再试。";
-            StatusText = "区服文件准备未完成。";
+            RegionSwitchLog.Write("RegionPreparationFailed", detail: ex.ToString());
+            _regionOperationError = "区服文件准备失败\n\n原因：" + ex.Message +
+                                    (hadActiveGeneration
+                                        ? "\n\n现有可用备份没有被替换。"
+                                        : "");
+            StatusText = "区服文件准备失败：" + ex.Message;
         }
         finally
         {
@@ -1172,11 +1179,11 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             StatusText = "正在检查区服备份…";
-            var status = await GetRegionStatusAsync(verifyFiles: true);
+            var status = await GetRegionStatusAsync(verifyFiles: true, verifyBackupHashes: true);
             _regionPageStatus = status;
             _regionOperationNotice = status.State == RegionBackupState.Ready &&
                                      status.ChinaBackupComplete && status.InternationalBackupComplete &&
-                                     status.GenerationCompatibility == GenerationCompatibility.Compatible
+                                     (status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort)
                 ? "区服备份完整，可以正常使用。"
                 : "部分区服备份文件缺失或损坏，需要重新准备。";
             StatusText = "区服备份检查完成。";
@@ -1226,6 +1233,11 @@ public sealed class MainViewModel : ObservableObject
         _regionOperationError = "";
         _regionOperationNotice = "";
         UpdateRegionGuide();
+        if (_regionPageStatus.State == RegionBackupState.Preparing)
+        {
+            await CompleteRegionBackupAsync();
+            return;
+        }
         await RefreshRegionPageAsync();
     }
 

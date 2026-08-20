@@ -30,6 +30,7 @@ public static class FeatureSelfTest
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
             RunRegionGenerationTest(workspace, report).GetAwaiter().GetResult();
+            RunBestEffortRegionTest(workspace, report).GetAwaiter().GetResult();
             RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
             RunAccountPreferenceTest(workspace, report);
             RunAppPathsMigrationTest(workspace, report);
@@ -351,9 +352,11 @@ public static class FeatureSelfTest
             GamePathValid = true,
             CurrentRegion = CurrentGameRegion.China,
             GenerationCompatibility = GenerationCompatibility.Compatible,
+            SwitchEligibility = RegionSwitchEligibility.Normal,
             ChinaBackupComplete = true,
             InternationalBackupComplete = true,
             ActiveGenerationId = "existing-active",
+            ExactSnapshotMatch = true,
         };
         var ready = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
         Assert(ready.State == RegionPreparationState.Ready && !ready.ShowNotPrepared,
@@ -376,9 +379,19 @@ public static class FeatureSelfTest
         AssertActions(outdated, RegionPreparationAction.Restart);
 
         readyStatus.CurrentRegion = CurrentGameRegion.Mixed;
+        readyStatus.ExactSnapshotMatch = false;
         var mixed = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
         Assert(mixed.State == RegionPreparationState.Mixed && mixed.CanRestore, "Mixed offers local recovery");
         AssertActions(mixed, RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational);
+
+        readyStatus.CurrentRegion = CurrentGameRegion.Unknown;
+        readyStatus.GenerationCompatibility = GenerationCompatibility.Unknown;
+        readyStatus.SwitchEligibility = RegionSwitchEligibility.BestEffort;
+        var bestEffort = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(bestEffort.State == RegionPreparationState.Mixed && bestEffort.CanSwitchChina &&
+               bestEffort.CanSwitchInternational && bestEffort.Title == "当前游戏版本无法确认",
+            "Unknown compatibility with complete backups offers both BestEffort restore actions");
+        AssertActions(bestEffort, RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational);
 
         var error = RegionPreparationGuide.Create(empty, RegionOperationPhase.None, false, false, null,
             backupRoot, error: "simulated read error");
@@ -424,6 +437,7 @@ public static class FeatureSelfTest
         File.WriteAllText(Path.Combine(game, "different.txt"), "International content");
         File.WriteAllText(Path.Combine(game, ".build.info"), "International build metadata");
         CreateLargeFile(Path.Combine(game, "large.bin"), 256L * 1024 * 1024, 0x49);
+        WriteRuntimeFiles(game);
         Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
             "one cross-region continuation makes both sides ready");
 
@@ -443,6 +457,8 @@ public static class FeatureSelfTest
         Assert(kinds["international-only.txt"] == RegionDifferenceKind.InternationalOnly, "InternationalOnly classification");
         Assert(kinds["different.txt"] == RegionDifferenceKind.Different, "Different classification");
         Assert(kinds["large.bin"] == RegionDifferenceKind.Different, "large Different classification");
+        Assert(!generation.Differences.Any(item => OverwatchRegionScanner.IsIgnoredRelativePath(item.RelativePath)),
+            "runtime cache/log/temp/dump/shmem files are excluded before comparison");
         Assert(new FileInfo(Path.Combine(generationRoot, "backups", "china", "large.bin")).Length == 256L * 1024 * 1024,
             "full China large file stored");
         Assert(new FileInfo(Path.Combine(generationRoot, "backups", "international", "large.bin")).Length == 256L * 1024 * 1024,
@@ -561,6 +577,146 @@ public static class FeatureSelfTest
         report.AppendLine("TEST 6 Generation/Staging: PASS (drift-tolerant China/International detection, strong correction/conflict, successful/failed normalize state, update rejection, strict restore hash, 256MB copies)");
     }
 
+    private static async Task RunBestEffortRegionTest(string workspace, StringBuilder report)
+    {
+        var game = Path.Combine(workspace, "best-effort-game");
+        var store = Path.Combine(workspace, "best-effort-store");
+        Directory.CreateDirectory(Path.Combine(game, "_retail_"));
+        Directory.CreateDirectory(Path.Combine(game, "data", "casc", "data"));
+        File.WriteAllText(Path.Combine(game, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch_loader.dll"), "stable common loader");
+        File.WriteAllText(Path.Combine(game, ".build.info"), "China metadata");
+        File.WriteAllText(Path.Combine(game, "same-untracked.txt"), "same and not a Difference");
+        File.WriteAllText(Path.Combine(game, "same-modified.txt"), "same before runtime");
+        File.WriteAllText(Path.Combine(game, "china-only.txt"), "china only");
+        File.WriteAllText(Path.Combine(game, "different-1.txt"), "China one");
+        File.WriteAllText(Path.Combine(game, "different-2.txt"), "China two");
+        File.WriteAllText(Path.Combine(game, "different-3.txt"), "China three");
+        File.WriteAllText(Path.Combine(game, "data", "casc", "data", "data.001"), "China CASC data");
+
+        var manager = new OverwatchRegionManager(store, () => false, 0);
+        Assert(await manager.StartPreparationAsync(game, GameRegion.China) == RegionBackupState.Preparing,
+            "BestEffort fixture source staging is complete");
+
+        File.Delete(Path.Combine(game, "china-only.txt"));
+        File.WriteAllText(Path.Combine(game, "international-only-1.txt"), "international one");
+        File.WriteAllText(Path.Combine(game, "international-only-2.txt"), "international two");
+        File.WriteAllText(Path.Combine(game, "different-1.txt"), "International one");
+        File.WriteAllText(Path.Combine(game, "different-2.txt"), "International two");
+        File.WriteAllText(Path.Combine(game, "different-3.txt"), "International three");
+        File.WriteAllText(Path.Combine(game, "data", "casc", "data", "data.001"), "International CASC data");
+        File.WriteAllText(Path.Combine(game, ".build.info"), "International metadata");
+        WriteRuntimeFiles(game);
+
+        // A normal second-stage failure must retain the fully copied source staging for retry.
+        try
+        {
+            await using var changing = new FileStream(Path.Combine(game, "different-1.txt"), FileMode.Open,
+                FileAccess.ReadWrite, FileShare.None);
+            await manager.ContinuePreparationAsync(game);
+            throw new InvalidOperationException("locked target file should fail the second-stage scan");
+        }
+        catch (IOException) { }
+        Assert(Directory.EnumerateFiles(Path.Combine(store, "staging"), "pending.json", SearchOption.AllDirectories).Any() &&
+               Directory.EnumerateFiles(Path.Combine(store, "staging"), "china-manifest.json", SearchOption.AllDirectories).Any(),
+            "ordinary second-stage failure preserves source staging and pending metadata");
+        Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
+            "second-stage retry reuses source staging and completes");
+
+        var status = await manager.GetStatusAsync(game);
+        var generationRoot = Path.Combine(store, "generations", status.ActiveGenerationId!);
+        var generation = OverwatchRegionBackupStore.ReadJson<OverwatchRegionGeneration>(
+            Path.Combine(generationRoot, "pair.json"))!;
+        Assert(generation.Differences.Any(item => item.RelativePath == "data/casc/data/data.001"),
+            "real CASC data remains a known region Difference");
+        Assert(!generation.Differences.Any(item => OverwatchRegionScanner.IsIgnoredRelativePath(item.RelativePath)),
+            "runtime files created after playing are absent from long-lived Differences");
+
+        var unknownFiles = Enumerable.Range(1, 10)
+            .Select(index => Path.Combine(game, "unknown", $"extra-{index}.dat")).ToList();
+        foreach (var path in unknownFiles)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "runtime extra " + Path.GetFileName(path));
+        }
+        File.Delete(Path.Combine(game, "same-untracked.txt"));
+        File.WriteAllText(Path.Combine(game, "same-modified.txt"), "runtime modified but not a Difference");
+        File.Delete(Path.Combine(game, "international-only-1.txt"));
+        File.Delete(Path.Combine(game, "different-1.txt"));
+        File.Delete(Path.Combine(game, "different-2.txt"));
+
+        await using (var unreadableCore = new FileStream(Path.Combine(game, "_retail_", "Overwatch_loader.dll"),
+                         FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var unknownStatus = await manager.GetStatusAsync(game);
+            Assert(unknownStatus.GenerationCompatibility == GenerationCompatibility.Unknown &&
+                   unknownStatus.SwitchEligibility == RegionSwitchEligibility.BestEffort &&
+                   unknownStatus.CurrentRegion == CurrentGameRegion.Unknown,
+                "unconfirmable current version is distinct from complete, usable backups");
+
+            var international = await manager.NormalizeToRegionAsync(game, GameRegion.International);
+            Assert(international.Verified && international.Eligibility == RegionSwitchEligibility.BestEffort,
+                "Unknown compatibility normalizes directly to International in BestEffort mode");
+            Assert(File.Exists(Path.Combine(game, "international-only-1.txt")) &&
+                   File.ReadAllText(Path.Combine(game, "different-1.txt")) == "International one" &&
+                   File.ReadAllText(Path.Combine(game, "different-2.txt")) == "International two",
+                "missing known target files are restored from the target backup");
+            Assert(unknownFiles.All(File.Exists) && !File.Exists(Path.Combine(game, "same-untracked.txt")) &&
+                   File.ReadAllText(Path.Combine(game, "same-modified.txt")) == "runtime modified but not a Difference",
+                "extra, missing, and modified files outside generation.Differences remain untouched");
+
+            var china = await manager.NormalizeToRegionAsync(game, GameRegion.China);
+            Assert(china.Verified && china.Eligibility == RegionSwitchEligibility.BestEffort &&
+                   File.Exists(Path.Combine(game, "china-only.txt")) &&
+                   !File.Exists(Path.Combine(game, "international-only-1.txt")),
+                "Unknown current region normalizes directly to China using only known Differences");
+
+            var accountCalls = new List<string>();
+            await AccountSwitchPipeline.ExecuteAsync(
+                () => { accountCalls.Add("Quit BattleNet"); return Task.CompletedTask; },
+                async () =>
+                {
+                    accountCalls.Add("Normalize Game -> International");
+                    var result = await manager.NormalizeToRegionAsync(game, GameRegion.International);
+                    Assert(result.Eligibility == RegionSwitchEligibility.BestEffort && result.Verified,
+                        "account-linked Unknown normalize verifies known International Differences");
+                },
+                () => { accountCalls.Add("Restore Target Account"); return Task.CompletedTask; },
+                () => { accountCalls.Add("Launch BattleNet"); return Task.CompletedTask; });
+            Assert(accountCalls.SequenceEqual(new[] { "Quit BattleNet", "Normalize Game -> International",
+                    "Restore Target Account", "Launch BattleNet" }),
+                "account-linked BestEffort normalize happens before account restore and Battle.net launch");
+        }
+
+        var corruptBackup = Path.Combine(generationRoot, "backups", "international", "different-1.txt");
+        File.WriteAllText(corruptBackup, "xxxxxxxxxxxxxxxxx");
+        Assert(new FileInfo(corruptBackup).Length == new FileInfo(Path.Combine(game, "different-1.txt")).Length,
+            "corrupt target backup fixture preserves size so rejection depends on Hash");
+        var beforeRejected = File.ReadAllText(Path.Combine(game, "different-1.txt"));
+        try
+        {
+            await manager.NormalizeToRegionAsync(game, GameRegion.International);
+            throw new InvalidOperationException("corrupt known target backup should reject normalize");
+        }
+        catch (InvalidDataException) { }
+        Assert(File.ReadAllText(Path.Combine(game, "different-1.txt")) == beforeRejected,
+            "corrupt target backup rejects before any known live file is changed");
+
+        File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch_loader.dll"), "updated common loader");
+        var updated = await manager.GetStatusAsync(game);
+        Assert(updated.GenerationCompatibility == GenerationCompatibility.Updated &&
+               updated.SwitchEligibility == RegionSwitchEligibility.GameUpdated,
+            "Updated remains blocked independently from BestEffort Unknown");
+
+        var log = File.ReadAllText(RegionSwitchLog.FileOverride!);
+        Assert(log.Contains("GenerationCompatibility=Unknown", StringComparison.Ordinal) &&
+               log.Contains("SwitchMode=BestEffort", StringComparison.Ordinal) &&
+               log.Contains("IgnoredUnknownFiles=未枚举，未参与处理", StringComparison.Ordinal) &&
+               log.Contains("Verification=passed", StringComparison.Ordinal),
+            "BestEffort logs record Unknown reason, mode, known-only handling, and verification");
+        report.AppendLine("TEST 7 BestEffort/volatile/staging/account: PASS (A-H: unknown-file preservation, known-file repair, strict backup hash, Updated block, Unknown direct normalize, account order, volatile filtering, source staging reuse)");
+    }
+
     private static async Task RunAccountSwitchOrderTest(StringBuilder report)
     {
         var calls = new List<string>();
@@ -586,7 +742,7 @@ public static class FeatureSelfTest
         catch (IOException) { }
         Assert(!calls.Contains("Restore Target Account") && !calls.Contains("Launch BattleNet"),
             "normalize failure prevents target restore and Battle.net launch");
-        report.AppendLine("TEST 7 account switch pipeline: PASS (strict read-only-backup order/fail-fast/no launch after region failure)");
+        report.AppendLine("TEST 8 account switch pipeline: PASS (strict read-only-backup order/fail-fast/no launch after region failure)");
     }
 
     private static void RunAccountPreferenceTest(string workspace, StringBuilder report)
@@ -608,7 +764,7 @@ public static class FeatureSelfTest
         var international = new AccountRow { BattleTag = "Global#1", RegionOverride = AccountRegionOverride.International };
         Assert(StatsPage.DataSourceFor(china) == "ChinaStats", "china account routes to china stats");
         Assert(StatsPage.DataSourceFor(international) == "BlizzardCareer", "international account routes to career");
-        report.AppendLine("TEST 8 settings/account list: PASS");
+        report.AppendLine("TEST 9 settings/account list: PASS");
     }
 
     private static void RunAppPathsMigrationTest(string workspace, StringBuilder report)
@@ -648,7 +804,29 @@ public static class FeatureSelfTest
         Assert(!customResult.DefaultRegionMoved, "custom region setting prevents default region move");
         Assert(File.Exists(Path.Combine(externalRegion, "custom.bin")), "custom region store remains in place");
         Assert(File.Exists(Path.Combine(customOld, "region-switch", "sentinel.bin")), "legacy default remains untouched when custom path is set");
-        report.AppendLine("TEST 9 app paths migration: PASS (settings/accounts/logs/ow/default move/custom preserved)");
+        report.AppendLine("TEST 10 app paths migration: PASS (settings/accounts/logs/ow/default move/custom preserved)");
+    }
+
+    private static void WriteRuntimeFiles(string gameRoot)
+    {
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["cache/session.bin"] = "cache",
+            ["logs/game.log"] = "log",
+            ["_retail_/shadercache/compiled.bin"] = "shader cache",
+            ["_retail_/temp/runtime-state.dat"] = "runtime temp",
+            ["crashdumps/overwatch.dmp"] = "crash dump",
+            ["data/casc/ecache/data.000"] = "CASC encoding cache",
+            ["data/casc/ecache/0000000001.idx"] = "CASC encoding cache index",
+            ["data/casc/data/shmem"] = "CASC shared memory state",
+            ["data/casc/pro/shmem"] = "CASC product shared memory state",
+        };
+        foreach (var (relative, content) in files)
+        {
+            var path = Path.Combine(gameRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content);
+        }
     }
 
     private static void CreateLargeFile(string path, long length, byte firstByte)

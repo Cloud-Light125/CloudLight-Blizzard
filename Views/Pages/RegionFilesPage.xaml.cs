@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using CloudLightBlizzard.Services;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.ViewModels;
 
@@ -49,6 +50,12 @@ public partial class RegionFilesPage : UserControl
         if (_vm == null) return;
         Directory.CreateDirectory(_vm.RegionBackupRoot);
         Process.Start(new ProcessStartInfo { FileName = _vm.RegionBackupRoot, UseShellExecute = true });
+    }
+
+    private void OnOpenLogs(object sender, RoutedEventArgs e)
+    {
+        Directory.CreateDirectory(AppPaths.Current.LogsDir);
+        Process.Start(new ProcessStartInfo { FileName = AppPaths.Current.LogsDir, UseShellExecute = true });
     }
 
     private async void OnCaptureChina(object sender, RoutedEventArgs e) =>

@@ -12,6 +12,9 @@ public enum CurrentGameRegion { Unknown, China, International, Mixed }
 public enum GenerationCompatibility { Compatible, Updated, Unknown }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionSwitchEligibility { Normal, BestEffort, BackupUnavailable, GameUpdated }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RegionEvidenceResult { NoStrongConflict, StrongChina, StrongInternational, StrongConflict }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -107,7 +110,8 @@ public sealed record RegionSwitchResult(
     int ChinaOnlyProcessed = 0,
     int InternationalOnlyProcessed = 0,
     int DifferentRestored = 0,
-    bool Verified = false);
+    bool Verified = false,
+    RegionSwitchEligibility Eligibility = RegionSwitchEligibility.Normal);
 
 public sealed class RegionSnapshotStatus
 {
@@ -117,6 +121,8 @@ public sealed class RegionSnapshotStatus
     public CurrentGameRegion CurrentRegion { get; set; }
     public GenerationCompatibility GenerationCompatibility { get; set; } = GenerationCompatibility.Unknown;
     public string CompatibilityReason { get; set; } = "";
+    public RegionSwitchEligibility SwitchEligibility { get; set; } = RegionSwitchEligibility.BackupUnavailable;
+    public string SwitchEligibilityReason { get; set; } = "";
     public OverwatchRegion? PendingSourceRegion { get; set; }
     public OverwatchRegion? PendingTargetRegion { get; set; }
     public bool ChinaCaptured { get; set; }

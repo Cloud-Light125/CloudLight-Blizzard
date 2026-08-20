@@ -159,7 +159,11 @@
                     <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowError, Converter={StaticResource BoolVisibility}}">
                         <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
-                        <Button Content="重新检查" IsEnabled="{Binding RegionGuide.CanRetry}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="16,0" Click="OnRetry"/>
+                        <WrapPanel>
+                            <Button Content="重试" IsEnabled="{Binding RegionGuide.CanRetry}" Style="{StaticResource PrimaryButton}" Padding="16,0" Margin="0,0,8,0" Click="OnRetry"/>
+                            <Button Content="打开日志文件夹" Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnOpenLogs"/>
+                            <Button Content="重新准备区服文件" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource SecondaryButton}" Padding="16,0" Margin="8,0,0,0" Click="OnReprepare"/>
+                        </WrapPanel>
                     </StackPanel>
 
                     <Border BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,14,0,0"

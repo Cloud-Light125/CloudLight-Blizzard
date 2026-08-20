@@ -111,9 +111,25 @@ public sealed class RegionPreparationGuide
         var targetName = RegionName(target);
         var current = status.CurrentRegion;
         var isOperationallyBusy = operation != RegionOperationPhase.None || busy;
+        var backupCanSwitch = status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
         var actions = ActionsFor(state);
 
         var (step, title, description) = CopyFor(state, source, target);
+        if (status.SwitchEligibility == RegionSwitchEligibility.BestEffort && state == RegionPreparationState.Mixed)
+        {
+            step = "可以宽容恢复";
+            title = "当前游戏版本无法确认";
+            description = "区服备份可以使用。当前目录可能包含未记录的新文件，或缺少未记录的旧文件。\n\n" +
+                          "恢复时只会修改 Active Generation 已知的国服 / 国际服差异文件，其它文件不会参与处理。";
+        }
+        if (status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable &&
+            status.State == RegionBackupState.Ready && state == RegionPreparationState.Error &&
+            string.IsNullOrWhiteSpace(error))
+        {
+            title = "区服备份不可用";
+            description = "Active Generation、Manifest 或区服目标备份不完整，当前不能切换。\n\n原因：" +
+                          status.SwitchEligibilityReason;
+        }
         if (status.State == RegionBackupState.Legacy && state == RegionPreparationState.Outdated)
         {
             title = "区服文件需要重新准备";
@@ -127,7 +143,7 @@ public sealed class RegionPreparationGuide
             CurrentFileText = CurrentRegionName(current),
             ChinaBackupText = BackupName(status.ChinaBackupComplete, status.ChinaCaptured),
             InternationalBackupText = BackupName(status.InternationalBackupComplete, status.InternationalCaptured),
-            BackupStateText = BackupStateName(status.State),
+            BackupStateText = BackupStateName(status),
             BackupSizeText = $"{status.DifferenceCount:N0} 个文件 · {FormatBytes(status.BackupBytes)}",
             DifferenceText = $"{status.DifferenceCount:N0} 个文件",
             BackupBytesText = FormatBytes(status.BackupBytes),
@@ -145,20 +161,25 @@ public sealed class RegionPreparationGuide
             ProgressCurrent = progress is { BytesTotal: > 0 } ? progress.BytesCurrent : progress?.Current ?? 0,
             ProgressTotal = Math.Max(1, progress is { BytesTotal: > 0 } ? progress.BytesTotal : progress?.Total ?? 1),
             ProgressIndeterminate = progress is null || progress.BytesTotal <= 0 && progress.Total <= 0,
-            SwitchChinaText = current == CurrentGameRegion.China ? "当前为国服" :
+            SwitchChinaText = current == CurrentGameRegion.China && status.ExactSnapshotMatch ? "当前为国服" :
                 current == CurrentGameRegion.International ? "切换到国服" : "恢复到国服",
-            SwitchInternationalText = current == CurrentGameRegion.International ? "当前为国际服" :
+            SwitchInternationalText = current == CurrentGameRegion.International && status.ExactSnapshotMatch ? "当前为国际服" :
                 current == CurrentGameRegion.China ? "切换到国际服" : "恢复到国际服",
-            CanSwitchChina = !isOperationallyBusy && status.GamePathValid && state is RegionPreparationState.Ready or RegionPreparationState.Mixed && current != CurrentGameRegion.China,
-            CanSwitchInternational = !isOperationallyBusy && status.GamePathValid && state is RegionPreparationState.Ready or RegionPreparationState.Mixed && current != CurrentGameRegion.International,
+            CanSwitchChina = !isOperationallyBusy && status.GamePathValid && backupCanSwitch &&
+                             state is RegionPreparationState.Ready or RegionPreparationState.Mixed &&
+                             (current != CurrentGameRegion.China || !status.ExactSnapshotMatch),
+            CanSwitchInternational = !isOperationallyBusy && status.GamePathValid && backupCanSwitch &&
+                                     state is RegionPreparationState.Ready or RegionPreparationState.Mixed &&
+                                     (current != CurrentGameRegion.International || !status.ExactSnapshotMatch),
             CanChangePaths = !isOperationallyBusy,
             CanClear = !isOperationallyBusy && state == RegionPreparationState.Ready,
             CanChooseCurrentRegion = !isOperationallyBusy && state == RegionPreparationState.NotPrepared && status.GamePathValid,
             CanContinueOtherRegion = !isOperationallyBusy && state == RegionPreparationState.WaitingForOtherRegion,
             CanCancel = busy && operation is RegionOperationPhase.PreparingCurrentRegion or RegionOperationPhase.BuildingBackup,
-            CanValidate = !isOperationallyBusy && state == RegionPreparationState.Ready,
-            CanRestart = !isOperationallyBusy && state is RegionPreparationState.Ready or RegionPreparationState.Outdated,
-            CanRestore = !isOperationallyBusy && state == RegionPreparationState.Mixed,
+            CanValidate = !isOperationallyBusy && backupCanSwitch && state is RegionPreparationState.Ready or RegionPreparationState.Mixed,
+            CanRestart = !isOperationallyBusy && (state is RegionPreparationState.Ready or RegionPreparationState.Outdated ||
+                                                   state == RegionPreparationState.Error && status.State != RegionBackupState.Preparing),
+            CanRestore = !isOperationallyBusy && backupCanSwitch && state == RegionPreparationState.Mixed,
             CanRetry = !isOperationallyBusy && state == RegionPreparationState.Error,
             ShowTopRegionActions = state is RegionPreparationState.Ready or RegionPreparationState.Mixed,
             ShowNotPrepared = state == RegionPreparationState.NotPrepared,
@@ -188,8 +209,13 @@ public sealed class RegionPreparationGuide
         if (!string.IsNullOrWhiteSpace(error)) return RegionPreparationState.Error;
         if (restartRequested) return RegionPreparationState.NotPrepared;
         if (status.State == RegionBackupState.Preparing) return RegionPreparationState.WaitingForOtherRegion;
-        if (status.State == RegionBackupState.Stale) return RegionPreparationState.Outdated;
-        if (status.State == RegionBackupState.Ready && status.GenerationCompatibility == GenerationCompatibility.Compatible &&
+        if (status.State == RegionBackupState.Stale || status.SwitchEligibility == RegionSwitchEligibility.GameUpdated)
+            return RegionPreparationState.Outdated;
+        if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable)
+            return RegionPreparationState.Error;
+        if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.BestEffort)
+            return RegionPreparationState.Mixed;
+        if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.Normal &&
             status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown) return RegionPreparationState.Mixed;
         if (status.State == RegionBackupState.Ready) return RegionPreparationState.Ready;
         if (status.State is RegionBackupState.Legacy) return RegionPreparationState.Outdated;
@@ -244,21 +270,27 @@ public sealed class RegionPreparationGuide
     };
 
     private static string BackupName(bool complete, bool captured) => complete ? "已准备" : captured ? "已保存，等待另一端" : "尚未准备";
-    private static string BackupStateName(RegionBackupState state) => state switch
+    private static string BackupStateName(RegionSnapshotStatus status) => status.SwitchEligibility switch
     {
-        RegionBackupState.Ready => "可以使用",
-        RegionBackupState.Preparing => "正在准备",
-        RegionBackupState.Stale => "需要重新准备",
-        RegionBackupState.Empty => "尚未准备",
-        RegionBackupState.Legacy => "需要重新准备",
-        _ => "需要检查",
+        RegionSwitchEligibility.BestEffort => "可以使用（宽容恢复）",
+        RegionSwitchEligibility.BackupUnavailable when status.State == RegionBackupState.Ready => "备份不可用",
+        RegionSwitchEligibility.GameUpdated => "需要重新准备",
+        _ => status.State switch
+        {
+            RegionBackupState.Ready => "可以使用",
+            RegionBackupState.Preparing => "正在准备",
+            RegionBackupState.Stale => "需要重新准备",
+            RegionBackupState.Empty => "尚未准备",
+            RegionBackupState.Legacy => "需要重新准备",
+            _ => "需要检查",
+        },
     };
     private static string CurrentRegionName(CurrentGameRegion region) => region switch
     {
         CurrentGameRegion.China => "国服",
         CurrentGameRegion.International => "国际服",
         CurrentGameRegion.Mixed => "状态不完整",
-        _ => "尚未识别",
+        _ => "无法确认",
     };
     private static string RegionName(OverwatchRegion? region) => region == OverwatchRegion.International ? "国际服" : "国服";
     private static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024
