@@ -44,6 +44,7 @@ public partial class DropsPage : UserControl
         _main = main;
         _vm = new DropsViewModel(main.DropsHost);
         DataContext = _vm;
+        _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
         main.DropsHost.EventReceived += OnWorkerEvent;
         SoopTab.IsChecked = true;
         SoopPanel.Visibility = Visibility.Visible;
@@ -53,6 +54,8 @@ public partial class DropsPage : UserControl
     public async Task RefreshAsync()
     {
         if (_vm == null || _loading) return;
+        if (_main != null)
+            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl, _main.Settings.FallbackDirect);
         _loading = true;
         try
         {
@@ -224,6 +227,12 @@ public partial class DropsPage : UserControl
     private async void OnStart(object sender, RoutedEventArgs e)
     {
         if (_vm == null || sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
+        await StartPlatformAsync(platform);
+    }
+
+    private async Task StartPlatformAsync(DropsPlatform platform)
+    {
+        if (_vm == null) return;
         try
         {
             var state = await _vm.StartAsync(platform);
@@ -236,6 +245,12 @@ public partial class DropsPage : UserControl
     private async void OnStop(object sender, RoutedEventArgs e)
     {
         if (_vm == null || sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
+        await StopPlatformAsync(platform);
+    }
+
+    private async Task StopPlatformAsync(DropsPlatform platform)
+    {
+        if (_vm == null) return;
         try
         {
             var state = await _vm.StopAsync(platform);
@@ -245,7 +260,107 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, $"停止 {PlatformName(platform)} 失败"); }
     }
 
-    private async void OnRefresh(object sender, RoutedEventArgs e) => await RefreshPlatformAsync(_platform);
+    private async void OnRefresh(object sender, RoutedEventArgs e)
+    {
+        if (_platform == DropsPlatform.Soop) await RefreshSoopAsync();
+        else if (_platform == DropsPlatform.Twitch) await RefreshTwitchAsync();
+        else await RefreshPlatformAsync(_platform);
+    }
+
+    private async void OnSoopRefresh(object sender, RoutedEventArgs e) => await RefreshSoopAsync();
+
+    private async Task RefreshSoopAsync()
+    {
+        if (_vm == null || _vm.IsSoopRefreshing || _loading) return;
+        _vm.BeginSoopRefresh();
+        _loading = true;
+        try
+        {
+            var state = await _vm.RequestAsync(DropsPlatform.Soop, "refresh");
+            _vm.ApplyState(DropsPlatform.Soop, state);
+            PopulateSettings(DropsPlatform.Soop, state);
+            _vm.CompleteSoopRefresh();
+        }
+        catch (Exception ex)
+        {
+            _vm.FailSoopRefresh();
+            ShowError(ex, "刷新 SOOP 掉宝信息失败");
+        }
+        finally { _loading = false; }
+    }
+
+    private void OnOpenProxySettings(object sender, RoutedEventArgs e)
+    {
+        if (Window.GetWindow(this) is MainWindow mainWindow)
+            mainWindow.OpenProxySettings();
+    }
+
+    private void OnToggleHelp(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }) return;
+        var target = tag switch
+        {
+            "YouTube" => YouTubeHelp,
+            "Twitch" => TwitchHelp,
+            _ => SoopHelp,
+        };
+        target.Visibility = target.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void OnQuickStartAction(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || sender is not Button { Tag: string action }) return;
+        switch (action)
+        {
+            case "soop_add_account":
+                SoopAccountsCard.BringIntoView();
+                SoopUserId.Focus();
+                break;
+            case "soop_settings":
+                SoopSettingsCard.BringIntoView();
+                SoopChannelMode.Focus();
+                break;
+            case "soop_refresh":
+                await RefreshSoopAsync();
+                break;
+            case "soop_start":
+                if (SoopAccountsList.SelectedItem == null && _vm.Accounts.Count > 0)
+                    SoopAccountsList.SelectedIndex = 0;
+                await RunSoopAccountCommandAsync("start_account", "启动");
+                break;
+            case "youtube_browser":
+                YouTubeBrowserCard.BringIntoView();
+                YouTubeBrowser.Focus();
+                break;
+            case "youtube_account":
+                YouTubeAccountsCard.BringIntoView();
+                if (_vm.Accounts.Count == 0)
+                    YouTubeProfileName.Focus();
+                else
+                {
+                    if (YouTubeProfilesList.SelectedItem == null) YouTubeProfilesList.SelectedIndex = 0;
+                    await OpenYouTubeLoginAsync();
+                }
+                break;
+            case "youtube_channel":
+                YouTubeChannelsCard.BringIntoView();
+                YouTubeChannelName.Focus();
+                break;
+            case "youtube_start":
+                await StartPlatformAsync(DropsPlatform.YouTube);
+                break;
+            case "twitch_login":
+                await LoginTwitchAsync();
+                break;
+            case "twitch_settings":
+                TwitchSettingsCard.BringIntoView();
+                TwitchPriorityMode.Focus();
+                break;
+            case "twitch_start":
+                await StartPlatformAsync(DropsPlatform.Twitch);
+                break;
+        }
+    }
 
     private void OnSoopChannelModeChanged(object sender, SelectionChangedEventArgs e) => UpdateSoopChannelFields();
 
@@ -388,6 +503,9 @@ public partial class DropsPage : UserControl
     }
 
     private async void OnYouTubeLogin(object sender, RoutedEventArgs e)
+        => await OpenYouTubeLoginAsync();
+
+    private async Task OpenYouTubeLoginAsync()
     {
         if (_vm == null) return;
         var profile = (YouTubeProfilesList.SelectedItem as DropsRow)?.Id ?? YouTubeProfileName.Text.Trim();
@@ -448,6 +566,9 @@ public partial class DropsPage : UserControl
     }
 
     private async void OnTwitchLogin(object sender, RoutedEventArgs e)
+        => await LoginTwitchAsync();
+
+    private async Task LoginTwitchAsync()
     {
         if (_vm == null) return;
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "login"); await LoadPlatformAsync(DropsPlatform.Twitch); }
@@ -462,6 +583,9 @@ public partial class DropsPage : UserControl
     }
 
     private async void OnTwitchReload(object sender, RoutedEventArgs e)
+        => await RefreshTwitchAsync();
+
+    private async Task RefreshTwitchAsync()
     {
         if (_vm == null || _vm.IsTwitchRefreshing) return;
         _vm.BeginTwitchRefresh();

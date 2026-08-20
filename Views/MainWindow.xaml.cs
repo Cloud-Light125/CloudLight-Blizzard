@@ -200,6 +200,12 @@ public partial class MainWindow : Window
         else _statsPage.SelectAccount(null);
     }
 
+    internal void OpenProxySettings()
+    {
+        SettingsNav.IsChecked = true;
+        _settingsPage.FocusProxySection();
+    }
+
     private void SetupTray()
     {
         _tray = new System.Windows.Forms.NotifyIcon { Text = "CloudLight Blizzard", Visible = true, Icon = LoadTrayIcon() };

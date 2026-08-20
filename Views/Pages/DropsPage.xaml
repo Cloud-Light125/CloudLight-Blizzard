@@ -154,6 +154,42 @@
                 </StackPanel>
             </Grid>
         </DataTemplate>
+        <DataTemplate x:Key="QuickStartStepTemplate">
+            <Grid Margin="0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="34"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" FontSize="13"
+                           Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Top"/>
+                <StackPanel Grid.Column="1" Margin="0,0,16,0">
+                    <WrapPanel>
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding StateText}" FontSize="11.5" FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource Text.Muted}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StateKind}" Value="complete">
+                                            <Setter Property="Foreground" Value="{DynamicResource Status.Success}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding StateKind}" Value="progress">
+                                            <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Text.Muted}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+                <Button Grid.Column="2" Content="{Binding ActionText}" Tag="{Binding ActionKey}"
+                        Visibility="{Binding ActionVisibility}" Style="{StaticResource SecondaryButton}"
+                        Padding="12,0" VerticalAlignment="Center" Click="OnQuickStartAction"/>
+            </Grid>
+        </DataTemplate>
         <Style x:Key="PlatformTab" TargetType="RadioButton" BasedOn="{StaticResource NavigationButton}">
             <Setter Property="MinWidth" Value="118"/><Setter Property="Height" Value="38"/><Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
@@ -185,30 +221,43 @@
                 <Button Content="刷新" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/>
                 <StackPanel>
                     <TextBlock Text="掉宝" Style="{StaticResource PageTitle}"/>
-                    <TextBlock Text="统一管理 SOOP、YouTube 与 Twitch 的观赛与掉宝。" Style="{StaticResource PageDescription}"/>
+                    <TextBlock Text="统一管理 SOOP、YouTube 与 Twitch 的观看与掉宝。" Style="{StaticResource PageDescription}"/>
                 </StackPanel>
             </DockPanel>
 
-            <UniformGrid Columns="3" Margin="0,22,0,0">
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="16,13">
+                <DockPanel>
+                    <Button Content="前往设置" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
+                            Padding="13,0" Margin="16,0,0,0" Click="OnOpenProxySettings"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding NetworkProxyStatus}" FontWeight="SemiBold"/>
+                        <TextBlock Text="SOOP、YouTube 与 Twitch 共用此网络设置。Chrome / Brave 的本机调试连接始终直连。"
+                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <UniformGrid Columns="3" Margin="0,16,0,0">
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,0,8,0">
                     <StackPanel>
-                        <DockPanel><TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><TextBlock Text="{Binding Soop.Status}" Foreground="{DynamicResource Accent.Primary}"/></Border></DockPanel>
+                        <DockPanel><TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><StackPanel Orientation="Horizontal"><TextBlock Text="● " Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding Soop.Status}" Foreground="{DynamicResource Accent.Primary}"/></StackPanel></Border></DockPanel>
                         <TextBlock Text="{Binding Soop.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,12" TextWrapping="Wrap"/>
-                        <WrapPanel><Button Content="启动" Tag="Soop" Visibility="{Binding Soop.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="停止" Tag="Soop" Visibility="{Binding Soop.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
+                        <WrapPanel><Button Content="全部开始" Tag="Soop" Visibility="{Binding Soop.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="全部停止" Tag="Soop" Visibility="{Binding Soop.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource SurfaceCard}" Margin="4,0">
                     <StackPanel>
-                        <DockPanel><TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><TextBlock Text="{Binding YouTube.Status}" Foreground="{DynamicResource Accent.Primary}"/></Border></DockPanel>
+                        <DockPanel><TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><StackPanel Orientation="Horizontal"><TextBlock Text="● " Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding YouTube.Status}" Foreground="{DynamicResource Accent.Primary}"/></StackPanel></Border></DockPanel>
                         <TextBlock Text="{Binding YouTube.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,12" TextWrapping="Wrap"/>
-                        <WrapPanel><Button Content="启动" Tag="YouTube" Visibility="{Binding YouTube.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="停止" Tag="YouTube" Visibility="{Binding YouTube.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="YouTube" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
+                        <WrapPanel><Button Content="开始观看" Tag="YouTube" Visibility="{Binding YouTube.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="停止观看" Tag="YouTube" Visibility="{Binding YouTube.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="YouTube" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource SurfaceCard}" Margin="8,0,0,0">
                     <StackPanel>
-                        <DockPanel><TextBlock Text="Twitch" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><TextBlock Text="{Binding Twitch.Status}" Foreground="{DynamicResource Accent.Primary}"/></Border></DockPanel>
+                        <DockPanel><TextBlock Text="Twitch" Style="{StaticResource SectionTitle}"/><Border DockPanel.Dock="Right" Style="{StaticResource Badge}"><StackPanel Orientation="Horizontal"><TextBlock Text="● " Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding Twitch.Status}" Foreground="{DynamicResource Accent.Primary}"/></StackPanel></Border></DockPanel>
                         <TextBlock Text="{Binding Twitch.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,12" TextWrapping="Wrap"/>
-                        <WrapPanel><Button Content="启动" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="停止" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="Twitch" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
+                        <WrapPanel><Button Content="开始 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnStart"/><Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnStop"/><Button Content="进入" Tag="Twitch" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenPlatform"/></WrapPanel>
                     </StackPanel>
                 </Border>
             </UniformGrid>
@@ -221,6 +270,30 @@
 
             <StackPanel x:Name="SoopPanel" Visibility="Collapsed">
                 <Border Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button Content="使用帮助" Tag="Soop" DockPanel.Dock="Right"
+                                    Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
+                            <StackPanel>
+                                <TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="先添加账号并刷新掉宝信息，确认任务后再启动账号。"
+                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <Border x:Name="SoopHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                                Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
+                            <TextBlock Text="添加账号后，先刷新直播间、任务和背包。确认存在可用任务后，再启动账号。程序会按照当前策略自动选择直播间并执行掉宝任务。"
+                                       Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
+                        </Border>
+                        <Expander Header="{Binding SoopQuickStart.Summary}" IsExpanded="{Binding SoopQuickStart.IsExpanded, Mode=TwoWay}"
+                                  Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
+                            <ItemsControl ItemsSource="{Binding SoopQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                                          Margin="12,6,0,0"/>
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}"/>
                         <Grid Margin="0,14,0,0">
@@ -239,7 +312,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                <Border x:Name="SoopSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="直播间与任务策略" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="自动选择适合的直播间，或指定频道；同一账号同一时间只进入一个直播间。" Style="{StaticResource FieldHint}"/>
@@ -255,7 +328,7 @@
                             <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="背包刷新间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SoopInventoryInterval" Style="{StaticResource HintTextBox}" Tag="300"/></DockPanel></StackPanel>
                             <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="直播间刷新间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SoopChannelInterval" Style="{StaticResource HintTextBox}" Tag="300"/></DockPanel></StackPanel>
                         </Grid>
-                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSaveSoop"/><Button Content="刷新直播间、任务与背包" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnRefresh"/></WrapPanel>
+                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnSaveSoop"/><Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/><ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/></WrapPanel>
                     </StackPanel>
                 </Border>
                 <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -265,11 +338,45 @@
             </StackPanel>
 
             <StackPanel x:Name="YouTubePanel" Visibility="Collapsed">
-                <Border Style="{StaticResource SurfaceCard}"><StackPanel>
+                <Border Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button Content="使用帮助" Tag="YouTube" DockPanel.Dock="Right"
+                                    Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
+                            <StackPanel>
+                                <TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="CloudLight Blizzard 会使用所选 Chrome / Brave 和独立观看账号检查已启用频道，发现直播后自动开始观看。"
+                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <Border x:Name="YouTubeHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                                Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
+                            <TextBlock Text="选择 Chrome 或 Brave，添加观看账号并通过“打开登录窗口”完成 YouTube 登录。随后添加并启用要监控的频道。启动后，程序会定期检查直播并自动开始观看。"
+                                       Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
+                        </Border>
+                        <Expander Header="{Binding YouTubeQuickStart.Summary}" IsExpanded="{Binding YouTubeQuickStart.IsExpanded, Mode=TwoWay}"
+                                  Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
+                            <ItemsControl ItemsSource="{Binding YouTubeQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                                          Margin="12,6,0,0"/>
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="YouTubeBrowserCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
                     <TextBlock Text="浏览器与观看" Style="{StaticResource SectionTitle}"/>
                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition/></Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,8,0"><TextBlock Text="浏览器" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="YouTubeBrowser" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnYouTubeBrowserChanged"><ComboBoxItem Content="Google Chrome" Tag="chrome"/><ComboBoxItem Content="Brave" Tag="brave"/></ComboBox></StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="浏览器程序位置" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="浏览..." DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnBrowseYouTubeBrowser"/><TextBox x:Name="YouTubeBrowserPath" Style="{StaticResource HintTextBox}" Tag="自动检测，通常无需填写" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></DockPanel></StackPanel>
+                        <Expander Grid.Column="1" Header="自定义浏览器路径（可选）"
+                                  Foreground="{DynamicResource Text.Secondary}" Margin="8,0,0,0">
+                            <DockPanel Margin="0,8,0,0">
+                                <Button Content="浏览..." DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}"
+                                        Padding="12,0" Margin="8,0,0,0" Click="OnBrowseYouTubeBrowser"/>
+                                <TextBox x:Name="YouTubeBrowserPath" Style="{StaticResource HintTextBox}"
+                                         Tag="自动检测，通常无需填写"
+                                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                            </DockPanel>
+                        </Expander>
                     </Grid>
                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition/></Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,8,0"><TextBlock Text="观看模式" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="YouTubeMode" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnYouTubeModeChanged"><ComboBoxItem Content="自动检测直播" Tag="auto"/><ComboBoxItem Content="手动指定直播" Tag="manual"/></ComboBox></StackPanel>
@@ -281,15 +388,17 @@
                 </StackPanel></Border>
 
                 <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel>
-                        <TextBlock Text="浏览器观看账号" Style="{StaticResource SectionTitle}"/>
+                    <Border x:Name="YouTubeAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel>
+                        <TextBlock Text="观看账号" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="每个观看账号使用独立的 Chrome / Brave 浏览器资料目录，登录状态互不影响。" Style="{StaticResource FieldHint}"/>
                         <Grid Margin="0,10,0,10" MinHeight="110"><ListBox x:Name="YouTubeProfilesList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/><TextBlock Text="暂无观看账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Accounts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
                         <TextBlock Text="账号名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeProfileName" Style="{StaticResource HintTextBox}" Tag="例如：主账号" Width="240" HorizontalAlignment="Left"/>
                         <WrapPanel Margin="0,10,0,0"><Button Content="添加账号" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddProfile"/><Button Content="打开登录窗口" Style="{StaticResource PrimaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeLogin"/><Button Content="删除账号" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteProfile"/></WrapPanel>
+                        <TextBlock Text="首次使用请在打开的浏览器中完成 YouTube 登录。" Style="{StaticResource FieldHint}"/>
                     </StackPanel></Border>
-                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel>
+                    <Border x:Name="YouTubeChannelsCard" Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel>
                         <TextBlock Text="频道列表" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="程序只会自动检查已启用的频道。绿色圆点表示启用，灰色圆点表示停用。" Style="{StaticResource FieldHint}"/>
                         <Grid Margin="0,10,0,10" MinHeight="100"><ListBox x:Name="YouTubeChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource YouTubeChannelRowTemplate}" MaxHeight="180"/><TextBlock Text="尚未添加频道。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
                         <TextBlock Text="频道名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeChannelName" Style="{StaticResource HintTextBox}" Tag="例如：Overwatch Esports"/>
                         <TextBlock Text="频道 ID" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/><TextBox x:Name="YouTubeChannelId" Style="{StaticResource HintTextBox}" Tag="例如：UC..."/>
@@ -305,12 +414,38 @@
             </StackPanel>
 
             <StackPanel x:Name="TwitchPanel" Visibility="Collapsed">
-                <Border Style="{StaticResource SurfaceCard}"><StackPanel>
+                <Border Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button Content="使用帮助" Tag="Twitch" DockPanel.Dock="Right"
+                                    Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
+                            <StackPanel>
+                                <TextBlock Text="Twitch" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="先完成登录，再设置掉宝偏好并明确启动 Twitch 掉宝。"
+                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <Border x:Name="TwitchHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                                Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
+                            <TextBlock Text="首先完成 Twitch 登录。优先游戏决定程序优先处理哪些游戏的掉宝，排除游戏不会被自动选择。启动后，程序会获取掉宝活动、寻找符合条件的频道并持续更新掉宝进度。"
+                                       Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
+                        </Border>
+                        <Expander Header="{Binding TwitchQuickStart.Summary}" IsExpanded="{Binding TwitchQuickStart.IsExpanded, Mode=TwoWay}"
+                                  Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
+                            <ItemsControl ItemsSource="{Binding TwitchQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                                          Margin="12,6,0,0"/>
+                        </Expander>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="TwitchLoginCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
                     <TextBlock Text="Twitch 登录与掉宝" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="登录信息仅保存在本机，不会显示在页面或普通日志中。" Style="{StaticResource FieldHint}"/>
+                    <TextBlock Text="登录信息仅保存在本机。登录成功与已经启动 Twitch 掉宝是两个不同状态，请以顶部状态和快速开始为准。" Style="{StaticResource FieldHint}"/>
                     <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
-                        <Button Content="Twitch 登录" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin"/>
-                        <Button Content="退出登录" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout"/>
+                        <Button Content="登录 Twitch" Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin"/>
+                        <Button Content="退出登录" Visibility="{Binding TwitchLogoutVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout"/>
+                        <Button Content="开始 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
+                        <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/>
                         <Button x:Name="TwitchRefreshButton" Content="{Binding TwitchRefreshButtonText}"
                                 IsEnabled="{Binding CanRefreshTwitch}" Style="{StaticResource SecondaryButton}"
                                 Padding="14,0" Margin="8,0,0,0" Click="OnTwitchReload"/>
@@ -324,8 +459,9 @@
                     </WrapPanel>
                 </StackPanel></Border>
 
-                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
+                <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
                     <TextBlock Text="Twitch 设置" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}"/>
                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,8,0"><TextBlock Text="界面语言" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchLanguage" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag"/></StackPanel>
                         <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="掉宝优先策略" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchPriorityMode" Style="{StaticResource ThemeComboBox}"><ComboBoxItem Content="仅挂机优先游戏" Tag="PRIORITY_ONLY"/><ComboBoxItem Content="最早结束的活动优先" Tag="ENDING_SOONEST"/><ComboBoxItem Content="剩余可用时间最少优先" Tag="LOW_AVBL_FIRST"/></ComboBox></StackPanel>

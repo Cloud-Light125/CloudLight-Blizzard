@@ -45,6 +45,14 @@ public partial class SettingsPage : UserControl
         SkippedVersionText.Text = skipped ?? "";
         UpdateCheckingState();
     }
+    public void FocusProxySection()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            NetworkProxyCard.BringIntoView();
+            EnableProxyBox.Focus();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
     private void Refresh()
     {
         if (_vm == null) return; ExePathText.Text = _vm.Settings.ClientExe ?? "自动检测（未手动指定）";
