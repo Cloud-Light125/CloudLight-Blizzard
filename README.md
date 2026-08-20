@@ -50,6 +50,20 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 
 三个平台都提供“导入旧版数据”，执行 Copy → SHA-256 Verify，保留原目录；同名数据由用户选择跳过、覆盖或取消。
 
+### 掉宝项目来源与致谢
+
+#### Twitch
+
+Twitch 掉宝部分也参考并整合了 [**DevilXD/TwitchDropsMiner**](https://github.com/DevilXD/TwitchDropsMiner) 的相关实现，并按照其 MIT License 保留相应 attribution 与许可证声明。感谢原作者 **DevilXD** 及项目贡献者的开源工作。
+
+#### YouTube
+
+YouTube 掉宝部分最初基于 [**ucarno/ow-league-tokens**](https://github.com/ucarno/ow-league-tokens) 开发，并在此基础上进行了较大幅度的重构与扩展。具体来说，当前 CloudLight 版本针对现在的 YouTube、Chrome 和 Overwatch 赛事 / 直播环境进行了较大幅度的重构：从 OWL / League Token 定位迁移为通用 Overwatch YouTube Watcher，移除了旧 OWL Schedule、`hqdefault_live.jpg` 检测和 Selenium / undetected-chromedriver 主控制链路，改用真实 Chrome / Brave 持久化 Profile，并增加 PySide6 中文 GUI、新的直播发现方式、手动直播 URL、多频道管理、播放状态监控与恢复、实际观看时长统计、近 7 天观看历史，以及 Windows 安装包等功能。感谢原作者 **ucarno** 及贡献者公开源代码和早期实现。
+
+#### SOOP
+
+SOOP 掉宝部分的早期实现直接建立在 [**tom1230123/soop-drops-miner**](https://github.com/tom1230123/soop-drops-miner) 的工作基础上，并在此基础上进行了较大规模的重构与扩展，包括强化多账号独立 Session、WebSocket 与心跳稳定性，加入代理、低流量模式、自动领取验证、Windows 托盘与开机自启，以及重构 CustomTkinter 多页面界面、状态同步和增量刷新。感谢该项目原作者与贡献者对 SOOP 登录、Drops API、直播间连接、观看状态等关键实现所做的探索；这些工作构成了本项目最初的源码基础。该工具作者在小黑盒的账号为 **@www5329**。再次感谢大佬的开源精神！
+
 ## Battle.net 多账号管理
 
 CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个账号保存各自的本地登录状态。已保存账号可以快速切换，每个账号都可以设置自定义名称、备注，以及国服或国际服归属。程序会自动识别当前账号，并同时展示所有已经保存的账号。
@@ -174,6 +188,6 @@ CloudLight Blizzard 可以读取本机 Battle.net 的账号信息，并为多个
 
 CloudLight Blizzard 起源于 GPLv3 开源项目 BnetSwitch，并继续按照 GNU GPL v3.0 开源。
 
-项目许可证见 `LICENSE`。第三方组件仍分别受其原始许可证约束；依法需要保留的许可证、翻译署名和声明不会作为产品宣传显示在程序 UI 或本 README 中。
+项目许可证见 `LICENSE`。第三方组件仍分别受其原始许可证约束；依法需要保留的许可证、署名和声明会在本 README、第三方声明文件及相应源码目录中按要求保留，但不代表相关上游作者对本项目提供背书。
 
 掉宝整合的来源、上游许可证状态、Worker 边界和完整 Twitch MIT notice 见 `THIRD_PARTY_NOTICES.md` 与 `docs/DROPS_INTEGRATION_AUDIT.md`。SOOP 直接上游和 YouTube 直接上游目前未声明许可证，不能通过删除 attribution 或套用本项目 GPLv3 来解决再分发授权问题。
