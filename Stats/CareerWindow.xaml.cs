@@ -1,16 +1,15 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using CloudLightBlizzard.Services.Overwatch;
 
 namespace CloudLightBlizzard.Stats;
 
-// 国际服/亚服生涯窗。数据来自暴雪官方公开生涯页,不需要登录、不需要扫码 —— 和国服那套(网易大神)
-// 完全是两条路,所以单开一个窗,不去动 StatsWindow。
-//
-// 和国服窗最大的结构差别:暴雪一次就把「键鼠/手柄 × 快速/竞技」四份数据全塞在同一张页面里,
-// 所以切分段是纯本地的事,不再发一次请求。_profile 存整页解析结果,切分段只重新 Build 一次。
+// 国际服生涯数据来自暴雪官方公开生涯页。
+// 页面一次包含「键鼠/手柄 × 快速/竞技」四份数据，切换分段时只在本地重建视图。
 public partial class CareerWindow : UserControl
 {
     private readonly CareerService _svc = new();
@@ -19,8 +18,30 @@ public partial class CareerWindow : UserControl
     private string _input = CareerService.InputPc;
     private string _mode = CareerService.ModeComp;
     private bool _suppressSeg;                // 程序化勾选分段按钮时,别触发重建
+    private HeroSortField _heroSortField = HeroSortField.Duration;
+    private ListSortDirection _heroSortDirection = ListSortDirection.Descending;
+    private ListCollectionView? _heroView;
 
-    public CareerWindow() => InitializeComponent();
+    public CareerWindow()
+    {
+        InitializeComponent();
+        UpdateHeroSortDisplay();
+    }
+
+    /// <summary>预填 BattleTag 并停留在查询前状态，不发起网络请求。</summary>
+    public void PrepareAccount(string battleTag)
+    {
+        _battleTag = battleTag.Trim();
+        _profile = null;
+        DataContext = null;
+        HeroList.ItemsSource = null;
+        _heroView = null;
+        SearchBox.Text = _battleTag;
+        ShowOverlay(OverlayKind.Empty, "查询国际服战绩",
+            string.IsNullOrEmpty(_battleTag)
+                ? "输入 BattleTag（例如 Player#1234），再点击“查询”。"
+                : $"已填入 {_battleTag}，点击“查询”后读取公开生涯数据。");
+    }
 
     /// <summary>为某个国际服账号打开生涯窗。吃的是 BattleTag(如 Player#1234),不是 roleId。</summary>
     public static void ShowFor(Window owner, string battleTag)
@@ -59,7 +80,7 @@ public partial class CareerWindow : UserControl
             {
                 if (outcome.NotFound)
                     ShowOverlay(OverlayKind.NotFound, "这个账号在国际服查不到",
-                        $"{battleTag}\n国服账号在暴雪侧不存在;也可能是昵称或编号写错了。");
+                        $"{battleTag}\n请检查昵称与编号，并确认使用的是国际服 BattleTag。");
                 else if (outcome.Error?.Contains("未公开") == true)
                     ShowOverlay(OverlayKind.Private, "这个账号的生涯档案没公开",
                         "在游戏里把「生涯档案」设为公开,再回来刷新一次。");
@@ -98,6 +119,7 @@ public partial class CareerWindow : UserControl
     {
         if (_profile is not { } p) return;
         var ps = await CareerService.BuildAsync(p, _input, _mode, k => TryFindResource(k) as Brush);
+        BindHeroList(ps.Heroes);
 
         if (!CareerService.HasData(p, _input, _mode))
         {
@@ -112,6 +134,69 @@ public partial class CareerWindow : UserControl
         DataContext = ps;
         HeroCount.Text = ps.Heroes.Count > 0 ? $"· {ps.Heroes.Count} 个" : "";
         HideOverlay();
+    }
+
+    private void BindHeroList(List<HeroStat> heroes)
+    {
+        _heroView = new ListCollectionView(heroes);
+        HeroList.ItemsSource = _heroView;
+        ApplyHeroSort();
+    }
+
+    private void OnHeroSort(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag } || !Enum.TryParse<HeroSortField>(tag, out var field)) return;
+        if (_heroSortField == field)
+            _heroSortDirection = _heroSortDirection == ListSortDirection.Ascending
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
+        else
+        {
+            _heroSortField = field;
+            _heroSortDirection = field == HeroSortField.Name
+                ? ListSortDirection.Ascending
+                : ListSortDirection.Descending;
+        }
+        ApplyHeroSort();
+    }
+
+    private void ApplyHeroSort()
+    {
+        if (_heroView is not null)
+        {
+            _heroView.CustomSort = new HeroStatComparer(_heroSortField, _heroSortDirection);
+            HeroScrollViewer.ScrollToTop();
+        }
+        UpdateHeroSortDisplay();
+    }
+
+    private void UpdateHeroSortDisplay()
+    {
+        HeroNameSortIndicator.Text = "";
+        HeroDurationSortIndicator.Text = "";
+        HeroWinRateSortIndicator.Text = "";
+        HeroMatchesSortIndicator.Text = "";
+        HeroUsageSortIndicator.Text = "";
+
+        var indicator = _heroSortDirection == ListSortDirection.Ascending ? "↑" : "↓";
+        var label = _heroSortField switch
+        {
+            HeroSortField.Name => "英雄",
+            HeroSortField.Duration => "时长",
+            HeroSortField.WinRate => "胜率",
+            HeroSortField.Matches => "场次",
+            HeroSortField.Usage => "使用占比",
+            _ => "时长",
+        };
+        switch (_heroSortField)
+        {
+            case HeroSortField.Name: HeroNameSortIndicator.Text = indicator; break;
+            case HeroSortField.Duration: HeroDurationSortIndicator.Text = indicator; break;
+            case HeroSortField.WinRate: HeroWinRateSortIndicator.Text = indicator; break;
+            case HeroSortField.Matches: HeroMatchesSortIndicator.Text = indicator; break;
+            case HeroSortField.Usage: HeroUsageSortIndicator.Text = indicator; break;
+        }
+        HeroSortSummary.Text = $"按{label}{(_heroSortDirection == ListSortDirection.Ascending ? "升序" : "降序")}";
     }
 
     // ── 分段:没数据的一边留着但禁用,并标「· 无数据」──────────
@@ -202,7 +287,6 @@ public partial class CareerWindow : UserControl
         OverlayBar.Visibility = kind == OverlayKind.Loading ? Visibility.Visible : Visibility.Collapsed;
         OverlayButtons.Visibility = kind == OverlayKind.Loading ? Visibility.Collapsed : Visibility.Visible;
 
-        // 「查不到」不区分国服号和拼错 —— 暴雪两种情况都是 404,按国服号来写文案会误导拼错的人
         (OverlayPrimary.Content, OverlaySecondary.Content) = kind switch
         {
             OverlayKind.Private => ("我已公开,刷新", "换个账号"),

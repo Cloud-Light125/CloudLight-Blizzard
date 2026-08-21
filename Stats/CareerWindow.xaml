@@ -2,6 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:CloudLightBlizzard.Stats"
+        xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
+        behaviors:NestedScrollBehavior.IsEnabled="True"
         Background="{DynamicResource Stats.Bg}"
         FontFamily="Segoe UI, Microsoft YaHei UI">
 
@@ -9,6 +11,21 @@
         <local:PercentBarWidthConverter x:Key="BarWidth"/>
         <local:PathToImageConverter x:Key="PathToImg"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="HeroSortHeaderButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="{DynamicResource Stats.Tx3}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Stats.Accent}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
         <!-- 英雄行:图标+名 / 时长 / 胜率 / 场次 / 使用占比。列宽和上面的表头必须一一对齐 -->
         <DataTemplate x:Key="CareerHeroRow" DataType="{x:Type local:HeroStat}">
@@ -168,13 +185,15 @@
 
         <Grid>
             <!-- ===== 内容区 ===== -->
+            <ScrollViewer x:Name="CareerScrollViewer" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
             <Grid x:Name="ContentRoot" Margin="16">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 玩家头卡 -->
@@ -290,7 +309,7 @@
                             <TextBlock Text="{Binding AvgSectionTitle}" Style="{StaticResource Stats.H6}" Margin="0"/>
                             <Border Background="{DynamicResource Stats.AccentSoft}" CornerRadius="11" Height="22" Padding="8,0"
                                     HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    ToolTip="伤害、治疗等均值按每10分钟统计,不是场均 —— 和国服战绩窗的口径不一样">
+                                    ToolTip="伤害、治疗等均值按每10分钟统计，不是每场平均值">
                                 <TextBlock Text="每10分钟口径" FontSize="11.5" Foreground="{DynamicResource Stats.Accent}" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
@@ -345,14 +364,15 @@
                                        Foreground="{DynamicResource Stats.Tx3}" Margin="0,0,0,4"/>
                             <TextBlock Text="官方生涯页不提供近期对局、单局记分板、好友、社交口碑和排行榜。" FontSize="11.5"
                                        Foreground="{DynamicResource Stats.Tx3}" Margin="0,0,0,4"/>
-                            <TextBlock Text="这里只展示官方给出的字段,不推算「场均抵挡」这类国服才有的口径。" FontSize="11.5"
+                            <TextBlock Text="这里只展示官方给出的字段，不推算公开生涯页没有提供的数据。" FontSize="11.5"
                                        Foreground="{DynamicResource Stats.Tx3}"/>
                         </StackPanel>
                     </Expander>
                 </Border>
 
                 <!-- 常用英雄:表头固定,只有行区滚动 -->
-                <Border Grid.Row="4" Style="{StaticResource Stats.CardStyle}" Padding="0,12,0,0" Margin="0,10,0,0" MinHeight="170">
+                <Border Grid.Row="4" Style="{StaticResource Stats.CardStyle}" Padding="0,12,0,0"
+                        Margin="0,10,0,0" Height="460">
                     <DockPanel>
                         <Grid DockPanel.Dock="Top" Margin="14,0,14,10">
                             <StackPanel Orientation="Horizontal">
@@ -360,7 +380,7 @@
                                 <TextBlock x:Name="HeroCount" FontSize="11.5" Margin="6,0,0,0" VerticalAlignment="Center"
                                            Foreground="{DynamicResource Stats.Tx3}"/>
                             </StackPanel>
-                            <TextBlock Text="按游戏时长排列" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}"
+                            <TextBlock x:Name="HeroSortSummary" Text="按时长降序" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </Grid>
 
@@ -374,27 +394,39 @@
                                     <ColumnDefinition Width="88"/>
                                     <ColumnDefinition Width="180"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="英雄" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}"/>
-                                <TextBlock Grid.Column="1" Text="时长" FontSize="11.5" Margin="0,0,14,0"
-                                           Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="2" Text="胜率" FontSize="11.5" Margin="0,0,14,0"
-                                           Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="3" Text="场次" FontSize="11.5" Margin="0,0,18,0"
-                                           Foreground="{DynamicResource Stats.Tx3}" HorizontalAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Text="使用占比" FontSize="11.5" Foreground="{DynamicResource Stats.Tx3}"/>
+                                <Button Grid.Column="0" Tag="Name" Style="{StaticResource HeroSortHeaderButton}" Click="OnHeroSort">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="英雄"/><TextBlock x:Name="HeroNameSortIndicator" Margin="4,0,0,0"/></StackPanel>
+                                </Button>
+                                <Button Grid.Column="1" Tag="Duration" Style="{StaticResource HeroSortHeaderButton}" Click="OnHeroSort"
+                                        Margin="0,0,14,0" HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="时长"/><TextBlock x:Name="HeroDurationSortIndicator" Margin="4,0,0,0"/></StackPanel>
+                                </Button>
+                                <Button Grid.Column="2" Tag="WinRate" Style="{StaticResource HeroSortHeaderButton}" Click="OnHeroSort"
+                                        Margin="0,0,14,0" HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="胜率"/><TextBlock x:Name="HeroWinRateSortIndicator" Margin="4,0,0,0"/></StackPanel>
+                                </Button>
+                                <Button Grid.Column="3" Tag="Matches" Style="{StaticResource HeroSortHeaderButton}" Click="OnHeroSort"
+                                        Margin="0,0,18,0" HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="场次"/><TextBlock x:Name="HeroMatchesSortIndicator" Margin="4,0,0,0"/></StackPanel>
+                                </Button>
+                                <Button Grid.Column="4" Tag="Usage" Style="{StaticResource HeroSortHeaderButton}" Click="OnHeroSort">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="使用占比"/><TextBlock x:Name="HeroUsageSortIndicator" Margin="4,0,0,0"/></StackPanel>
+                                </Button>
                             </Grid>
                         </Border>
 
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding Heroes}" ItemTemplate="{StaticResource CareerHeroRow}"
+                        <ScrollViewer x:Name="HeroScrollViewer" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="HeroList" ItemTemplate="{StaticResource CareerHeroRow}"
                                           VirtualizingStackPanel.IsVirtualizing="True"
                                           VirtualizingStackPanel.VirtualizationMode="Recycling"/>
                         </ScrollViewer>
                     </DockPanel>
                 </Border>
             </Grid>
+            </ScrollViewer>
 
-            <!-- ===== 覆盖态:加载 / 空 / 出错 / 私密 / 国服号 ===== -->
+            <!-- ===== 覆盖态:加载 / 空 / 出错 / 私密 ===== -->
             <Border x:Name="OverlayPanel" Background="{DynamicResource Stats.Bg}">
                 <Border Style="{StaticResource Stats.CardStyle}" Padding="24" MinWidth="360"
                         HorizontalAlignment="Center" VerticalAlignment="Center">

@@ -2,10 +2,8 @@ using System.Text.RegularExpressions;
 
 namespace CloudLightBlizzard.Services.Overwatch;
 
-// 暴雪官方生涯页(overwatch.blizzard.com)只有英文/繁中等语言,没有简体。
-// 这里把英文英雄名/统计项名翻成简体,用词尽量对齐国服官方译名
-// (国服统计项名抄自网易大神 ow_hero_attr.json 的 valueText —— 已验证暴雪统计项 GUID
-//  与网易 valueGuid 是同一套,例如 0x0860000000000021 == 603482350067646497 == 累计游戏时间)。
+// 暴雪官方生涯页(overwatch.blizzard.com)没有简体中文版本。
+// 这里把英文英雄名和统计项名翻成游戏内常用的简体译名。
 //
 // 原则:查不到就原样返回英文。暴雪出新英雄/新统计项时宁可显示英文,也不显示空白。
 public static class OwEnNames
@@ -53,9 +51,7 @@ public static class OwEnNames
     }
 
     // ── 英雄:slug → 简体 ────────────────────────────────────────
-    // slug 抄自生涯页 data-hero-id,简体抄自网易 ow_hero_config.json 的 name。
-    // vendetta 用发布顺序定位:生涯页下拉里排在 wuyang(0x02E00000000003C3)与
-    // sierra(0x02E00000000004D2)之间,网易配置里只有「斩仇」(0x02E0000000000472)落在这个区间。
+    // slug 来自生涯页 data-hero-id，中文名使用游戏内简体译名。
     private static readonly Dictionary<string, string> HeroTable = new(StringComparer.OrdinalIgnoreCase)
     {
         ["ana"] = "安娜",

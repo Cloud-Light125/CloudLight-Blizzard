@@ -47,52 +47,6 @@ public partial class App : Application
             return;
         }
 
-        // 战绩界面布局验证:--statsdemo。免登录用演示数据开 StatsWindow(查布局是否崩)。
-        if (e.Args.Contains("--statsdemo"))
-        {
-            Stats.StatsWindow.ShowDemo();
-            return;
-        }
-
-        // 好友列表验证:--friendtest。用缓存登录态实测 getFriendModule,写 friendtest.txt。
-        if (e.Args.Contains("--friendtest"))
-        {
-            var sb3 = new StringBuilder();
-            try { Task.Run(() => Services.Overwatch.OwProbe.RunFriendTestAsync(sb3)).GetAwaiter().GetResult(); }
-            catch (Exception ex) { sb3.AppendLine("异常: " + ex); }
-            try
-            {
-                var dir = AppPaths.Current.Root;
-                File.WriteAllText(Path.Combine(dir, "friendtest.txt"), sb3.ToString(), Encoding.UTF8);
-            }
-            catch { }
-            Shutdown(0);
-            return;
-        }
-
-        // 对局详情布局验证:--matchdemo。免登录用演示数据开记分板窗。
-        if (e.Args.Contains("--matchdemo"))
-        {
-            Stats.MatchDetailWindow.ShowDemo();
-            return;
-        }
-
-        // 对局翻页验证:--matchtest。用缓存登录态实测 queryMatchList,写 matchtest.txt。
-        if (e.Args.Contains("--matchtest"))
-        {
-            var sb2 = new StringBuilder();
-            try { Task.Run(() => Services.Overwatch.OwProbe.RunMatchTestAsync(sb2)).GetAwaiter().GetResult(); }
-            catch (Exception ex) { sb2.AppendLine("异常: " + ex); }
-            try
-            {
-                var dir = AppPaths.Current.Root;
-                File.WriteAllText(Path.Combine(dir, "matchtest.txt"), sb2.ToString(), Encoding.UTF8);
-            }
-            catch { }
-            Shutdown(0);
-            return;
-        }
-
         // 国际服生涯链路验证:--careerprobe "Name#1234"。抓暴雪生涯页 → 解析 → 映射,写 careerprobe.txt 并打开。
         if (e.Args.Length >= 1 && e.Args[0] == "--careerprobe")
         {
@@ -116,14 +70,6 @@ public partial class App : Application
         if (e.Args.Length >= 1 && e.Args[0] == "--careerdemo")
         {
             Stats.CareerWindow.ShowStandalone(e.Args.Length >= 2 ? e.Args[1] : "");
-            return;
-        }
-
-        // 守望先锋战绩链路验证:--owtest。扫码 → 遍历账号库拉取翻译 → 写 owtest.txt 并打开。
-        if (e.Args.Contains("--owtest"))
-        {
-            RunOwTest();
-            Shutdown(0);
             return;
         }
 
@@ -279,23 +225,6 @@ public partial class App : Application
             var dir = AppPaths.Current.Root;
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, "addaccount.txt"), sb.ToString(), Encoding.UTF8);
-        }
-        catch { /* ignore */ }
-    }
-
-    // 战绩链路验证(--owtest):在线程池跑异步流程,避免阻塞 UI 线程 dispatcher 造成死锁。
-    private static void RunOwTest()
-    {
-        var sb = new StringBuilder();
-        try { Task.Run(() => Services.Overwatch.OwProbe.RunAsync(sb)).GetAwaiter().GetResult(); }
-        catch (Exception ex) { sb.AppendLine("异常: " + ex); }
-        try
-        {
-            var dir = AppPaths.Current.Root;
-            Directory.CreateDirectory(dir);
-            var p = Path.Combine(dir, "owtest.txt");
-            File.WriteAllText(p, sb.ToString(), Encoding.UTF8);
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = p, UseShellExecute = true }); } catch { }
         }
         catch { /* ignore */ }
     }

@@ -6,12 +6,7 @@ using CloudLightBlizzard.Services.Overwatch;
 
 namespace CloudLightBlizzard.Stats;
 
-// 国际服/亚服生涯:抓暴雪官方生涯页 → 解析 → 灌进和国服共用的 PlayerStats。
-//
-// 与国服(网易大神)的口径差异,必须在界面上说清楚,不能混为一谈:
-//   · 暴雪给的是【每 10 分钟】均值,网易给的是【场均】—— 数值差一大截,标签跟着数据源走
-//   · 暴雪没有「抵挡」这个口径(Barrier Damage Done 是打对面护盾造成的伤害,不是同一回事)→ 留空
-//   · 暴雪生涯页没有对局记录、没有本周表现、没有口碑、没有历史赛季 —— 这是数据源限制,不是没做
+// 国际服生涯：抓取暴雪官方公开生涯页并映射成页面模型。
 public sealed class CareerService
 {
     private readonly BlizzardCareerClient _client = new();
@@ -120,8 +115,6 @@ public sealed class CareerService
             ps.TotalHours = Hours(all.Get("Time Played"));
             ps.AvgDamage = all.Get("Hero Damage Done - Avg per 10 Min") ?? "";
             ps.AvgHeal = all.Get("Healing Done - Avg per 10 Min") ?? "";
-            ps.AvgResist = "";                     // 暴雪无「抵挡」口径,HasResist 会自动隐藏这一格
-
             var elim = Num(all.Get("Eliminations"));
             var asst = Num(all.Get("Assists"));
             var dead = Num(all.Get("Deaths"));
@@ -157,8 +150,6 @@ public sealed class CareerService
         return new RoleRank
         {
             TierText = r.Division > 0 ? $"{cn} {r.Division}" : cn,
-            ScoreText = "",                        // 暴雪只给档位,没有分数
-            ExtraText = "",                        // 也没有场次/连胜
             TierBrush = brushKey is null ? null : fb(brushKey),
             TierIconLocal = await OwImageCache.GetAsync(r.TierIconUrl, 96).ConfigureAwait(false),
         };
@@ -174,21 +165,33 @@ public sealed class CareerService
 
         foreach (var bar in mode.Bars(CareerParser.CatTimePlayed))
         {
+            var durationSeconds = DurationSeconds(bar.Value);
+            var winRateText = winRate.TryGetValue(bar.Slug, out var winRateRaw) ? Percent(winRateRaw) : "";
             var hs = new HeroStat
             {
                 Name = OwEnNames.Hero(bar.Slug),
                 IconLocal = await OwImageCache.GetAsync(bar.IconUrl, 128).ConfigureAwait(false),
+                DurationSeconds = durationSeconds,
+                WinRateValue = winRateRaw is null ? 0 : Num(winRateRaw),
                 PlayPercent = bar.Percent,
                 HoursText = Hours(bar.Value),
-                WinRateText = winRate.TryGetValue(bar.Slug, out var w) ? Percent(w) : "",
+                WinRateText = winRateText,
                 TotalTabText = "累计",             // 暴雪给的是生涯累计值,不是场均
             };
             hs.Detail = string.Join(" · ", new[] { hs.HoursText, hs.WinRateText }.Where(s => !string.IsNullOrEmpty(s)));
 
             if (mode.Heroes.TryGetValue(bar.Slug, out var block))
             {
-                hs.MatchsText = block.Get("Games Played") is { } g ? $"{g} 场"
-                              : gamesWon.TryGetValue(bar.Slug, out var gw) ? $"{gw} 胜" : "";
+                if (block.Get("Games Played") is { } gamesPlayed)
+                {
+                    hs.MatchCount = WholeNumber(gamesPlayed);
+                    hs.MatchsText = $"{gamesPlayed} 场";
+                }
+                else if (gamesWon.TryGetValue(bar.Slug, out var gamesWonRaw))
+                {
+                    hs.MatchCount = WholeNumber(gamesWonRaw);
+                    hs.MatchsText = $"{gamesWonRaw} 胜";
+                }
                 Fill(block, hs);
             }
             res.Add(hs);
@@ -226,6 +229,20 @@ public sealed class CareerService
         if (h > 0) return m > 0 ? $"{h} 小时 {m} 分" : $"{h} 小时";
         return m > 0 ? $"{m} 分钟" : "不足 1 分钟";
     }
+
+    private static long DurationSeconds(string? hms)
+    {
+        if (string.IsNullOrWhiteSpace(hms)) return 0;
+        var parts = hms.Split(':');
+        if (parts.Length is < 2 or > 3 || parts.Any(part => !long.TryParse(part, out _))) return 0;
+        var values = parts.Select(long.Parse).ToArray();
+        return parts.Length == 3
+            ? values[0] * 3600 + values[1] * 60 + values[2]
+            : values[0] * 60 + values[1];
+    }
+
+    private static int WholeNumber(string? value)
+        => (int)Math.Clamp(Math.Round(Num(value)), 0, int.MaxValue);
 
     /// <summary>胜率进度条在 0 的时候只给 "0"(没有百分号),补上,免得界面上一列 % 里混一个光杆 0。</summary>
     private static string Percent(string? s)

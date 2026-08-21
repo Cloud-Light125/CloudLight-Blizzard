@@ -16,9 +16,7 @@ public sealed class AppPaths
     public string SoopDropsDir => Path.Combine(DropsDir, "soop");
     public string YouTubeDropsDir => Path.Combine(DropsDir, "youtube");
     public string TwitchDropsDir => Path.Combine(DropsDir, "twitch");
-    public string OverwatchDataDir => Path.Combine(Root, "overwatch");
-    public string OverwatchCacheDir => Path.Combine(OverwatchDataDir, "cache");
-    public string OverwatchSessionDir => Path.Combine(OverwatchDataDir, "session");
+    public string OverwatchCacheDir => Path.Combine(Root, "overwatch", "cache");
     public string DefaultRegionStorageDir => Path.Combine(Root, "region-switch");
     public string LegacyRoot { get; }
     public string LegacyRegionStorageDir => Path.Combine(LegacyRoot, "region-switch");
@@ -43,7 +41,6 @@ public sealed class AppPaths
         Directory.CreateDirectory(YouTubeDropsDir);
         Directory.CreateDirectory(TwitchDropsDir);
         Directory.CreateDirectory(OverwatchCacheDir);
-        Directory.CreateDirectory(OverwatchSessionDir);
     }
 
     /// <summary>
@@ -67,8 +64,6 @@ public sealed class AppPaths
         CopyFileIfMissing(Path.Combine(LegacyRoot, "settings.json"), SettingsFile, migrated);
         CopyDirectoryMissing(Path.Combine(LegacyRoot, "accounts"), AccountsDir, migrated);
         CopyDirectoryMissing(Path.Combine(LegacyRoot, "logs"), LogsDir, migrated);
-        MigrateLegacyOverwatch(migrated);
-
         // 兼容旧目录中其它应用数据，但排除广告缓存与单独处理的区服大文件。
         foreach (var entry in Directory.EnumerateFileSystemEntries(LegacyRoot))
         {
@@ -128,24 +123,6 @@ public sealed class AppPaths
             if (Directory.Exists(oldItem) && !Directory.Exists(newItem)) return false;
         }
         return true;
-    }
-
-    private void MigrateLegacyOverwatch(List<string> migrated)
-    {
-        var old = Path.Combine(LegacyRoot, "ow");
-        if (!Directory.Exists(old)) return;
-        CopyDirectoryMissing(Path.Combine(old, "img"), Path.Combine(OverwatchCacheDir, "img"), migrated);
-        CopyDirectoryMissing(Path.Combine(old, "config"), Path.Combine(OverwatchCacheDir, "config"), migrated);
-        CopyFileIfMissing(Path.Combine(old, "session.json"), Path.Combine(OverwatchSessionDir, "session.json"), migrated);
-        CopyFileIfMissing(Path.Combine(old, "device.txt"), Path.Combine(OverwatchDataDir, "device.txt"), migrated);
-        foreach (var entry in Directory.EnumerateFileSystemEntries(old))
-        {
-            var name = Path.GetFileName(entry);
-            if (name.Equals("img", StringComparison.OrdinalIgnoreCase) || name.Equals("config", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("session.json", StringComparison.OrdinalIgnoreCase) || name.Equals("device.txt", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Directory.Exists(entry)) CopyDirectoryMissing(entry, Path.Combine(OverwatchDataDir, name), migrated);
-            else CopyFileIfMissing(entry, Path.Combine(OverwatchDataDir, name), migrated);
-        }
     }
 
     private static void CopyDirectoryMissing(string source, string destination, List<string> migrated)

@@ -3,10 +3,8 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using CloudLightBlizzard.Models;
-using CloudLightBlizzard.Stats;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.ViewModels;
-using CloudLightBlizzard.Views.Pages;
 using GameRegion = CloudLightBlizzard.Services.OverwatchRegion.OverwatchRegion;
 
 namespace CloudLightBlizzard.Services;
@@ -26,7 +24,6 @@ public static class FeatureSelfTest
         {
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
-            RunStatsExplicitQueryWorkflowTest(report).GetAwaiter().GetResult();
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
             RunRegionGenerationTest(workspace, report).GetAwaiter().GetResult();
@@ -108,77 +105,6 @@ public static class FeatureSelfTest
         Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired)
                == AccountSwitchVerificationState.LoggedIn, "confirmed target wins");
         report.AppendLine("TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)");
-    }
-
-    private static async Task RunStatsExplicitQueryWorkflowTest(StringBuilder report)
-    {
-        var loginChecks = 0;
-        var loginDialogs = 0;
-        var chinaRequests = 0;
-        var internationalRequests = 0;
-        var loggedIn = false;
-        var workflow = new StatsQueryWorkflow();
-
-        workflow.PageOpened();
-        Assert(loginChecks == 0 && loginDialogs == 0 && chinaRequests == 0 && internationalRequests == 0,
-            "startup/page open performs no stats or login work");
-
-        var china = new StatsAccountSelection("1:cn", true);
-        workflow.SelectAccount(china);
-        workflow.SelectAccount(new StatsAccountSelection("2:global", false));
-        workflow.SelectAccount(china);
-        Assert(workflow.State == StatsQueryState.Idle && loginChecks == 0 && chinaRequests == 0 && internationalRequests == 0,
-            "account switch/dropdown selection performs no request");
-
-        async Task<bool> CheckLogin()
-        {
-            loginChecks++;
-            await Task.Yield();
-            return loggedIn;
-        }
-        async Task<object> QueryChina()
-        {
-            chinaRequests++;
-            await Task.Yield();
-            return new object();
-        }
-        async Task<object> QueryInternational()
-        {
-            internationalRequests++;
-            await Task.Yield();
-            return new object();
-        }
-
-        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
-        Assert(workflow.State == StatsQueryState.LoginRequired && loginChecks == 1 &&
-               loginDialogs == 0 && chinaRequests == 0,
-            "China query without login only enters LoginRequired");
-
-        await workflow.LoginAsync(async () =>
-        {
-            loginDialogs++;
-            loggedIn = true;
-            await Task.Yield();
-            return true;
-        });
-        Assert(workflow.State == StatsQueryState.ReadyToQuery && loginDialogs == 1 && chinaRequests == 0,
-            "explicit login succeeds without auto query");
-
-        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
-        Assert(workflow.State == StatsQueryState.Loaded && chinaRequests == 1 && internationalRequests == 0,
-            "explicit China query calls China service once");
-
-        workflow.SelectAccount(new StatsAccountSelection("2:global", false));
-        Assert(workflow.State == StatsQueryState.Idle && internationalRequests == 0,
-            "international selection remains idle");
-        await workflow.QueryAsync(CheckLogin, QueryChina, QueryInternational);
-        Assert(workflow.State == StatsQueryState.Loaded && internationalRequests == 1 && loginChecks == 2,
-            "explicit international query calls career service without China login check");
-
-        workflow.SelectAccount(china);
-        Assert(workflow.State == StatsQueryState.Loaded && chinaRequests == 1 && internationalRequests == 1,
-            "returning to an account displays memory cache without refreshing");
-        report.AppendLine("TEST 3 stats explicit workflow: PASS (startup/navigation/account switch/selection=0; login and China/global queries are button-only)");
     }
 
     private static async Task RunUpdateCheckTest(string workspace, StringBuilder report)
@@ -760,10 +686,6 @@ public static class FeatureSelfTest
         Assert(loaded.PreferenceFor(123456).Region == AccountRegionOverride.China, "account preference persisted");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
-        var china = new AccountRow { BattleTag = "China#1", RegionOverride = AccountRegionOverride.China };
-        var international = new AccountRow { BattleTag = "Global#1", RegionOverride = AccountRegionOverride.International };
-        Assert(StatsPage.DataSourceFor(china) == "ChinaStats", "china account routes to china stats");
-        Assert(StatsPage.DataSourceFor(international) == "BlizzardCareer", "international account routes to career");
         report.AppendLine("TEST 9 settings/account list: PASS");
     }
 
@@ -773,12 +695,10 @@ public static class FeatureSelfTest
         var newRoot = Path.Combine(workspace, "documents-app");
         Directory.CreateDirectory(Path.Combine(oldRoot, "accounts", "42"));
         Directory.CreateDirectory(Path.Combine(oldRoot, "logs"));
-        Directory.CreateDirectory(Path.Combine(oldRoot, "ow", "img"));
         Directory.CreateDirectory(Path.Combine(oldRoot, "region-switch", "generations", "g1"));
         File.WriteAllText(Path.Combine(oldRoot, "settings.json"), "{\"DarkMode\":true}");
         File.WriteAllText(Path.Combine(oldRoot, "accounts", "42", "meta.json"), "{}");
         File.WriteAllText(Path.Combine(oldRoot, "logs", "account-switch.log"), "ok");
-        File.WriteAllText(Path.Combine(oldRoot, "ow", "img", "cache.bin"), "cache");
         File.WriteAllText(Path.Combine(oldRoot, "region-switch", "active-generation.json"), "{}");
         File.WriteAllText(Path.Combine(oldRoot, "region-switch", "generations", "g1", "pair.json"), "{}");
 
@@ -787,7 +707,6 @@ public static class FeatureSelfTest
         Assert(File.Exists(paths.SettingsFile), "settings migrated");
         Assert(File.Exists(Path.Combine(paths.AccountsDir, "42", "meta.json")), "accounts migrated");
         Assert(File.Exists(Path.Combine(paths.LogsDir, "account-switch.log")), "logs migrated");
-        Assert(File.Exists(Path.Combine(paths.OverwatchCacheDir, "img", "cache.bin")), "ow cache migrated");
         Assert(result.DefaultRegionMoved && File.Exists(Path.Combine(paths.DefaultRegionStorageDir, "active-generation.json")),
             "default region store moved without copy");
 
@@ -804,7 +723,7 @@ public static class FeatureSelfTest
         Assert(!customResult.DefaultRegionMoved, "custom region setting prevents default region move");
         Assert(File.Exists(Path.Combine(externalRegion, "custom.bin")), "custom region store remains in place");
         Assert(File.Exists(Path.Combine(customOld, "region-switch", "sentinel.bin")), "legacy default remains untouched when custom path is set");
-        report.AppendLine("TEST 10 app paths migration: PASS (settings/accounts/logs/ow/default move/custom preserved)");
+        report.AppendLine("TEST 10 app paths migration: PASS (settings/accounts/logs/default move/custom preserved)");
     }
 
     private static void WriteRuntimeFiles(string gameRoot)

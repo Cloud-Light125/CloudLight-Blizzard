@@ -38,7 +38,7 @@ public sealed class AccountRow : ObservableObject
     private string _remark = "";
     public string Remark { get => _remark; set { Set(ref _remark, value); Raise(nameof(RemarkVisibility)); } }
     private AccountRegionOverride _regionOverride;
-    public AccountRegionOverride RegionOverride { get => _regionOverride; set { Set(ref _regionOverride, value); Raise(nameof(IsCnRegion)); Raise(nameof(RegionText)); } }
+    public AccountRegionOverride RegionOverride { get => _regionOverride; set { Set(ref _regionOverride, value); Raise(nameof(IsCnRegion)); Raise(nameof(RegionText)); Raise(nameof(StatsVisibility)); } }
 
     public string DisplayName => string.IsNullOrWhiteSpace(CustomName) ? BattleTag : CustomName.Trim();
     public Visibility CustomNameVisibility => string.IsNullOrWhiteSpace(CustomName) ? Visibility.Collapsed : Visibility.Visible;
@@ -50,6 +50,7 @@ public sealed class AccountRow : ObservableObject
 
     public string RegionText => IsCnRegion ? "国服" : "国际服";
     public Visibility RegionVisibility => RegionText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility StatsVisibility => IsCnRegion ? Visibility.Collapsed : Visibility.Visible;
 
     public static string Region(string? environment)
     {

@@ -6,8 +6,7 @@ using System.Windows.Media.Imaging;
 
 namespace CloudLightBlizzard.Services.Overwatch;
 
-// OW 图片本地缓存:头像/英雄图标/地图缩略图 下载一次存本机,之后走本地,不再打网易 CDN。
-// 缩略图:下载后按目标宽度降采样再存,避免把整张大图(地图1~2MB)囤在本地。
+// 国际服生涯图片本地缓存：下载后按目标宽度降采样，后续直接读取本地文件。
 public static class OwImageCache
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(25) };
@@ -19,11 +18,11 @@ public static class OwImageCache
     /// <summary>战绩缓存根目录。</summary>
     public static string CacheRoot => AppPaths.Current.OverwatchCacheDir;
 
-    /// <summary>缓存占用字节数(图片 img + 配置 config;不含登录 session)。</summary>
+    /// <summary>国际服生涯图片、HTML 与可安全清理的历史战绩缓存占用字节数。</summary>
     public static long CacheSizeBytes()
     {
         long sum = 0;
-        foreach (var sub in new[] { "img", "config" })
+        foreach (var sub in new[] { "img", "career", "config" })
         {
             var d = Path.Combine(CacheRoot, sub);
             if (!Directory.Exists(d)) continue;
@@ -33,11 +32,11 @@ public static class OwImageCache
         return sum;
     }
 
-    /// <summary>清除战绩缓存(图片 + 配置,可重新下载;保留登录 session)。返回删除的字节数。</summary>
+    /// <summary>清除可重新下载的战绩缓存。返回删除的字节数。</summary>
     public static long ClearCache()
     {
         long freed = CacheSizeBytes();
-        foreach (var sub in new[] { "img", "config" })
+        foreach (var sub in new[] { "img", "career", "config" })
         {
             var d = Path.Combine(CacheRoot, sub);
             try { if (Directory.Exists(d)) Directory.Delete(d, true); } catch { freed = 0; }
@@ -51,14 +50,6 @@ public static class OwImageCache
         if (thumbWidth > 0) return Path.Combine(Dir, $"{hash}_t{thumbWidth}.png");
         string ext = url.Contains(".jpg", StringComparison.OrdinalIgnoreCase) ? ".jpg" : ".png";
         return Path.Combine(Dir, hash + ext);
-    }
-
-    /// <summary>本地已缓存则返回路径(不下载),否则 null。thumbWidth>0 取缩略图变体。</summary>
-    public static string? CachedPath(string? url, int thumbWidth = 0)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return null;
-        var p = PathFor(url, thumbWidth);
-        return File.Exists(p) && new FileInfo(p).Length > 0 ? p : null;
     }
 
     /// <summary>返回本地缓存路径;没有就下载(thumbWidth>0 则降采样)后返回。失败返回 null。</summary>
@@ -76,22 +67,6 @@ public static class OwImageCache
             return path;
         }
         catch { return null; }
-    }
-
-    /// <summary>批量并发预取。thumbWidth>0 存缩略图。返回成功数。</summary>
-    public static async Task<int> PrefetchAsync(IEnumerable<string> urls, int thumbWidth = 0, int concurrency = 8)
-    {
-        var list = urls.Where(u => !string.IsNullOrWhiteSpace(u)).Distinct().ToList();
-        int ok = 0;
-        using var sem = new SemaphoreSlim(concurrency);
-        var tasks = list.Select(async u =>
-        {
-            await sem.WaitAsync();
-            try { if (await GetAsync(u, thumbWidth) != null) Interlocked.Increment(ref ok); }
-            finally { sem.Release(); }
-        });
-        await Task.WhenAll(tasks);
-        return ok;
     }
 
     // 用 WPF 解码器按目标宽度降采样,重编码为 PNG。失败返回 null(调用方回退存原图)。

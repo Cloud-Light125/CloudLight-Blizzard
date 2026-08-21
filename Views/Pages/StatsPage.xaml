@@ -1,43 +1,25 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.StatsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
-             behaviors:NestedScrollBehavior.IsEnabled="True"
-             Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+             Foreground="{DynamicResource Text.Primary}"
+             Background="{DynamicResource App.Background}">
     <Grid Margin="28,24,22,22">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
         <StackPanel>
-            <TextBlock Text="战绩" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="选择账号后，由你决定何时查询或刷新守望先锋战绩。" Style="{StaticResource PageDescription}"/>
+            <TextBlock Text="国际服战绩" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="输入 BattleTag 后，查询暴雪公开的守望先锋生涯数据。"
+                       Style="{StaticResource PageDescription}"/>
         </StackPanel>
-        <Border Grid.Row="1" Style="{StaticResource SurfaceCard}" Padding="16" Margin="0,20,0,16">
-            <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="330"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="账号" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,10,0"/>
-                <ComboBox x:Name="AccountBox" Grid.Column="1" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="DisplayName" SelectionChanged="OnAccountChanged"/>
-                <TextBlock Grid.Column="2" Text="区服" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" Margin="20,0,10,0"/>
-                <StackPanel Grid.Column="3" VerticalAlignment="Center">
-                    <TextBlock x:Name="RegionText" Text="—" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="BattleTagText" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                </StackPanel>
-                <Button x:Name="HeaderRefreshButton" Grid.Column="4" Content="刷新战绩" Visibility="Collapsed"
-                        Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnRefresh"/>
-            </Grid>
-        </Border>
-        <Border Grid.Row="2" Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
-            <Grid>
-                <ContentControl x:Name="StatsHost" Visibility="Collapsed"/>
-                <StackPanel x:Name="StatePanel" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
-                    <TextBlock x:Name="StateTitle" Text="尚未查询战绩" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
-                    <TextBlock x:Name="StateDescription" Text="选择账号后，点击查询即可获取最新战绩。"
-                               Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" TextAlignment="Center" LineHeight="21" Margin="0,8,0,0"/>
-                    <ProgressBar x:Name="LoadingBar" Style="{StaticResource ThemeProgressBar}" Width="260" Height="8" IsIndeterminate="True" Visibility="Collapsed" Margin="0,16,0,0"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,17,0,0">
-                        <Button x:Name="QueryButton" Content="查询战绩" Style="{StaticResource PrimaryButton}" Padding="18,0" Click="OnQuery"/>
-                        <Button x:Name="LoginButton" Content="登录网易大神" Style="{StaticResource PrimaryButton}" Padding="18,0" Visibility="Collapsed" Click="OnLoginDashen"/>
-                    </StackPanel>
-                </StackPanel>
-            </Grid>
+
+        <Border Grid.Row="1" Margin="0,20,0,0"
+                Background="{DynamicResource App.Surface}"
+                BorderBrush="{DynamicResource App.Border}"
+                BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+            <ContentControl x:Name="CareerHost"/>
         </Border>
     </Grid>
 </UserControl>
