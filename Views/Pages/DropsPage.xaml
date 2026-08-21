@@ -308,7 +308,7 @@
                                 <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Accounts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                             </TextBlock>
                         </Grid>
-                        <WrapPanel><Button Content="启动选中账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSoopStartAccount"/><Button Content="停止选中账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopStopAccount"/><Button Content="删除选中账号" Style="{StaticResource DangerButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopDeleteAccount"/><Button Content="全部开始" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/><Button Content="全部停止" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/></WrapPanel>
+                        <WrapPanel><Button Content="启动选中账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSoopStartAccount"/><Button Content="停止选中账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopStopAccount"/><Button Content="设为主账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopSetPrimaryAccount"/><Button Content="删除选中账号" Style="{StaticResource DangerButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopDeleteAccount"/><Button Content="全部开始" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/><Button Content="全部停止" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/></WrapPanel>
                     </StackPanel>
                 </Border>
 
@@ -323,6 +323,9 @@
                         <StackPanel x:Name="SoopManualChannelPanel" Margin="0,12,0,0" Visibility="Collapsed"><TextBlock Text="直播间地址或频道 ID" Style="{StaticResource FieldLabel}"/><TextBox x:Name="SoopManualChannel" Style="{StaticResource HintTextBox}" Tag="例如 owesports 或 https://play.sooplive.com/owesports"/></StackPanel>
                         <StackPanel x:Name="SoopPreferredChannelPanel" Margin="0,12,0,0" Visibility="Collapsed"><TextBlock Text="赛事频道" Style="{StaticResource FieldLabel}"/><TextBox x:Name="SoopPreferredChannel" Style="{StaticResource HintTextBox}" Tag="owesports"/></StackPanel>
                         <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="SoopLowBandwidth" Style="{StaticResource ThemeCheckBox}" Content="低流量模式" Margin="0,0,18,0"/><CheckBox x:Name="SoopAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取奖励" Margin="0,0,18,0"/><CheckBox x:Name="SoopHangWithoutMissions" Style="{StaticResource ThemeCheckBox}" Content="没有任务时继续等待"/></WrapPanel>
+                        <CheckBox x:Name="SoopAutoStart" Style="{StaticResource ThemeCheckBox}"
+                                  Content="启动 CloudLight Blizzard 时自动运行 SOOP"
+                                  Margin="0,14,0,0" Click="OnAutoStartChanged"/>
                         <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,8,0"><TextBlock Text="任务刷新间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SoopMissionInterval" Style="{StaticResource HintTextBox}" Tag="90"/></DockPanel></StackPanel>
                             <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="背包刷新间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SoopInventoryInterval" Style="{StaticResource HintTextBox}" Tag="300"/></DockPanel></StackPanel>
@@ -457,6 +460,27 @@
                                    Foreground="{DynamicResource Text.Secondary}"
                                    Visibility="{Binding TwitchRefreshStatusVisibility}"/>
                     </WrapPanel>
+                    <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="14"
+                            Margin="0,14,0,0" Visibility="{Binding TwitchAuthorizationVisibility}">
+                        <StackPanel>
+                            <TextBlock Text="Twitch 授权" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="请在 Twitch 官方页面完成授权。" Style="{StaticResource FieldHint}"/>
+                            <TextBlock Text="授权码" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                            <TextBlock Text="{Binding TwitchAuthorizationCode}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Content="打开 Twitch 授权页面" Style="{StaticResource PrimaryButton}"
+                                        Padding="14,0" Click="OnOpenTwitchAuthorization"/>
+                                <Button Content="复制授权码" Style="{StaticResource SecondaryButton}"
+                                        Padding="14,0" Margin="8,0,0,0" Click="OnCopyTwitchAuthorizationCode"/>
+                                <TextBlock Text="正在等待授权……" Foreground="{DynamicResource Text.Secondary}"
+                                           VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                    <CheckBox x:Name="TwitchAutoStart" Style="{StaticResource ThemeCheckBox}"
+                              Content="启动 CloudLight Blizzard 时自动运行 Twitch"
+                              Margin="0,14,0,0" Click="OnAutoStartChanged"/>
                 </StackPanel></Border>
 
                 <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>

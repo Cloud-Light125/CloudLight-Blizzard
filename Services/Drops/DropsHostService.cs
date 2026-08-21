@@ -60,6 +60,8 @@ public sealed class DropsHostService : IAsyncDisposable
         timeout.CancelAfter(TimeSpan.FromSeconds(command switch
         {
             "refresh" when platform == DropsPlatform.Twitch => 90,
+            "auto_start" when platform == DropsPlatform.Twitch => 270,
+            "auto_start" when platform == DropsPlatform.Soop => 120,
             "stop" or "shutdown" => 40,
             _ => 30,
         }));
@@ -75,7 +77,7 @@ public sealed class DropsHostService : IAsyncDisposable
             }
             finally { worker.WriteGate.Release(); }
             var result = await completion.Task.ConfigureAwait(false);
-            if (command == "start")
+            if (command is "start" or "auto_start")
             {
                 worker.BusinessRunning = result.ValueKind == JsonValueKind.Object &&
                                          result.TryGetProperty("running", out var running)
@@ -361,7 +363,6 @@ public sealed class DropsHostService : IAsyncDisposable
         {
             if (worker.Process.HasExited) continue;
             worker.Lifecycle = WorkerLifecycle.Stopping;
-            try { await RequestAsync(worker.Platform, "stop", cancellationToken: timeout.Token).ConfigureAwait(false); } catch { }
             try { await RequestAsync(worker.Platform, "shutdown", cancellationToken: timeout.Token).ConfigureAwait(false); } catch { }
         }
         foreach (var worker in workers)

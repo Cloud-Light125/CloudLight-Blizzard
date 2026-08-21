@@ -23,7 +23,6 @@ public partial class DropsPage : UserControl
         .ToDictionary(platform => platform, _ => new StringBuilder());
     private readonly SemaphoreSlim _logStartGate = new(1, 1);
     private bool _logTailStarted;
-    private CancellationTokenSource? _twitchStateRefresh;
 
     public DropsPage()
     {
@@ -46,9 +45,75 @@ public partial class DropsPage : UserControl
         DataContext = _vm;
         _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
         main.DropsHost.EventReceived += OnWorkerEvent;
+        SoopAutoStart.IsChecked = main.Settings.AutoStartSoop;
+        TwitchAutoStart.IsChecked = main.Settings.AutoStartTwitch;
         SoopTab.IsChecked = true;
         SoopPanel.Visibility = Visibility.Visible;
         _initialized = true;
+    }
+
+    public void StartAutomaticPlatforms()
+    {
+        if (_main?.Settings.AutoStartSoop == true) _ = AutoStartSoopAsync();
+        if (_main?.Settings.AutoStartTwitch == true) _ = AutoStartTwitchAsync();
+        // YouTube intentionally remains manual-only.
+    }
+
+    private async Task AutoStartSoopAsync()
+    {
+        if (_vm == null) return;
+        try
+        {
+            _vm.Soop.Status = "正在恢复 SOOP 账号…";
+            _vm.Soop.Summary = "正在读取已保存的主账号";
+            var state = await _vm.RequestAsync(DropsPlatform.Soop, "auto_start");
+            if (Bool(state, "missingPrimary"))
+            {
+                _vm.Soop.Running = false;
+                _vm.Soop.Status = "需要设置主账号";
+                _vm.Soop.Summary = "SOOP 自动启动已开启，但尚未设置主账号。";
+                return;
+            }
+            if (_platform == DropsPlatform.Soop)
+            {
+                _vm.ApplyState(DropsPlatform.Soop, state);
+                PopulateSettings(DropsPlatform.Soop, state);
+            }
+            _vm.Soop.Status = "SOOP 正在运行";
+        }
+        catch
+        {
+            _vm.Soop.Running = false;
+            _vm.Soop.Status = "启动失败";
+            _vm.Soop.Summary = "SOOP 自动登录失败";
+        }
+    }
+
+    private async Task AutoStartTwitchAsync()
+    {
+        if (_vm == null) return;
+        try
+        {
+            _vm.BeginTwitchLogin();
+            var state = await _vm.RequestAsync(DropsPlatform.Twitch, "auto_start");
+            if (Bool(state, "requiresLogin"))
+            {
+                if (state.TryGetProperty("authRequired", out var auth) && auth.ValueKind == JsonValueKind.Object)
+                    _vm.SetTwitchAuthorization(Text(auth, "url"), Text(auth, "code"), automatic: true);
+                else
+                    _vm.SetTwitchAuthorization("", "", automatic: true);
+                return;
+            }
+            if (_platform == DropsPlatform.Twitch)
+            {
+                _vm.ApplyState(DropsPlatform.Twitch, state);
+                PopulateSettings(DropsPlatform.Twitch, state);
+            }
+        }
+        catch
+        {
+            _vm.SetTwitchFailure("Twitch 自动启动失败，请检查代理设置或运行日志。");
+        }
     }
 
     public async Task RefreshAsync()
@@ -413,6 +478,22 @@ public partial class DropsPage : UserControl
     private async void OnSoopStartAccount(object sender, RoutedEventArgs e) => await RunSoopAccountCommandAsync("start_account", "启动");
     private async void OnSoopStopAccount(object sender, RoutedEventArgs e) => await RunSoopAccountCommandAsync("stop_account", "停止");
 
+    private async void OnSoopSetPrimaryAccount(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        if (SoopAccountsList.SelectedItem is not DropsRow row)
+        {
+            ShowInfo("请先选择一个 SOOP 账号。", "设置主账号");
+            return;
+        }
+        try
+        {
+            await _vm.RequestAsync(DropsPlatform.Soop, "set_primary_account", new { userid = row.Id });
+            await LoadPlatformAsync(DropsPlatform.Soop);
+        }
+        catch (Exception ex) { ShowError(ex, "设置 SOOP 主账号失败"); }
+    }
+
     private async Task RunSoopAccountCommandAsync(string command, string action)
     {
         if (_vm == null) return;
@@ -571,8 +652,31 @@ public partial class DropsPage : UserControl
     private async Task LoginTwitchAsync()
     {
         if (_vm == null) return;
+        _vm.BeginTwitchLogin();
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "login"); await LoadPlatformAsync(DropsPlatform.Twitch); }
-        catch (Exception ex) { ShowError(ex, "启动 Twitch 登录失败"); }
+        catch (Exception ex) { _vm.SetTwitchFailure("Twitch 登录启动失败，请检查代理设置或运行日志。"); ShowError(ex, "启动 Twitch 登录失败"); }
+    }
+
+    private void OnOpenTwitchAuthorization(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationUrl)) return;
+        try { Process.Start(new ProcessStartInfo { FileName = _vm.TwitchAuthorizationUrl, UseShellExecute = true }); }
+        catch { _ = CopyLoginUrlAsync(_vm.TwitchAuthorizationUrl); }
+    }
+
+    private async void OnCopyTwitchAuthorizationCode(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationCode)) return;
+        if (!await ClipboardService.CopyTextAsync(_vm.TwitchAuthorizationCode))
+            ShowInfo("复制失败，请稍后重试。", "Twitch 授权");
+    }
+
+    private void OnAutoStartChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized || _main == null) return;
+        _main.Settings.AutoStartSoop = SoopAutoStart.IsChecked == true;
+        _main.Settings.AutoStartTwitch = TwitchAutoStart.IsChecked == true;
+        _main.Settings.Save();
     }
 
     private async void OnTwitchLogout(object sender, RoutedEventArgs e)
@@ -818,21 +922,23 @@ public partial class DropsPage : UserControl
                     .Concat(_vm.TwitchPriorityGames).Concat(_vm.TwitchExcludedGames));
                 RefreshTwitchGameChoices();
             }));
-            ScheduleTwitchStateRefresh();
+            RefreshTwitchStateFromEvent();
             return;
         }
         if (message.Name == "login_status" && message.Payload.TryGetProperty("userId", out var userId) &&
             userId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
         {
-            ScheduleTwitchStateRefresh(TimeSpan.FromSeconds(1));
+            RefreshTwitchStateFromEvent();
             return;
         }
-        if (message.Name != "login_required") return;
+        if (message.Name != "auth_required") return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             var url = Text(message.Payload, "url");
             var code = Text(message.Payload, "code");
-            if (MessageBox.Show($"Twitch 设备码：{code}\n\n将在浏览器打开授权页面。完成授权后程序会自动继续。", "Twitch 登录", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
+            var automatic = Bool(message.Payload, "automatic");
+            _vm?.SetTwitchAuthorization(url, code, automatic);
+            if (automatic || string.IsNullOrWhiteSpace(url)) return;
             try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
             catch { _ = CopyLoginUrlAsync(url); }
         }));
@@ -848,27 +954,18 @@ public partial class DropsPage : UserControl
         catch { ShowInfo("无法打开浏览器，请稍后重试。", "Twitch 登录"); }
     }
 
-    private void ScheduleTwitchStateRefresh(TimeSpan? delay = null)
+    private void RefreshTwitchStateFromEvent()
     {
-        _twitchStateRefresh?.Cancel();
-        _twitchStateRefresh?.Dispose();
-        _twitchStateRefresh = new CancellationTokenSource();
-        var token = _twitchStateRefresh.Token;
+        if (_platform != DropsPlatform.Twitch) return;
         _ = Dispatcher.InvokeAsync(async () =>
         {
-            try
-            {
-                await Task.Delay(delay ?? TimeSpan.FromMilliseconds(250), token);
-                if (!token.IsCancellationRequested) await LoadPlatformAsync(DropsPlatform.Twitch);
-            }
-            catch (OperationCanceledException) { }
+            if (_platform == DropsPlatform.Twitch && !_loading)
+                await LoadPlatformAsync(DropsPlatform.Twitch);
         });
     }
 
     public async ValueTask DisposeAsync()
     {
-        _twitchStateRefresh?.Cancel();
-        _twitchStateRefresh?.Dispose();
         if (_main is not null) _main.DropsHost.EventReceived -= OnWorkerEvent;
         _vm?.Dispose();
         _logTail.Changed -= OnLogTailChanged;

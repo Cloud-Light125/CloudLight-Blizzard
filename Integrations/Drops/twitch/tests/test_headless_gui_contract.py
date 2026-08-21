@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import tempfile
@@ -19,10 +20,104 @@ for path in (str(DROPS_DIR), str(TWITCH_DIR), str(CORE_DIR)):
         sys.path.insert(0, path)
 
 import headless_gui
+from exceptions import ExitRequest
 from worker import TwitchWorker
 
 
 class HeadlessGuiContractTests(unittest.TestCase):
+    def test_device_authorization_exposes_real_url_and_code(self) -> None:
+        login_event = threading.Event()
+        client = SimpleNamespace(
+            _cloudlight_auto_start=False,
+            _cloudlight_login_event=login_event,
+        )
+        form = headless_gui.LoginForm(client)
+        asyncio.run(form.ask_enter_code("https://www.twitch.tv/activate?device-code=ABCDEFGH", "ABCD-EFGH"))
+        self.assertTrue(login_event.is_set())
+        self.assertEqual(client._cloudlight_login_state, "authorization_required")
+        self.assertEqual(client._cloudlight_auth_required["code"], "ABCD-EFGH")
+        self.assertEqual(
+            client._cloudlight_auth_required["url"],
+            "https://www.twitch.tv/activate?device-code=ABCDEFGH",
+        )
+
+        automatic = SimpleNamespace(
+            _cloudlight_auto_start=True,
+            _cloudlight_login_event=threading.Event(),
+        )
+        with self.assertRaises(ExitRequest):
+            asyncio.run(headless_gui.LoginForm(automatic).ask_enter_code(
+                "https://www.twitch.tv/activate?device-code=IJKLMNOP", "IJKL-MNOP"
+            ))
+        self.assertEqual(automatic._cloudlight_login_state, "needs_login")
+
+    def test_validated_session_is_logged_in_but_not_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                worker._authenticated_user_id = 884633382
+                worker._login_state = "logged_in"
+                state = worker.load_state({})
+                self.assertFalse(state["running"])
+                self.assertEqual(state["authState"], "logged_in")
+                self.assertEqual(state["accounts"][0]["userId"], 884633382)
+                self.assertTrue(state["accounts"][0]["loggedIn"])
+                self.assertTrue(worker.ssl_check({})["contextCreated"])
+                self.assertEqual(
+                    worker._friendly_runtime_error(RuntimeError("SSL is not supported.")),
+                    "Twitch 网络初始化失败，请检查代理设置或 Twitch 运行组件。",
+                )
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
+    def test_auto_start_uses_login_and_refresh_completion_signals(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                auth = SimpleNamespace(user_id=884633382)
+                client = SimpleNamespace(
+                    _auth_state=auth,
+                    _cloudlight_login_state="logged_in",
+                    _cloudlight_ready=True,
+                    _cloudlight_auth_required=None,
+                )
+                refresh_calls: list[bool] = []
+
+                def start(payload: dict[str, object]) -> dict[str, object]:
+                    self.assertTrue(payload["automatic"])
+                    worker._client = client
+                    worker.running = True
+                    worker._login_transition.set()
+                    worker._ready_transition.set()
+                    return {"running": True}
+
+                def refresh(payload: dict[str, object]) -> dict[str, object]:
+                    refresh_calls.append(True)
+                    return {"running": True, "accounts": [{"userId": 884633382, "loggedIn": True}]}
+
+                worker.start = start
+                worker.refresh = refresh
+                worker.load_state = lambda payload: {"authState": "logged_in", "running": True}
+                state = worker.auto_start({})
+                self.assertEqual(refresh_calls, [True])
+                self.assertTrue(state["autoStartCompleted"])
+                self.assertFalse(state["requiresLogin"])
+                self.assertTrue(state["running"])
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
     def test_core_initialization_and_public_facades(self) -> None:
         sys.modules["gui"] = headless_gui
         import constants

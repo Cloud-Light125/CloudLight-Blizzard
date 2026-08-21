@@ -667,32 +667,31 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var targetRegion = target.IsCnRegion ? OverwatchRegion.China : OverwatchRegion.International;
+        var shouldSwitchRegion = false;
+        var regionSkipReason = "";
         try
         {
             var regionStatus = await _regionManager.GetStatusAsync(_settings.OverwatchGamePath);
             var canNormalize = regionStatus.SwitchEligibility is
                 RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
-            if (!regionStatus.GamePathValid || !canNormalize)
+
+            if (regionStatus.GamePathValid && canNormalize)
             {
-                MessageBox.Show(regionStatus.SwitchEligibility == RegionSwitchEligibility.GameUpdated
-                        ? "检测到游戏已经更新。当前区服备份基于旧版本，请先重新准备区服文件。"
-                        : "当前区服备份缺失或损坏，无法安全切换目标账号。请先检查或重新准备区服文件。",
-                    "无法切换账号", MessageBoxButton.OK, MessageBoxImage.Warning);
-                MainSectionRequested?.Invoke("region");
-                return;
+                shouldSwitchRegion = true;
             }
-            if (OverwatchRegionManager.IsGameRunning())
+            else
             {
-                MessageBox.Show("守望先锋正在运行，请先退出游戏后再切换区服。",
-                    "无法切换游戏文件", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                regionSkipReason = regionStatus.SwitchEligibility == RegionSwitchEligibility.GameUpdated
+                    ? "游戏已更新，现有区服备份基于旧版本。"
+                    : !regionStatus.GamePathValid
+                        ? "未找到有效的守望先锋游戏目录。"
+                        : "区服备份缺失、损坏或当前不可安全使用。";
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show("无法检查本地区服文件：" + ex.Message, "无法检查区服文件",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            // 区服文件预检失败发生在任何游戏文件修改之前，因此只降级为账号切换。
+            regionSkipReason = "无法检查本地区服文件：" + ex.Message;
         }
 
         Busy = true;
@@ -716,6 +715,16 @@ public sealed class MainViewModel : ObservableObject
                 },
                 async () =>
                 {
+                    if (!shouldSwitchRegion)
+                    {
+                        StatusText = string.IsNullOrWhiteSpace(regionSkipReason)
+                            ? "区服文件当前不可用，本次仅切换 Battle.net 账号。"
+                            : $"区服文件未修改：{regionSkipReason} 本次仅切换 Battle.net 账号。";
+                        _switchLog.Write("RegionFilesSkipped", currentId, target.AccountId,
+                            targetRegion: target.RegionText, detail: regionSkipReason);
+                        return;
+                    }
+
                     stage = "区服文件";
                     var progress = new Progress<RegionProgress>(p => StatusText = p.Message);
                     _switchLog.Write("RegionFilesSwitchStarted", currentId, target.AccountId,
@@ -750,7 +759,9 @@ public sealed class MainViewModel : ObservableObject
             _pendingSwitchStartedUtc = DateTime.UtcNow;
             _pendingClientSeen = false;
             _lastPendingActiveId = currentId;
-            StatusText = $"已切换到「{target.BattleTag}」,战网正在启动,正在确认登录结果…";
+            StatusText = shouldSwitchRegion
+                ? $"已切换到「{target.BattleTag}」,战网正在启动,正在确认登录结果…"
+                : $"已切换到「{target.BattleTag}」；本次未修改守望先锋国服/国际服文件，正在确认登录结果…";
         }
         catch (Exception ex)
         {

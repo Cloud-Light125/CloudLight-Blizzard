@@ -5,6 +5,7 @@ import importlib
 import json
 import logging
 import os
+import ssl
 import sys
 import threading
 import time
@@ -32,6 +33,12 @@ class TwitchWorker(WorkerBase):
         self._client_task: Any = None
         self._client_stopped = threading.Event()
         self._client_stopped.set()
+        self._login_transition = threading.Event()
+        self._ready_transition = threading.Event()
+        self._login_state = "logged_out"
+        self._login_error = ""
+        self._automatic_start = False
+        self._authenticated_user_id: int | None = None
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="twitch-asyncio", daemon=True)
         self._loop_thread.start()
@@ -43,6 +50,9 @@ class TwitchWorker(WorkerBase):
             "reload": self.reload,
             "get_games": self.get_games,
             "get_languages": self.get_languages,
+            "auto_start": self.auto_start,
+            "ssl_check": self.ssl_check,
+            "network_check": self.network_check,
         })
         self._migrate_legacy_proxy()
 
@@ -117,16 +127,90 @@ class TwitchWorker(WorkerBase):
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=timeout)
 
+    def _set_login_state(self, state: str, summary: str = "", error: str = "") -> None:
+        self._login_state = state
+        self._login_error = error
+        event("auth_state", {"state": state, "summary": summary, "error": error})
+
+    @staticmethod
+    def _friendly_runtime_error(exc: BaseException) -> str:
+        message = str(exc)
+        if "SSL is not supported" in message or "ssl" in message.lower() and "supported" in message.lower():
+            return "Twitch 网络初始化失败，请检查代理设置或 Twitch 运行组件。"
+        return "Twitch 掉宝服务启动失败，请检查网络或运行日志。"
+
     async def _start_client(self) -> None:
         client = self._core["twitch"].Twitch(self._settings)
+        client._cloudlight_auto_start = self._automatic_start
+        client._cloudlight_login_event = self._login_transition
+        client._cloudlight_ready_event = self._ready_transition
+        client._cloudlight_login_state = "checking"
+        client._cloudlight_auth_required = None
+        client._cloudlight_ready = False
         self._client = client
         self.running = True
-        self.status("正在登录", "Twitch")
+        self._set_login_state("checking", "正在检查 Twitch 登录状态")
+        self.status("正在检查登录状态", "Twitch")
+        runtime_error = ""
         try:
             await client.run()
         except Exception as exc:
             self.logger.exception("Twitch worker runtime failed")
-            event("error", {"message": str(exc)})
+            runtime_error = self._friendly_runtime_error(exc)
+            self._set_login_state("failed", runtime_error, runtime_error)
+            event("error", {"message": runtime_error, "phase": "startup"})
+            self._login_transition.set()
+            self._ready_transition.set()
+        finally:
+            try:
+                await self._shutdown_client_safely(client)
+            finally:
+                client_state = str(getattr(client, "_cloudlight_login_state", ""))
+                auth = getattr(client, "_auth_state", None)
+                if hasattr(auth, "user_id"):
+                    self._authenticated_user_id = int(auth.user_id)
+                if not runtime_error and client_state == "needs_login":
+                    self._authenticated_user_id = None
+                    self._set_login_state("needs_login", "Twitch Session 已失效，需要重新登录")
+                if self._client is client:
+                    self._client = None
+                self.running = False
+                if runtime_error:
+                    self.status("启动失败", runtime_error)
+                elif client_state == "needs_login":
+                    self.status("需要登录", "请手动登录 Twitch 后重试")
+                else:
+                    if self._authenticated_user_id is not None:
+                        self._set_login_state("logged_in", "Twitch 已登录，当前未运行")
+                    elif self._login_state not in {"logged_out", "needs_login"}:
+                        self._set_login_state("logged_out", "尚未登录 Twitch")
+                    self.status("已停止", self._account_summary())
+                self._client_stopped.set()
+
+    async def _login_client_only(self) -> None:
+        client = self._core["twitch"].Twitch(self._settings)
+        client._cloudlight_auto_start = False
+        client._cloudlight_login_event = self._login_transition
+        client._cloudlight_ready_event = self._ready_transition
+        client._cloudlight_login_state = "checking"
+        client._cloudlight_auth_required = None
+        client._cloudlight_ready = False
+        self._client = client
+        self._set_login_state("checking", "正在检查 Twitch 登录状态")
+        self.status("正在检查登录状态", "Twitch")
+        runtime_error = ""
+        try:
+            auth = await client.get_auth()
+            self._authenticated_user_id = int(auth.user_id)
+            self._set_login_state("logged_in", "Twitch 登录成功")
+            self.status("登录成功", str(auth.user_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.logger.exception("Twitch login failed")
+            runtime_error = self._friendly_runtime_error(exc)
+            self._set_login_state("failed", runtime_error, runtime_error)
+            event("error", {"message": runtime_error, "phase": "login"})
         finally:
             try:
                 await self._shutdown_client_safely(client)
@@ -134,7 +218,10 @@ class TwitchWorker(WorkerBase):
                 if self._client is client:
                     self._client = None
                 self.running = False
-                self.status("已停止", self._account_summary())
+                if runtime_error:
+                    self.status("启动失败", runtime_error)
+                elif self._authenticated_user_id is not None:
+                    self.status("已登录 · 未运行", str(self._authenticated_user_id))
                 self._client_stopped.set()
 
     async def _shutdown_client_safely(self, client: Any) -> None:
@@ -175,6 +262,11 @@ class TwitchWorker(WorkerBase):
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         available_games = self.get_games({})
+        client_state = str(getattr(self._client, "_cloudlight_login_state", "")) if self._client is not None else ""
+        auth_state = client_state or self._login_state
+        auth_required = getattr(self._client, "_cloudlight_auth_required", None) if self._client is not None else None
+        if self._client is not None and getattr(self._client, "_cloudlight_ready", False):
+            auth_state = "running"
         return {
             "running": self.running, "settings": self._settings_dict(),
             "accounts": self.get_accounts({}), "campaigns": self.get_campaigns({}),
@@ -183,12 +275,18 @@ class TwitchWorker(WorkerBase):
             "availableGames": available_games, "games": available_games,
             "websockets": self._websocket_state(), "languages": self.get_languages({}),
             "coreAvailable": bool(self._core), "coreError": self._core_error,
+            "authState": auth_state, "authRequired": auth_required,
+            "loginError": self._login_error,
         }
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
         if self._client_task is not None and not self._client_task.done():
             return self.load_state({})
+        self._automatic_start = bool(payload.get("automatic", False))
+        self._login_transition.clear()
+        self._ready_transition.clear()
+        self._login_error = ""
         self._client_stopped.clear()
         self._client_task = asyncio.run_coroutine_threadsafe(self._start_client(), self._loop)
         self.running = True
@@ -198,7 +296,7 @@ class TwitchWorker(WorkerBase):
     def stop(self, payload: dict[str, Any]) -> dict[str, Any]:
         client = self._client
         task = self._client_task
-        if client is not None and self.running:
+        if client is not None:
             self._loop.call_soon_threadsafe(client.close)
         if task is not None:
             try:
@@ -219,13 +317,80 @@ class TwitchWorker(WorkerBase):
         return self.load_state({})
 
     def login(self, payload: dict[str, Any]) -> dict[str, Any]:
-        result = self.start({})
-        return {"started": True, "message": "设备码登录已启动；请按登录事件提示在浏览器中授权。", "state": result}
+        self._require_core()
+        if self._client_task is not None and not self._client_task.done():
+            return {"started": False, "state": self.load_state({})}
+        self._automatic_start = False
+        self._login_transition.clear()
+        self._ready_transition.clear()
+        self._login_error = ""
+        self._client_stopped.clear()
+        self._client_task = asyncio.run_coroutine_threadsafe(self._login_client_only(), self._loop)
+        return {
+            "started": True,
+            "message": "正在检查已有 Session；如需设备授权，将显示 Twitch 返回的地址和授权码。",
+            "state": self.load_state({}),
+        }
+
+    def auto_start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_core()
+        self.status("正在检查登录状态", "正在恢复 Twitch Session")
+        self.start({"automatic": True})
+        if not self._login_transition.wait(timeout=75):
+            raise TimeoutError("Twitch 登录状态检查超时。")
+        state = self.load_state({})
+        auth_state = str(state.get("authState", ""))
+        if auth_state in {"authorization_required", "needs_login", "logged_out"}:
+            return {**state, "requiresLogin": True, "autoStartCompleted": False}
+        if auth_state == "failed":
+            raise RuntimeError(self._login_error or "Twitch 自动启动失败。")
+
+        self._set_login_state("starting", "正在刷新 Twitch 掉宝信息")
+        self.status("启动中", "正在加载活动、奖励和频道")
+        if not self._ready_transition.wait(timeout=90):
+            raise TimeoutError("Twitch 初始掉宝信息加载超时。")
+        refreshed = self.refresh({})
+        self._set_login_state("running", "Twitch 正在运行")
+        self.status("正在运行", self._account_summary())
+        refreshed["autoStartCompleted"] = True
+        refreshed["requiresLogin"] = False
+        return refreshed
 
     def logout(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.stop({})
         self.cookies_path.unlink(missing_ok=True)
+        self._authenticated_user_id = None
+        self._set_login_state("logged_out", "尚未登录 Twitch")
         return {"loggedOut": True}
+
+    def ssl_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        context = ssl.create_default_context()
+        return {
+            "contextCreated": isinstance(context, ssl.SSLContext),
+            "openssl": ssl.OPENSSL_VERSION,
+        }
+
+    def network_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Build/runtime diagnostic for HTTPS over the configured HTTP proxy."""
+        import aiohttp
+
+        url = str(payload.get("url", "https://www.twitch.tv")).strip()
+
+        async def check() -> dict[str, Any]:
+            timeout = aiohttp.ClientTimeout(total=30)
+            connector = aiohttp.TCPConnector(ssl=ssl.create_default_context())
+            proxy = self.proxy["proxyUrl"] if self.proxy["enableProxy"] else None
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.get(url, proxy=proxy, allow_redirects=True) as response:
+                    await response.read()
+                    return {
+                        "ok": response.status < 500,
+                        "status": response.status,
+                        "url": str(response.url),
+                        "proxy": bool(proxy),
+                    }
+
+        return self._submit(check(), timeout=35)
 
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
@@ -317,6 +482,9 @@ class TwitchWorker(WorkerBase):
             auth = self._client._auth_state
             if hasattr(auth, "user_id"):
                 return [{"userId": auth.user_id, "loggedIn": True, "cookiesPath": str(self.cookies_path)}]
+        if self._authenticated_user_id is not None:
+            return [{"userId": self._authenticated_user_id, "loggedIn": True,
+                     "cookiesPath": str(self.cookies_path)}]
         return ([{"userId": None, "loggedIn": False, "sessionSaved": True}]
                 if self.cookies_path.exists() else [])
 
@@ -440,6 +608,8 @@ class TwitchWorker(WorkerBase):
         return {"selected": channel_id}
 
     def shutdown(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.shutdown_requested:
+            return {"shutdown": True}
         result = super().shutdown(payload)
         try:
             asyncio.run_coroutine_threadsafe(self._finish_loop(), self._loop).result(timeout=5)

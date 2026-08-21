@@ -108,8 +108,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private bool _twitchLoggedIn;
     public Visibility TwitchLoginVisibility => _twitchLoggedIn ? Visibility.Collapsed : Visibility.Visible;
     public Visibility TwitchLogoutVisibility => _twitchLoggedIn ? Visibility.Visible : Visibility.Collapsed;
+    private string _twitchAuthState = "logged_out";
+    public string TwitchAuthState => _twitchAuthState;
+    private string _twitchAuthorizationUrl = "";
+    public string TwitchAuthorizationUrl { get => _twitchAuthorizationUrl; private set => Set(ref _twitchAuthorizationUrl, value); }
+    private string _twitchAuthorizationCode = "";
+    public string TwitchAuthorizationCode { get => _twitchAuthorizationCode; private set => Set(ref _twitchAuthorizationCode, value); }
+    public Visibility TwitchAuthorizationVisibility => _twitchAuthState == "authorization_required"
+        ? Visibility.Visible : Visibility.Collapsed;
     private bool _soopHasRefreshed;
     private bool _soopSettingsReady;
+    private bool _twitchSettingsReady;
     private string _youtubeCurrentLabel = "YouTube";
 
     public DropsQuickStartGuide SoopQuickStart { get; } = new(
@@ -251,6 +260,49 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         IsTwitchRefreshing = true;
     }
 
+    public void BeginTwitchLogin()
+    {
+        SetTwitchAuthState("checking");
+        Twitch.Status = "正在检查登录状态";
+        Twitch.Summary = "正在检查已有 Twitch Session";
+        UpdateTwitchQuickStart(default, false);
+    }
+
+    public void SetTwitchAuthorization(string url, string code, bool automatic)
+    {
+        TwitchAuthorizationUrl = url;
+        TwitchAuthorizationCode = code;
+        SetTwitchAuthState(automatic ? "needs_login" : "authorization_required", clearAuthorization: false);
+        Twitch.Running = !automatic;
+        Twitch.Status = automatic ? "需要登录" : "等待用户授权";
+        Twitch.Summary = automatic
+            ? "Twitch Session 已失效，请手动登录后再启动"
+            : $"请在 Twitch 官方页面输入授权码 {code}";
+        UpdateTwitchQuickStart(default, false);
+    }
+
+    public void SetTwitchFailure(string message)
+    {
+        SetTwitchAuthState("failed");
+        Twitch.Running = false;
+        Twitch.Status = "启动失败";
+        Twitch.Summary = string.IsNullOrWhiteSpace(message)
+            ? "Twitch 掉宝服务启动失败，请查看运行日志。" : message;
+        UpdateTwitchQuickStart(default, false);
+    }
+
+    private void SetTwitchAuthState(string state, bool clearAuthorization = true)
+    {
+        _twitchAuthState = state;
+        if (clearAuthorization && state != "authorization_required")
+        {
+            TwitchAuthorizationUrl = "";
+            TwitchAuthorizationCode = "";
+        }
+        Raise(nameof(TwitchAuthState));
+        Raise(nameof(TwitchAuthorizationVisibility));
+    }
+
     public void CompleteTwitchRefresh(DateTimeOffset completedAt)
     {
         TwitchRefreshStatus = $"最后刷新：{completedAt.ToLocalTime():HH:mm:ss}";
@@ -298,7 +350,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
             Id = Text(item, "uid"), Primary = Text(item, "uid"),
             Secondary = $"登录：已保存 · 直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
-            Status = Bool(item, "running") ? "运行中" : "已停止", Payload = item.Clone(),
+            Status = (Bool(item, "primary") ? "主账号 · " : "") + (Bool(item, "running") ? "运行中" : "已停止"),
+            Payload = item.Clone(),
         });
         AddRows(state, "tasks", Tasks, item => new DropsRow
         {
@@ -407,6 +460,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         });
         var loggedIn = state.TryGetProperty("accounts", out var accountArray) && accountArray.ValueKind == JsonValueKind.Array &&
                        accountArray.EnumerateArray().Any(item => Bool(item, "loggedIn"));
+        var authState = Text(state, "authState", loggedIn ? "logged_in" : vm.Running ? "checking" : "logged_out");
+        if (loggedIn && (authState == "checking" || authState == "logged_out")) authState = "logged_in";
+        if (state.TryGetProperty("authRequired", out var authRequired) && authRequired.ValueKind == JsonValueKind.Object)
+            SetTwitchAuthorization(Text(authRequired, "url"), Text(authRequired, "code"), Bool(authRequired, "automatic"));
+        else
+            SetTwitchAuthState(authState);
         _twitchLoggedIn = loggedIn;
         Raise(nameof(TwitchLoginVisibility));
         Raise(nameof(TwitchLogoutVisibility));
@@ -414,10 +473,25 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var availableCampaigns = _twitchCampaigns.Count(item => Bool(item, "available"));
         var hasCurrentChannel = state.TryGetProperty("currentChannel", out var currentChannel) &&
                                 currentChannel.ValueKind == JsonValueKind.Object;
-        if (!loggedIn)
+        if (authState == "failed")
         {
-            vm.Status = vm.Running ? "正在登录" : "未登录";
-            vm.Summary = vm.Running ? "请在浏览器完成 Twitch 授权" : "尚未登录 Twitch";
+            vm.Status = "启动失败";
+            vm.Summary = Text(state, "loginError", "Twitch 掉宝服务启动失败，请查看运行日志。");
+        }
+        else if (authState == "needs_login")
+        {
+            vm.Status = "需要登录";
+            vm.Summary = "Twitch Session 已失效，请手动登录后再启动";
+        }
+        else if (authState == "authorization_required")
+        {
+            vm.Status = "等待用户授权";
+            vm.Summary = "请在 Twitch 官方页面完成设备授权";
+        }
+        else if (!loggedIn)
+        {
+            vm.Status = authState == "checking" ? "正在检查登录状态" : "未登录";
+            vm.Summary = authState == "checking" ? "正在检查已有 Twitch Session" : "尚未登录 Twitch";
         }
         else if (!vm.Running)
         {
@@ -486,9 +560,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void UpdateTwitchQuickStart(JsonElement state, bool loggedIn)
     {
-        var settingsReady = state.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object;
-        TwitchQuickStart.Steps[0].Update(loggedIn ? "complete" : Twitch.Running ? "progress" : "incomplete",
-            loggedIn ? "✓ 已登录 Twitch" : Twitch.Running ? "● 正在进行 · 等待授权" : "○ 尚未登录 Twitch",
+        if (state.ValueKind == JsonValueKind.Object)
+            _twitchSettingsReady = state.TryGetProperty("settings", out var settings) &&
+                                   settings.ValueKind == JsonValueKind.Object;
+        var settingsReady = _twitchSettingsReady;
+        var checking = _twitchAuthState is "checking" or "starting";
+        var waiting = _twitchAuthState == "authorization_required";
+        var failed = _twitchAuthState == "failed";
+        TwitchQuickStart.Steps[0].Update(loggedIn ? "complete" : checking || waiting ? "progress" : "incomplete",
+            loggedIn ? "✓ 已登录 Twitch"
+                : waiting ? "● 正在进行 · 等待用户授权"
+                : checking ? "● 正在进行 · 正在检查登录状态"
+                : failed ? "○ 启动失败"
+                : _twitchAuthState == "needs_login" ? "○ 需要重新登录" : "○ 尚未登录 Twitch",
             loggedIn, loggedIn ? "" : "登录 Twitch");
         TwitchQuickStart.Steps[1].Update(settingsReady ? "complete" : "incomplete",
             settingsReady ? "✓ 已完成 · 已采用当前设置" : "○ 未完成", settingsReady,
@@ -565,8 +649,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var vm = For(snapshot.Platform);
         if (snapshot.Lifecycle == WorkerLifecycle.Crashed)
         {
-            vm.Status = "运行异常";
+            vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "启动失败" : "运行异常";
             vm.Running = false;
+            if (snapshot.Platform == DropsPlatform.Twitch)
+                SetTwitchFailure("Twitch 后台服务异常退出，请检查运行组件或日志。");
         }
         else if (snapshot.Lifecycle == WorkerLifecycle.Stopped)
             vm.Running = false;
@@ -582,6 +668,35 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 vm.Summary = summary.GetString()!;
             if (message.Payload.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
         }
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "auth_state")
+        {
+            var state = Text(message.Payload, "state", "logged_out");
+            SetTwitchAuthState(state);
+            if (state == "failed") SetTwitchFailure(Text(message.Payload, "error"));
+            else if (state == "needs_login")
+            {
+                Twitch.Running = false;
+                Twitch.Status = "需要登录";
+                Twitch.Summary = "Twitch Session 已失效，请手动登录后再启动";
+            }
+            UpdateTwitchQuickStart(default, _twitchLoggedIn);
+        }
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "auth_required")
+            SetTwitchAuthorization(Text(message.Payload, "url"), Text(message.Payload, "code"), Bool(message.Payload, "automatic"));
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "login_status" &&
+            message.Payload.TryGetProperty("userId", out var twitchUserId) &&
+            twitchUserId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            _twitchLoggedIn = true;
+            SetTwitchAuthState("logged_in");
+            Twitch.Status = "已登录 · 启动中";
+            Twitch.Summary = $"Twitch 用户 {twitchUserId}";
+            Raise(nameof(TwitchLoginVisibility));
+            Raise(nameof(TwitchLogoutVisibility));
+            UpdateTwitchQuickStart(default, true);
+        }
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "error")
+            SetTwitchFailure(Text(message.Payload, "message"));
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
         {
             _youtubeCurrentLabel = Text(message.Payload, "channel", Text(message.Payload, "title", "YouTube"));

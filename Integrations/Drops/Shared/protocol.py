@@ -62,6 +62,13 @@ def emit(message: dict[str, Any]) -> None:
                 raise
 
 
+def close_protocol_output() -> None:
+    """Stop all later JSONL writes after the host side of the pipe is gone."""
+    global _OUTPUT_CLOSED
+    with _WRITE_LOCK:
+        _OUTPUT_CLOSED = True
+
+
 def event(name: str, payload: dict[str, Any] | None = None) -> None:
     emit({"event": name, "payload": payload or {}})
 
@@ -220,6 +227,8 @@ class WorkerBase:
         pass
 
     def shutdown(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.shutdown_requested:
+            return {"shutdown": True}
         self.stop({})
         self.shutdown_requested = True
         return {"shutdown": True}
@@ -255,6 +264,13 @@ class WorkerBase:
             emit(response)
             if self.shutdown_requested:
                 break
+        if self.shutdown_requested:
+            # shutdown() already performed core cleanup before its response was
+            # emitted. Do not run stop() twice or write another status event.
+            return 0
+        # stdin EOF means the host pipe has already gone away. Cleanup still has
+        # to run, but no cleanup status may be written to the invalid pipe.
+        close_protocol_output()
         try:
             self.stop({})
         except Exception:

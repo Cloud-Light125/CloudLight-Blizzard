@@ -18,6 +18,8 @@ public sealed class AppSettings
     public bool EnableProxy { get; set; }
     public string ProxyUrl { get; set; } = "";
     public bool FallbackDirect { get; set; }
+    public bool AutoStartSoop { get; set; }
+    public bool AutoStartTwitch { get; set; }
     public double WindowWidth { get; set; }
     public double WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }

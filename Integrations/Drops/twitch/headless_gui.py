@@ -97,7 +97,8 @@ class WebsocketStatus:
 
 
 class HeadlessSettingsFacade:
-    def __init__(self) -> None:
+    def __init__(self, twitch: Any = None) -> None:
+        self._twitch = twitch
         self.known_games: set[str] = set()
         self._games_revision = 0
         self._games_changed = threading.Condition()
@@ -124,6 +125,11 @@ class HeadlessSettingsFacade:
             self.known_games = names
             self._games_revision += 1
             self._games_changed.notify_all()
+        if self._twitch is not None:
+            self._twitch._cloudlight_ready = True
+            ready_event = getattr(self._twitch, "_cloudlight_ready_event", None)
+            if ready_event is not None:
+                ready_event.set()
         event("games", {"items": sorted(names, key=str.casefold)})
 
 
@@ -193,12 +199,28 @@ class _Inventory:
 
 
 class LoginForm:
-    def __init__(self) -> None:
+    def __init__(self, twitch: Any = None) -> None:
+        self._twitch = twitch
         self.status = ""
         self.user_id: int | None = None
 
     async def ask_enter_code(self, verification_uri: object, user_code: str) -> None:
-        event("login_required", {"url": str(verification_uri), "code": user_code, "method": "device"})
+        automatic = bool(getattr(self._twitch, "_cloudlight_auto_start", False))
+        payload = {
+            "url": str(verification_uri), "code": user_code,
+            "method": "device", "automatic": automatic,
+        }
+        if self._twitch is not None:
+            self._twitch._cloudlight_auth_required = payload
+            self._twitch._cloudlight_login_state = "needs_login" if automatic else "authorization_required"
+            login_event = getattr(self._twitch, "_cloudlight_login_event", None)
+            if login_event is not None:
+                login_event.set()
+        event("auth_required", payload)
+        if automatic:
+            # Automatic startup must not wait invisibly for a device code or
+            # force-open a browser every time the application starts.
+            raise ExitRequest()
 
     async def ask_login(self) -> Any:
         raise RuntimeError("Worker 模式只支持 Twitch 设备码登录")
@@ -206,6 +228,15 @@ class LoginForm:
     def update(self, status: object, user_id: int | None) -> None:
         self.status = str(status)
         self.user_id = user_id
+        if self._twitch is not None:
+            self._twitch._cloudlight_login_status = str(status)
+            self._twitch._cloudlight_login_user_id = user_id
+            self._twitch._cloudlight_login_state = "logged_in" if user_id is not None else "checking"
+            if user_id is not None:
+                self._twitch._cloudlight_auth_required = None
+            login_event = getattr(self._twitch, "_cloudlight_login_event", None)
+            if login_event is not None and user_id is not None:
+                login_event.set()
         event("login_status", {"status": str(status), "userId": user_id})
 
     def clear(self, **kwargs: Any) -> None:
@@ -225,8 +256,8 @@ class GUIManager:
         self.websockets = WebsocketStatus()
         self.channels = ChannelList()
         self.inv = _Inventory()
-        self.login = LoginForm()
-        self.settings = HeadlessSettingsFacade()
+        self.login = LoginForm(twitch)
+        self.settings = HeadlessSettingsFacade(twitch)
         self.help = _Help()
 
     def start(self) -> None:

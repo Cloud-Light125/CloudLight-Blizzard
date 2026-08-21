@@ -96,6 +96,7 @@ public partial class MainWindow : Window
         if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
         _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
         _watchTimer.Start();
+        _dropsPage.StartAutomaticPlatforms();
         _ = RunAutomaticUpdateCheckAsync();
     }
 
@@ -281,6 +282,16 @@ public partial class MainWindow : Window
         }
 
         _isClosing = true;
+
+        // 用户点击主窗口关闭按钮，并且启用了“关闭主页面时最小化到托盘”时，
+        // 直接隐藏到托盘；只有明确执行“退出”时才检查正在运行的掉宝任务。
+        if (!_exitRequested && _vm.Settings.CloseToTray)
+        {
+            CancelClosing(e);
+            HideToTray();
+            return;
+        }
+
         if (_vm.DropsHost.AnyRunning)
         {
             var dialog = new ExitConfirmationDialog { Owner = this };
@@ -299,13 +310,6 @@ public partial class MainWindow : Window
             BeginExit();
             CompleteExitCleanup();
             base.OnClosing(e);
-            return;
-        }
-
-        if (!_exitRequested && _vm.Settings.CloseToTray)
-        {
-            CancelClosing(e);
-            HideToTray();
             return;
         }
 

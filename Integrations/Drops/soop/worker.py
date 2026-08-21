@@ -17,7 +17,7 @@ from Shared.protocol import WorkerBase, atomic_write_json, event, read_json, run
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "settings_version": 3,
+    "settings_version": 4,
     "auto_claim_enabled": False,
     "low_bandwidth_mode": True,
     "proxy_enabled": False,
@@ -35,6 +35,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "preferred_bjid": "owesports",
     "priority_mission_id": "auto",
     "hang_without_missions": True,
+    "primary_account_uid": "",
 }
 
 
@@ -51,6 +52,8 @@ class SoopWorker(WorkerBase):
         self._core: dict[str, Any] = {}
         self._manager: Any = None
         self._states: dict[str, Any] = {}
+        self._state_changed = threading.Condition()
+        self._auto_start_uid = ""
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="soop-asyncio", daemon=True)
         self._loop_thread.start()
@@ -63,6 +66,8 @@ class SoopWorker(WorkerBase):
             "get_channels": self.get_channels,
             "set_channel": self.set_channel,
             "copy_redeem_code": self.copy_redeem_code,
+            "set_primary_account": self.set_primary_account,
+            "auto_start": self.auto_start,
         })
         self._migrate_legacy_proxy()
 
@@ -161,10 +166,15 @@ class SoopWorker(WorkerBase):
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=timeout)
 
     def _state_callback(self, state: Any) -> None:
-        self._states[state.uid] = state
+        with self._state_changed:
+            self._states[state.uid] = state
+            self._state_changed.notify_all()
         event("account_status", self._state_to_dict(state))
         active = sum(1 for item in self._states.values() if item.running)
-        self.status("运行中" if active else "已停止", f"{active}/{len(self.get_accounts({}))} 个账号运行")
+        if state.uid == self._auto_start_uid:
+            self.status("正在刷新掉宝信息…", "正在读取直播间、任务与奖励背包")
+        else:
+            self.status("运行中" if active else "已停止", f"{active}/{len(self.get_accounts({}))} 个账号运行")
 
     @staticmethod
     def _mission_to_dict(mission: Any) -> dict[str, Any]:
@@ -191,6 +201,7 @@ class SoopWorker(WorkerBase):
     def _state_to_dict(self, state: Any) -> dict[str, Any]:
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
+            "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
             "channelId": state.channel_id, "channelName": state.channel_nick, "broadcastNo": state.broad_no,
             "connectionHealthy": state.connection_healthy, "bridgeConnected": state.bridge_connected,
             "heartbeatStatus": state.heartbeat_status, "heartbeatLastSuccess": state.heartbeat_last_success,
@@ -232,7 +243,8 @@ class SoopWorker(WorkerBase):
         return self._effective_settings()
 
     def _validate_settings(self) -> None:
-        self.settings["settings_version"] = 3
+        self.settings["settings_version"] = 4
+        self.settings["primary_account_uid"] = str(self.settings.get("primary_account_uid", "")).strip()
         for name, minimum, maximum in (
             ("mission_poll_interval", 30, 600), ("inventory_poll_interval", 60, 1800),
             ("channel_refresh_interval", 60, 1800),
@@ -298,6 +310,9 @@ class SoopWorker(WorkerBase):
             self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
         removed = self._core["auth"].remove_account(uid)
         self._states.pop(uid, None)
+        if uid == str(self.settings.get("primary_account_uid", "")):
+            self.settings["primary_account_uid"] = ""
+            atomic_write_json(self.settings_path, self.settings)
         return {"userid": uid, "removed": removed}
 
     def get_accounts(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -306,10 +321,83 @@ class SoopWorker(WorkerBase):
         else:
             accounts = sorted(path.name for path in self.accounts_dir.iterdir() if (path / "cookies.json").is_file())
         result = []
+        primary_uid = str(self.settings.get("primary_account_uid", ""))
         for uid in accounts:
             state = self._states.get(uid)
-            result.append(self._state_to_dict(state) if state else {"uid": uid, "running": False, "status": "已保存", "channelId": None, "channelName": None})
+            result.append(self._state_to_dict(state) if state else {
+                "uid": uid, "running": False, "status": "已保存",
+                "channelId": None, "channelName": None, "primary": uid == primary_uid,
+            })
         return result
+
+    def set_primary_account(self, payload: dict[str, Any]) -> dict[str, Any]:
+        uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        if not uid:
+            raise ValueError("请先选择一个 SOOP 账号")
+        if uid not in {str(item.get("uid", "")) for item in self.get_accounts({})}:
+            raise ValueError("未找到要设为主账号的 SOOP 账号")
+        self.settings["primary_account_uid"] = uid
+        atomic_write_json(self.settings_path, self.settings)
+        event("primary_account_changed", {"userid": uid})
+        return {"userid": uid, "primary": True}
+
+    def auto_start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_core()
+        uid = str(self.settings.get("primary_account_uid", "")).strip()
+        if not uid:
+            return {**self.load_state({}), "autoStartCompleted": False, "missingPrimary": True}
+
+        self.status("正在恢复 SOOP 账号…", uid)
+        cookies = self._core["auth"].load_cookies(uid)
+        if not cookies:
+            raise RuntimeError("SOOP 自动登录失败")
+        if self._manager is None:
+            self._manager = self._core["multi"].MultiMinerManager(
+                on_state=self._state_callback,
+                channel_config=self._channel_config(),
+                app_config=self._app_config(),
+            )
+        self._auto_start_uid = uid
+        self.status("正在刷新掉宝信息…", "正在读取直播间、任务与奖励背包")
+        try:
+            self._submit(self._manager.start_account(cookies))
+        except Exception as exc:
+            self._auto_start_uid = ""
+            raise RuntimeError("SOOP 自动登录失败") from exc
+        self.running = True
+
+        # State callbacks are emitted by the real miner after its network,
+        # channel, mission and inventory work. Wait for that response instead
+        # of using a guessed startup delay.
+        import time
+        expires = time.monotonic() + 90.0
+        terminal = {"登录已失效，请重新添加账号", "无可用直播间", "进房失败"}
+        failure = ""
+        with self._state_changed:
+            while True:
+                state = self._states.get(uid)
+                if state is not None and state.status == "挂机中" and state.running:
+                    break
+                if state is not None and state.status in terminal:
+                    failure = ("SOOP 自动登录失败" if state.status.startswith("登录已失效")
+                               else f"SOOP 自动启动失败：{state.status}")
+                    break
+                remaining = expires - time.monotonic()
+                if remaining <= 0:
+                    failure = "SOOP 自动启动超时，请检查网络或账号状态。"
+                    break
+                self._state_changed.wait(timeout=remaining)
+
+        if failure:
+            self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
+            self.running = bool(self._manager.running_uids)
+            self._auto_start_uid = ""
+            raise RuntimeError(failure)
+
+        self.status("正在启动主账号…", uid)
+        self._auto_start_uid = ""
+        self.status("SOOP 正在运行", uid)
+        return {**self.load_state({}), "autoStartCompleted": True, "missingPrimary": False}
 
     def start_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
@@ -364,6 +452,8 @@ class SoopWorker(WorkerBase):
         raise ValueError("未找到奖励")
 
     def shutdown(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.shutdown_requested:
+            return {"shutdown": True}
         result = super().shutdown(payload)
         self._loop.call_soon_threadsafe(self._loop.stop)
         return result

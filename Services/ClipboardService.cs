@@ -21,7 +21,12 @@ public static class ClipboardService
             if (delay > 0) await Task.Delay(delay, cancellationToken);
             try
             {
-                await dispatcher.InvokeAsync(() => Clipboard.SetDataObject(text, true),
+                // SetDataObject(..., copy: true) performs an OLE flush. On some
+                // Windows clipboard owners that flush reports CLIPBRD_E_CANT_OPEN
+                // even after the text was already copied, which made every log
+                // copy look like a failure. SetText owns/releases the clipboard
+                // in one short STA operation and is sufficient for user copies.
+                await dispatcher.InvokeAsync(() => Clipboard.SetText(text, TextDataFormat.UnicodeText),
                     DispatcherPriority.Normal, cancellationToken).Task;
                 return true;
             }

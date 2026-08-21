@@ -1,0 +1,33 @@
+--- a/Views/MainWindow.xaml.cs
++++ b/Views/MainWindow.xaml.cs
+@@ -281,6 +281,16 @@
+         }
+
+         _isClosing = true;
++
++        // 用户点击主窗口关闭按钮，并且启用了“关闭主页面时最小化到托盘”时，
++        // 直接隐藏到托盘；只有明确执行“退出”时才检查正在运行的掉宝任务。
++        if (!_exitRequested && _vm.Settings.CloseToTray)
++        {
++            CancelClosing(e);
++            HideToTray();
++            return;
++        }
++
+         if (_vm.DropsHost.AnyRunning)
+         {
+             var dialog = new ExitConfirmationDialog { Owner = this };
+@@ -302,13 +312,6 @@
+             return;
+         }
+
+-        if (!_exitRequested && _vm.Settings.CloseToTray)
+-        {
+-            CancelClosing(e);
+-            HideToTray();
+-            return;
+-        }
+-
+         BeginExit();
+         CompleteExitCleanup();
+         base.OnClosing(e);
