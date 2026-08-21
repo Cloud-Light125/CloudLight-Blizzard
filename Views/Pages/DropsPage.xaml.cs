@@ -66,20 +66,41 @@ public partial class DropsPage : UserControl
         {
             _vm.Soop.Status = "正在恢复 SOOP 账号…";
             _vm.Soop.Summary = "正在读取已保存的主账号";
-            var state = await _vm.RequestAsync(DropsPlatform.Soop, "auto_start");
-            if (Bool(state, "missingPrimary"))
+
+            // 自动启动与手动启动共用同一个 start_account 业务入口。
+            // 自动流程只额外负责从已保存账号中找到明确设置的主账号。
+            var initialState = await _vm.LoadAsync(DropsPlatform.Soop);
+            JsonElement primaryAccount = default;
+            if (initialState.TryGetProperty("accounts", out var accounts) &&
+                accounts.ValueKind == JsonValueKind.Array)
+            {
+                primaryAccount = accounts.EnumerateArray()
+                    .FirstOrDefault(account => Bool(account, "primary"));
+            }
+
+            var uid = primaryAccount.ValueKind == JsonValueKind.Object
+                ? Text(primaryAccount, "uid")
+                : "";
+            if (string.IsNullOrWhiteSpace(uid))
             {
                 _vm.Soop.Running = false;
                 _vm.Soop.Status = "需要设置主账号";
                 _vm.Soop.Summary = "SOOP 自动启动已开启，但尚未设置主账号。";
                 return;
             }
+
+            _vm.Soop.Status = "正在启动主账号…";
+            _vm.Soop.Summary = uid;
+            await _vm.RequestAsync(DropsPlatform.Soop, "start_account", new { userid = uid });
+
+            // start_account 与手动按钮完全相同；后续网络、房间、任务和背包状态
+            // 由 Worker 的实时事件更新，不在启动阶段额外等待或重复刷新。
             if (_platform == DropsPlatform.Soop)
             {
+                var state = await _vm.LoadAsync(DropsPlatform.Soop);
                 _vm.ApplyState(DropsPlatform.Soop, state);
                 PopulateSettings(DropsPlatform.Soop, state);
             }
-            _vm.Soop.Status = "SOOP 正在运行";
         }
         catch
         {
@@ -95,20 +116,22 @@ public partial class DropsPage : UserControl
         try
         {
             _vm.BeginTwitchLogin();
-            var state = await _vm.RequestAsync(DropsPlatform.Twitch, "auto_start");
-            if (Bool(state, "requiresLogin"))
-            {
-                if (state.TryGetProperty("authRequired", out var auth) && auth.ValueKind == JsonValueKind.Object)
-                    _vm.SetTwitchAuthorization(Text(auth, "url"), Text(auth, "code"), automatic: true);
-                else
-                    _vm.SetTwitchAuthorization("", "", automatic: true);
-                return;
-            }
+
+            // 自动启动与手动“开始 Twitch 掉宝”共用 start 命令。
+            // automatic=true 只用于避免 Session 失效时在后台强制打开授权页面；
+            // 登录、初始化活动/频道和实际掉宝流程仍走与手动启动相同的 Worker 路径。
+            var state = await _vm.RequestAsync(
+                DropsPlatform.Twitch, "start", new { automatic = true });
+
             if (_platform == DropsPlatform.Twitch)
             {
                 _vm.ApplyState(DropsPlatform.Twitch, state);
                 PopulateSettings(DropsPlatform.Twitch, state);
             }
+
+            // 不再调用 Worker 的 auto_start 阻塞流程。
+            // 登录成功、需要重新登录、启动失败等状态均由 auth_state /
+            // auth_required / login_status / status 实时事件驱动。
         }
         catch
         {
@@ -517,19 +540,28 @@ public partial class DropsPage : UserControl
 
     private async void OnCopySoopCode(object sender, RoutedEventArgs e)
     {
-        if (_vm == null) return;
-        if (SoopInventoryList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一项包含兑换码的奖励。", "复制兑换码"); return; }
+        if (SoopInventoryList.SelectedItem is not DropsRow row)
+        {
+            ShowInfo("请先选择一项包含兑换码的奖励。", "复制兑换码");
+            return;
+        }
+
+        // 与“复制日志”使用同一套剪贴板写入方式。
+        // 兑换码已经包含在当前奖励行的 Payload 中，不再额外请求 Worker 执行复制相关命令。
+        var code = Text(row.Payload, "redeemCode");
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            ShowInfo("该奖励没有可复制的兑换码。", "复制兑换码");
+            return;
+        }
+
         try
         {
-            var result = await _vm.RequestAsync(DropsPlatform.Soop, "copy_redeem_code", new { id = row.Id });
-            var code = Text(result, "redeemCode");
-            if (string.IsNullOrWhiteSpace(code)) throw new InvalidOperationException("该奖励没有可复制的兑换码。");
             if (!await ClipboardService.CopyTextAsync(code))
                 ShowInfo("剪贴板暂时被其它程序占用，请稍后重试。", "复制兑换码");
         }
-        catch (Exception ex)
+        catch
         {
-            Trace.TraceError("SOOP redeem code copy failed: {0}", SensitiveDataRedactor.Redact(ex.Message));
             ShowInfo("复制失败，请稍后重试。", "复制兑换码");
         }
     }
