@@ -46,6 +46,7 @@ class TwitchWorker(WorkerBase):
         self.commands.update({
             "get_campaigns": self.get_campaigns,
             "get_channels": self.get_channels,
+            "claim_drop": self.claim_drop,
             "select_channel": self.select_channel,
             "reload": self.reload,
             "get_games": self.get_games,
@@ -598,10 +599,68 @@ class TwitchWorker(WorkerBase):
                     "id": drop.id, "campaignId": campaign.id, "campaign": campaign.name,
                     "game": campaign.game.name, "name": drop.name,
                     "currentMinutes": drop.current_minutes, "requiredMinutes": drop.required_minutes,
-                    "progress": drop.progress, "claimed": drop.is_claimed, "canClaim": drop.can_claim,
+                    "progress": drop.progress,
+                    "completed": drop.watch_requirement_completed,
+                    "claimed": drop.is_claimed, "canClaim": drop.can_claim,
                     "startsAt": drop.starts_at.isoformat(), "endsAt": drop.ends_at.isoformat(),
                 })
         return result
+
+    @staticmethod
+    def _find_drop(client: Any, drop_id: str) -> Any | None:
+        for campaign in client.inventory:
+            for drop in campaign.drops:
+                if drop.id == drop_id:
+                    return drop
+        return None
+
+    def claim_drop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        drop_id = str(payload.get("id", "")).strip()
+        if not drop_id:
+            return {"status": "not_found", "state": self.load_state({})}
+        client = self._client
+        if client is None or not self.running:
+            self.logger.warning("Twitch 奖励领取失败：掉宝服务尚未运行")
+            return {"status": "not_running", "state": self.load_state({})}
+        return self._submit(self._claim_drop(client, drop_id), timeout=60)
+
+    async def _claim_drop(self, client: Any, drop_id: str) -> dict[str, Any]:
+        drop = self._find_drop(client, drop_id)
+        if drop is None:
+            self.logger.warning("Twitch 奖励暂时无法领取：未找到对应奖励")
+            return {"status": "not_found", "state": self.load_state({})}
+        name = drop.name
+        if drop.is_claimed:
+            return {"status": "already_claimed", "state": self.load_state({})}
+        if not drop.watch_requirement_completed or not drop.can_claim:
+            self.logger.warning("Twitch 奖励暂时无法领取：%s", name)
+            return {"status": "not_claimable", "state": self.load_state({})}
+
+        try:
+            # TimedDrop.claim() invokes the TwitchDropsMiner ClaimDrop GQL mutation.
+            if not await drop.claim():
+                self.logger.warning("Twitch 奖励暂时无法领取：%s", name)
+                return {"status": "failed", "state": self.load_state({})}
+
+            # Refresh only the Core inventory. Do not restart the worker/state machine
+            # or disturb the currently watched campaign/channel.
+            await client.fetch_inventory()
+            refreshed_drop = self._find_drop(client, drop_id)
+            if refreshed_drop is None or not refreshed_drop.is_claimed:
+                self.logger.warning("Twitch 奖励领取结果尚未同步：%s", name)
+                return {"status": "unconfirmed", "state": self.load_state({})}
+
+            self.logger.info("Twitch 奖励领取成功：%s", name)
+            return {"status": "claimed", "state": self.load_state({})}
+        except Exception as exc:
+            if self._runtime_error_category(exc) == "authentication":
+                self.logger.warning("Twitch 登录状态已失效，请重新登录")
+                status = "authentication_error"
+            else:
+                self.logger.warning("Twitch 奖励领取失败：网络连接异常")
+                status = "network_error"
+            self.logger.debug("Twitch manual claim detail", exc_info=True)
+            return {"status": status, "state": self.load_state({})}
 
     def get_channels(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         if self._client is None:

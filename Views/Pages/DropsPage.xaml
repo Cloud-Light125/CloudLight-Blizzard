@@ -103,6 +103,33 @@
                 </Border>
             </Grid>
         </DataTemplate>
+        <DataTemplate x:Key="TwitchDropRowTemplate">
+            <Grid Margin="6,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}"
+                               FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}"
+                               FontSize="11" ToolTip="{Binding Secondary}" Margin="0,3,0,0"
+                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0"
+                            VerticalAlignment="Center">
+                    <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}"
+                                   FontSize="10.5"/>
+                    </Border>
+                    <Button Content="{Binding TwitchClaimButtonText}"
+                            Visibility="{Binding TwitchClaimVisibility}"
+                            IsEnabled="{Binding CanStartTwitchClaim}"
+                            Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0"
+                            Click="OnClaimTwitchDrop"/>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
         <DataTemplate x:Key="TwitchCampaignRowTemplate">
             <Grid Margin="6,8">
                 <Grid.ColumnDefinitions>
@@ -643,11 +670,43 @@
                     </StackPanel>
                 </Border>
 
-                <Grid Margin="0,14,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel><TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="145"><ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="300"/><TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
-                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel><TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,10" MinHeight="145"><ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250"/><TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel"/></StackPanel></Border>
-                </Grid>
+                <StackPanel Margin="0,14,0,0">
+                    <Border Style="{StaticResource SurfaceCard}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="打开背包" Style="{StaticResource SecondaryButton}"
+                                        Padding="12,0" Click="OnOpenTwitchInventory"/>
+                            </Grid>
+                            <Grid Margin="0,10,0,0" MinHeight="145">
+                                <ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource TwitchDropRowTemplate}"
+                                         MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                                <TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}"
+                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}"/>
+                            <Grid Margin="0,10,0,10" MinHeight="145">
+                                <ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}"
+                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250"/>
+                                <TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}"
+                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}"
+                                    Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </StackPanel>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">

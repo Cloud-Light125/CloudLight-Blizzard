@@ -334,6 +334,92 @@ class HeadlessGuiContractTests(unittest.TestCase):
                     logging.getLogger("TwitchDrops").removeHandler(handler)
                     handler.close()
 
+    def test_inventory_exposes_core_completed_claimed_and_can_claim_states(self) -> None:
+        now = datetime.now(timezone.utc)
+
+        def drop(drop_id: str, *, completed: bool, claimed: bool, can_claim: bool):
+            return SimpleNamespace(
+                id=drop_id, name=drop_id, current_minutes=300, required_minutes=60,
+                progress=1.0, watch_requirement_completed=completed,
+                is_claimed=claimed, can_claim=can_claim,
+                starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1),
+            )
+
+        campaign = SimpleNamespace(
+            id="campaign", name="OWWC 2026 Groups Day 3",
+            game=SimpleNamespace(name="Overwatch 2"),
+            drops=[
+                drop("claimable", completed=True, claimed=False, can_claim=True),
+                drop("waiting", completed=True, claimed=False, can_claim=False),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                worker._client = SimpleNamespace(inventory=[campaign])
+                rows = {row["id"]: row for row in worker.get_inventory({})}
+                self.assertEqual(
+                    (rows["claimable"]["completed"], rows["claimable"]["claimed"], rows["claimable"]["canClaim"]),
+                    (True, False, True),
+                )
+                self.assertEqual(
+                    (rows["waiting"]["completed"], rows["waiting"]["claimed"], rows["waiting"]["canClaim"]),
+                    (True, False, False),
+                )
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
+    def test_manual_claim_calls_core_once_refreshes_inventory_and_confirms_claimed(self) -> None:
+        now = datetime.now(timezone.utc)
+        claim_calls: list[str] = []
+        refresh_calls: list[bool] = []
+        drop = SimpleNamespace(
+            id="drop-id", name="Busan Sunset Namecard",
+            current_minutes=60, required_minutes=60, progress=1.0,
+            watch_requirement_completed=True, is_claimed=False, can_claim=True,
+            starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1),
+        )
+
+        async def claim() -> bool:
+            claim_calls.append(drop.id)
+            drop.is_claimed = True
+            drop.can_claim = False
+            return True
+
+        async def fetch_inventory() -> None:
+            refresh_calls.append(True)
+
+        drop.claim = claim
+        campaign = SimpleNamespace(
+            id="campaign", name="OWWC 2026 Groups Day 3",
+            game=SimpleNamespace(name="Overwatch 2"), drops=[drop],
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                worker.running = True
+                worker._client = SimpleNamespace(inventory=[campaign], fetch_inventory=fetch_inventory)
+                worker.load_state = lambda payload: {"inventory": worker.get_inventory({})}
+                result = worker.claim_drop({"id": drop.id})
+                self.assertEqual(claim_calls, [drop.id])
+                self.assertEqual(refresh_calls, [True])
+                self.assertEqual(result["status"], "claimed")
+                self.assertTrue(result["state"]["inventory"][0]["claimed"])
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
     def test_completed_unclaimed_drop_continues_campaign_without_inventory_fetch(self) -> None:
         sys.modules["gui"] = headless_gui
         import constants

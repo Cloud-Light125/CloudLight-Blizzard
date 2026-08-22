@@ -5,7 +5,7 @@ using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.ViewModels;
 
-public sealed class DropsRow
+public sealed class DropsRow : ObservableObject
 {
     public string Id { get; init; } = "";
     public string Primary { get; init; } = "";
@@ -15,6 +15,35 @@ public sealed class DropsRow
     public bool Enabled { get; init; }
     public double Progress { get; init; }
     public JsonElement Payload { get; init; }
+
+    public bool Completed { get; init; }
+    public bool Claimed { get; init; }
+    public bool CanClaim { get; init; }
+    public Visibility TwitchClaimVisibility => Completed && !Claimed && CanClaim
+        ? Visibility.Visible : Visibility.Collapsed;
+    private bool _isClaiming;
+    public bool IsClaiming
+    {
+        get => _isClaiming;
+        private set
+        {
+            if (_isClaiming == value) return;
+            Set(ref _isClaiming, value);
+            Raise(nameof(CanStartTwitchClaim));
+            Raise(nameof(TwitchClaimButtonText));
+        }
+    }
+    public bool CanStartTwitchClaim => Completed && !Claimed && CanClaim && !IsClaiming;
+    public string TwitchClaimButtonText => IsClaiming ? "领取中…" : "领取";
+
+    public bool TryBeginTwitchClaim()
+    {
+        if (!CanStartTwitchClaim) return false;
+        IsClaiming = true;
+        return true;
+    }
+
+    public void EndTwitchClaim() => IsClaiming = false;
 }
 
 public sealed class SoopProgressRow
@@ -834,8 +863,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "inventory", Inventory, item => new DropsRow
         {
             Id = Text(item, "id"), Primary = Text(item, "name"), Secondary = Text(item, "campaign"),
-            Status = Bool(item, "claimed") ? "已领取" : $"{Number(item, "currentMinutes"):0}/{Number(item, "requiredMinutes"):0} 分钟",
+            Status = TwitchDropStatus(item),
             Progress = Number(item, "progress") * 100, Payload = item.Clone(),
+            Completed = Bool(item, "completed"), Claimed = Bool(item, "claimed"),
+            CanClaim = Bool(item, "canClaim"),
         });
         AddRows(state, "channels", Channels, item => new DropsRow
         {
@@ -1113,6 +1144,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         "ineligible" => "不符合资格",
         _ => "当前不可参与",
     };
+
+    private static string TwitchDropStatus(JsonElement item)
+    {
+        if (Bool(item, "claimed")) return "已领取";
+        if (Bool(item, "completed"))
+            return Bool(item, "canClaim") ? "已完成" : "已完成 · 等待可领取";
+        var required = Math.Max(0, Number(item, "requiredMinutes"));
+        var current = Math.Min(Math.Max(0, Number(item, "currentMinutes")), required);
+        return $"{current:0} / {required:0} 分钟";
+    }
 
     private static void AddRows(JsonElement owner, string property, ObservableCollection<DropsRow> target,
         Func<JsonElement, DropsRow> create, bool distinct = false)

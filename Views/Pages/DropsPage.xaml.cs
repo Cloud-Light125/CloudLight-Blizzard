@@ -14,6 +14,7 @@ namespace CloudLightBlizzard.Views.Pages;
 public partial class DropsPage : UserControl
 {
     private const string SoopInventoryUrl = "https://drops.sooplive.com/inventory";
+    private const string TwitchInventoryUrl = "https://www.twitch.tv/drops/inventory";
     private MainViewModel? _main;
     private DropsViewModel? _vm;
     private DropsPlatform _platform = DropsPlatform.Soop;
@@ -25,6 +26,7 @@ public partial class DropsPage : UserControl
     private readonly Dictionary<DropsPlatform, long> _logVisibleRevisions = Enum.GetValues<DropsPlatform>()
         .ToDictionary(platform => platform, _ => 0L);
     private readonly SemaphoreSlim _logStartGate = new(1, 1);
+    private readonly HashSet<string> _twitchClaimsInProgress = new(StringComparer.Ordinal);
     private bool _logTailStarted;
 
     public DropsPage()
@@ -900,6 +902,53 @@ public partial class DropsPage : UserControl
         if (TwitchChannelsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个在线频道。", "切换频道"); return; }
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "select_channel", new { id = row.Id }); await LoadPlatformAsync(DropsPlatform.Twitch); }
         catch (Exception ex) { ShowError(ex, "切换 Twitch 频道失败"); }
+    }
+
+    private void OnOpenTwitchInventory(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = TwitchInventoryUrl, UseShellExecute = true });
+        }
+        catch
+        {
+            ShowInfo("无法打开 Twitch 奖励背包，请稍后重试。", "打开背包");
+        }
+    }
+
+    private async void OnClaimTwitchDrop(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || sender is not Button { DataContext: DropsRow row }) return;
+        if (!_twitchClaimsInProgress.Add(row.Id)) return;
+        if (!row.TryBeginTwitchClaim())
+        {
+            _twitchClaimsInProgress.Remove(row.Id);
+            return;
+        }
+
+        try
+        {
+            var result = await _vm.RequestAsync(
+                DropsPlatform.Twitch, "claim_drop", new { id = row.Id });
+            if (result.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.Object)
+            {
+                _vm.ApplyState(DropsPlatform.Twitch, state);
+                PopulateSettings(DropsPlatform.Twitch, state);
+            }
+
+            var status = Text(result, "status");
+            if (status is not ("claimed" or "already_claimed"))
+                ShowInfo("Twitch 奖励领取失败，请稍后重试。", "领取奖励");
+        }
+        catch
+        {
+            ShowInfo("Twitch 奖励领取失败，请稍后重试。", "领取奖励");
+        }
+        finally
+        {
+            row.EndTwitchClaim();
+            _twitchClaimsInProgress.Remove(row.Id);
+        }
     }
 
     private void RefreshTwitchGameChoices()
