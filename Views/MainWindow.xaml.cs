@@ -14,7 +14,7 @@ namespace CloudLightBlizzard;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _vm = new();
+    private readonly MainViewModel _vm;
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
     private readonly StatsPage _statsPage = new();
@@ -34,8 +34,9 @@ public partial class MainWindow : Window
     private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
 
-    public MainWindow(bool startHidden = false)
+    public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
     {
+        _vm = new MainViewModel(logSession);
         InitializeComponent();
         ThemeManager.Attach(this);
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);

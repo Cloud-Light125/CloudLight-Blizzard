@@ -45,6 +45,26 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 INVALID_PROFILE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+NO_LIVE_MARKERS = (
+    "not currently live", "is not live", "this live event will begin",
+    "premieres in", "has ended", "live event has ended",
+)
+
+
+class _YtDlpLogBridge:
+    """Keep yt-dlp diagnostics in DEBUG instead of writing raw text to the user log."""
+
+    def __init__(self, logger: Any) -> None:
+        self._logger = logger
+
+    def debug(self, message: object) -> None:
+        self._logger.debug("yt-dlp: %s", message)
+
+    def warning(self, message: object) -> None:
+        self._logger.debug("yt-dlp warning: %s", message)
+
+    def error(self, message: object) -> None:
+        self._logger.debug("yt-dlp error: %s", message)
 
 
 def normalize_profile(value: object) -> str:
@@ -117,6 +137,9 @@ class YouTubeWorker(WorkerBase):
         self.current_stream: dict[str, Any] | None = None
         self.started_at: datetime | None = None
         self.last_browser_status = "未启动"
+        self._last_reported_stream_key = ""
+        self._last_scan_failed = False
+        self._proxy_fallback_reported = False
         self.commands.update({
             "get_profiles": self.get_profiles,
             "add_profile": self.add_profile,
@@ -223,6 +246,8 @@ class YouTubeWorker(WorkerBase):
         self.started_at = datetime.now().astimezone()
         self._thread = threading.Thread(target=self._watch_loop, name="youtube-watcher", daemon=True)
         self._thread.start()
+        enabled_channels = sum(1 for channel in self.config["channels"] if channel.get("enabled", True))
+        self.logger.info("正在启动 YouTube 观看服务，已启用 %d 个频道", enabled_channels)
         self.status("正在检测", f"{len(self.config['profiles'])} 个观看账号")
         return self._state()
 
@@ -231,10 +256,11 @@ class YouTubeWorker(WorkerBase):
             for module in ("yt_dlp", "requests", "websocket"):
                 importlib.import_module(module)
         except ModuleNotFoundError as exc:
-            self.logger.exception("YouTube worker dependency is missing")
+            self.logger.exception("YouTube 观看服务缺少运行组件")
             raise RuntimeError("YouTube 观看服务组件不完整，请重新构建或安装后台组件。") from exc
 
     def stop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        was_running = self.running
         self.running = False
         self._stop.set()
         thread = self._thread
@@ -244,6 +270,8 @@ class YouTubeWorker(WorkerBase):
         self._close_all_browsers()
         self.current_stream = None
         self.last_browser_status = "已停止"
+        if was_running:
+            self.logger.info("YouTube 观看服务已停止")
         self.status("已停止", f"{len(self.config['profiles'])} 个观看账号")
         return self._state()
 
@@ -287,7 +315,10 @@ class YouTubeWorker(WorkerBase):
         previous = self.config.get("browser", "chrome")
         try:
             self.config["browser"] = browser
-            return {"browser": browser, "path": str(self._browser_binary())}
+            path = str(self._browser_binary())
+            label = "Google Chrome" if browser == "chrome" else "Brave"
+            self.logger.info("已找到 %s：%s", label, path)
+            return {"browser": browser, "path": path}
         finally:
             self.config["browser"] = previous
 
@@ -314,6 +345,7 @@ class YouTubeWorker(WorkerBase):
     def open_login(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = normalize_profile(payload.get("profile") or self.config["profiles"][0])
         session = self._launch(name, "https://www.youtube.com/", login=True)
+        self.logger.info("浏览器登录窗口已打开")
         return {"profile": name, "pid": session.process.pid, "profilePath": str(self.profiles_dir / name)}
 
     def get_channels(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -368,6 +400,10 @@ class YouTubeWorker(WorkerBase):
     def _watch_loop(self) -> None:
         try:
             while not self._stop.is_set():
+                enabled_channels = sum(
+                    1 for channel in self.config["channels"] if channel.get("enabled", True)
+                )
+                self.logger.info("正在检查 %d 个已启用频道", enabled_channels)
                 stream = self._detect_stream()
                 if stream:
                     self.current_stream = stream
@@ -375,70 +411,121 @@ class YouTubeWorker(WorkerBase):
                         if self._stop.is_set():
                             break
                         self._ensure_session(profile, stream["url"])
+                    stream_key = str(stream.get("videoId") or stream.get("url", ""))
+                    if stream_key != self._last_reported_stream_key:
+                        self.logger.info("发现直播：%s", stream.get("channel") or stream.get("title", "YouTube"))
+                        self.logger.info("开始观看：%s", stream.get("title", "YouTube 直播"))
+                        self._last_reported_stream_key = stream_key
                     self.last_browser_status = "浏览器运行中"
                     self.status("正在观看", f"{stream.get('channel', '')} · {len(self.sessions)} 个观看账号")
                     event("stream", stream)
                     self._sample_until_next_check(stream)
                 else:
+                    if self._last_reported_stream_key:
+                        self.logger.info("直播已结束，等待下一次检查")
+                        self._last_reported_stream_key = ""
+                    elif not self._last_scan_failed:
+                        self.logger.info("本轮未发现正在直播的频道")
                     self.current_stream = None
-                    self.status("等待直播", f"{len(self.config['channels'])} 个频道")
+                    if self._last_scan_failed:
+                        self.status("检测异常", "将在下一轮自动重试")
+                    else:
+                        self.status("等待直播", f"{enabled_channels} 个频道")
                     self._stop.wait(self.config["check_interval"])
         except Exception as exc:
-            self.logger.exception("YouTube watcher failed")
+            self.logger.exception("YouTube 观看服务运行异常")
             self.running = False
-            self.status("运行异常", str(exc))
-            event("error", {"message": str(exc)})
+            message = "YouTube 检测失败，请检查网络或浏览器设置"
+            self.status("运行异常", message)
+            event("error", {"message": message})
 
     def _detect_stream(self) -> dict[str, Any] | None:
+        self._last_scan_failed = False
         if self.config["mode"] == "manual":
             url = normalize_url(self.config["manual_url"])
             return {"title": "手动观看", "channel": "手动 URL", "url": url, "videoId": video_id(url), "source": "manual"}
-        errors: list[str] = []
-        for channel in self.config["channels"]:
-            if not channel.get("enabled", True):
-                continue
+        enabled_channels = [channel for channel in self.config["channels"] if channel.get("enabled", True)]
+        failures: list[str] = []
+        checked_no_live = 0
+        for channel in enabled_channels:
             base = channel.get("url") or f"https://www.youtube.com/channel/{channel.get('id', '')}/live"
             url = base if str(base).rstrip("/").endswith("/live") else str(base).rstrip("/") + "/live"
-            try:
-                import yt_dlp
-                options: dict[str, Any] = {
-                    "quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
-                    "ignore_no_formats_error": True, "socket_timeout": 15, "retries": 1,
-                    "extractor_retries": 1, "cachedir": False,
-                }
-                if self.proxy["enableProxy"]:
-                    options["proxy"] = self.proxy["proxyUrl"]
-                with yt_dlp.YoutubeDL(options) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                if info and info.get("_type") == "playlist":
-                    info = next((entry for entry in info.get("entries") or [] if entry), {})
-                if info and (info.get("is_live") or info.get("live_status") == "is_live"):
-                    found_id = str(info.get("id") or "")
-                    return {
-                        "title": str(info.get("title") or "正在直播"),
-                        "channel": str(info.get("channel") or info.get("uploader") or channel.get("name", "")),
-                        "url": str(info.get("webpage_url") or (f"https://www.youtube.com/watch?v={found_id}" if found_id else url)),
-                        "videoId": found_id, "source": "yt-dlp",
-                    }
-            except Exception as exc:
-                errors.append(f"{channel.get('name', '')}: {exc}")
-                if self.proxy["enableProxy"] and self.proxy["fallbackDirect"]:
-                    previous = self.proxy["enableProxy"]
-                    self.proxy["enableProxy"] = False
-                    try:
-                        result = self._detect_single_public(channel, url)
-                        if result:
-                            return result
-                    finally:
-                        self.proxy["enableProxy"] = previous
-            public = self._detect_single_public(channel, url)
+            result, no_live, error = self._detect_with_ytdlp(channel, url)
+            if result:
+                return result
+            public, public_checked = self._detect_single_public(channel, url)
             if public:
                 return public
-        if errors:
-            self.logger.warning("直播检测失败: %s", " | ".join(errors))
+            if no_live or public_checked:
+                checked_no_live += 1
+                continue
+            if error is not None and self.proxy["enableProxy"] and self.proxy["fallbackDirect"]:
+                if not self._proxy_fallback_reported:
+                    self.logger.info("YouTube 代理连接失败，正在尝试直连")
+                    self._proxy_fallback_reported = True
+                previous = self.proxy["enableProxy"]
+                self.proxy["enableProxy"] = False
+                try:
+                    result, no_live, direct_error = self._detect_with_ytdlp(channel, url)
+                    if result:
+                        return result
+                    public, public_checked = self._detect_single_public(channel, url)
+                    if public:
+                        return public
+                    if no_live or public_checked:
+                        checked_no_live += 1
+                        continue
+                    error = direct_error or error
+                finally:
+                    self.proxy["enableProxy"] = previous
+            if error is not None:
+                failures.append(f"{channel.get('name', '')}: {error}")
+        if failures:
+            self.logger.debug("YouTube channel detection details: %s", " | ".join(failures))
+        if enabled_channels and failures and checked_no_live == 0 and len(failures) == len(enabled_channels):
+            self._last_scan_failed = True
+            self.logger.warning("YouTube 检测失败，请检查网络或浏览器设置")
         return None
 
-    def _detect_single_public(self, channel: dict[str, Any], url: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _is_no_live_error(exc: BaseException) -> bool:
+        message = str(exc).casefold()
+        return any(marker in message for marker in NO_LIVE_MARKERS)
+
+    def _detect_with_ytdlp(
+        self, channel: dict[str, Any], url: str
+    ) -> tuple[dict[str, Any] | None, bool, BaseException | None]:
+        try:
+            import yt_dlp
+            options: dict[str, Any] = {
+                "quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
+                "ignore_no_formats_error": True, "socket_timeout": 15, "retries": 1,
+                "extractor_retries": 1, "cachedir": False, "logger": _YtDlpLogBridge(self.logger),
+            }
+            if self.proxy["enableProxy"]:
+                options["proxy"] = self.proxy["proxyUrl"]
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if info and info.get("_type") == "playlist":
+                info = next((entry for entry in info.get("entries") or [] if entry), {})
+            if info and (info.get("is_live") or info.get("live_status") == "is_live"):
+                found_id = str(info.get("id") or "")
+                return ({
+                    "title": str(info.get("title") or "正在直播"),
+                    "channel": str(info.get("channel") or info.get("uploader") or channel.get("name", "")),
+                    "url": str(info.get("webpage_url") or (f"https://www.youtube.com/watch?v={found_id}" if found_id else url)),
+                    "videoId": found_id, "source": "yt-dlp",
+                }, False, None)
+            return None, True, None
+        except Exception as exc:
+            if self._is_no_live_error(exc):
+                return None, True, None
+            self.logger.debug("yt-dlp detection failed for %s: %s", channel.get("name", ""), exc)
+            return None, False, exc
+
+    def _detect_single_public(
+        self, channel: dict[str, Any], url: str
+    ) -> tuple[dict[str, Any] | None, bool]:
         try:
             import requests
             session = requests.Session()
@@ -447,14 +534,15 @@ class YouTubeWorker(WorkerBase):
             response = session.get(url, timeout=15, proxies=proxies, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "zh-CN,zh;q=0.9"})
             response.raise_for_status()
             if not re.search(r'"isLiveNow"\s*:\s*true', response.text):
-                return None
+                return None, True
             ids = re.findall(r'"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"', response.text)
             if not ids:
-                return None
+                return None, True
             found = ids[-1]
-            return {"title": "正在直播", "channel": channel.get("name", ""), "url": f"https://www.youtube.com/watch?v={found}", "videoId": found, "source": "public-page"}
-        except Exception:
-            return None
+            return ({"title": "正在直播", "channel": channel.get("name", ""), "url": f"https://www.youtube.com/watch?v={found}", "videoId": found, "source": "public-page"}, True)
+        except Exception as exc:
+            self.logger.debug("YouTube public page detection failed for %s: %s", channel.get("name", ""), exc)
+            return None, False
 
     def _sample_until_next_check(self, stream: dict[str, Any]) -> None:
         deadline = time.monotonic() + self.config["check_interval"]
@@ -471,8 +559,12 @@ class YouTubeWorker(WorkerBase):
 
     def _browser_binary(self) -> Path:
         configured = str(self.config.get("browser_path", "")).strip()
-        if configured and Path(configured).is_file():
-            return Path(configured)
+        if configured:
+            try:
+                if Path(configured).is_file():
+                    return Path(configured)
+            except OSError as exc:
+                self.logger.debug("Configured browser path is unavailable: %s (%s)", configured, exc)
         candidates = []
         local = os.environ.get("LOCALAPPDATA", "")
         program_files = [os.environ.get("PROGRAMFILES", ""), os.environ.get("PROGRAMFILES(X86)", "")]
@@ -481,11 +573,11 @@ class YouTubeWorker(WorkerBase):
         else:
             candidates = [Path(root) / "Google/Chrome/Application/chrome.exe" for root in [local, *program_files] if root]
         for candidate in candidates:
-            if candidate.is_file():
-                return candidate
-        found = shutil.which("brave" if self.config["browser"] == "brave" else "chrome")
-        if found:
-            return Path(found)
+            try:
+                if candidate.is_file():
+                    return candidate
+            except OSError as exc:
+                self.logger.debug("Browser candidate is unavailable: %s (%s)", candidate, exc)
         raise FileNotFoundError("未找到 Chrome / Brave，请在设置中指定浏览器路径。")
 
     def _launch(self, profile: str, url: str, login: bool = False) -> BrowserSession:

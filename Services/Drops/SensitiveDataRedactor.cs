@@ -13,11 +13,15 @@ public static partial class SensitiveDataRedactor
     [GeneratedRegex("(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth)=)[^&#\\s]+")]
     private static partial Regex SecretQueryPattern();
 
+    [GeneratedRegex("(?i)(https?://)[^/\\s:@]+:[^@/\\s]+@")]
+    private static partial Regex UrlCredentialsPattern();
+
     public static string Redact(string? value)
     {
         if (string.IsNullOrEmpty(value)) return "";
         var redacted = BearerPattern().Replace(value, "$1<redacted>");
         redacted = SecretPattern().Replace(redacted, "$1<redacted>");
-        return SecretQueryPattern().Replace(redacted, "$1<redacted>");
+        redacted = SecretQueryPattern().Replace(redacted, "$1<redacted>");
+        return UrlCredentialsPattern().Replace(redacted, "$1<redacted>@");
     }
 }

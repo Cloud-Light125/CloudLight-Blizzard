@@ -3,7 +3,38 @@ using System.Text;
 
 namespace CloudLightBlizzard.Services.Drops;
 
-public sealed record PlatformLogChunk(DropsPlatform Platform, string Text, bool Reset);
+public sealed record PlatformLogChunk(DropsPlatform Platform, string Text, bool Reset)
+{
+    public long Revision { get; init; }
+}
+
+/// <summary>Captures the per-platform log positions at desktop process startup.</summary>
+public sealed class PlatformLogSession
+{
+    private readonly Dictionary<DropsPlatform, (string FilePath, long StartOffset)> _files;
+
+    public PlatformLogSession(string logsDirectory)
+    {
+        Directory.CreateDirectory(logsDirectory);
+        _files = Enum.GetValues<DropsPlatform>().ToDictionary(
+            platform => platform,
+            platform =>
+            {
+                var path = Path.Combine(logsDirectory, $"drops-{platform.ToString().ToLowerInvariant()}.log");
+                try
+                {
+                    var info = new FileInfo(path);
+                    return (path, info.Exists ? info.Length : 0L);
+                }
+                catch (IOException) { return (path, 0L); }
+                catch (UnauthorizedAccessException) { return (path, 0L); }
+            });
+    }
+
+    internal string FilePath(DropsPlatform platform) => _files[platform].FilePath;
+    internal long StartOffset(DropsPlatform platform) => _files[platform].StartOffset;
+    internal string LogsDirectory => Path.GetDirectoryName(_files[DropsPlatform.Soop].FilePath)!;
+}
 
 /// <summary>Incrementally tails the three independent drops logs with a watcher plus timer fallback.</summary>
 public sealed class PlatformLogTailService : IAsyncDisposable
@@ -17,6 +48,7 @@ public sealed class PlatformLogTailService : IAsyncDisposable
         public DateTime LastWriteTime { get; set; }
         public DateTime CreationTime { get; set; }
         public bool ResetRequested { get; set; }
+        public long Revision { get; set; }
         public Decoder Decoder { get; set; } = Encoding.UTF8.GetDecoder();
         public StringBuilder Content { get; } = new();
     }
@@ -31,16 +63,22 @@ public sealed class PlatformLogTailService : IAsyncDisposable
     public event EventHandler<PlatformLogChunk>? Changed;
 
     public PlatformLogTailService(string logsDirectory)
+        : this(new PlatformLogSession(logsDirectory))
     {
-        Directory.CreateDirectory(logsDirectory);
+    }
+
+    public PlatformLogTailService(PlatformLogSession session)
+    {
         _states = Enum.GetValues<DropsPlatform>().ToDictionary(
             platform => platform,
             platform => new TailState
             {
                 Platform = platform,
-                FilePath = Path.Combine(logsDirectory, $"drops-{platform.ToString().ToLowerInvariant()}.log"),
+                FilePath = session.FilePath(platform),
+                LastOffset = session.StartOffset(platform),
+                LastLength = session.StartOffset(platform),
             });
-        _watcher = new FileSystemWatcher(logsDirectory, "drops-*.log")
+        _watcher = new FileSystemWatcher(session.LogsDirectory, "drops-*.log")
         {
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.LastWrite,
             IncludeSubdirectories = false,
@@ -69,6 +107,44 @@ public sealed class PlatformLogTailService : IAsyncDisposable
     {
         lock (_states)
             return _states[platform].Content.ToString();
+    }
+
+    /// <summary>Clears only this process' visible buffer and skips bytes already on disk.</summary>
+    public async Task<long> ClearDisplayAsync(
+        DropsPlatform platform, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _pollGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { return -1; }
+
+        try
+        {
+            var state = _states[platform];
+            FileInfo? info = null;
+            try
+            {
+                info = new FileInfo(state.FilePath);
+                if (!info.Exists) info = null;
+                else info.Refresh();
+            }
+            catch (IOException) { info = null; }
+            catch (UnauthorizedAccessException) { info = null; }
+
+            lock (_states)
+            {
+                state.LastOffset = info?.Length ?? 0;
+                state.LastLength = info?.Length ?? 0;
+                state.LastWriteTime = info?.LastWriteTimeUtc ?? default;
+                state.CreationTime = info?.CreationTimeUtc ?? default;
+                state.ResetRequested = false;
+                state.Decoder = Encoding.UTF8.GetDecoder();
+                state.Content.Clear();
+                return ++state.Revision;
+            }
+        }
+        finally { _pollGate.Release(); }
     }
 
     private async Task RunPollLoopAsync()
@@ -138,7 +214,11 @@ public sealed class PlatformLogTailService : IAsyncDisposable
             info = new FileInfo(state.FilePath);
             if (!info.Exists)
             {
-                ResetState(state, clearContent: true);
+                lock (_states)
+                {
+                    if (state.ResetRequested)
+                        ResetCursor(state);
+                }
                 return;
             }
             info.Refresh();
@@ -151,9 +231,9 @@ public sealed class PlatformLogTailService : IAsyncDisposable
         {
             reset = state.ResetRequested || info.Length < state.LastOffset ||
                     (state.CreationTime != default && info.CreationTimeUtc != state.CreationTime) ||
-                    (info.Length == state.LastLength && state.LastOffset > 0 &&
+                    (state.LastWriteTime != default && info.Length == state.LastLength && state.LastOffset > 0 &&
                      info.LastWriteTimeUtc != state.LastWriteTime);
-            if (reset) ResetState(state, clearContent: true);
+            if (reset) ResetCursor(state);
         }
 
         if (info.Length <= state.LastOffset)
@@ -162,7 +242,6 @@ public sealed class PlatformLogTailService : IAsyncDisposable
             state.LastWriteTime = info.LastWriteTimeUtc;
             state.CreationTime = info.CreationTimeUtc;
             state.ResetRequested = false;
-            if (reset) Changed?.Invoke(this, new PlatformLogChunk(state.Platform, "", true));
             return;
         }
 
@@ -193,10 +272,13 @@ public sealed class PlatformLogTailService : IAsyncDisposable
             state.ResetRequested = false;
             state.Content.Append(text);
         }
-        Changed?.Invoke(this, new PlatformLogChunk(state.Platform, text, reset));
+        Changed?.Invoke(this, new PlatformLogChunk(state.Platform, text, false)
+        {
+            Revision = state.Revision,
+        });
     }
 
-    private static void ResetState(TailState state, bool clearContent)
+    private static void ResetCursor(TailState state)
     {
         state.LastOffset = 0;
         state.LastLength = 0;
@@ -204,7 +286,6 @@ public sealed class PlatformLogTailService : IAsyncDisposable
         state.CreationTime = default;
         state.ResetRequested = false;
         state.Decoder = Encoding.UTF8.GetDecoder();
-        if (clearContent) state.Content.Clear();
     }
 
     public async ValueTask DisposeAsync()

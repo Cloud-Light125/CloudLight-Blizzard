@@ -192,9 +192,10 @@ class BaseDrop:
             self._twitch.print(
                 _("status", "claimed_drop").format(drop=claim_text.replace('\n', ' '))
             )
+            logger.info("掉宝奖励已完成并领取：%s", self.name)
             self._twitch.gui.tray.notify(claim_text, _("gui", "tray", "notification_title"))
         else:
-            logger.error(f"Drop claim has potentially failed! Drop ID: {self.id}")
+            logger.error("Twitch 掉宝领取可能失败（Drop ID：%s）", self.id)
         return result
 
     async def _claim(self) -> bool:
@@ -452,7 +453,15 @@ class DropsCampaign:
 
     @property
     def finished(self) -> bool:
-        return all(d.is_claimed or d.required_minutes <= 0 for d in self.drops)
+        return all(
+            d.is_claimed
+            or d.required_minutes <= 0
+            or (
+                not self._twitch.settings.auto_claim_drops
+                and d.watch_requirement_completed
+            )
+            for d in self.drops
+        )
 
     @property
     def claimed_drops(self) -> int:

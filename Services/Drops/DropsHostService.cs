@@ -35,6 +35,15 @@ public sealed class DropsHostService : IAsyncDisposable
     public event EventHandler<WorkerEvent>? EventReceived;
     public event EventHandler<WorkerSnapshot>? SnapshotChanged;
 
+    public void PublishUserLog(DropsPlatform platform, string level, string message) =>
+        EventReceived?.Invoke(this, new WorkerEvent(platform, "log",
+            JsonSerializer.SerializeToElement(new
+            {
+                level,
+                message = SensitiveDataRedactor.Redact(message),
+                userFacing = true,
+            })));
+
     public bool AnyRunning
     {
         get { lock (_sync) return _workers.Values.Any(worker => worker.BusinessRunning); }
@@ -62,6 +71,7 @@ public sealed class DropsHostService : IAsyncDisposable
             "refresh" when platform == DropsPlatform.Twitch => 90,
             "auto_start" when platform == DropsPlatform.Twitch => 270,
             "auto_start" when platform == DropsPlatform.Soop => 120,
+            "claim_reward" when platform == DropsPlatform.Soop => 90,
             "stop" or "shutdown" => 40,
             _ => 30,
         }));
@@ -151,6 +161,9 @@ public sealed class DropsHostService : IAsyncDisposable
         process.Exited += (_, _) => OnExited(worker);
         lock (_sync) _workers[platform] = worker;
         PublishSnapshot(worker);
+        if (platform == DropsPlatform.Twitch)
+            EventReceived?.Invoke(this, new WorkerEvent(platform, "connection_status",
+                JsonSerializer.SerializeToElement(new { phase = "worker_starting" })));
 
         try
         {

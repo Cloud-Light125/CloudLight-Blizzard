@@ -65,6 +65,7 @@ class SoopWorker(WorkerBase):
             "stop_account": self.stop_account,
             "get_channels": self.get_channels,
             "set_channel": self.set_channel,
+            "claim_reward": self.claim_reward,
             "copy_redeem_code": self.copy_redeem_code,
             "set_primary_account": self.set_primary_account,
             "auto_start": self.auto_start,
@@ -118,8 +119,13 @@ class SoopWorker(WorkerBase):
             auth.ACCOUNTS_DIR = self.accounts_dir
             auth.COOKIES_PATH = self.data_dir / "cookies.json"
             channel = importlib.import_module("cloudlight_soop_core.channel")
+            drops = importlib.import_module("cloudlight_soop_core.drops")
             multi = importlib.import_module("cloudlight_soop_core.multi_miner")
-            self._core = {"config": config, "auth": auth, "channel": channel, "multi": multi}
+            network = importlib.import_module("cloudlight_soop_core.network")
+            self._core = {
+                "config": config, "auth": auth, "channel": channel,
+                "drops": drops, "multi": multi, "network": network,
+            }
             root_logger = logging.getLogger()
             root_logger.setLevel(logging.INFO)
             if self.logger.handlers and self.logger.handlers[0] not in root_logger.handlers:
@@ -198,6 +204,37 @@ class SoopWorker(WorkerBase):
             "redeemCode": item.redeem_code or "", "description": item.description or "",
         }
 
+    def _current_progress_for_state(self, state: Any) -> list[dict[str, Any]]:
+        """Return the tiers that the Core says can progress on the current channel."""
+        if not state.running or not state.channel_id or self._manager is None:
+            return []
+        get_miner = getattr(self._manager, "get_miner", None)
+        miner = get_miner(state.uid) if callable(get_miner) else None
+        current_channel = getattr(miner, "_current", None)
+        if current_channel is None:
+            return []
+
+        missions_for_channel = getattr(self._core.get("channel"), "missions_for_channel", None)
+        if not callable(missions_for_channel):
+            return []
+
+        rows: list[dict[str, Any]] = []
+        for mission in missions_for_channel(state.missions, current_channel):
+            item = mission.active_item()
+            if item is None:
+                continue
+            rows.append({
+                "id": f"{state.uid}:{mission.drops_idx}",
+                "account": state.uid,
+                "channel": state.channel_nick or state.channel_id,
+                "campaign": mission.title,
+                "reward": item.item_name,
+                "currentMinutes": item.view_time,
+                "requiredMinutes": item.give_term,
+                "percent": max(0, min(100, int(item.percent))),
+            })
+        return rows
+
     def _state_to_dict(self, state: Any) -> dict[str, Any]:
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
@@ -207,6 +244,7 @@ class SoopWorker(WorkerBase):
             "heartbeatStatus": state.heartbeat_status, "heartbeatLastSuccess": state.heartbeat_last_success,
             "networkUploaded": state.network_uploaded, "networkDownloaded": state.network_downloaded,
             "networkBps": state.network_last_minute_bps,
+            "currentProgress": self._current_progress_for_state(state),
             "missions": [self._mission_to_dict(mission) for mission in state.missions],
             "inventory": [self._inventory_to_dict(item) for item in state.inventory],
             "channels": [
@@ -223,6 +261,7 @@ class SoopWorker(WorkerBase):
             "accounts": self.get_accounts({}),
             "tasks": self.get_tasks({}),
             "inventory": self.get_inventory({}),
+            "currentProgress": self.get_current_progress({}),
             "coreAvailable": bool(self._core),
             "coreError": self._core_error,
             "proxy": self.proxy,
@@ -429,6 +468,11 @@ class SoopWorker(WorkerBase):
         states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
         return [{"uid": state.uid, **item} for state in states for item in map(self._inventory_to_dict, state.inventory)]
 
+    def get_current_progress(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        return [row for state in states for row in self._current_progress_for_state(state)]
+
     def get_channels(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         channels: dict[str, dict[str, Any]] = {}
         for state in self._states.values():
@@ -443,6 +487,51 @@ class SoopWorker(WorkerBase):
             "priority_mission_id": payload.get("priorityMissionId", self.settings.get("priority_mission_id", "auto")),
         }
         return self.save_settings({"settings": updates})
+
+    def claim_reward(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_core()
+        uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        item_id = str(payload.get("id", "")).strip()
+        if not uid or not item_id:
+            raise ValueError("请先选择要领取的 SOOP 奖励")
+
+        selected = next((item for item in self.get_inventory({"uid": uid}) if item.get("id") == item_id), None)
+        if selected is None:
+            raise ValueError("未找到要领取的 SOOP 奖励")
+        if selected.get("claimed"):
+            return {"id": item_id, "status": "already_claimed", "success": True}
+
+        cookies = self._core["auth"].load_cookies(uid)
+        if not cookies:
+            raise ValueError("SOOP 登录已失效，请重新添加账号")
+
+        async def claim_and_refresh() -> tuple[Any, list[Any] | None]:
+            context = self._core["network"].AccountNetworkContext(uid, cookies, self._app_config())
+            session = await context.open()
+            try:
+                client = self._core["drops"].DropsClient(session)
+                result = await client.claim_and_verify(item_id, max_attempts=2)
+                try:
+                    refreshed = await client.get_inventory(with_codes=True)
+                except Exception:
+                    refreshed = None
+                return result, refreshed
+            finally:
+                await context.close()
+
+        result, refreshed = self._submit(claim_and_refresh(), timeout=80)
+        if refreshed is not None and uid in self._states:
+            state = self._states[uid]
+            state.inventory = list(refreshed)
+            self._state_callback(state)
+        status = result.status.value
+        self.logger.info("[%s] 手动领取结果：%s", uid, status)
+        return {
+            "id": item_id,
+            "status": status,
+            "success": bool(result.success),
+            "redeemCode": result.redeem_code or "",
+        }
 
     def copy_redeem_code(self, payload: dict[str, Any]) -> dict[str, Any]:
         item_id = str(payload.get("id", ""))

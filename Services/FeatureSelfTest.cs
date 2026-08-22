@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.ViewModels;
 using GameRegion = CloudLightBlizzard.Services.OverwatchRegion.OverwatchRegion;
@@ -11,7 +12,7 @@ namespace CloudLightBlizzard.Services;
 
 public static class FeatureSelfTest
 {
-    public static void Run(string outputRoot)
+    public static void Run(string outputRoot, string? test = null)
     {
         outputRoot = Path.GetFullPath(outputRoot);
         Directory.CreateDirectory(outputRoot);
@@ -22,8 +23,16 @@ public static class FeatureSelfTest
         var report = new StringBuilder();
         try
         {
+            if (string.Equals(test, "drops-log", StringComparison.OrdinalIgnoreCase))
+            {
+                RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
+            RunTwitchConnectionStateTest(report);
+            RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
             RunRegionGenerationTest(workspace, report).GetAwaiter().GetResult();
@@ -105,6 +114,100 @@ public static class FeatureSelfTest
         Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired)
                == AccountSwitchVerificationState.LoggedIn, "confirmed target wins");
         report.AppendLine("TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)");
+    }
+
+    private static void RunTwitchConnectionStateTest(StringBuilder report)
+    {
+        var host = new DropsHostService();
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMilliseconds(20),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2),
+                   (_, _) => Task.CompletedTask))
+        {
+            vm.BeginTwitchLogin();
+            Assert(vm.TwitchConnectionStage == TwitchConnectionStage.Connecting,
+                "Twitch login immediately enters connecting stage");
+            Assert(!vm.CanTwitchLogin && vm.TwitchLoginButtonText == "正在登录…",
+                "Twitch login button immediately shows progress and blocks duplicates");
+
+            vm.SetTwitchTemporaryNetworkFailure("simulated network failure");
+            vm.SetTwitchTemporaryNetworkFailure("same simulated network failure");
+            Assert(SpinWait.SpinUntil(() => vm.TwitchRetryLoopActive, 500),
+                "Twitch network failure schedules retry");
+            Assert(vm.TwitchRetryLoopStarts == 1,
+                "Twitch retry supervisor remains single-instance");
+        }
+
+        var retryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMilliseconds(80),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2),
+                   (_, _) => { Interlocked.Increment(ref retryCalls); return Task.CompletedTask; }))
+        {
+            vm.BeginTwitchLogin();
+            vm.SetTwitchTemporaryNetworkFailure("simulated network failure");
+            vm.SetTwitchAuthorization("https://www.twitch.tv/activate", "ABCD-EFGH", automatic: false);
+            Thread.Sleep(120);
+            Assert(retryCalls == 0, "Twitch auth-required cancels network retry");
+            Assert(vm.TwitchConnectionStage == TwitchConnectionStage.WaitingAuthorization,
+                "Twitch auth-required remains waiting for the current device code");
+            Assert(!vm.CanTwitchLogin, "Twitch auth-required blocks duplicate device-code requests");
+        }
+        report.AppendLine("Twitch connection state: PASS");
+    }
+
+    private static async Task RunPlatformLogTailSessionTest(string workspace, StringBuilder report)
+    {
+        static string LogPath(string directory) => Path.Combine(directory, "drops-twitch.log");
+
+        var existingDirectory = Path.Combine(workspace, "log-tail-existing");
+        Directory.CreateDirectory(existingDirectory);
+        var existingPath = LogPath(existingDirectory);
+        await File.WriteAllTextAsync(existingPath, "OLD-1\nOLD-2\n");
+        var existingSession = new PlatformLogSession(existingDirectory);
+        await File.AppendAllTextAsync(existingPath, "NEW-1\nNEW-2\n");
+        await using (var tail = new PlatformLogTailService(existingSession))
+        {
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            Assert(tail.GetCurrentText(DropsPlatform.Twitch) == "NEW-1\nNEW-2\n",
+                "log UI skips bytes written before process session capture");
+        }
+
+        var missingDirectory = Path.Combine(workspace, "log-tail-missing");
+        Directory.CreateDirectory(missingDirectory);
+        var missingSession = new PlatformLogSession(missingDirectory);
+        await File.WriteAllTextAsync(LogPath(missingDirectory), "NEW-1\n");
+        await using (var tail = new PlatformLogTailService(missingSession))
+        {
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            Assert(tail.GetCurrentText(DropsPlatform.Twitch) == "NEW-1\n",
+                "log created after process startup is read from byte zero");
+        }
+
+        var truncatedDirectory = Path.Combine(workspace, "log-tail-truncated");
+        Directory.CreateDirectory(truncatedDirectory);
+        var truncatedPath = LogPath(truncatedDirectory);
+        await File.WriteAllTextAsync(truncatedPath, "OLD-CONTENT-BEFORE-START\n");
+        var truncatedSession = new PlatformLogSession(truncatedDirectory);
+        await File.AppendAllTextAsync(truncatedPath, "SESSION-BEFORE-TRUNCATE\n");
+        await using (var tail = new PlatformLogTailService(truncatedSession))
+        {
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            await File.WriteAllTextAsync(truncatedPath, "NEW-FILE\n");
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            Assert(tail.GetCurrentText(DropsPlatform.Twitch) ==
+                   "SESSION-BEFORE-TRUNCATE\nNEW-FILE\n",
+                "truncated log resets its cursor without clearing current-session UI content");
+
+            await tail.ClearDisplayAsync(DropsPlatform.Twitch);
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            Assert(tail.GetCurrentText(DropsPlatform.Twitch).Length == 0,
+                "clear display advances the cursor and refresh does not restore visible history");
+            await File.AppendAllTextAsync(truncatedPath, "AFTER-CLEAR\n");
+            await tail.RefreshAsync(DropsPlatform.Twitch);
+            Assert(tail.GetCurrentText(DropsPlatform.Twitch) == "AFTER-CLEAR\n",
+                "new log content remains visible after clear display");
+        }
+
+        report.AppendLine("Drops log session cursor: PASS (existing/missing/truncate/clear)");
     }
 
     private static async Task RunUpdateCheckTest(string workspace, StringBuilder report)

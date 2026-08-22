@@ -111,7 +111,7 @@ class TwitchWorker(WorkerBase):
             root_logger.setLevel(logging.INFO)
             if self.logger.handlers and self.logger.handlers[0] not in root_logger.handlers:
                 root_logger.addHandler(self.logger.handlers[0])
-            self.logger.info("Twitch core loaded from %s", root)
+            self.logger.debug("Twitch core loaded from %s", root)
         except Exception as exc:
             self._core_error = f"Twitch 业务核心加载失败: {exc}"
             self.logger.exception(self._core_error)
@@ -133,13 +133,26 @@ class TwitchWorker(WorkerBase):
         event("auth_state", {"state": state, "summary": summary, "error": error})
 
     @staticmethod
+    def _set_connection_state(phase: str, detail: str = "") -> None:
+        event("connection_status", {"phase": phase, "detail": detail})
+
+    @staticmethod
     def _friendly_runtime_error(exc: BaseException) -> str:
         message = str(exc)
         if "SSL is not supported" in message or "ssl" in message.lower() and "supported" in message.lower():
             return "Twitch 网络初始化失败，请检查代理设置或 Twitch 运行组件。"
         return "Twitch 掉宝服务启动失败，请检查网络或运行日志。"
 
+    @staticmethod
+    def _runtime_error_category(exc: BaseException) -> str:
+        if exc.__class__.__name__ in {"LoginException", "CaptchaRequired"}:
+            return "authentication"
+        if getattr(exc, "status", None) == 401:
+            return "authentication"
+        return "network"
+
     async def _start_client(self) -> None:
+        self._set_connection_state("connecting")
         client = self._core["twitch"].Twitch(self._settings)
         client._cloudlight_auto_start = self._automatic_start
         client._cloudlight_login_event = self._login_transition
@@ -147,18 +160,27 @@ class TwitchWorker(WorkerBase):
         client._cloudlight_login_state = "checking"
         client._cloudlight_auth_required = None
         client._cloudlight_ready = False
+        client._cloudlight_connection_phase = "connecting"
         self._client = client
         self.running = True
+        self.logger.info("正在启动 Twitch 掉宝服务")
         self._set_login_state("checking", "正在检查 Twitch 登录状态")
         self.status("正在检查登录状态", "Twitch")
         runtime_error = ""
         try:
             await client.run()
         except Exception as exc:
-            self.logger.exception("Twitch worker runtime failed")
+            self.logger.exception("Twitch 掉宝服务运行异常")
             runtime_error = self._friendly_runtime_error(exc)
-            self._set_login_state("failed", runtime_error, runtime_error)
-            event("error", {"message": runtime_error, "phase": "startup"})
+            category = self._runtime_error_category(exc)
+            if category == "authentication":
+                runtime_error = "Twitch 登录已失效，请重新登录。"
+                self._authenticated_user_id = None
+                self._set_login_state("needs_login", runtime_error, runtime_error)
+            else:
+                self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                self._set_login_state("failed", runtime_error, runtime_error)
+            event("error", {"message": runtime_error, "phase": "startup", "category": category})
             self._login_transition.set()
             self._ready_transition.set()
         finally:
@@ -188,6 +210,7 @@ class TwitchWorker(WorkerBase):
                 self._client_stopped.set()
 
     async def _login_client_only(self) -> None:
+        self._set_connection_state("connecting")
         client = self._core["twitch"].Twitch(self._settings)
         client._cloudlight_auto_start = False
         client._cloudlight_login_event = self._login_transition
@@ -195,6 +218,7 @@ class TwitchWorker(WorkerBase):
         client._cloudlight_login_state = "checking"
         client._cloudlight_auth_required = None
         client._cloudlight_ready = False
+        client._cloudlight_connection_phase = "connecting"
         self._client = client
         self._set_login_state("checking", "正在检查 Twitch 登录状态")
         self.status("正在检查登录状态", "Twitch")
@@ -207,10 +231,17 @@ class TwitchWorker(WorkerBase):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self.logger.exception("Twitch login failed")
+            self.logger.exception("Twitch 登录失败")
             runtime_error = self._friendly_runtime_error(exc)
-            self._set_login_state("failed", runtime_error, runtime_error)
-            event("error", {"message": runtime_error, "phase": "login"})
+            category = self._runtime_error_category(exc)
+            if category == "authentication":
+                runtime_error = "Twitch 登录已失效，请重新登录。"
+                self._authenticated_user_id = None
+                self._set_login_state("needs_login", runtime_error, runtime_error)
+            else:
+                self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                self._set_login_state("failed", runtime_error, runtime_error)
+            event("error", {"message": runtime_error, "phase": "login", "category": category})
         finally:
             try:
                 await self._shutdown_client_safely(client)
@@ -228,9 +259,9 @@ class TwitchWorker(WorkerBase):
         try:
             await client.shutdown()
         except asyncio.CancelledError:
-            self.logger.info("Twitch core shutdown was cancelled; forcing session cleanup")
+            self.logger.debug("Twitch core shutdown was cancelled; forcing session cleanup")
         except Exception:
-            self.logger.exception("Twitch core shutdown failed; forcing session cleanup")
+            self.logger.exception("Twitch 后台清理异常，将继续释放网络连接")
         finally:
             session = getattr(client, "_session", None)
             if session is not None and not session.closed:
@@ -277,6 +308,9 @@ class TwitchWorker(WorkerBase):
             "coreAvailable": bool(self._core), "coreError": self._core_error,
             "authState": auth_state, "authRequired": auth_required,
             "loginError": self._login_error,
+            "connectionState": str(
+                getattr(self._client, "_cloudlight_connection_phase", "unconnected")
+            ),
         }
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -284,6 +318,9 @@ class TwitchWorker(WorkerBase):
         if self._client_task is not None and not self._client_task.done():
             return self.load_state({})
         self._automatic_start = bool(payload.get("automatic", False))
+        retry_attempt = int(payload.get("retryAttempt", 0) or 0)
+        if retry_attempt > 0:
+            self.logger.warning("Twitch 正在进行第 %d 次重连…", retry_attempt)
         self._login_transition.clear()
         self._ready_transition.clear()
         self._login_error = ""
@@ -302,17 +339,18 @@ class TwitchWorker(WorkerBase):
             try:
                 task.result(timeout=2)
             except TimeoutError:
-                self.logger.info("Twitch graceful stop timed out; cancelling the client task")
+                self.logger.debug("Twitch graceful stop timed out; cancelling the client task")
                 task.cancel()
                 if not self._client_stopped.wait(timeout=15):
-                    self.logger.error("Twitch client cleanup did not finish after cancellation")
+                    self.logger.error("Twitch 后台服务停止超时")
             except Exception:
                 if not self._client_stopped.wait(timeout=15):
-                    self.logger.exception("Twitch client stop failed before cleanup completed")
+                    self.logger.exception("Twitch 后台服务停止异常")
         self._client_task = None
         if self._client_stopped.is_set():
             self._client = None
         self.running = False
+        self.logger.info("Twitch 掉宝服务已停止")
         self.status("已停止", self._account_summary())
         return self.load_state({})
 
@@ -321,6 +359,11 @@ class TwitchWorker(WorkerBase):
         if self._client_task is not None and not self._client_task.done():
             return {"started": False, "state": self.load_state({})}
         self._automatic_start = False
+        retry_attempt = int(payload.get("retryAttempt", 0) or 0)
+        if retry_attempt > 0:
+            self.logger.warning("Twitch 正在进行第 %d 次重连…", retry_attempt)
+        else:
+            self.logger.info("Twitch 登录开始。")
         self._login_transition.clear()
         self._ready_transition.clear()
         self._login_error = ""
@@ -502,6 +545,16 @@ class TwitchWorker(WorkerBase):
             drops = list(campaign.drops)
             required_minutes = max((drop.total_required_minutes for drop in drops), default=0)
             remaining_minutes = max((drop.total_remaining_minutes for drop in drops), default=0)
+            completed_drops = sum(
+                drop.is_claimed
+                or drop.required_minutes <= 0
+                or drop.watch_requirement_completed
+                for drop in drops
+            )
+            progress = (
+                max(0.0, min(1.0, (required_minutes - remaining_minutes) / required_minutes))
+                if required_minutes > 0 else 0.0
+            )
             excluded = game_name in exclude
             can_earn = campaign.can_earn(ignore_channel_status=True)
             available = can_earn and not excluded
@@ -528,9 +581,10 @@ class TwitchWorker(WorkerBase):
                 "canEarn": can_earn, "available": available,
                 "availability": availability,
                 "startsAt": campaign.starts_at.isoformat(), "endsAt": campaign.ends_at.isoformat(),
+                "completedDrops": completed_drops,
                 "claimedDrops": campaign.claimed_drops, "totalDrops": campaign.total_drops,
                 "requiredMinutes": required_minutes, "remainingMinutes": remaining_minutes,
-                "progress": campaign.progress,
+                "progress": progress,
             })
         return result
 

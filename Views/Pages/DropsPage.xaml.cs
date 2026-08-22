@@ -13,26 +13,28 @@ namespace CloudLightBlizzard.Views.Pages;
 
 public partial class DropsPage : UserControl
 {
+    private const string SoopInventoryUrl = "https://drops.sooplive.com/inventory";
     private MainViewModel? _main;
     private DropsViewModel? _vm;
     private DropsPlatform _platform = DropsPlatform.Soop;
     private bool _initialized;
     private bool _loading;
-    private readonly PlatformLogTailService _logTail = new(AppPaths.Current.LogsDir);
+    private PlatformLogTailService? _logTail;
     private readonly Dictionary<DropsPlatform, StringBuilder> _logBuffers = Enum.GetValues<DropsPlatform>()
         .ToDictionary(platform => platform, _ => new StringBuilder());
+    private readonly Dictionary<DropsPlatform, long> _logVisibleRevisions = Enum.GetValues<DropsPlatform>()
+        .ToDictionary(platform => platform, _ => 0L);
     private readonly SemaphoreSlim _logStartGate = new(1, 1);
     private bool _logTailStarted;
 
     public DropsPage()
     {
         InitializeComponent();
-        _logTail.Changed += OnLogTailChanged;
         IsVisibleChanged += async (_, _) =>
         {
             if (!IsVisible || !_initialized) return;
             await EnsureLogTailStartedAsync();
-            await _logTail.RefreshAsync(_platform);
+            if (_logTail is not null) await _logTail.RefreshAsync(_platform);
             RenderLogBuffer();
             await RefreshAsync();
         };
@@ -41,12 +43,15 @@ public partial class DropsPage : UserControl
     public void Initialize(MainViewModel main)
     {
         _main = main;
+        _logTail = new PlatformLogTailService(main.DropsLogSession);
+        _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
         DataContext = _vm;
         _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
         main.DropsHost.EventReceived += OnWorkerEvent;
         SoopAutoStart.IsChecked = main.Settings.AutoStartSoop;
         TwitchAutoStart.IsChecked = main.Settings.AutoStartTwitch;
+        _vm.SetTwitchAutoStartEnabled(main.Settings.AutoStartTwitch);
         SoopTab.IsChecked = true;
         SoopPanel.Visibility = Visibility.Visible;
         _initialized = true;
@@ -115,7 +120,7 @@ public partial class DropsPage : UserControl
         if (_vm == null) return;
         try
         {
-            _vm.BeginTwitchLogin();
+            _vm.BeginTwitchStart(automatic: true);
 
             // 自动启动与手动“开始 Twitch 掉宝”共用 start 命令。
             // automatic=true 只用于避免 Session 失效时在后台强制打开授权页面；
@@ -133,9 +138,9 @@ public partial class DropsPage : UserControl
             // 登录成功、需要重新登录、启动失败等状态均由 auth_state /
             // auth_required / login_status / status 实时事件驱动。
         }
-        catch
+        catch (Exception ex)
         {
-            _vm.SetTwitchFailure("Twitch 自动启动失败，请检查代理设置或运行日志。");
+            _vm.SetTwitchTemporaryNetworkFailure(ex.Message);
         }
     }
 
@@ -298,7 +303,7 @@ public partial class DropsPage : UserControl
         YouTubePanel.Visibility = platform == DropsPlatform.YouTube ? Visibility.Visible : Visibility.Collapsed;
         TwitchPanel.Visibility = platform == DropsPlatform.Twitch ? Visibility.Visible : Visibility.Collapsed;
         await EnsureLogTailStartedAsync();
-        await _logTail.RefreshAsync(platform);
+        if (_logTail is not null) await _logTail.RefreshAsync(platform);
         RenderLogBuffer();
         await LoadPlatformAsync(platform);
     }
@@ -321,13 +326,18 @@ public partial class DropsPage : UserControl
     private async Task StartPlatformAsync(DropsPlatform platform)
     {
         if (_vm == null) return;
+        if (platform == DropsPlatform.Twitch) _vm.BeginTwitchStart(automatic: false);
         try
         {
             var state = await _vm.StartAsync(platform);
             _vm.ApplyState(platform, state);
             if (platform == _platform) PopulateSettings(platform, state); else await LoadPlatformAsync(_platform);
         }
-        catch (Exception ex) { ShowError(ex, $"启动 {PlatformName(platform)} 失败"); }
+        catch (Exception ex)
+        {
+            if (platform == DropsPlatform.Twitch) _vm.SetTwitchTemporaryNetworkFailure(ex.Message);
+            else ShowError(ex, $"启动 {PlatformName(platform)} 失败");
+        }
     }
 
     private async void OnStop(object sender, RoutedEventArgs e)
@@ -339,6 +349,7 @@ public partial class DropsPage : UserControl
     private async Task StopPlatformAsync(DropsPlatform platform)
     {
         if (_vm == null) return;
+        if (platform == DropsPlatform.Twitch) _vm.StopTwitchByUser();
         try
         {
             var state = await _vm.StopAsync(platform);
@@ -538,6 +549,56 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "删除 SOOP 账号失败"); }
     }
 
+    private async void OnClaimSoopReward(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        if (SoopInventoryList.SelectedItem is not DropsRow row)
+        {
+            ShowInfo("请先选择一项要领取的奖励。", "领取奖励");
+            return;
+        }
+        if (Bool(row.Payload, "claimed"))
+        {
+            ShowInfo("该奖励已经领取。", "领取奖励");
+            return;
+        }
+        var uid = Text(row.Payload, "uid");
+        if (string.IsNullOrWhiteSpace(uid))
+        {
+            ShowInfo("无法确定该奖励所属的 SOOP 账号，请刷新背包后重试。", "领取奖励");
+            return;
+        }
+        if (MessageBox.Show($"确认领取奖励「{row.Primary}」？", "领取奖励",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        var button = sender as Button;
+        if (button != null) button.IsEnabled = false;
+        try
+        {
+            var result = await _vm.RequestAsync(
+                DropsPlatform.Soop, "claim_reward", new { userid = uid, id = row.Id });
+            var message = Text(result, "status") switch
+            {
+                "claimed" => "领取已确认。现在可以复制兑换码。",
+                "already_claimed" => "该奖励已经领取。",
+                "not_claimable" => "该奖励尚未达到领取条件。",
+                "unconfirmed" => "领取结果无法确认，请前往 SOOP 官方背包检查。",
+                _ => "领取失败，请稍后重试或前往 SOOP 官方背包检查。",
+            };
+            ShowInfo(message, "领取奖励");
+            await LoadPlatformAsync(DropsPlatform.Soop);
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex, "领取 SOOP 奖励失败");
+        }
+        finally
+        {
+            if (button != null) button.IsEnabled = true;
+        }
+    }
+
     private async void OnCopySoopCode(object sender, RoutedEventArgs e)
     {
         if (SoopInventoryList.SelectedItem is not DropsRow row)
@@ -551,7 +612,9 @@ public partial class DropsPage : UserControl
         var code = Text(row.Payload, "redeemCode");
         if (string.IsNullOrWhiteSpace(code))
         {
-            ShowInfo("该奖励没有可复制的兑换码。", "复制兑换码");
+            ShowInfo(Bool(row.Payload, "claimed")
+                ? "该奖励没有可复制的兑换码。"
+                : "请先领取该奖励，再复制兑换码。", "复制兑换码");
             return;
         }
 
@@ -563,6 +626,18 @@ public partial class DropsPage : UserControl
         catch
         {
             ShowInfo("复制失败，请稍后重试。", "复制兑换码");
+        }
+    }
+
+    private void OnOpenSoopInventory(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = SoopInventoryUrl, UseShellExecute = true });
+        }
+        catch
+        {
+            ShowInfo("无法打开 SOOP 奖励背包，请稍后重试。", "打开背包");
         }
     }
 
@@ -683,10 +758,10 @@ public partial class DropsPage : UserControl
 
     private async Task LoginTwitchAsync()
     {
-        if (_vm == null) return;
+        if (_vm == null || !_vm.CanTwitchLogin) return;
         _vm.BeginTwitchLogin();
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "login"); await LoadPlatformAsync(DropsPlatform.Twitch); }
-        catch (Exception ex) { _vm.SetTwitchFailure("Twitch 登录启动失败，请检查代理设置或运行日志。"); ShowError(ex, "启动 Twitch 登录失败"); }
+        catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
     }
 
     private void OnOpenTwitchAuthorization(object sender, RoutedEventArgs e)
@@ -708,12 +783,14 @@ public partial class DropsPage : UserControl
         if (!_initialized || _main == null) return;
         _main.Settings.AutoStartSoop = SoopAutoStart.IsChecked == true;
         _main.Settings.AutoStartTwitch = TwitchAutoStart.IsChecked == true;
+        _vm?.SetTwitchAutoStartEnabled(_main.Settings.AutoStartTwitch);
         _main.Settings.Save();
     }
 
     private async void OnTwitchLogout(object sender, RoutedEventArgs e)
     {
         if (_vm == null || MessageBox.Show("退出 Twitch 并删除本地登录信息？", "退出登录", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        _vm.LogoutTwitchByUser();
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "logout"); await LoadPlatformAsync(DropsPlatform.Twitch); }
         catch (Exception ex) { ShowError(ex, "Twitch 退出登录失败"); }
     }
@@ -851,11 +928,11 @@ public partial class DropsPage : UserControl
 
     private async Task EnsureLogTailStartedAsync()
     {
-        if (_logTailStarted) return;
+        if (_logTailStarted || _logTail is null) return;
         await _logStartGate.WaitAsync();
         try
         {
-            if (_logTailStarted) return;
+            if (_logTailStarted || _logTail is null) return;
             await _logTail.StartAsync();
             _logTailStarted = true;
         }
@@ -864,6 +941,8 @@ public partial class DropsPage : UserControl
 
     private void OnLogTailChanged(object? sender, PlatformLogChunk chunk) => Dispatcher.BeginInvoke(new Action(() =>
     {
+        if (chunk.Revision < _logVisibleRevisions[chunk.Platform]) return;
+        _logVisibleRevisions[chunk.Platform] = chunk.Revision;
         var buffer = _logBuffers[chunk.Platform];
         if (chunk.Reset) buffer.Clear();
         buffer.Append(chunk.Text);
@@ -908,10 +987,16 @@ public partial class DropsPage : UserControl
         catch { ShowInfo("复制失败，请稍后重试。", "复制日志"); }
     }
 
-    private void OnClearLogDisplay(object sender, RoutedEventArgs e)
+    private async void OnClearLogDisplay(object sender, RoutedEventArgs e)
     {
-        _logBuffers[_platform].Clear();
-        LogTextBox.Clear();
+        var platform = _platform;
+        if (_logTail is not null)
+        {
+            var revision = await _logTail.ClearDisplayAsync(platform);
+            if (revision >= 0) _logVisibleRevisions[platform] = revision;
+        }
+        _logBuffers[platform].Clear();
+        if (_platform == platform) LogTextBox.Clear();
     }
 
     private void OnLogTextChanged(object sender, TextChangedEventArgs e)
@@ -943,6 +1028,19 @@ public partial class DropsPage : UserControl
     private void OnWorkerEvent(object? sender, WorkerEvent message)
     {
         if (message.Platform != DropsPlatform.Twitch) return;
+        if (message.Name == "log" && Bool(message.Payload, "userFacing"))
+        {
+            var text = Text(message.Payload, "message");
+            if (string.IsNullOrWhiteSpace(text)) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var level = Text(message.Payload, "level", "info").ToUpperInvariant();
+                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {level} cloudlight.drops: {text}{Environment.NewLine}";
+                _logBuffers[DropsPlatform.Twitch].Append(line);
+                if (_platform == DropsPlatform.Twitch) AppendLogText(line, reset: false);
+            }));
+            return;
+        }
         if (message.Name == "games" && message.Payload.TryGetProperty("items", out var items) &&
             items.ValueKind == JsonValueKind.Array)
         {
@@ -1000,8 +1098,11 @@ public partial class DropsPage : UserControl
     {
         if (_main is not null) _main.DropsHost.EventReceived -= OnWorkerEvent;
         _vm?.Dispose();
-        _logTail.Changed -= OnLogTailChanged;
-        await _logTail.DisposeAsync().ConfigureAwait(false);
+        if (_logTail is not null)
+        {
+            _logTail.Changed -= OnLogTailChanged;
+            await _logTail.DisposeAsync().ConfigureAwait(false);
+        }
         _logStartGate.Dispose();
     }
 

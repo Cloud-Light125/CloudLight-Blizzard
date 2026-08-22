@@ -26,6 +26,7 @@ _SECRET = re.compile(
 )
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+")
 _SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth)=)[^&#\s]+")
+_URL_CREDENTIALS = re.compile(r"(?i)(https?://)[^/\s:@]+:[^@/\s]+@")
 
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8")
@@ -39,7 +40,8 @@ def redact(value: object) -> str:
     text = str(value)
     text = _BEARER.sub(r"\1<redacted>", text)
     text = _SECRET.sub(r"\1<redacted>", text)
-    return _SECRET_QUERY.sub(r"\1<redacted>", text)
+    text = _SECRET_QUERY.sub(r"\1<redacted>", text)
+    return _URL_CREDENTIALS.sub(r"\1<redacted>@", text)
 
 
 def emit(message: dict[str, Any]) -> None:
@@ -258,7 +260,7 @@ class WorkerBase:
                 request_id = str(request.get("id", ""))
                 response = self.dispatch(request)
             except Exception as exc:
-                self.logger.error("Worker command failed: %s", redact(exc))
+                self.logger.error("后台请求失败：%s", redact(exc))
                 self.logger.debug("%s", traceback.format_exc())
                 response = {"id": request_id, "ok": False, "error": redact(exc)}
             emit(response)
@@ -274,7 +276,7 @@ class WorkerBase:
         try:
             self.stop({})
         except Exception:
-            self.logger.exception("Worker stop failed")
+            self.logger.exception("后台服务停止异常")
         return 0
 
 

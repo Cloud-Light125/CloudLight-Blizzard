@@ -106,6 +106,101 @@ class SoopWorkerContractTests(unittest.TestCase):
             finally:
                 self._close(worker)
 
+    def test_current_progress_uses_core_channel_and_active_tier_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                current_channel = SimpleNamespace(user_id="owesports")
+                current_item = SimpleNamespace(
+                    item_name="1 Esports Loot Box 3-1", give_term=120,
+                    view_time=106, percent=88, mission_success=False,
+                )
+                mission = SimpleNamespace(
+                    drops_idx="campaign-3", title="OWWC GROUP STAGE DAY 3",
+                    type_label="固定型", start_date="", end_date="",
+                    category_name="Overwatch 2", category_no="123",
+                    is_event_active=True, items=[current_item],
+                    active_item=lambda: current_item,
+                )
+                worker._manager = SimpleNamespace(
+                    get_miner=lambda uid: SimpleNamespace(_current=current_channel)
+                )
+                worker._core = {"channel": SimpleNamespace(
+                    missions_for_channel=lambda missions, channel: missions
+                    if channel is current_channel else []
+                )}
+                state = SimpleNamespace(
+                    uid="account", running=True, status="挂机中",
+                    channel_id="owesports", channel_nick="OW Esports", broad_no="1",
+                    connection_healthy=True, bridge_connected=True,
+                    heartbeat_status="ok", heartbeat_last_success="now",
+                    network_uploaded=0, network_downloaded=0, network_last_minute_bps=0,
+                    missions=[mission], inventory=[], available_channels=[],
+                )
+
+                progress = worker._state_to_dict(state)["currentProgress"]
+                self.assertEqual(progress, [{
+                    "id": "account:campaign-3", "account": "account", "channel": "OW Esports",
+                    "campaign": "OWWC GROUP STAGE DAY 3", "reward": "1 Esports Loot Box 3-1",
+                    "currentMinutes": 106, "requiredMinutes": 120, "percent": 88,
+                }])
+            finally:
+                self._close(worker)
+
+    def test_manual_claim_uses_verified_core_flow_without_real_network(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                calls: list[tuple[str, object]] = []
+
+                class FakeContext:
+                    def __init__(self, uid, cookies, config) -> None:
+                        calls.append(("context", (uid, cookies, config)))
+
+                    async def open(self):
+                        return "session"
+
+                    async def close(self) -> None:
+                        calls.append(("closed", True))
+
+                class FakeDropsClient:
+                    def __init__(self, session) -> None:
+                        self.session = session
+
+                    async def claim_and_verify(self, item_id, *, max_attempts):
+                        calls.append(("claim", (item_id, max_attempts)))
+                        return SimpleNamespace(
+                            status=SimpleNamespace(value="claimed"), success=True,
+                            redeem_code="CODE-123",
+                        )
+
+                    async def get_inventory(self, *, with_codes):
+                        calls.append(("refresh", with_codes))
+                        return []
+
+                worker._core = {
+                    "auth": SimpleNamespace(load_cookies=lambda uid: {"uid": uid}),
+                    "network": SimpleNamespace(AccountNetworkContext=FakeContext),
+                    "drops": SimpleNamespace(DropsClient=FakeDropsClient),
+                }
+                worker._app_config = lambda: "config"
+                worker.get_inventory = lambda payload: [{
+                    "uid": "account", "id": "reward", "claimed": False,
+                }]
+
+                result = worker.claim_reward({"userid": "account", "id": "reward"})
+                self.assertEqual(result, {
+                    "id": "reward", "status": "claimed", "success": True,
+                    "redeemCode": "CODE-123",
+                })
+                self.assertIn(("claim", ("reward", 2)), calls)
+                self.assertIn(("refresh", True), calls)
+                self.assertIn(("closed", True), calls)
+            finally:
+                self._close(worker)
+
 
 if __name__ == "__main__":
     unittest.main()

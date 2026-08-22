@@ -56,6 +56,11 @@ class Websocket:
         self._max_pong: float = self._next_ping + PING_TIMEOUT.total_seconds()
         # main task, responsible for receiving messages, sending them, and websocket ping
         self._handle_task: asyncio.Task[None] | None = None
+        self._has_connected = False
+        self._connection_problem_started: float | None = None
+        self._long_retry_logged = False
+        self._proxy_failure_logged = False
+        self._direct_failure_logged = False
         # topics stuff
         self.topics: dict[str, WebsocketTopic] = {}
         self._submitted: set[WebsocketTopic] = set()
@@ -74,10 +79,33 @@ class Websocket:
             self._idx, status=status, topics=(len(self.topics) if refresh_topics else None)
         )
 
+    def _report_phase(self, phase: str) -> None:
+        connection = getattr(self._twitch.gui, "connection", None)
+        if connection is not None:
+            connection.update(phase)
+
     def request_reconnect(self):
         # reset our ping interval, so we send a PING after reconnect right away
         self._next_ping = time()
         self._reconnect_requested.set()
+
+    def _report_connection_problem(self) -> None:
+        if self._connection_problem_started is None:
+            self._connection_problem_started = time()
+            ws_logger.warning("Twitch 实时连接异常，正在自动重试。")
+        self._report_phase("realtime_reconnecting")
+
+    def _report_connected(self) -> None:
+        if self._connection_problem_started is not None:
+            ws_logger.info("Twitch 实时连接已恢复")
+        elif not self._has_connected:
+            ws_logger.info("Twitch 实时连接已建立")
+        self._has_connected = True
+        self._connection_problem_started = None
+        self._long_retry_logged = False
+        self._proxy_failure_logged = False
+        self._direct_failure_logged = False
+        self._report_phase("realtime_connected")
 
     async def start(self):
         async with self._state_lock:
@@ -105,6 +133,7 @@ class Websocket:
                 self.topics.clear()
                 self._topics_changed.set()
                 self._twitch.gui.websockets.remove(self._idx)
+            self._report_phase("realtime_disconnected")
 
     def stop_nowait(self, *, remove: bool = False):
         # weird syntax but that's what we get for using a decorator for this
@@ -136,16 +165,30 @@ class Websocket:
                 if proxy_fallback_pending:
                     proxy_fallback_pending = False
                     proxy = None
-                    ws_logger.warning(
-                        f"Websocket[{self._idx}] proxy connection failed; falling back to direct"
-                    )
+                    self._proxy_failure_logged = True
+                    self._connection_problem_started = self._connection_problem_started or time()
+                    ws_logger.warning("Twitch 代理连接失败，正在尝试直连")
                     continue
-                ws_logger.info(
+                if proxy is not None and not self._proxy_failure_logged:
+                    self._proxy_failure_logged = True
+                    ws_logger.warning("Twitch 代理连接失败。")
+                elif proxy is None and not self._direct_failure_logged:
+                    self._direct_failure_logged = True
+                    ws_logger.warning("Twitch 直连失败。")
+                self._report_connection_problem()
+                if (
+                    not self._long_retry_logged
+                    and self._connection_problem_started is not None
+                    and time() - self._connection_problem_started >= 60
+                ):
+                    ws_logger.warning("Twitch 实时连接仍未恢复，将继续自动重试。")
+                    self._long_retry_logged = True
+                ws_logger.debug(
                     f"Websocket[{self._idx}] connection problem (sleep: {round(delay)}s)"
                 )
                 await asyncio.sleep(delay)
             except RuntimeError:
-                ws_logger.warning(
+                ws_logger.debug(
                     f"Websocket[{self._idx}] exiting backoff connect loop "
                     "because session is closed (RuntimeError)"
                 )
@@ -157,7 +200,8 @@ class Websocket:
         self.set_status(_("gui", "websocket", "initializing"))
         await self._twitch.wait_until_login()
         self.set_status(_("gui", "websocket", "connecting"))
-        ws_logger.info(f"Websocket[{self._idx}] connecting...")
+        self._report_phase("realtime_connecting")
+        ws_logger.debug(f"Websocket[{self._idx}] connecting...")
         self._closed.clear()
         # Connect/Reconnect loop
         async for websocket in self._backoff_connect(
@@ -168,7 +212,7 @@ class Websocket:
             # NOTE: _topics_changed doesn't start set,
             # because there's no initial topics we can sub to right away
             self.set_status(_("gui", "websocket", "connected"))
-            ws_logger.info(f"Websocket[{self._idx}] connected.")
+            self._report_connected()
             try:
                 try:
                     while not self._reconnect_requested.is_set():
@@ -184,18 +228,21 @@ class Websocket:
             except WebsocketClosed as exc:
                 if exc.received:
                     # server closed the connection, not us - reconnect
-                    ws_logger.warning(
+                    ws_logger.debug(
                         f"Websocket[{self._idx}] closed unexpectedly: {websocket.close_code}"
                     )
+                    self._report_connection_problem()
                 elif self._closed.is_set():
                     # we closed it - exit
-                    ws_logger.info(f"Websocket[{self._idx}] stopped.")
+                    ws_logger.debug(f"Websocket[{self._idx}] stopped.")
                     self.set_status(_("gui", "websocket", "disconnected"))
                     return
             except Exception:
                 ws_logger.exception(f"Exception in Websocket[{self._idx}]")
+                self._report_connection_problem()
             self.set_status(_("gui", "websocket", "reconnecting"))
-            ws_logger.warning(f"Websocket[{self._idx}] reconnecting...")
+            self._report_connection_problem()
+            ws_logger.debug(f"Websocket[{self._idx}] reconnecting...")
 
     async def _handle_ping(self):
         now = time()
@@ -205,7 +252,7 @@ class Websocket:
             await self.send({"type": "PING"})
         elif now >= self._max_pong:
             # it's been more than 10s and there was no PONG
-            ws_logger.warning(f"Websocket[{self._idx}] didn't receive a PONG, reconnecting...")
+            ws_logger.debug(f"Websocket[{self._idx}] didn't receive a PONG, reconnecting...")
             self.request_reconnect()
 
     async def _handle_topics(self):
@@ -307,7 +354,7 @@ class Websocket:
                 pass
             elif msg_type == "RECONNECT":
                 # We've received a reconnect request
-                ws_logger.warning(f"Websocket[{self._idx}] requested reconnect.")
+                ws_logger.debug(f"Websocket[{self._idx}] requested reconnect.")
                 self.request_reconnect()
             else:
                 ws_logger.warning(f"Websocket[{self._idx}] received unknown payload: {message}")

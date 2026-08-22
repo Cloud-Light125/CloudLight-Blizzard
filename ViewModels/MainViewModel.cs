@@ -141,6 +141,7 @@ public sealed class MainViewModel : ObservableObject
 
     public UpdateCheckCoordinator UpdateChecks { get; }
     public DropsHostService DropsHost { get; } = new();
+    public PlatformLogSession DropsLogSession { get; }
 
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
@@ -230,8 +231,9 @@ public sealed class MainViewModel : ObservableObject
     private string _regionOperationError = "";
     public bool IsRegionOperationBusy => _regionOperationPhase != RegionOperationPhase.None;
 
-    public MainViewModel()
+    public MainViewModel(PlatformLogSession? dropsLogSession = null)
     {
+        DropsLogSession = dropsLogSession ?? new PlatformLogSession(AppPaths.Current.LogsDir);
         _settings = AppSettings.Load();
         DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
         DropsHost.EventReceived += (sender, message) =>

@@ -17,6 +17,19 @@ public sealed class DropsRow
     public JsonElement Payload { get; init; }
 }
 
+public sealed class SoopProgressRow
+{
+    public string Id { get; init; } = "";
+    public string Account { get; init; } = "";
+    public string Channel { get; init; } = "";
+    public string Campaign { get; init; } = "";
+    public string Reward { get; init; } = "";
+    public int CurrentMinutes { get; init; }
+    public int RequiredMinutes { get; init; }
+    public double Percent { get; init; }
+    public string ProgressText => $"{CurrentMinutes} / {RequiredMinutes} 分钟 · {Percent:0}%";
+}
+
 public sealed class DropsQuickStartStep : ObservableObject
 {
     public string Number { get; }
@@ -69,6 +82,29 @@ public sealed class DropsQuickStartGuide : ObservableObject
 
 public enum TwitchCampaignScope { Available, Priority, All }
 
+public enum TwitchConnectionStage
+{
+    Unconnected,
+    WorkerStarting,
+    Connecting,
+    CheckingSession,
+    RestoringSession,
+    RequestingAuthorization,
+    WaitingAuthorization,
+    LoginSucceeded,
+    LoadingCampaigns,
+    LoadingChannels,
+    ConnectingRealtime,
+    Connected,
+    Running,
+    Reconnecting,
+    Slow,
+    RetryWaiting,
+    AuthenticationExpired,
+    NetworkFailed,
+    Stopped,
+}
+
 public sealed class DropsPlatformViewModel : ObservableObject
 {
     public DropsPlatform Platform { get; }
@@ -97,6 +133,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public ObservableCollection<DropsRow> Inventory { get; } = new();
     public ObservableCollection<DropsRow> Channels { get; } = new();
     public ObservableCollection<DropsRow> History { get; } = new();
+    public ObservableCollection<SoopProgressRow> SoopCurrentProgress { get; } = new();
     public ObservableCollection<string> TwitchAvailableGames { get; } = new();
     public ObservableCollection<string> TwitchPriorityChoices { get; } = new();
     public ObservableCollection<string> TwitchExcludeChoices { get; } = new();
@@ -116,6 +153,51 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public string TwitchAuthorizationCode { get => _twitchAuthorizationCode; private set => Set(ref _twitchAuthorizationCode, value); }
     public Visibility TwitchAuthorizationVisibility => _twitchAuthState == "authorization_required"
         ? Visibility.Visible : Visibility.Collapsed;
+    private TwitchConnectionStage _twitchConnectionStage = TwitchConnectionStage.Unconnected;
+    public TwitchConnectionStage TwitchConnectionStage => _twitchConnectionStage;
+    private DateTimeOffset _twitchStageStartedAt = DateTimeOffset.Now;
+    public DateTimeOffset TwitchStageStartedAt => _twitchStageStartedAt;
+    private DateTimeOffset? _lastTwitchConnectedAt;
+    public DateTimeOffset? LastTwitchConnectedAt => _lastTwitchConnectedAt;
+    private string _twitchLastError = "";
+    public string TwitchLastError => _twitchLastError;
+    private bool _isTwitchLoginInProgress;
+    public bool IsTwitchLoginInProgress
+    {
+        get => _isTwitchLoginInProgress;
+        private set
+        {
+            if (_isTwitchLoginInProgress == value) return;
+            Set(ref _isTwitchLoginInProgress, value);
+            Raise(nameof(CanTwitchLogin));
+            Raise(nameof(TwitchLoginButtonText));
+        }
+    }
+    public bool CanTwitchLogin => !IsTwitchLoginInProgress &&
+                                  _twitchAuthState != "authorization_required";
+    public string TwitchLoginButtonText => IsTwitchLoginInProgress ? "正在登录…"
+        : _twitchAuthState == "needs_login" ? "重新登录" : "登录 Twitch";
+    private readonly TimeSpan _twitchRetryDelay;
+    private readonly TimeSpan _twitchSlowThreshold;
+    private readonly TimeSpan _twitchFailureThreshold;
+    private readonly Func<int, CancellationToken, Task>? _twitchRetryOverride;
+    private CancellationTokenSource? _twitchStageMonitorCts;
+    private CancellationTokenSource? _twitchRetryCts;
+    private Task? _twitchRetryTask;
+    private readonly object _twitchRetrySync = new();
+    private long _twitchStageRevision;
+    private int _twitchRetryAttempt;
+    private int _twitchRetryLoopStarts;
+    private bool _twitchConnectionIntent;
+    private bool _twitchManualIntent;
+    private bool _twitchStartIntent;
+    private bool _twitchAutoStartEnabled;
+    private bool _twitchUserStopped;
+    private bool _twitchUserLoggedOut;
+    private bool _twitchApplicationStopping;
+    private bool _twitchRetryAttemptInProgress;
+    internal bool TwitchRetryLoopActive => _twitchRetryTask is { IsCompleted: false };
+    internal int TwitchRetryLoopStarts => _twitchRetryLoopStarts;
     private bool _soopHasRefreshed;
     private bool _soopSettingsReady;
     private bool _twitchSettingsReady;
@@ -203,9 +285,23 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public string TwitchChannelsEmptyText { get => _twitchChannelsEmptyText; private set => Set(ref _twitchChannelsEmptyText, value); }
 
     public DropsViewModel(DropsHostService host)
+        : this(host, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(45), null)
+    {
+    }
+
+    internal DropsViewModel(DropsHostService host, TimeSpan retryDelay,
+        TimeSpan slowThreshold, TimeSpan failureThreshold,
+        Func<int, CancellationToken, Task>? retryOverride)
     {
         _host = host;
+        _twitchRetryDelay = retryDelay;
+        _twitchSlowThreshold = slowThreshold;
+        _twitchFailureThreshold = failureThreshold;
+        _twitchRetryOverride = retryOverride;
         Platforms = [Soop, YouTube, Twitch];
+        Twitch.Status = "Twitch 尚未连接";
+        Twitch.Summary = "尚未登录 Twitch";
         _host.SnapshotChanged += OnSnapshotChanged;
         _host.EventReceived += OnEventReceived;
     }
@@ -262,10 +358,68 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void BeginTwitchLogin()
     {
+        CancelTwitchRetry();
+        _twitchConnectionIntent = true;
+        _twitchManualIntent = true;
+        _twitchStartIntent = false;
+        _twitchUserStopped = false;
+        _twitchUserLoggedOut = false;
+        _twitchRetryAttempt = 0;
         SetTwitchAuthState("checking");
-        Twitch.Status = "正在检查登录状态";
-        Twitch.Summary = "正在检查已有 Twitch Session";
+        IsTwitchLoginInProgress = true;
+        SetTwitchStage(TwitchConnectionStage.Connecting,
+            "正在连接 Twitch 服务器…", "正在启动登录流程", monitor: true);
         UpdateTwitchQuickStart(default, false);
+    }
+
+    public void BeginTwitchStart(bool automatic)
+    {
+        CancelTwitchRetry();
+        _twitchConnectionIntent = true;
+        _twitchStartIntent = true;
+        _twitchManualIntent |= !automatic;
+        _twitchAutoStartEnabled |= automatic;
+        _twitchUserStopped = false;
+        _twitchUserLoggedOut = false;
+        SetTwitchStage(TwitchConnectionStage.Connecting,
+            "正在连接 Twitch 服务器…", "正在启动 Twitch 掉宝服务", monitor: true);
+    }
+
+    public void SetTwitchAutoStartEnabled(bool enabled)
+    {
+        _twitchAutoStartEnabled = enabled;
+        if (!enabled && !_twitchManualIntent)
+        {
+            _twitchConnectionIntent = false;
+            _twitchStartIntent = false;
+            CancelTwitchRetry();
+        }
+    }
+
+    public void StopTwitchByUser()
+    {
+        _twitchUserStopped = true;
+        _twitchConnectionIntent = false;
+        _twitchManualIntent = false;
+        _twitchStartIntent = false;
+        CancelTwitchRetry();
+        SetTwitchStage(TwitchConnectionStage.Stopped,
+            "Twitch 已停止", _twitchLoggedIn ? "已登录，可重新开始 Twitch 掉宝" : "Twitch 尚未连接");
+    }
+
+    public void LogoutTwitchByUser()
+    {
+        _twitchUserLoggedOut = true;
+        _twitchConnectionIntent = false;
+        _twitchManualIntent = false;
+        _twitchStartIntent = false;
+        _twitchLoggedIn = false;
+        CancelTwitchRetry();
+        SetTwitchAuthState("logged_out");
+        SetTwitchStage(TwitchConnectionStage.Unconnected,
+            "Twitch 尚未连接", "尚未登录 Twitch");
+        Raise(nameof(TwitchLoginVisibility));
+        Raise(nameof(TwitchLogoutVisibility));
     }
 
     public void SetTwitchAuthorization(string url, string code, bool automatic)
@@ -273,11 +427,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         TwitchAuthorizationUrl = url;
         TwitchAuthorizationCode = code;
         SetTwitchAuthState(automatic ? "needs_login" : "authorization_required", clearAuthorization: false);
-        Twitch.Running = !automatic;
-        Twitch.Status = automatic ? "需要登录" : "等待用户授权";
-        Twitch.Summary = automatic
-            ? "Twitch Session 已失效，请手动登录后再启动"
-            : $"请在 Twitch 官方页面输入授权码 {code}";
+        Twitch.Running = false;
+        IsTwitchLoginInProgress = false;
+        CancelTwitchRetry();
+        SetTwitchStage(automatic ? TwitchConnectionStage.AuthenticationExpired : TwitchConnectionStage.WaitingAuthorization,
+            automatic ? "Twitch 登录已失效" : "等待完成 Twitch 授权",
+            automatic ? "请重新完成 Twitch 授权" : "请在浏览器中输入上方验证码完成登录");
         UpdateTwitchQuickStart(default, false);
     }
 
@@ -285,10 +440,38 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     {
         SetTwitchAuthState("failed");
         Twitch.Running = false;
-        Twitch.Status = "启动失败";
-        Twitch.Summary = string.IsNullOrWhiteSpace(message)
+        IsTwitchLoginInProgress = false;
+        _twitchLastError = string.IsNullOrWhiteSpace(message)
             ? "Twitch 掉宝服务启动失败，请查看运行日志。" : message;
+        Raise(nameof(TwitchLastError));
+        SetTwitchStage(TwitchConnectionStage.NetworkFailed,
+            "无法连接 Twitch", "请检查网络或代理设置。");
+        ScheduleTwitchRetry(showWaiting: true);
         UpdateTwitchQuickStart(default, false);
+    }
+
+    internal void SetTwitchTemporaryNetworkFailure(string message)
+    {
+        if (!HasTwitchRetryIntent())
+        {
+            _twitchLastError = message;
+            Raise(nameof(TwitchLastError));
+            IsTwitchLoginInProgress = false;
+            SetTwitchStage(TwitchConnectionStage.NetworkFailed,
+                "无法连接 Twitch", "请检查网络或代理设置。");
+            return;
+        }
+        var alreadyWaiting = _twitchConnectionStage == TwitchConnectionStage.RetryWaiting &&
+                             TwitchRetryLoopActive;
+        _twitchLastError = message;
+        Raise(nameof(TwitchLastError));
+        IsTwitchLoginInProgress = false;
+        SetTwitchStage(TwitchConnectionStage.RetryWaiting,
+            "暂时无法连接 Twitch", "将于 1 分钟后自动重试，请检查网络或代理设置。");
+        if (!alreadyWaiting)
+            _host.PublishUserLog(DropsPlatform.Twitch, "warning",
+                "Twitch 连接超时，将在 60 秒后自动重试。");
+        ScheduleTwitchRetry(showWaiting: false);
     }
 
     private void SetTwitchAuthState(string state, bool clearAuthorization = true)
@@ -301,6 +484,180 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         Raise(nameof(TwitchAuthState));
         Raise(nameof(TwitchAuthorizationVisibility));
+        Raise(nameof(CanTwitchLogin));
+        Raise(nameof(TwitchLoginButtonText));
+    }
+
+    private void SetTwitchStage(TwitchConnectionStage stage, string status, string summary,
+        bool monitor = false)
+    {
+        _twitchStageMonitorCts?.Cancel();
+        _twitchStageMonitorCts?.Dispose();
+        _twitchStageMonitorCts = null;
+        _twitchConnectionStage = stage;
+        _twitchStageStartedAt = DateTimeOffset.Now;
+        var revision = ++_twitchStageRevision;
+        Twitch.Status = status;
+        Twitch.Summary = summary;
+        Raise(nameof(TwitchConnectionStage));
+        Raise(nameof(TwitchStageStartedAt));
+
+        if (stage is TwitchConnectionStage.Connected or TwitchConnectionStage.Running)
+        {
+            var wasRetrying = _twitchRetryAttempt > 0;
+            _lastTwitchConnectedAt = DateTimeOffset.Now;
+            _twitchLastError = "";
+            Raise(nameof(LastTwitchConnectedAt));
+            Raise(nameof(TwitchLastError));
+            CancelTwitchRetry();
+            if (wasRetrying)
+            {
+                _host.PublishUserLog(DropsPlatform.Twitch, "info", "Twitch 已重新连接。");
+                _twitchRetryAttempt = 0;
+            }
+        }
+        else if (stage == TwitchConnectionStage.LoginSucceeded && !_twitchStartIntent)
+        {
+            CancelTwitchRetry();
+        }
+        else if (stage is TwitchConnectionStage.WaitingAuthorization or TwitchConnectionStage.AuthenticationExpired)
+        {
+            CancelTwitchRetry();
+        }
+
+        if (monitor && CanRetryTwitchConnection())
+        {
+            _twitchStageMonitorCts = new CancellationTokenSource();
+            _ = MonitorTwitchStageAsync(revision, _twitchStageMonitorCts.Token);
+        }
+    }
+
+    private async Task MonitorTwitchStageAsync(long revision, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(_twitchSlowThreshold, token).ConfigureAwait(false);
+            Dispatch(() =>
+            {
+                if (revision != _twitchStageRevision || !CanRetryTwitchConnection()) return;
+                _twitchConnectionStage = TwitchConnectionStage.Slow;
+                Twitch.Status = "Twitch 连接较慢，仍在尝试…";
+                Twitch.Summary = "网络响应较慢，连接仍在继续";
+                Raise(nameof(TwitchConnectionStage));
+            });
+            var remaining = _twitchFailureThreshold - _twitchSlowThreshold;
+            if (remaining > TimeSpan.Zero)
+                await Task.Delay(remaining, token).ConfigureAwait(false);
+            Dispatch(() =>
+            {
+                if (revision == _twitchStageRevision && CanRetryTwitchConnection())
+                    SetTwitchTemporaryNetworkFailure("Twitch 连接阶段长时间没有进展。");
+            });
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private bool CanRetryTwitchConnection()
+    {
+        return HasTwitchRetryIntent() &&
+               _twitchConnectionStage is not TwitchConnectionStage.Connected and
+               not TwitchConnectionStage.Running;
+    }
+
+    private bool HasTwitchRetryIntent()
+    {
+        if ((!_twitchConnectionIntent && !_twitchAutoStartEnabled) ||
+            _twitchUserStopped || _twitchUserLoggedOut ||
+            _twitchApplicationStopping || _twitchAuthState is "authorization_required" or "needs_login")
+            return false;
+        return _twitchStartIntent || !_twitchLoggedIn;
+    }
+
+    private void ScheduleTwitchRetry(bool showWaiting)
+    {
+        if (!HasTwitchRetryIntent()) return;
+        if (showWaiting)
+            SetTwitchStage(TwitchConnectionStage.RetryWaiting,
+                "暂时无法连接 Twitch", "将于 1 分钟后自动重试，请检查网络或代理设置。");
+        if (!CanRetryTwitchConnection()) return;
+        lock (_twitchRetrySync)
+        {
+            if (_twitchRetryTask is { IsCompleted: false } &&
+                _twitchRetryCts is { IsCancellationRequested: false }) return;
+            _twitchRetryCts = new CancellationTokenSource();
+            _twitchRetryLoopStarts++;
+            _twitchRetryTask = RunTwitchRetryLoopAsync(_twitchRetryCts);
+        }
+    }
+
+    private async Task RunTwitchRetryLoopAsync(CancellationTokenSource owner)
+    {
+        var token = owner.Token;
+        try
+        {
+            while (CanRetryTwitchConnection())
+            {
+                await Task.Delay(_twitchRetryDelay, token).ConfigureAwait(false);
+                if (!CanRetryTwitchConnection()) break;
+                var attempt = Interlocked.Increment(ref _twitchRetryAttempt);
+                Dispatch(() => SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "正在连接 Twitch 服务器…", $"正在进行第 {attempt} 次重连", monitor: true));
+                try
+                {
+                    if (_twitchRetryOverride is not null)
+                    {
+                        await _twitchRetryOverride(attempt, token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        _twitchRetryAttemptInProgress = true;
+                        var snapshot = _host.Snapshots.First(item => item.Platform == DropsPlatform.Twitch);
+                        if (snapshot.Lifecycle is WorkerLifecycle.Starting or WorkerLifecycle.Running)
+                        {
+                            try { await _host.StopAsync(DropsPlatform.Twitch, token).ConfigureAwait(false); }
+                            catch { }
+                        }
+                        var command = _twitchStartIntent ? "start" : "login";
+                        await _host.RequestAsync(DropsPlatform.Twitch, command,
+                            new { automatic = _twitchStartIntent, retryAttempt = attempt }, token).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    Dispatch(() =>
+                    {
+                        if (!CanRetryTwitchConnection()) return;
+                        _twitchLastError = ex.Message;
+                        Raise(nameof(TwitchLastError));
+                        SetTwitchStage(TwitchConnectionStage.RetryWaiting,
+                            "暂时无法连接 Twitch", "将在 1 分钟后继续自动重试");
+                    });
+                }
+                finally { _twitchRetryAttemptInProgress = false; }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            lock (_twitchRetrySync)
+            {
+                if (ReferenceEquals(_twitchRetryCts, owner))
+                {
+                    _twitchRetryCts = null;
+                    _twitchRetryTask = null;
+                }
+            }
+            owner.Dispose();
+        }
+    }
+
+    private void CancelTwitchRetry()
+    {
+        _twitchStageMonitorCts?.Cancel();
+        _twitchStageMonitorCts?.Dispose();
+        _twitchStageMonitorCts = null;
+        lock (_twitchRetrySync) _twitchRetryCts?.Cancel();
     }
 
     public void CompleteTwitchRefresh(DateTimeOffset completedAt)
@@ -334,6 +691,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (state.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
         if (state.TryGetProperty("status", out var status)) vm.Status = status.GetString() ?? vm.Status;
         Accounts.Clear(); Tasks.Clear(); Inventory.Clear(); Channels.Clear(); History.Clear();
+        SoopCurrentProgress.Clear();
         switch (platform)
         {
             case DropsPlatform.Soop: ApplySoop(state, vm); break;
@@ -364,6 +722,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Id = Text(item, "id"), Primary = Text(item, "name"), Secondary = Text(item, "description"),
             Status = Bool(item, "claimed") ? "已领取" : "未领取", Payload = item.Clone(),
         });
+        AddSoopProgressRows(state, replaceAccount: false);
         var activeAccounts = Accounts.Count(row => Bool(row.Payload, "running"));
         var availableTasks = Tasks.Count(row => Bool(row.Payload, "active"));
         vm.Status = activeAccounts > 0 || vm.Running
@@ -371,6 +730,32 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             : Accounts.Count == 0 ? "未配置" : availableTasks > 0 ? "就绪" : "待刷新";
         vm.Summary = $"{Accounts.Count} 个账号 · {availableTasks} 个可用任务";
         UpdateSoopQuickStart(state);
+    }
+
+    private void AddSoopProgressRows(JsonElement owner, bool replaceAccount)
+    {
+        var account = Text(owner, "uid");
+        if (replaceAccount && !string.IsNullOrWhiteSpace(account))
+        {
+            for (var index = SoopCurrentProgress.Count - 1; index >= 0; index--)
+                if (string.Equals(SoopCurrentProgress[index].Account, account, StringComparison.Ordinal))
+                    SoopCurrentProgress.RemoveAt(index);
+        }
+        if (!owner.TryGetProperty("currentProgress", out var rows) || rows.ValueKind != JsonValueKind.Array) return;
+        foreach (var item in rows.EnumerateArray())
+        {
+            SoopCurrentProgress.Add(new SoopProgressRow
+            {
+                Id = Text(item, "id"),
+                Account = Text(item, "account"),
+                Channel = Text(item, "channel", "尚未进入直播间"),
+                Campaign = Text(item, "campaign"),
+                Reward = Text(item, "reward"),
+                CurrentMinutes = (int)Number(item, "currentMinutes"),
+                RequiredMinutes = (int)Number(item, "requiredMinutes"),
+                Percent = Number(item, "percent"),
+            });
+        }
     }
 
     private void ApplyYouTube(JsonElement state, DropsPlatformViewModel vm)
@@ -467,52 +852,145 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         else
             SetTwitchAuthState(authState);
         _twitchLoggedIn = loggedIn;
+        if (loggedIn) IsTwitchLoginInProgress = false;
         Raise(nameof(TwitchLoginVisibility));
         Raise(nameof(TwitchLogoutVisibility));
         RebuildTwitchCampaigns();
         var availableCampaigns = _twitchCampaigns.Count(item => Bool(item, "available"));
         var hasCurrentChannel = state.TryGetProperty("currentChannel", out var currentChannel) &&
                                 currentChannel.ValueKind == JsonValueKind.Object;
+        var connectionState = Text(state, "connectionState");
         if (authState == "failed")
         {
-            vm.Status = "启动失败";
-            vm.Summary = Text(state, "loginError", "Twitch 掉宝服务启动失败，请查看运行日志。");
+            SetTwitchTemporaryNetworkFailure(
+                Text(state, "loginError", "Twitch 暂时无法连接。"));
         }
         else if (authState == "needs_login")
         {
-            vm.Status = "需要登录";
-            vm.Summary = "Twitch Session 已失效，请手动登录后再启动";
+            SetTwitchAuthState("needs_login");
+            IsTwitchLoginInProgress = false;
+            SetTwitchStage(TwitchConnectionStage.AuthenticationExpired,
+                "Twitch 登录已失效", "请重新完成 Twitch 授权");
         }
         else if (authState == "authorization_required")
         {
-            vm.Status = "等待用户授权";
-            vm.Summary = "请在 Twitch 官方页面完成设备授权";
+            SetTwitchStage(TwitchConnectionStage.WaitingAuthorization,
+                "等待完成 Twitch 授权", "请在浏览器中输入上方验证码完成登录");
         }
         else if (!loggedIn)
         {
-            vm.Status = authState == "checking" ? "正在检查登录状态" : "未登录";
-            vm.Summary = authState == "checking" ? "正在检查已有 Twitch Session" : "尚未登录 Twitch";
+            if (authState == "checking")
+                SetTwitchStage(TwitchConnectionStage.CheckingSession,
+                    "正在检查 Twitch 登录状态…", "正在检查本机保存的登录信息", monitor: true);
+            else if (!_twitchConnectionIntent)
+                SetTwitchStage(TwitchConnectionStage.Unconnected,
+                    "Twitch 尚未连接", "尚未登录 Twitch");
         }
         else if (!vm.Running)
         {
-            vm.Status = "已登录 · 未运行";
-            vm.Summary = availableCampaigns > 0 ? $"{availableCampaigns} 个当前可掉宝活动" : "可以开始 Twitch 掉宝";
+            SetTwitchStage(TwitchConnectionStage.LoginSucceeded,
+                "Twitch 登录成功", availableCampaigns > 0
+                    ? $"已加载 {availableCampaigns} 个当前可掉宝活动"
+                    : "已登录，可开始 Twitch 掉宝");
+        }
+        else if (!string.IsNullOrWhiteSpace(connectionState) && connectionState != "unconnected")
+        {
+            ApplyTwitchConnectionPhase(connectionState);
         }
         else if (hasCurrentChannel)
         {
-            vm.Status = "正在观看";
-            vm.Summary = $"{Text(currentChannel, "name", "当前频道")} · {Text(currentChannel, "game", "掉宝进行中")}";
+            SetTwitchStage(TwitchConnectionStage.Running,
+                "Twitch 掉宝正在运行",
+                $"{Text(currentChannel, "name", "当前频道")} · {Text(currentChannel, "game", "掉宝进行中")}");
         }
         else
         {
-            vm.Status = availableCampaigns > 0 ? "正在寻找频道" : "Twitch 正在运行";
-            vm.Summary = availableCampaigns > 0
-                ? $"{availableCampaigns} 个当前可掉宝活动"
-                : "正在获取或等待可用掉宝活动";
+            SetTwitchStage(TwitchConnectionStage.Running,
+                "Twitch 掉宝正在运行", availableCampaigns > 0
+                    ? $"已加载 {availableCampaigns} 个当前可掉宝活动"
+                    : "正在等待可用掉宝活动");
         }
         TwitchInventoryEmptyText = loggedIn ? "当前没有正在进行的掉宝。" : "请先登录 Twitch 账号。";
         TwitchChannelsEmptyText = loggedIn ? "当前没有符合条件的在线频道。" : "请先登录 Twitch 账号。";
         UpdateTwitchQuickStart(state, loggedIn);
+    }
+
+    private void ApplyTwitchConnectionPhase(string phase)
+    {
+        switch (phase)
+        {
+            case "worker_starting":
+                SetTwitchStage(TwitchConnectionStage.WorkerStarting,
+                    "正在启动 Twitch 服务…", "正在准备 Twitch 连接", monitor: true);
+                break;
+            case "connecting":
+                SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "正在连接 Twitch 服务器…", "正在建立安全连接", monitor: true);
+                break;
+            case "checking_session":
+                SetTwitchStage(TwitchConnectionStage.CheckingSession,
+                    "正在检查 Twitch 登录状态…", "正在检查本机保存的登录信息", monitor: true);
+                break;
+            case "restoring_session":
+                SetTwitchStage(TwitchConnectionStage.RestoringSession,
+                    "正在恢复 Twitch 登录…", "正在验证已有登录信息", monitor: true);
+                break;
+            case "requesting_authorization":
+                SetTwitchStage(TwitchConnectionStage.RequestingAuthorization,
+                    "正在获取 Twitch 登录授权…", "正在向 Twitch 请求授权信息", monitor: true);
+                break;
+            case "login_succeeded":
+                _twitchLoggedIn = true;
+                IsTwitchLoginInProgress = false;
+                SetTwitchAuthState("logged_in");
+                SetTwitchStage(TwitchConnectionStage.LoginSucceeded,
+                    "Twitch 登录成功", _twitchStartIntent
+                        ? "正在继续加载 Twitch 掉宝数据" : "已登录，可开始 Twitch 掉宝");
+                Raise(nameof(TwitchLoginVisibility));
+                Raise(nameof(TwitchLogoutVisibility));
+                break;
+            case "loading_campaigns":
+                SetTwitchStage(TwitchConnectionStage.LoadingCampaigns,
+                    "正在获取 Twitch 掉宝活动…", "正在加载活动与奖励进度", monitor: true);
+                break;
+            case "campaigns_loaded":
+                SetTwitchStage(TwitchConnectionStage.LoadingChannels,
+                    "Twitch 掉宝活动已加载", "正在加载可用掉宝任务…", monitor: true);
+                break;
+            case "loading_channels":
+                SetTwitchStage(TwitchConnectionStage.LoadingChannels,
+                    "正在加载可用掉宝任务…", "正在查找符合条件的频道", monitor: true);
+                break;
+            case "realtime_connecting":
+                SetTwitchStage(TwitchConnectionStage.ConnectingRealtime,
+                    "正在建立 Twitch 实时连接…", "登录状态正常，正在连接实时服务", monitor: true);
+                ScheduleTwitchRetry(showWaiting: false);
+                break;
+            case "realtime_connected":
+                SetTwitchStage(TwitchConnectionStage.Connected,
+                    "Twitch 已连接", "实时连接已建立");
+                break;
+            case "realtime_reconnecting":
+                SetTwitchStage(TwitchConnectionStage.Reconnecting,
+                    "Twitch 连接中断，正在重新连接…", "已保持登录，实时连接正在自动恢复");
+                ScheduleTwitchRetry(showWaiting: false);
+                break;
+            case "realtime_disconnected":
+                if (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping ||
+                    _twitchRetryAttemptInProgress || !_twitchStartIntent) break;
+                SetTwitchStage(TwitchConnectionStage.Reconnecting,
+                    "Twitch 连接中断，正在重新连接…", "已保持登录，将自动恢复连接");
+                ScheduleTwitchRetry(showWaiting: false);
+                break;
+            case "service_ready":
+                SetTwitchStage(TwitchConnectionStage.Connected,
+                    "Twitch 已连接", "已登录，当前没有可运行的掉宝活动");
+                break;
+            case "running":
+                SetTwitchStage(TwitchConnectionStage.Running,
+                    "Twitch 掉宝正在运行", "实时连接已建立");
+                break;
+        }
     }
 
     private void UpdateSoopQuickStart(JsonElement state = default)
@@ -564,14 +1042,18 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             _twitchSettingsReady = state.TryGetProperty("settings", out var settings) &&
                                    settings.ValueKind == JsonValueKind.Object;
         var settingsReady = _twitchSettingsReady;
-        var checking = _twitchAuthState is "checking" or "starting";
+        var checking = IsTwitchLoginInProgress || _twitchConnectionStage is
+            TwitchConnectionStage.WorkerStarting or TwitchConnectionStage.Connecting or
+            TwitchConnectionStage.CheckingSession or TwitchConnectionStage.RestoringSession or
+            TwitchConnectionStage.RequestingAuthorization or TwitchConnectionStage.Slow or
+            TwitchConnectionStage.RetryWaiting;
         var waiting = _twitchAuthState == "authorization_required";
         var failed = _twitchAuthState == "failed";
         TwitchQuickStart.Steps[0].Update(loggedIn ? "complete" : checking || waiting ? "progress" : "incomplete",
             loggedIn ? "✓ 已登录 Twitch"
                 : waiting ? "● 正在进行 · 等待用户授权"
-                : checking ? "● 正在进行 · 正在检查登录状态"
-                : failed ? "○ 启动失败"
+                : checking ? $"● 正在进行 · {Twitch.Status}"
+                : failed ? "○ 暂时无法连接"
                 : _twitchAuthState == "needs_login" ? "○ 需要重新登录" : "○ 尚未登录 Twitch",
             loggedIn, loggedIn ? "" : "登录 Twitch");
         TwitchQuickStart.Steps[1].Update(settingsReady ? "complete" : "incomplete",
@@ -588,7 +1070,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         Tasks.Clear();
         foreach (var item in _twitchCampaigns.Where(IsTwitchCampaignVisible))
         {
-            var claimed = Number(item, "claimedDrops");
+            var completed = Number(item, "completedDrops");
             var total = Number(item, "totalDrops");
             var remaining = Number(item, "remainingMinutes");
             Tasks.Add(new DropsRow
@@ -598,8 +1080,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 Secondary = Text(item, "game"),
                 Status = CampaignStatus(Text(item, "availability")),
                 Detail = remaining > 0
-                    ? $"{claimed:0}/{total:0} 个奖励 · 剩余 {remaining:0} 分钟"
-                    : $"{claimed:0}/{total:0} 个奖励",
+                    ? $"{completed:0}/{total:0} 个奖励 · 剩余 {remaining:0} 分钟"
+                    : $"{completed:0}/{total:0} 个奖励",
                 Progress = Number(item, "progress") * 100,
                 Payload = item.Clone(),
             });
@@ -649,18 +1131,25 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var vm = For(snapshot.Platform);
         if (snapshot.Lifecycle == WorkerLifecycle.Crashed)
         {
-            vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "启动失败" : "运行异常";
+            vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "Twitch 连接中断" : "运行异常";
             vm.Running = false;
             if (snapshot.Platform == DropsPlatform.Twitch)
-                SetTwitchFailure("Twitch 后台服务异常退出，请检查运行组件或日志。");
+                SetTwitchTemporaryNetworkFailure("Twitch 后台服务意外退出。");
         }
         else if (snapshot.Lifecycle == WorkerLifecycle.Stopped)
+        {
             vm.Running = false;
+            if (snapshot.Platform == DropsPlatform.Twitch && !_twitchRetryAttemptInProgress &&
+                !_twitchUserStopped && !_twitchUserLoggedOut && _twitchConnectionIntent)
+                ScheduleTwitchRetry(showWaiting: true);
+        }
     });
 
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
-        if (message.Name == "status")
+        if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
+            AddSoopProgressRows(message.Payload, replaceAccount: true);
+        if (message.Name == "status" && message.Platform != DropsPlatform.Twitch)
         {
             var vm = For(message.Platform);
             if (message.Payload.TryGetProperty("status", out var status)) vm.Status = status.GetString() ?? vm.Status;
@@ -668,16 +1157,26 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 vm.Summary = summary.GetString()!;
             if (message.Payload.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
         }
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "status" &&
+            message.Payload.TryGetProperty("running", out var twitchRunning))
+            Twitch.Running = twitchRunning.GetBoolean();
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "connection_status")
+            ApplyTwitchConnectionPhase(Text(message.Payload, "phase"));
         if (message.Platform == DropsPlatform.Twitch && message.Name == "auth_state")
         {
             var state = Text(message.Payload, "state", "logged_out");
             SetTwitchAuthState(state);
-            if (state == "failed") SetTwitchFailure(Text(message.Payload, "error"));
+            if (state == "checking")
+                SetTwitchStage(TwitchConnectionStage.CheckingSession,
+                    "正在检查 Twitch 登录状态…", "正在检查本机保存的登录信息", monitor: true);
+            else if (state == "failed")
+                SetTwitchTemporaryNetworkFailure(Text(message.Payload, "error", "Twitch 暂时无法连接。"));
             else if (state == "needs_login")
             {
                 Twitch.Running = false;
-                Twitch.Status = "需要登录";
-                Twitch.Summary = "Twitch Session 已失效，请手动登录后再启动";
+                IsTwitchLoginInProgress = false;
+                SetTwitchStage(TwitchConnectionStage.AuthenticationExpired,
+                    "Twitch 登录已失效", "请重新完成 Twitch 授权");
             }
             UpdateTwitchQuickStart(default, _twitchLoggedIn);
         }
@@ -688,15 +1187,32 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             twitchUserId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
         {
             _twitchLoggedIn = true;
+            IsTwitchLoginInProgress = false;
             SetTwitchAuthState("logged_in");
-            Twitch.Status = "已登录 · 启动中";
-            Twitch.Summary = $"Twitch 用户 {twitchUserId}";
+            SetTwitchStage(TwitchConnectionStage.LoginSucceeded,
+                "Twitch 登录成功", _twitchStartIntent
+                    ? "正在获取 Twitch 掉宝活动…" : "已登录，可开始 Twitch 掉宝");
             Raise(nameof(TwitchLoginVisibility));
             Raise(nameof(TwitchLogoutVisibility));
             UpdateTwitchQuickStart(default, true);
         }
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "games" && _twitchStartIntent)
+            ApplyTwitchConnectionPhase("campaigns_loaded");
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "current_channel" &&
+            message.Payload.ValueKind == JsonValueKind.Object && message.Payload.EnumerateObject().Any())
+            SetTwitchStage(TwitchConnectionStage.Running,
+                "Twitch 掉宝正在运行", "实时连接已建立");
         if (message.Platform == DropsPlatform.Twitch && message.Name == "error")
-            SetTwitchFailure(Text(message.Payload, "message"));
+        {
+            if (Text(message.Payload, "category") == "authentication")
+            {
+                SetTwitchAuthState("needs_login");
+                SetTwitchStage(TwitchConnectionStage.AuthenticationExpired,
+                    "Twitch 登录已失效", "请重新完成 Twitch 授权");
+            }
+            else
+                SetTwitchTemporaryNetworkFailure(Text(message.Payload, "message", "Twitch 暂时无法连接。"));
+        }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
         {
             _youtubeCurrentLabel = Text(message.Payload, "channel", Text(message.Payload, "title", "YouTube"));
@@ -733,6 +1249,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _twitchApplicationStopping = true;
+        _twitchConnectionIntent = false;
+        CancelTwitchRetry();
         _host.SnapshotChanged -= OnSnapshotChanged;
         _host.EventReceived -= OnEventReceived;
     }

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using CloudLightBlizzard.Services;
+using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard;
 
@@ -18,7 +19,7 @@ public partial class App : Application
     {
         if (e.Args.Length >= 2 && e.Args[0] == "--feature-selftest")
         {
-            Task.Run(() => FeatureSelfTest.Run(e.Args[1])).GetAwaiter().GetResult();
+            Task.Run(() => FeatureSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2))).GetAwaiter().GetResult();
             Shutdown(0);
             return;
         }
@@ -82,12 +83,15 @@ public partial class App : Application
             return;
         }
 
+        var settings = AppSettings.Load();
+        var logSession = new PlatformLogSession(AppPaths.Current.LogsDir);
+
         // 关掉 WPF 硬件加速:进程内不再建 D3D 设备,游戏加加 / RTSS 等 FPS 悬浮窗就不会把本程序
         // 当游戏挂性能条(它们靠 hook D3D Present 出条)。本工具是静态界面,软件渲染无感。
         System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
         // 应用亮/暗主题(记住上次选择)。
-        try { ThemeManager.Apply(AppSettings.Load().DarkMode); }
+        try { ThemeManager.Apply(settings.DarkMode); }
         catch { /* ignore */ }
 
         // 未捕获异常写日志,避免直接崩溃后无从查起。
@@ -96,9 +100,8 @@ public partial class App : Application
             WriteCrash(args.ExceptionObject as Exception);
 
         base.OnStartup(e);
-        var settings = AppSettings.Load();
         var startHidden = global::CloudLightBlizzard.MainWindow.ShouldStartHidden(e.Args, settings.StartMinimized);
-        var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden);
+        var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession);
         MainWindow = mainWindow;
         if (!startHidden) mainWindow.Show();
     }

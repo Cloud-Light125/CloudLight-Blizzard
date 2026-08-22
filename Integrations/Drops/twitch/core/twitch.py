@@ -193,7 +193,7 @@ class _AuthState:
                 continue
 
     async def _login(self) -> str:
-        logger.info("Login flow started")
+        logger.info("Twitch 授权流程已开始")
         gui_print = self._twitch.gui.print
         login_form: LoginForm = self._twitch.gui.login
         client_info: ClientInfo = self._twitch._client_type
@@ -255,13 +255,13 @@ class _AuthState:
             # Error handling
             if "error_code" in login_response:
                 error_code: int = login_response["error_code"]
-                logger.info(f"Login error code: {error_code}")
+                logger.debug("Twitch login error code: %s", error_code)
                 if error_code == 1000:
-                    logger.info("1000: CAPTCHA is required")
+                    logger.debug("1000: CAPTCHA is required")
                     use_chrome = True
                     break
                 elif error_code in (2004, 3001):
-                    logger.info("3001: Login failed due to incorrect username or password")
+                    logger.debug("3001: Login failed due to incorrect username or password")
                     gui_print(_("login", "incorrect_login_pass"))
                     if error_code == 2004:
                         # invalid username
@@ -272,7 +272,7 @@ class _AuthState:
                     3012,  # Invalid authy token
                     3023,  # Invalid email code
                 ):
-                    logger.info("3012/23: Login failed due to incorrect 2FA code")
+                    logger.debug("3012/23: Login failed due to incorrect 2FA code")
                     if error_code == 3023:
                         token_kind = "email"
                         gui_print(_("login", "incorrect_email_code"))
@@ -286,7 +286,7 @@ class _AuthState:
                     3022,  # Email code needed
                 ):
                     # 2FA handling
-                    logger.info("3011/22: 2FA token required")
+                    logger.debug("3011/22: 2FA token required")
                     # user didn't provide a token, so ask them for it
                     if error_code == 3022:
                         token_kind = "email"
@@ -309,17 +309,17 @@ class _AuthState:
                     #     "error_description":"client blocked from this operation"
                     # }
                     gui_print(_("login", "error_code").format(error_code=error_code))
-                    logger.info(str(login_response))
+                    logger.debug("Twitch login response: %s", login_response)
                     use_chrome = True
                     break
                 else:
                     ext_msg = str(login_response)
-                    logger.info(ext_msg)
+                    logger.debug("Twitch login message: %s", ext_msg)
                     raise LoginException(ext_msg)
             # Success handling
             if "access_token" in login_response:
                 self.access_token = cast(str, login_response["access_token"])
-                logger.info("Access token granted")
+                logger.debug("Access token granted")
                 login_form.clear()
                 break
 
@@ -382,16 +382,23 @@ class _AuthState:
         if not self._hasattrs("access_token", "user_id"):
             # looks like we're missing something
             login_form: LoginForm = self._twitch.gui.login
-            logger.info("Checking login")
+            logger.info("正在检查 Twitch 登录状态")
+            phase = getattr(login_form, "phase", None)
+            if callable(phase):
+                phase("checking_session")
             login_form.update(_("gui", "login", "logging_in"), None)
             for client_mismatch_attempt in range(2):
                 for invalid_token_attempt in range(2):
                     cookie = jar.filter_cookies(client_info.CLIENT_URL)
                     if "auth-token" not in cookie:
+                        if callable(phase):
+                            phase("requesting_authorization")
                         self.access_token = await self._oauth_login()
                         cookie["auth-token"] = self.access_token
                     elif not hasattr(self, "access_token"):
-                        logger.info("Restoring session from cookie")
+                        logger.info("正在恢复 Twitch 登录 Session")
+                        if callable(phase):
+                            phase("restoring_session")
                         self.access_token = cookie["auth-token"].value
                     # validate the auth token, by obtaining user_id
                     async with self._twitch.request(
@@ -401,7 +408,7 @@ class _AuthState:
                     ) as response:
                         if response.status == 401:
                             # the access token we have is invalid - clear the cookie and reauth
-                            logger.info("Restored session is invalid")
+                            logger.debug("Restored Twitch session is invalid")
                             assert client_info.CLIENT_URL.host is not None
                             jar.clear_domain(client_info.CLIENT_URL.host)
                             continue
@@ -414,14 +421,16 @@ class _AuthState:
                 if validate_response["client_id"] == client_info.CLIENT_ID:
                     break
                 # otherwise, we need to delete the entire cookie file and clear the jar
-                logger.info("Cookie client ID mismatch")
+                logger.debug("Twitch cookie client ID mismatch")
                 jar.clear()
                 COOKIES_PATH.unlink(missing_ok=True)
             else:
                 raise RuntimeError("Login verification failure (step #1)")
             self.user_id = int(validate_response["user_id"])
             cookie["persistent"] = str(self.user_id)
-            logger.info(f"Login successful, user ID: {self.user_id}")
+            logger.info("Twitch 登录成功")
+            if callable(phase):
+                phase("login_succeeded")
             login_form.update(_("gui", "login", "logged_in"), self.user_id)
             # update our cookie and save it
             jar.update_cookies(cookie, client_info.CLIENT_URL)
@@ -444,6 +453,9 @@ class Twitch:
         self._claim_blocked_drops: set[str] = set()
         self._reported_pending_claims: set[str] = set()
         self._reported_progression_warnings: set[str] = set()
+        self._reported_completed_campaigns: set[str] = set()
+        self._reported_claimed_after_pending: set[str] = set()
+        self._notification_delete_not_found_logged = False
         # TDM_CLAIM_TOGGLE_PATCH_END: claim-policy-state
         self._mnt_triggers: deque[datetime] = deque()
         # NOTE: GQL is pretty volatile and breaks everything if one runs into their rate limit.
@@ -606,7 +618,7 @@ class Twitch:
         if drop.id in self._reported_pending_claims:
             return
         self._reported_pending_claims.add(drop.id)
-        message = _("status", "pending_claim").format(drop=drop.name)
+        message = f"掉宝奖励已完成，等待手动领取：{drop.name}"
         logger.info(message)
         self.print(message)
         self.print(_("status", "trying_another_drop"))
@@ -624,6 +636,17 @@ class Twitch:
             self._report_pending_claim(drop)
             return False
         return await drop.claim()
+
+    @staticmethod
+    def _is_notification_already_deleted(exc: GQLException) -> bool:
+        errors = exc.args[0] if len(exc.args) == 1 else None
+        return (
+            isinstance(errors, list)
+            and len(errors) == 1
+            and isinstance(errors[0], dict)
+            and errors[0].get("message") == "notification not found"
+            and errors[0].get("path") == ["deleteNotification"]
+        )
     # TDM_CLAIM_TOGGLE_PATCH_END: claim-policy
 
     async def run(self):
@@ -670,6 +693,9 @@ class Twitch:
         self.change_state(State.INVENTORY_FETCH)
         while True:
             if self._state is State.IDLE:
+                connection = getattr(self.gui, "connection", None)
+                if connection is not None:
+                    connection.update("service_ready")
                 if self.settings.dump:
                     self.gui.close()
                     continue
@@ -680,10 +706,19 @@ class Twitch:
                 self._state_change.clear()
             elif self._state is State.INVENTORY_FETCH:
                 self.gui.tray.change_icon("maint")
+                connection = getattr(self.gui, "connection", None)
+                if connection is not None:
+                    connection.update("loading_campaigns")
+                first_inventory_load = not getattr(self, "_cloudlight_inventory_loaded", False)
+                logger.log(logging.INFO if first_inventory_load else logging.DEBUG,
+                           "Twitch 正在获取掉宝活动。")
                 # ensure the websocket is running
                 await self.websocket.start()
                 await self.fetch_inventory()
                 self.gui.set_games(set(campaign.game for campaign in self.inventory))
+                if first_inventory_load:
+                    self._cloudlight_inventory_loaded = True
+                    logger.info("Twitch 掉宝活动已加载。")
                 # Save state on every inventory fetch
                 self.save()
                 self.change_state(State.GAMES_UPDATE)
@@ -725,6 +760,15 @@ class Twitch:
                     ):
                         # non-excluded games with no priority are placed last, below priority ones
                         self.wanted_games.append(game)
+                for campaign in self.inventory:
+                    if (
+                        campaign.active
+                        and campaign.eligible
+                        and campaign.finished
+                        and campaign.id not in self._reported_completed_campaigns
+                    ):
+                        logger.info("当前 Twitch 掉宝任务已完成：%s", campaign.name)
+                        self._reported_completed_campaigns.add(campaign.id)
                 full_cleanup = True
                 self.restart_watching()
                 self.change_state(State.CHANNELS_CLEANUP)
@@ -769,6 +813,12 @@ class Twitch:
                     self.print(_("status", "no_campaign"))
                     self.change_state(State.IDLE)
             elif self._state is State.CHANNELS_FETCH:
+                connection = getattr(self.gui, "connection", None)
+                if connection is not None:
+                    connection.update("loading_channels")
+                if not getattr(self, "_cloudlight_channels_loaded", False):
+                    self._cloudlight_channels_loaded = True
+                    logger.info("Twitch 正在加载可用掉宝任务。")
                 self.gui.status.update(_("gui", "status", "gathering"))
                 # start with all current channels, clear the memory and GUI
                 new_channels: set[Channel] = set(channels.values())
@@ -912,6 +962,9 @@ class Twitch:
                     # not watching anything and there isn't anything to watch either
                     self.print(_("status", "no_channel"))
                     self.change_state(State.IDLE)
+                connection = getattr(self.gui, "connection", None)
+                if connection is not None:
+                    connection.update("running")
                 del new_watching, selected_channel, watching_channel
             elif self._state is State.RESTART:
                 raise ReloadRequest()
@@ -1094,6 +1147,7 @@ class Twitch:
         )
 
     def watch(self, channel: Channel, *, update_status: bool = True):
+        previous = self.watching_channel.get_with_default(None)
         self.gui.tray.change_icon("active")
         self.gui.channels.set_watching(channel)
         self.watching_channel.set(channel)
@@ -1101,6 +1155,17 @@ class Twitch:
             status_text = _("status", "watching").format(channel=channel.name)
             self.print(status_text)
             self.gui.status.update(status_text)
+            game_name = channel.game.name if channel.game is not None else "未知游戏"
+            if previous is None:
+                logger.info("开始观看：%s · %s", channel.name, game_name)
+            elif previous.id != channel.id:
+                if previous.offline:
+                    reason = "当前频道已离线"
+                elif not self.can_watch(previous):
+                    reason = "当前频道不再满足掉宝条件"
+                else:
+                    reason = "当前任务需要其他频道"
+                logger.info("切换观看频道：%s → %s（原因：%s）", previous.name, channel.name, reason)
 
     def stop_watching(self):
         self.gui.clear_drop()
@@ -1181,7 +1246,7 @@ class Twitch:
                     self.print(_("status", "goes_online").format(channel=channel.name))
                     self.watch(channel)
                 else:
-                    logger.info(f"{channel.name} goes ONLINE")
+                    logger.debug(f"{channel.name} goes ONLINE")
             else:
                 # Channel was OFFLINE and stays that way
                 logger.log(CALL, f"{channel.name} stays OFFLINE")
@@ -1197,7 +1262,7 @@ class Twitch:
                         self.print(_("status", "goes_offline").format(channel=channel.name))
                     else:
                         # Channel stays ONLINE, but we can't watch it anymore
-                        logger.info(
+                        logger.debug(
                             f"{channel.name} status has been updated, switching... "
                             f"(🎁: {stream_before.drops_enabled and '✔' or '❌'} -> "
                             f"{stream_after.drops_enabled and '✔' or '❌'})"
@@ -1208,10 +1273,10 @@ class Twitch:
                     pass
             # NOTE: In these cases, it wasn't the watching channel
             elif stream_after is None:
-                logger.info(f"{channel.name} goes OFFLINE")
+                logger.debug(f"{channel.name} goes OFFLINE")
             else:
                 # Channel stays ONLINE, but has been updated
-                logger.info(
+                logger.debug(
                     f"{channel.name} status has been updated "
                     f"(🎁: {stream_before.drops_enabled and '✔' or '❌'} -> "
                     f"{stream_after.drops_enabled and '✔' or '❌'})"
@@ -1245,7 +1310,10 @@ class Twitch:
             # TDM_CLAIM_TOGGLE_PATCH_BEGIN: disabled-claim-event
             if not self.settings.auto_claim_drops:
                 drop.display()
-                self.change_state(State.INVENTORY_FETCH)
+                if campaign.can_earn(watching_channel):
+                    self.restart_watching()
+                else:
+                    self.change_state(State.CHANNEL_SWITCH)
                 return
             # TDM_CLAIM_TOGGLE_PATCH_END: disabled-claim-event
             drop.display()
@@ -1294,12 +1362,20 @@ class Twitch:
                 "quests_viewer_reward_campaign_earned_emote",  # emote confirmation
                 # badge confirmation?
             ):
-                self.change_state(State.INVENTORY_FETCH)
-                await self.gql_request(
-                    GQL_QUERIES["NotificationsDelete"].with_variables(
-                        {"input": {"id": data["id"]}}
+                try:
+                    await self.gql_request(
+                        GQL_QUERIES["NotificationsDelete"].with_variables(
+                            {"input": {"id": data["id"]}}
+                        )
                     )
-                )
+                except GQLException as exc:
+                    if not self._is_notification_already_deleted(exc):
+                        raise
+                    if not self._notification_delete_not_found_logged:
+                        logger.debug("通知已经不存在，忽略删除请求。")
+                        self._notification_delete_not_found_logged = True
+                    return
+                self.change_state(State.INVENTORY_FETCH)
 
     async def get_auth(self) -> _AuthState:
         await self._auth_state.validate()
@@ -1316,6 +1392,8 @@ class Twitch:
         proxy_fallback_pending = bool(
             kwargs.get("proxy") and getattr(self.settings, "_cloudlight_fallback_direct", False)
         )
+        proxy_failure_logged = False
+        direct_failure_logged = False
         logger.debug(f"Request: ({method=}, {url=}, {kwargs=})")
         session_timeout = timedelta(seconds=session.timeout.total or 0)
         backoff = ExponentialBackoff(maximum=3*60)
@@ -1350,8 +1428,16 @@ class Twitch:
                 if proxy_fallback_pending:
                     proxy_fallback_pending = False
                     kwargs.pop("proxy", None)
+                    proxy_failure_logged = True
+                    logger.warning("Twitch 代理连接失败，正在尝试直连。")
                     self.print("代理连接失败，本次请求回退直连。")
                     continue
+                if kwargs.get("proxy") and not proxy_failure_logged:
+                    proxy_failure_logged = True
+                    logger.warning("Twitch 代理连接失败。")
+                elif not kwargs.get("proxy") and not direct_failure_logged:
+                    direct_failure_logged = True
+                    logger.warning("Twitch 直连失败。")
                 # connection problems, retry
                 if backoff.steps > 1:
                     # just so that quick retries that sometimes happen, aren't shown
@@ -1585,9 +1671,14 @@ class Twitch:
                 for drop in self._drops.values()
                 if drop.has_unclaimed_completed_precondition
             )
-        self._reported_pending_claims.intersection_update(
-            drop.id for drop in self._drops.values() if drop.pending_claim
-        )
+        for drop in self._drops.values():
+            if (
+                drop.id in self._reported_pending_claims
+                and drop.is_claimed
+                and drop.id not in self._reported_claimed_after_pending
+            ):
+                logger.info("掉宝奖励已领取：%s", drop.name)
+                self._reported_claimed_after_pending.add(drop.id)
         # TDM_CLAIM_TOGGLE_PATCH_END: refresh-claim-policy-state
         # concurrently add the campaigns into the GUI
         # NOTE: this fetches pictures from the CDN, so might be slow without a cache

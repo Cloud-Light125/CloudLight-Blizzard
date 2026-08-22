@@ -20,7 +20,7 @@ for path in (str(DROPS_DIR), str(TWITCH_DIR), str(CORE_DIR)):
         sys.path.insert(0, path)
 
 import headless_gui
-from exceptions import ExitRequest
+from exceptions import ExitRequest, GQLException
 from worker import TwitchWorker
 
 
@@ -200,6 +200,9 @@ class HeadlessGuiContractTests(unittest.TestCase):
             def __init__(self, required: int, remaining: int) -> None:
                 self.total_required_minutes = required
                 self.total_remaining_minutes = remaining
+                self.required_minutes = required
+                self.is_claimed = remaining == 0
+                self.watch_requirement_completed = remaining == 0
 
         class Campaign:
             def __init__(
@@ -293,6 +296,147 @@ class HeadlessGuiContractTests(unittest.TestCase):
                     worker.logger.removeHandler(handler)
                     logging.getLogger("TwitchDrops").removeHandler(handler)
                     handler.close()
+
+    def test_campaign_progress_counts_completed_unclaimed_drops(self) -> None:
+        class Drop:
+            def __init__(self, required: int, current: int) -> None:
+                self.required_minutes = required
+                self.total_required_minutes = required
+                self.total_remaining_minutes = max(0, required - current)
+                self.is_claimed = False
+                self.watch_requirement_completed = current >= required
+
+        drops = [Drop(required, 245) for required in (180, 240, 300, 90, 60, 120)]
+        campaign = SimpleNamespace(
+            id="campaign", name="Campaign", game=SimpleNamespace(name="Game"),
+            linked=True, active=True, upcoming=False, expired=False, eligible=True,
+            finished=False, starts_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            ends_at=datetime.now(timezone.utc) + timedelta(hours=2),
+            claimed_drops=0, total_drops=6, drops=drops,
+            can_earn=lambda ignore_channel_status: True,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                worker._client = SimpleNamespace(inventory=[campaign])
+                row = worker.get_campaigns({})[0]
+                self.assertEqual(row["completedDrops"], 5)
+                self.assertEqual(row["claimedDrops"], 0)
+                self.assertEqual(row["totalDrops"], 6)
+                self.assertEqual(row["remainingMinutes"], 55)
+                self.assertAlmostEqual(row["progress"], 245 / 300)
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
+    def test_completed_unclaimed_drop_continues_campaign_without_inventory_fetch(self) -> None:
+        sys.modules["gui"] = headless_gui
+        import constants
+        constants.LANG_PATH = CORE_DIR / "lang"
+        import inventory
+        import twitch
+
+        campaign = object.__new__(inventory.DropsCampaign)
+        campaign._twitch = SimpleNamespace(settings=SimpleNamespace(auto_claim_drops=False))
+        campaign.timed_drops = {
+            "done": SimpleNamespace(
+                is_claimed=False, required_minutes=60, watch_requirement_completed=True
+            )
+        }
+        self.assertTrue(campaign.finished)
+
+        async def scenario() -> None:
+            restarted: list[bool] = []
+            states: list[object] = []
+            active_campaign = SimpleNamespace(can_earn=lambda channel: True)
+            drop = SimpleNamespace(
+                id="done", campaign=active_campaign,
+                update_claim=lambda claim_id: None, display=lambda: None,
+            )
+            client = object.__new__(twitch.Twitch)
+            client.settings = SimpleNamespace(auto_claim_drops=False)
+            client._drops = {"done": drop}
+            client.watching_channel = SimpleNamespace(get_with_default=lambda default: "same-channel")
+
+            async def skip_claim(item) -> bool:
+                self.assertIs(item, drop)
+                return False
+
+            client.claim_drop_if_enabled = skip_claim
+            client.restart_watching = lambda: restarted.append(True)
+            client.change_state = lambda state: states.append(state)
+            await twitch.Twitch.process_drops.__wrapped__(client, 1, {
+                "type": "drop-claim",
+                "data": {"drop_id": "done", "drop_instance_id": "claim-id"},
+            })
+            self.assertEqual(restarted, [True])
+            self.assertEqual(states, [])
+
+        asyncio.run(scenario())
+
+    def test_completed_unclaimed_drop_is_logged_once_per_client_lifecycle(self) -> None:
+        sys.modules["gui"] = headless_gui
+        import constants
+        constants.LANG_PATH = CORE_DIR / "lang"
+        import twitch
+
+        client = object.__new__(twitch.Twitch)
+        client._reported_pending_claims = set()
+        messages: list[str] = []
+        client.print = messages.append
+        drop = SimpleNamespace(id="drop-id", name="Esports Lootbox")
+
+        with self.assertLogs("TwitchDrops", level="INFO") as captured:
+            twitch.Twitch._report_pending_claim(client, drop)
+            twitch.Twitch._report_pending_claim(client, drop)
+
+        user_lines = [line for line in captured.output if "等待手动领取" in line]
+        self.assertEqual(user_lines, [
+            "INFO:TwitchDrops:掉宝奖励已完成，等待手动领取：Esports Lootbox"
+        ])
+        self.assertEqual(sum("等待手动领取" in message for message in messages), 1)
+
+    def test_notification_not_found_is_idempotent_but_other_gql_errors_propagate(self) -> None:
+        sys.modules["gui"] = headless_gui
+        import constants
+        constants.LANG_PATH = CORE_DIR / "lang"
+        import twitch
+
+        async def scenario() -> None:
+            client = object.__new__(twitch.Twitch)
+            client._notification_delete_not_found_logged = False
+            states: list[object] = []
+            client.change_state = lambda state: states.append(state)
+            current_error = GQLException([{
+                "message": "notification not found", "path": ["deleteNotification"]
+            }])
+
+            async def gql_request(query):
+                raise current_error
+
+            client.gql_request = gql_request
+            message = {
+                "type": "create-notification",
+                "data": {"notification": {
+                    "id": "missing", "type": "user_drop_reward_reminder_notification"
+                }},
+            }
+            await twitch.Twitch.process_notifications.__wrapped__(client, 1, message)
+            self.assertEqual(states, [])
+            self.assertTrue(client._notification_delete_not_found_logged)
+
+            current_error = GQLException([{
+                "message": "service failure", "path": ["deleteNotification"]
+            }])
+            with self.assertRaises(GQLException):
+                await twitch.Twitch.process_notifications.__wrapped__(client, 1, message)
+
+        asyncio.run(scenario())
 
 
 if __name__ == "__main__":

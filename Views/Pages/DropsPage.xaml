@@ -190,6 +190,32 @@
                         Padding="12,0" VerticalAlignment="Center" Click="OnQuickStartAction"/>
             </Grid>
         </DataTemplate>
+        <DataTemplate x:Key="SoopProgressRowTemplate">
+            <Grid Margin="6,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Campaign}" ToolTip="{Binding Campaign}"
+                               FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
+                        <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
+                    </Border>
+                </Grid>
+                <TextBlock Grid.Row="1" Margin="0,5,0,0" TextTrimming="CharacterEllipsis">
+                    <Run Text="当前奖励："/><Run Text="{Binding Reward}"/>
+                </TextBlock>
+                <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextTrimming="CharacterEllipsis">
+                    <Run Text="账号："/><Run Text="{Binding Account}"/><Run Text="　直播间："/><Run Text="{Binding Channel}"/>
+                </TextBlock>
+                <ProgressBar Grid.Row="3" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                             Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0"/>
+            </Grid>
+        </DataTemplate>
         <Style x:Key="PlatformTab" TargetType="RadioButton" BasedOn="{StaticResource NavigationButton}">
             <Setter Property="MinWidth" Value="118"/><Setter Property="Height" Value="38"/><Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
@@ -293,6 +319,30 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Text="当前掉宝进度" Style="{StaticResource SectionTitle}"/>
+                        <Grid Margin="0,10,0,0" MinHeight="92">
+                            <ListBox ItemsSource="{Binding SoopCurrentProgress}"
+                                     ItemTemplate="{StaticResource SoopProgressRowTemplate}" MaxHeight="300"/>
+                            <TextBlock Text="当前没有正在累计的掉宝任务"
+                                       Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SoopCurrentProgress.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}"/>
@@ -335,8 +385,29 @@
                     </StackPanel>
                 </Border>
                 <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel><TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="120"><ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280"/><TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
-                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel><TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,10" MinHeight="120"><ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/><TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnCopySoopCode"/></StackPanel></Border>
+                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0" VerticalAlignment="Top"><StackPanel><TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="120"><ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280"/><TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
+                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0" VerticalAlignment="Top">
+                        <StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <Button Content="打开背包" DockPanel.Dock="Right"
+                                        Style="{StaticResource SecondaryButton}" Height="26" Padding="10,0"
+                                        FontSize="11" Click="OnOpenSoopInventory"/>
+                                <TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <Grid Margin="0,10,0,10" MinHeight="96">
+                                <ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}"
+                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
+                                <TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <WrapPanel>
+                                <Button Content="领取选中奖励" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
+                                <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </StackPanel>
 
@@ -444,8 +515,39 @@
                 <Border x:Name="TwitchLoginCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
                     <TextBlock Text="Twitch 登录与掉宝" Style="{StaticResource SectionTitle}"/>
                     <TextBlock Text="登录信息仅保存在本机。登录成功与已经启动 Twitch 掉宝是两个不同状态，请以顶部状态和快速开始为准。" Style="{StaticResource FieldHint}"/>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar Width="28" Height="4" Margin="0,0,12,0" VerticalAlignment="Center"
+                                     IsIndeterminate="True" Foreground="{DynamicResource Accent.Primary}"
+                                     Background="{DynamicResource App.SurfaceAlt}">
+                            <ProgressBar.Style>
+                                <Style TargetType="ProgressBar">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Unconnected"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Connected"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Running"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="LoginSucceeded"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Stopped"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="AuthenticationExpired"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="NetworkFailed"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ProgressBar.Style>
+                        </ProgressBar>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="{Binding Twitch.Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding Twitch.Summary}" Foreground="{DynamicResource Text.Secondary}"
+                                       Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
                     <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
-                        <Button Content="登录 Twitch" Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin"/>
+                        <Button Content="{Binding TwitchLoginButtonText}" IsEnabled="{Binding CanTwitchLogin}"
+                                Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}"
+                                Padding="14,0" Click="OnTwitchLogin"/>
                         <Button Content="退出登录" Visibility="{Binding TwitchLogoutVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout"/>
                         <Button Content="开始 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
                         <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/>
