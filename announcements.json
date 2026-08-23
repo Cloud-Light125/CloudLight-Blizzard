@@ -1,4 +1,15 @@
 {
   "schemaVersion": 1,
-  "announcements": []
+  "announcements": [
+    {
+      "id": "2026-08-23-001",
+      "revision": 1,
+      "title": "CloudLight Blizzard 公告与交流群",
+      "content": "CloudLight Blizzard 公告功能现已上线，后续重要更新、功能调整、已知问题和使用提示会通过这里发布。\n\n推荐加入 CloudLight Blizzard QQ 交流群：1108021175\n\n群内可以反馈软件问题、提交 Bug、交流使用方法，也可以更及时地获取项目动态。如果软件内反馈功能暂时无法使用，也可以直接在群内反馈。\n\n感谢大家的使用与反馈。",
+      "publishedAt": "2026-08-23T17:52:00+08:00",
+      "minVersion": "2.0.6",
+      "maxVersion": null,
+      "enabled": true
+    }
+  ]
 }
