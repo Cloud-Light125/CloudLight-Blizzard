@@ -196,6 +196,9 @@ public sealed class MainViewModel : ObservableObject
     public string AppVersion => "v" + UpdateChecks.CurrentVersion;
     public AppSettings Settings => _settings;
     public string RegionBackupRoot => _regionManager.BackupRoot;
+    public bool IsVerifiedDifferenceMode => _settings.RegionBackupMode == RegionBackupMode.VerifiedDifference;
+    public bool IsFullSnapshotMode => _settings.RegionBackupMode == RegionBackupMode.FullSnapshot;
+    public bool HasPendingRegionPreparation => _regionPageStatus.State == RegionBackupState.Preparing;
 
     private string _gameRegionTitle = "当前文件：尚未识别";
     public string GameRegionTitle { get => _gameRegionTitle; set => Set(ref _gameRegionTitle, value); }
@@ -698,6 +701,7 @@ public sealed class MainViewModel : ObservableObject
 
         Busy = true;
         var stage = "关闭 Battle.net";
+        string? regionFileWarning = null;
         _switchLog.Write("SwitchStarted", currentId, target.AccountId,
             Accounts.FirstOrDefault(a => a.AccountId == currentId)?.RegionText, target.RegionText);
         _pendingLogCursor = await Task.Run(() => _authLogProbe.CaptureCursor());
@@ -733,8 +737,15 @@ public sealed class MainViewModel : ObservableObject
                         sourceRegion: "NormalizeCurrentKnownDifferences", targetRegion: target.RegionText);
                     var result = await _regionManager.NormalizeToRegionAsync(
                         _settings.OverwatchGamePath!, targetRegion, progress);
+                    if (result.Outcome == RegionSwitchOutcome.Failed)
+                        throw new InvalidDataException($"区服文件切换失败，{result.FailedCount:N0} 个文件无法处理。" +
+                                                       FormatRegionFileIssues(result.Issues));
+                    if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
+                        regionFileWarning = $"{result.FailedCount:N0} 个区服文件存在异常，已跳过；其他文件已继续处理。";
                     _switchLog.Write("RegionFilesSwitchCompleted", currentId, target.AccountId,
-                        targetRegion: target.RegionText, detail: $"restored={result.Restored};deleted={result.Deleted};verified={result.Verified}");
+                        targetRegion: target.RegionText,
+                        detail: $"outcome={result.Outcome};restored={result.Restored};deleted={result.Deleted};" +
+                                $"failed={result.FailedCount};verified={result.Verified}");
                 },
                 async () =>
                 {
@@ -761,7 +772,9 @@ public sealed class MainViewModel : ObservableObject
             _pendingSwitchStartedUtc = DateTime.UtcNow;
             _pendingClientSeen = false;
             _lastPendingActiveId = currentId;
-            StatusText = shouldSwitchRegion
+            StatusText = regionFileWarning is not null
+                ? $"已切换到「{target.BattleTag}」；{regionFileWarning} 战网正在启动，正在确认登录结果…"
+                : shouldSwitchRegion
                 ? $"已切换到「{target.BattleTag}」,战网正在启动,正在确认登录结果…"
                 : $"已切换到「{target.BattleTag}」；本次未修改守望先锋国服/国际服文件，正在确认登录结果…";
         }
@@ -936,7 +949,8 @@ public sealed class MainViewModel : ObservableObject
             _regionManager.BackupRoot,
             _regionOperationNotice,
             _regionOperationError,
-            _regionOperationSource);
+            _regionOperationSource,
+            _settings.RegionBackupMode);
         Raise(nameof(IsRegionOperationBusy));
     }
 
@@ -1069,7 +1083,10 @@ public sealed class MainViewModel : ObservableObject
             }
             StatusText = "正在切换区服文件…";
             var progress = new Progress<RegionProgress>(UpdateRegionProgress);
-            await _regionManager.NormalizeToRegionAsync(_settings.OverwatchGamePath!, target, progress);
+            var result = await _regionManager.NormalizeToRegionAsync(_settings.OverwatchGamePath!, target, progress);
+            if (result.Outcome == RegionSwitchOutcome.Failed)
+                throw new InvalidDataException($"未能处理任何区服差异文件；{result.FailedCount:N0} 个文件存在异常。" +
+                                               FormatRegionFileIssues(result.Issues));
             if (restartClient)
             {
                 StatusText = "正在重新启动 Battle.net…";
@@ -1077,7 +1094,13 @@ public sealed class MainViewModel : ObservableObject
                 RegionSwitchLog.Write("Battle.net restart", target);
                 restartClient = false;
             }
-            StatusText = $"守望先锋区服文件已切换到{(target == OverwatchRegion.China ? "国服" : "国际服")}。";
+            StatusText = result.Outcome == RegionSwitchOutcome.PartialSuccess
+                ? $"区服文件已部分切换到{RegionName(target)}；{result.FailedCount:N0} 个异常文件已跳过。"
+                : $"守望先锋区服文件已切换到{RegionName(target)}。";
+            if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
+                MessageBox.Show($"{result.FailedCount:N0} 个文件存在异常，已自动跳过。\n其他区服差异文件已继续处理。" +
+                                FormatRegionFileIssues(result.Issues), "区服文件部分完成",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
@@ -1114,7 +1137,8 @@ public sealed class MainViewModel : ObservableObject
             StatusText = "正在准备区服文件…";
             var progress = new Progress<RegionProgress>(UpdateRegionProgress);
             await _regionManager.CaptureAsync(
-                _settings.OverwatchGamePath!, region, progress, _regionOperationCancellation.Token);
+                _settings.OverwatchGamePath!, region, progress, _regionOperationCancellation.Token,
+                _settings.RegionBackupMode);
             StatusText = "区服文件准备已进入下一步。";
         }
         catch (OperationCanceledException)
@@ -1159,6 +1183,19 @@ public sealed class MainViewModel : ObservableObject
             var progress = new Progress<RegionProgress>(UpdateRegionProgress);
             var state = await _regionManager.CompleteAsync(
                 _settings.OverwatchGamePath!, progress, _regionOperationCancellation.Token);
+            if (state == RegionBackupState.Ready && _settings.RegionBackupMode == RegionBackupMode.VerifiedDifference)
+            {
+                var completed = await _regionManager.GetStatusAsync(_settings.OverwatchGamePath,
+                    verifyFiles: false);
+                _regionOperationNotice = completed.HasWarnings
+                    ? $"智能差异备份准备完成，但部分文件存在异常。\n" +
+                      $"已确认区服差异：{completed.DifferenceCount:N0} 个\n" +
+                      $"自动忽略非稳定变化：{completed.RejectedCount:N0} 个\n" +
+                      $"因文件异常跳过：{completed.SkippedFileCount:N0} 个\n\n" +
+                      $"{completed.SkippedFileCount:N0} 个文件可能存在异常，已自动跳过。其他区服差异文件仍可正常使用。"
+                    : $"已完成区服差异准备。\n已确认 {completed.DifferenceCount:N0} 个区服差异文件。\n" +
+                      $"已自动忽略 {completed.RejectedCount:N0} 个非稳定文件变化。";
+            }
             StatusText = state == RegionBackupState.Ready
                 ? "区服文件已经准备完成。"
                 : "区服文件准备已更新。";
@@ -1171,7 +1208,10 @@ public sealed class MainViewModel : ObservableObject
         catch (IOException ex) when (GameFilesStillChanging(ex))
         {
             RegionSwitchLog.Write("RegionPreparationFailed", detail: ex.ToString());
-            _regionOperationError = "区服文件准备失败\n\n原因：" + ex.Message +
+            _regionOperationError = (_settings.RegionBackupMode == RegionBackupMode.VerifiedDifference
+                                        ? "智能差异备份未能完成。\n你可以重新尝试，或改用完整备份模式。"
+                                        : "区服文件准备失败") +
+                                    "\n\n原因：" + ex.Message +
                                     (hadActiveGeneration
                                         ? "\n\n现有可用备份没有被替换。"
                                         : "");
@@ -1180,7 +1220,10 @@ public sealed class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             RegionSwitchLog.Write("RegionPreparationFailed", detail: ex.ToString());
-            _regionOperationError = "区服文件准备失败\n\n原因：" + ex.Message +
+            _regionOperationError = (_settings.RegionBackupMode == RegionBackupMode.VerifiedDifference
+                                        ? "智能差异备份未能完成。\n你可以重新尝试，或改用完整备份模式。"
+                                        : "区服文件准备失败") +
+                                    "\n\n原因：" + ex.Message +
                                     (hadActiveGeneration
                                         ? "\n\n现有可用备份没有被替换。"
                                         : "");
@@ -1209,9 +1252,12 @@ public sealed class MainViewModel : ObservableObject
             StatusText = "正在检查区服备份…";
             var status = await GetRegionStatusAsync(verifyFiles: true, verifyBackupHashes: true);
             _regionPageStatus = status;
-            _regionOperationNotice = status.State == RegionBackupState.Ready &&
-                                     status.ChinaBackupComplete && status.InternationalBackupComplete &&
-                                     (status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort)
+            _regionOperationNotice = status.BackupFileIssueCount > 0
+                ? $"检测到 {status.BackupFileIssueCount:N0} 个备份文件缺失、损坏或无法读取。" +
+                  "切换时将逐文件跳过，其他完整文件仍可继续使用。"
+                : status.State == RegionBackupState.Ready &&
+                                      status.ChinaBackupComplete && status.InternationalBackupComplete &&
+                                      (status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort)
                 ? "区服备份完整，可以正常使用。"
                 : "部分区服备份文件缺失或损坏，需要重新准备。";
             StatusText = "区服备份检查完成。";
@@ -1232,6 +1278,7 @@ public sealed class MainViewModel : ObservableObject
     public void RequestRegionReprepare()
     {
         if (!RegionGuide.CanRestart) return;
+        _regionManager.CancelPreparation();
         _regionRestartRequested = true;
         _regionOperationNotice = "";
         _regionOperationError = "";
@@ -1246,6 +1293,83 @@ public sealed class MainViewModel : ObservableObject
         _regionOperationNotice = "";
         _regionOperationError = "";
         StatusText = "已清除区服备份。";
+        _ = RefreshHomeRegionAsync();
+    }
+
+    public void ChangeRegionBackupMode(RegionBackupMode mode)
+    {
+        if (Busy || IsRegionOperationBusy || _settings.RegionBackupMode == mode) return;
+        if (_regionPageStatus.State == RegionBackupState.Preparing)
+            _regionManager.CancelPreparation();
+        _settings.RegionBackupMode = mode;
+        _settings.Save();
+        _regionRestartRequested = true;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        Raise(nameof(IsVerifiedDifferenceMode));
+        Raise(nameof(IsFullSnapshotMode));
+        Raise(nameof(HasPendingRegionPreparation));
+        UpdateRegionGuide();
+        _ = RefreshHomeRegionAsync();
+    }
+
+    public async Task RedoVerifiedStep1Async()
+    {
+        if (!RegionGuide.CanRedoStep1) return;
+        await RunVerifiedRedoAsync("正在重新记录当前区服文件状态……", RegionOperationPhase.PreparingCurrentRegion,
+            (progress, token) => _regionManager.RedoVerifiedStep1Async(
+                _settings.OverwatchGamePath!, progress, token));
+    }
+
+    public async Task RedoVerifiedStep2Async()
+    {
+        if (!RegionGuide.CanRedoStep2) return;
+        await RunVerifiedRedoAsync("正在重新分析另一区服文件差异……", RegionOperationPhase.BuildingBackup,
+            (progress, token) => _regionManager.RedoVerifiedStep2Async(
+                _settings.OverwatchGamePath!, progress, token));
+    }
+
+    private async Task RunVerifiedRedoAsync(string status, RegionOperationPhase phase,
+        Func<IProgress<RegionProgress>, CancellationToken, Task<RegionBackupState>> operation)
+    {
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        _regionOperationCancellation = new CancellationTokenSource();
+        SetRegionOperation(phase, new RegionProgress(status));
+        Busy = true;
+        try
+        {
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
+            await operation(progress, _regionOperationCancellation.Token);
+            StatusText = "区服文件准备步骤已重新完成。";
+        }
+        catch (OperationCanceledException)
+        {
+            _regionOperationNotice = "已取消本次操作，可以从原有准备步骤继续。";
+        }
+        catch (Exception ex)
+        {
+            RegionSwitchLog.Write("RegionPreparationRedoFailed", detail: ex.ToString());
+            _regionOperationError = "智能差异备份未能完成。\n\n你可以重新尝试，或改用完整备份模式。\n\n原因：" + ex.Message;
+        }
+        finally
+        {
+            _regionOperationCancellation.Dispose();
+            _regionOperationCancellation = null;
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            await RefreshHomeRegionAsync(verifyFiles: false);
+        }
+    }
+
+    public void ReturnRegionPreparationToStep1()
+    {
+        if (!RegionGuide.CanReturnToStep1) return;
+        _regionManager.CancelPreparation();
+        _regionRestartRequested = true;
+        _regionOperationNotice = "";
+        _regionOperationError = "";
+        StatusText = "已返回区服文件准备第一步。";
         _ = RefreshHomeRegionAsync();
     }
 
@@ -1296,6 +1420,9 @@ public sealed class MainViewModel : ObservableObject
         ex.Message.Contains("仍在变化", StringComparison.OrdinalIgnoreCase) ||
         ex.Message.Contains("写入", StringComparison.OrdinalIgnoreCase) ||
         ex.Message.Contains("扫描期间", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatRegionFileIssues(IReadOnlyList<RegionFileIssue>? issues) =>
+        issues is { Count: > 0 } ? "\n完整路径和原因已写入区服切换日志。" : "";
 
     private static string RegionName(OverwatchRegion? region) => region == OverwatchRegion.China ? "国服" : "国际服";
 }

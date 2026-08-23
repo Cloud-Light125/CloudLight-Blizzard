@@ -6,6 +6,17 @@ namespace CloudLightBlizzard.Services.OverwatchRegion;
 public enum OverwatchRegion { China, International }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionBackupMode
+{
+    // 必须保持为 0：旧 Generation / pending.json 没有 BackupMode 字段时按完整备份兼容读取。
+    FullSnapshot = 0,
+    VerifiedDifference = 1,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionPreparationCheckpoint { Step1Ready, Step2Ready }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CurrentGameRegion { Unknown, China, International, Mixed }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -31,10 +42,20 @@ public enum RegionBackupState
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RegionDifferenceKind { Same, ChinaOnly, InternationalOnly, Different }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CandidateBackupStatus { Available, Unavailable }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CandidateVerificationOutcome { VerifiedUsable, VerificationRejected, FileIssueSkipped }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionSwitchOutcome { Success, PartialSuccess, Failed }
+
 public sealed class RegionFileEntry
 {
     public string RelativePath { get; set; } = "";
     public long Size { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public DateTime LastWriteTimeUtc { get; set; }
     public string Sha256 { get; set; } = "";
 }
@@ -72,6 +93,7 @@ public sealed class OverwatchRegionGeneration
     public string GenerationId { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public RegionBackupState State { get; set; } = RegionBackupState.Preparing;
+    public RegionBackupMode BackupMode { get; set; } = RegionBackupMode.FullSnapshot;
     public OverwatchRegion SourceRegion { get; set; }
     public OverwatchRegion TargetRegion { get; set; }
     public string ChinaManifestId { get; set; } = "";
@@ -82,6 +104,37 @@ public sealed class OverwatchRegionGeneration
     public bool ChinaBackupComplete { get; set; }
     public bool InternationalBackupComplete { get; set; }
     public List<RegionDifference> Differences { get; set; } = new();
+    public RegionVerificationSummary? VerificationSummary { get; set; }
+}
+
+public sealed class RegionVerificationSummary
+{
+    public int CandidateCount { get; set; }
+    public int VerifiedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int SkippedFileCount { get; set; }
+    public bool HasWarnings { get; set; }
+    public List<RegionCandidateResult> Results { get; set; } = new();
+}
+
+public sealed class RegionFileIssue
+{
+    public string RelativePath { get; set; } = "";
+    public string Reason { get; set; } = "";
+}
+
+public sealed class CandidateBackupRecord
+{
+    public string RelativePath { get; set; } = "";
+    public CandidateBackupStatus Status { get; set; } = CandidateBackupStatus.Available;
+    public string Reason { get; set; } = "";
+}
+
+public sealed class RegionCandidateResult
+{
+    public string RelativePath { get; set; } = "";
+    public CandidateVerificationOutcome Outcome { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 public sealed class PendingRegionPreparation
@@ -89,8 +142,14 @@ public sealed class PendingRegionPreparation
     public int SchemaVersion { get; set; } = 2;
     public string GenerationId { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public RegionBackupMode BackupMode { get; set; } = RegionBackupMode.FullSnapshot;
+    public RegionPreparationCheckpoint Checkpoint { get; set; } = RegionPreparationCheckpoint.Step1Ready;
     public OverwatchRegion SourceRegion { get; set; }
     public OverwatchRegion TargetRegion { get; set; }
+    public List<RegionFileIssue> Step1Warnings { get; set; } = new();
+    public int CandidateCount { get; set; }
+    public int CandidateBackupSavedCount { get; set; }
+    public List<CandidateBackupRecord> CandidateBackups { get; set; } = new();
 }
 
 public sealed class ActiveGenerationPointer
@@ -111,13 +170,18 @@ public sealed record RegionSwitchResult(
     int InternationalOnlyProcessed = 0,
     int DifferentRestored = 0,
     bool Verified = false,
-    RegionSwitchEligibility Eligibility = RegionSwitchEligibility.Normal);
+    RegionSwitchEligibility Eligibility = RegionSwitchEligibility.Normal,
+    RegionSwitchOutcome Outcome = RegionSwitchOutcome.Success,
+    int FailedCount = 0,
+    IReadOnlyList<RegionFileIssue>? Issues = null);
 
 public sealed class RegionSnapshotStatus
 {
     public bool GamePathValid { get; set; }
     public string GamePath { get; set; } = "";
     public RegionBackupState State { get; set; }
+    public RegionBackupMode BackupMode { get; set; } = RegionBackupMode.FullSnapshot;
+    public RegionPreparationCheckpoint? PreparationCheckpoint { get; set; }
     public CurrentGameRegion CurrentRegion { get; set; }
     public GenerationCompatibility GenerationCompatibility { get; set; } = GenerationCompatibility.Unknown;
     public string CompatibilityReason { get; set; } = "";
@@ -136,4 +200,13 @@ public sealed class RegionSnapshotStatus
     public string? LastSuccessfulGenerationId { get; set; }
     public RegionEvidenceResult RegionEvidence { get; set; } = RegionEvidenceResult.NoStrongConflict;
     public bool ExactSnapshotMatch { get; set; }
+    public int CandidateCount { get; set; }
+    public int CandidateBackupSavedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int SkippedFileCount { get; set; }
+    public int BackupFileIssueCount { get; set; }
+    public bool HasWarnings { get; set; }
+    public IReadOnlyList<RegionFileIssue> FileIssues { get; set; } = Array.Empty<RegionFileIssue>();
 }
+
+public sealed record RegionScanResult(OverwatchRegionManifest Manifest, IReadOnlyList<RegionFileIssue> Issues);

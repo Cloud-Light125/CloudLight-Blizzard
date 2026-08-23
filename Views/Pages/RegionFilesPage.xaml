@@ -21,6 +21,7 @@
                         <TextBlock Text="国服备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                         <TextBlock Text="国际服备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                         <TextBlock Text="备份状态" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
+                        <TextBlock Text="备份模式" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                         <TextBlock Text="备份大小" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1">
@@ -28,6 +29,7 @@
                         <TextBlock Text="{Binding RegionGuide.ChinaBackupText}" Margin="0,10,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.InternationalBackupText}" Margin="0,10,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.BackupStateText}" Margin="0,10,0,0"/>
+                        <TextBlock Text="{Binding RegionGuide.BackupModeText}" Margin="0,10,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.BackupSizeText}" Margin="0,10,0,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Margin="24,0,0,0"
@@ -71,6 +73,37 @@
                 <StackPanel>
                     <TextBlock Text="区服文件准备" Style="{StaticResource SectionTitle}"/>
 
+                    <TextBlock Text="备份模式" FontWeight="SemiBold" Margin="0,13,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Background="{DynamicResource Body}" BorderBrush="{DynamicResource Bd}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                            <StackPanel>
+                                <RadioButton x:Name="VerifiedModeRadio" GroupName="RegionBackupMode"
+                                             IsEnabled="{Binding RegionGuide.CanChangePaths}"
+                                             IsChecked="{Binding IsVerifiedDifferenceMode, Mode=OneWay}"
+                                             Click="OnVerifiedMode" Content="智能差异备份（推荐）" FontWeight="SemiBold"/>
+                                <TextBlock Text="仅保存经过国服 → 国际服 → 国服往返验证的真实区服差异文件。占用空间更小，并且游戏启动/关闭产生的缓存、日志等变化不会导致整个备份失败。"
+                                           TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="12" LineHeight="18" Margin="22,7,0,0"/>
+                                <TextBlock Text="需要依次记录当前区服、另一区服，再切回当前区服。"
+                                           TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" Margin="22,5,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Background="{DynamicResource Body}" BorderBrush="{DynamicResource Bd}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                            <StackPanel>
+                                <RadioButton x:Name="FullModeRadio" GroupName="RegionBackupMode"
+                                             IsEnabled="{Binding RegionGuide.CanChangePaths}"
+                                             IsChecked="{Binding IsFullSnapshotMode, Mode=OneWay}"
+                                             Click="OnFullMode" Content="完整备份" FontWeight="SemiBold"/>
+                                <TextBlock Text="保留当前完整区服快照方式。占用空间更大，但适合智能差异备份无法正常完成的特殊环境。"
+                                           TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="12" LineHeight="18" Margin="22,7,0,0"/>
+                                <TextBlock Text="仅在智能差异备份无法正常完成时建议使用。"
+                                           TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" Margin="22,5,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="如果智能差异备份无法正常完成，可重新准备并改用完整备份模式。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" Margin="0,8,0,2"/>
+
                     <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowNotPrepared, Converter={StaticResource BoolVisibility}}">
                         <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
@@ -98,8 +131,21 @@
                                 <TextBlock Text="只有 Battle.net 已经完成更新，并显示可以正常启动游戏以后，再点击下面的按钮。" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                             </StackPanel>
                         </Border>
-                        <Button Content="{Binding RegionGuide.ContinueButtonText}" IsEnabled="{Binding RegionGuide.CanContinueOtherRegion}"
-                                Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="18,0" Click="OnComplete"/>
+                        <WrapPanel>
+                            <Button Content="{Binding RegionGuide.ContinueButtonText}" IsEnabled="{Binding RegionGuide.CanContinueOtherRegion}"
+                                    Style="{StaticResource PrimaryButton}" Padding="18,0" Margin="0,0,8,8" Click="OnComplete"/>
+                            <Button Content="重新执行步骤 1" IsEnabled="{Binding RegionGuide.CanRedoStep1}"
+                                    Visibility="{Binding RegionGuide.CanRedoStep1, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnRedoStep1"/>
+                            <Button Content="重新执行步骤 2" IsEnabled="{Binding RegionGuide.CanRedoStep2}"
+                                    Visibility="{Binding RegionGuide.CanRedoStep2, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnRedoStep2"/>
+                            <Button Content="返回步骤 1" IsEnabled="{Binding RegionGuide.CanReturnToStep1}"
+                                    Visibility="{Binding RegionGuide.CanReturnToStep1, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnReturnStep1"/>
+                            <Button Content="重新开始准备" IsEnabled="{Binding RegionGuide.CanRestart}"
+                                    Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,0,8" Click="OnReprepare"/>
+                        </WrapPanel>
                     </StackPanel>
 
                     <StackPanel Margin="0,12,0,0" Visibility="{Binding RegionGuide.ShowProgress, Converter={StaticResource BoolVisibility}}">
@@ -130,6 +176,15 @@
                             <StackPanel><TextBlock Text="国服文件" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="国际服文件" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/><TextBlock Text="区服差异" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/><TextBlock Text="本地备份" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/></StackPanel>
                             <StackPanel Grid.Column="1"><TextBlock Text="{Binding RegionGuide.ChinaBackupText}"/><TextBlock Text="{Binding RegionGuide.InternationalBackupText}" Margin="0,7,0,0"/><TextBlock Text="{Binding RegionGuide.DifferenceText}" Margin="0,7,0,0"/><TextBlock Text="{Binding RegionGuide.BackupBytesText}" Margin="0,7,0,0"/></StackPanel>
                         </Grid>
+                        <Expander Header="{Binding RegionGuide.WarningSummaryText}" Margin="0,0,0,14"
+                                  Foreground="{DynamicResource Status.Warning}"
+                                  Visibility="{Binding RegionGuide.ShowWarningDetails, Converter={StaticResource BoolVisibility}}">
+                            <Border Background="{DynamicResource Body}" BorderBrush="{DynamicResource Bd}"
+                                    BorderThickness="1" CornerRadius="7" Padding="11" Margin="0,8,0,0">
+                                <TextBlock Text="{Binding RegionGuide.WarningDetailsText}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource Text.Secondary}" FontSize="12" LineHeight="18"/>
+                            </Border>
+                        </Expander>
                         <WrapPanel>
                             <Button Content="检查备份完整性" IsEnabled="{Binding RegionGuide.CanValidate}" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,0" Click="OnValidate"/>
                             <Button Content="重新准备区服文件" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource SecondaryButton}" Padding="15,0" Click="OnReprepare"/>
@@ -137,7 +192,6 @@
                         <Expander Header="高级操作" Margin="0,14,0,0" Foreground="{DynamicResource Text.Secondary}">
                             <StackPanel Margin="0,10,0,0">
                                 <Button Content="打开备份文件夹" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,0,0,9" Click="OnOpenStorage"/>
-                                <Button Content="清除区服备份" IsEnabled="{Binding RegionGuide.CanClear}" Style="{StaticResource DangerButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnClear"/>
                             </StackPanel>
                         </Expander>
                     </StackPanel>
@@ -163,6 +217,15 @@
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
                         <WrapPanel>
                             <Button Content="重试" IsEnabled="{Binding RegionGuide.CanRetry}" Style="{StaticResource PrimaryButton}" Padding="16,0" Margin="0,0,8,0" Click="OnRetry"/>
+                            <Button Content="重新执行步骤 2" IsEnabled="{Binding RegionGuide.CanRedoStep2}"
+                                    Visibility="{Binding RegionGuide.CanRedoStep2, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="16,0" Margin="0,0,8,0" Click="OnRedoStep2"/>
+                            <Button Content="返回步骤 1" IsEnabled="{Binding RegionGuide.CanReturnToStep1}"
+                                    Visibility="{Binding RegionGuide.CanReturnToStep1, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="16,0" Margin="0,0,8,0" Click="OnReturnStep1"/>
+                            <Button Content="改用完整备份" IsEnabled="{Binding RegionGuide.CanUseFullSnapshot}"
+                                    Visibility="{Binding RegionGuide.CanUseFullSnapshot, Converter={StaticResource BoolVisibility}}"
+                                    Style="{StaticResource SecondaryButton}" Padding="16,0" Margin="0,0,8,0" Click="OnUseFullSnapshot"/>
                             <Button Content="打开日志文件夹" Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnOpenLogs"/>
                             <Button Content="重新准备区服文件" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource SecondaryButton}" Padding="16,0" Margin="8,0,0,0" Click="OnReprepare"/>
                         </WrapPanel>
@@ -184,12 +247,21 @@
                         </Border.Style>
                         <TextBlock Text="{Binding RegionGuide.Notice}" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap" LineHeight="20"/>
                     </Border>
+
+                    <Separator Margin="0,18,0,14"/>
+                    <StackPanel>
+                        <TextBlock Text="备份管理" FontWeight="SemiBold"/>
+                        <TextBlock Text="“重新开始准备”只删除未完成的准备数据；下面的操作会删除 Active Generation、所有历史 Generation 和临时数据。"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" LineHeight="18" Margin="0,5,0,9"/>
+                        <Button Content="删除所有区服备份" IsEnabled="{Binding RegionGuide.CanClear}"
+                                Style="{StaticResource DangerButton}" HorizontalAlignment="Left" Padding="15,0" Click="OnClear"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
             <Expander Header="为什么需要准备？" Margin="0,18,0,0" Foreground="{DynamicResource Text.Secondary}">
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,10,0,0">
-                    <TextBlock Text="国服和国际服的大部分游戏文件相同，但仍有一部分文件存在差异。&#10;&#10;首次准备时，CloudLight Blizzard 会记录两个区服的完整状态，然后只长期保存真正不同的文件。&#10;&#10;以后切换区服时，就可以直接从本地恢复这些文件，减少 Battle.net 重复下载。"
+                    <TextBlock Text="国服和国际服的大部分游戏文件相同，但仍有一部分文件存在差异。&#10;&#10;智能差异备份通过当前区服 → 另一区服 → 当前区服的往返记录，保守确认真正稳定的区服差异；完整备份则保留完整临时快照作为兼容方案。&#10;&#10;以后切换区服时，只会恢复或删除当前 Active Generation 已知的区服差异文件。"
                                TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21"/>
                 </Border>
             </Expander>

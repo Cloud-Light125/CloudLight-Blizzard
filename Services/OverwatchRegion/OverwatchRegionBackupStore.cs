@@ -16,6 +16,13 @@ public sealed class OverwatchRegionBackupStore
     public string Root { get; }
     public string GenerationsRoot => Path.Combine(Root, "generations");
     public string StagingRoot => Path.Combine(Root, "staging");
+    public string PreparationRoot => Path.Combine(Root, "preparation");
+    public string PreparationCurrentRoot => Path.Combine(PreparationRoot, "current");
+    private string PreparationPreviousRoot => Path.Combine(PreparationRoot, "previous");
+    public string PreparationStateFile => Path.Combine(PreparationCurrentRoot, "state.json");
+    public string Step1ManifestFile => Path.Combine(PreparationCurrentRoot, "step1-manifest.json");
+    public string Step2ManifestFile => Path.Combine(PreparationCurrentRoot, "step2-manifest.json");
+    public string CandidateRoot => Path.Combine(PreparationCurrentRoot, "candidate");
     public string ActiveGenerationFile => Path.Combine(Root, "active-generation.json");
     public string LegacyManifestsRoot => Path.Combine(Root, "manifests");
 
@@ -24,6 +31,8 @@ public sealed class OverwatchRegionBackupStore
         Root = Path.GetFullPath(root ?? AppPaths.Current.DefaultRegionStorageDir);
         Directory.CreateDirectory(GenerationsRoot);
         Directory.CreateDirectory(StagingRoot);
+        Directory.CreateDirectory(PreparationRoot);
+        RecoverPreparationSwap();
     }
 
     public bool HasLegacyData => Directory.Exists(LegacyManifestsRoot) ||
@@ -49,11 +58,24 @@ public sealed class OverwatchRegionBackupStore
         ReadJson<OverwatchRegionManifest>(StagingManifestFile(id, region));
     public void SavePending(PendingRegionPreparation pending) => WriteJson(PendingFile(pending.GenerationId), pending);
 
+    public void SaveVerifiedPending(PendingRegionPreparation pending) => WriteJson(PreparationStateFile, pending);
+    public void SavePreparationManifest(int step, OverwatchRegionManifest manifest) =>
+        WriteJson(step == 1 ? Step1ManifestFile : Step2ManifestFile, manifest);
+    public OverwatchRegionManifest? LoadPreparationManifest(int step) =>
+        ReadJson<OverwatchRegionManifest>(step == 1 ? Step1ManifestFile : Step2ManifestFile);
+    public string CandidateRegionRoot(OverwatchRegion region) => Path.Combine(CandidateRoot,
+        region == OverwatchRegion.China ? "china" : "international");
+    public string CandidateFile(OverwatchRegion region, string relative) =>
+        SafeCombine(CandidateRegionRoot(region), relative);
+
     public PendingRegionPreparation? LoadPending()
     {
-        if (!Directory.Exists(StagingRoot)) return null;
-        return Directory.EnumerateFiles(StagingRoot, "pending.json", SearchOption.AllDirectories)
+        var verified = ReadJson<PendingRegionPreparation>(PreparationStateFile);
+        var legacy = !Directory.Exists(StagingRoot) ? Enumerable.Empty<PendingRegionPreparation?>() :
+            Directory.EnumerateFiles(StagingRoot, "pending.json", SearchOption.AllDirectories)
             .Select(ReadJson<PendingRegionPreparation>)
+            .Where(value => value?.SchemaVersion == 2);
+        return legacy.Append(verified)
             .Where(value => value?.SchemaVersion == 2)
             .OrderByDescending(value => value!.CreatedAtUtc)
             .FirstOrDefault();
@@ -118,13 +140,65 @@ public sealed class OverwatchRegionBackupStore
         if (Directory.Exists(path)) Directory.Delete(path, true);
     }
 
+    public void DeletePreparation()
+    {
+        if (Directory.Exists(PreparationRoot)) Directory.Delete(PreparationRoot, true);
+        Directory.CreateDirectory(PreparationRoot);
+    }
+
+    public void CommitPreparationDirectory(string working)
+    {
+        if (Directory.Exists(PreparationPreviousRoot)) Directory.Delete(PreparationPreviousRoot, true);
+        if (Directory.Exists(PreparationCurrentRoot))
+            Directory.Move(PreparationCurrentRoot, PreparationPreviousRoot);
+        try
+        {
+            Directory.Move(working, PreparationCurrentRoot);
+            try { if (Directory.Exists(PreparationPreviousRoot)) Directory.Delete(PreparationPreviousRoot, true); }
+            catch { /* 新 current 已经提交；previous 仅是下次可清理的回滚副本。 */ }
+        }
+        catch
+        {
+            if (!Directory.Exists(PreparationCurrentRoot) && Directory.Exists(PreparationPreviousRoot))
+                Directory.Move(PreparationPreviousRoot, PreparationCurrentRoot);
+            throw;
+        }
+    }
+
+    private void RecoverPreparationSwap()
+    {
+        if (!Directory.Exists(PreparationCurrentRoot) && Directory.Exists(PreparationPreviousRoot))
+            Directory.Move(PreparationPreviousRoot, PreparationCurrentRoot);
+        else if (Directory.Exists(PreparationCurrentRoot) && Directory.Exists(PreparationPreviousRoot))
+            try { Directory.Delete(PreparationPreviousRoot, true); } catch { }
+    }
+
+    public void ResetVerifiedToStep1(PendingRegionPreparation pending)
+    {
+        foreach (var path in new[] { Step2ManifestFile, CandidateRoot })
+        {
+            if (File.Exists(path)) File.Delete(path);
+            if (Directory.Exists(path)) Directory.Delete(path, true);
+        }
+        foreach (var path in Directory.Exists(PreparationCurrentRoot)
+                     ? Directory.EnumerateDirectories(PreparationCurrentRoot, "step2-working-*")
+                     : Array.Empty<string>())
+            Directory.Delete(path, true);
+        pending.Checkpoint = RegionPreparationCheckpoint.Step1Ready;
+        pending.CandidateCount = 0;
+        pending.CandidateBackupSavedCount = 0;
+        pending.CandidateBackups.Clear();
+        SaveVerifiedPending(pending);
+    }
+
     public void Clear()
     {
-        foreach (var directory in new[] { GenerationsRoot, StagingRoot, LegacyManifestsRoot, Path.Combine(Root, "backups") })
+        foreach (var directory in new[] { GenerationsRoot, StagingRoot, PreparationRoot, LegacyManifestsRoot, Path.Combine(Root, "backups") })
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
         if (File.Exists(ActiveGenerationFile)) File.Delete(ActiveGenerationFile);
         Directory.CreateDirectory(GenerationsRoot);
         Directory.CreateDirectory(StagingRoot);
+        Directory.CreateDirectory(PreparationRoot);
     }
 
     public static string SafeCombine(string root, string relative)

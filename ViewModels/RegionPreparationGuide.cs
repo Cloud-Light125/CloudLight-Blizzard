@@ -7,6 +7,9 @@ public enum RegionPreparationState
     NotPrepared,
     PreparingCurrentRegion,
     WaitingForOtherRegion,
+    WaitingForOriginalRegion,
+    AnalyzingOtherRegion,
+    VerifyingDifferences,
     BuildingBackup,
     Ready,
     Outdated,
@@ -36,6 +39,9 @@ public enum RegionPreparationAction
     RestoreChina,
     RestoreInternational,
     Retry,
+    RedoStep1,
+    RedoStep2,
+    ReturnToStep1,
 }
 
 public sealed class RegionPreparationGuide
@@ -45,6 +51,7 @@ public sealed class RegionPreparationGuide
     public string ChinaBackupText { get; init; } = "尚未准备";
     public string InternationalBackupText { get; init; } = "尚未准备";
     public string BackupStateText { get; init; } = "尚未准备";
+    public string BackupModeText { get; init; } = "智能差异备份";
     public string BackupSizeText { get; init; } = "0 个文件 · 0.0 KB";
     public string DifferenceText { get; init; } = "0 个文件";
     public string BackupBytesText { get; init; } = "0.0 KB";
@@ -60,6 +67,8 @@ public sealed class RegionPreparationGuide
     public string SecondStepCompleteText { get; init; } = "";
     public string ContinueButtonText { get; init; } = "继续";
     public string ProgressText { get; init; } = "正在准备区服文件…";
+    public string WarningSummaryText { get; init; } = "";
+    public string WarningDetailsText { get; init; } = "";
     public double ProgressCurrent { get; init; }
     public double ProgressTotal { get; init; } = 1;
     public bool ProgressIndeterminate { get; init; }
@@ -77,6 +86,10 @@ public sealed class RegionPreparationGuide
     public bool CanRestart { get; init; }
     public bool CanRestore { get; init; }
     public bool CanRetry { get; init; }
+    public bool CanRedoStep1 { get; init; }
+    public bool CanRedoStep2 { get; init; }
+    public bool CanReturnToStep1 { get; init; }
+    public bool CanUseFullSnapshot { get; init; }
 
     public bool ShowTopRegionActions { get; init; }
     public bool ShowNotPrepared { get; init; }
@@ -91,6 +104,7 @@ public sealed class RegionPreparationGuide
     public bool ShowGamePathRequired { get; init; }
     public bool ShowNotice { get; init; }
     public bool ShowSuccessNotice { get; init; }
+    public bool ShowWarningDetails { get; init; }
     public IReadOnlyList<RegionPreparationAction> VisibleActions { get; init; } = Array.Empty<RegionPreparationAction>();
 
     public static RegionPreparationGuide Create(
@@ -102,7 +116,8 @@ public sealed class RegionPreparationGuide
         string backupRoot,
         string notice = "",
         string error = "",
-        OverwatchRegion? operationSource = null)
+        OverwatchRegion? operationSource = null,
+        RegionBackupMode selectedMode = RegionBackupMode.VerifiedDifference)
     {
         var state = ResolveState(status, operation, restartRequested, error);
         var source = status.PendingSourceRegion ?? operationSource;
@@ -112,9 +127,11 @@ public sealed class RegionPreparationGuide
         var current = status.CurrentRegion;
         var isOperationallyBusy = operation != RegionOperationPhase.None || busy;
         var backupCanSwitch = status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
-        var actions = ActionsFor(state);
-
-        var (step, title, description) = CopyFor(state, source, target);
+        var preparationMode = status.State is RegionBackupState.Preparing or RegionBackupState.Ready or
+            RegionBackupState.Stale ? status.BackupMode : selectedMode;
+        if (restartRequested) preparationMode = selectedMode;
+        var actions = ActionsFor(state, preparationMode);
+        var (step, title, description) = CopyFor(state, source, target, preparationMode);
         if (status.SwitchEligibility == RegionSwitchEligibility.BestEffort && state == RegionPreparationState.Mixed)
         {
             step = "可以宽容恢复";
@@ -135,6 +152,27 @@ public sealed class RegionPreparationGuide
             title = "区服文件需要重新准备";
             description = "区服文件功能已经升级，当前备份无法继续使用。请重新准备一次区服文件。\n\n旧备份会保留到新的准备过程成功完成，不会在开始准备时立即删除。";
         }
+        if (state == RegionPreparationState.Ready && status.HasWarnings)
+        {
+            title = "区服文件已经准备完成，但部分文件存在异常";
+            description = $"已确认 {status.DifferenceCount:N0} 个区服差异文件，" +
+                          $"自动忽略 {status.RejectedCount:N0} 个非稳定变化，" +
+                          $"因文件异常跳过 {status.SkippedFileCount:N0} 个。\n\n" +
+                          $"{status.SkippedFileCount:N0} 个文件可能存在异常，已自动跳过。其他区服差异文件仍可正常使用。";
+        }
+        if (state == RegionPreparationState.WaitingForOriginalRegion && status.CandidateCount > 0)
+        {
+            description = $"发现候选差异：{status.CandidateCount:N0} 个\n" +
+                          $"成功保存候选：{status.CandidateBackupSavedCount:N0} 个\n" +
+                          $"因文件异常跳过：{status.SkippedFileCount:N0} 个\n\n" +
+                          $"请在 Battle.net 中切回{RegionName(source)}并等待更新完成，然后开始最终验证。";
+        }
+        if (state == RegionPreparationState.Ready && status.BackupFileIssueCount > 0)
+        {
+            title = "区服备份可用，但部分文件已损坏或缺失";
+            description = $"检测到 {status.BackupFileIssueCount:N0} 个备份文件异常。切换时会自动跳过这些文件，" +
+                          "并继续处理其他完整的区服差异文件；异常文件不会复制进游戏目录。";
+        }
         if (!string.IsNullOrWhiteSpace(error)) description = error;
 
         return new RegionPreparationGuide
@@ -144,6 +182,8 @@ public sealed class RegionPreparationGuide
             ChinaBackupText = BackupName(status.ChinaBackupComplete, status.ChinaCaptured),
             InternationalBackupText = BackupName(status.InternationalBackupComplete, status.InternationalCaptured),
             BackupStateText = BackupStateName(status),
+            BackupModeText = preparationMode == RegionBackupMode.VerifiedDifference
+                ? "智能差异备份" : "完整备份",
             BackupSizeText = $"{status.DifferenceCount:N0} 个文件 · {FormatBytes(status.BackupBytes)}",
             DifferenceText = $"{status.DifferenceCount:N0} 个文件",
             BackupBytesText = FormatBytes(status.BackupBytes),
@@ -154,10 +194,20 @@ public sealed class RegionPreparationGuide
             Description = description,
             Notice = notice,
             PreparationRouteText = source is null || target is null ? "" : $"当前准备：{RegionName(source)} → {targetName}",
-            FirstStepCompleteText = source is null ? "" : $"✓ 步骤 1　{RegionName(source)}文件已保存",
-            SecondStepCompleteText = target is null ? "" : $"✓ 步骤 2　{targetName}更新已确认",
-            ContinueButtonText = string.IsNullOrWhiteSpace(notice) ? $"我已完成{targetName}更新" : "重新检查",
+            FirstStepCompleteText = source is null ? "" : preparationMode == RegionBackupMode.VerifiedDifference
+                ? $"✓ 步骤 1　{RegionName(source)}文件状态已记录"
+                : $"✓ 步骤 1　{RegionName(source)}文件已保存",
+            SecondStepCompleteText = target is null ? "" : $"✓ 步骤 2　{targetName}差异已记录",
+            ContinueButtonText = string.IsNullOrWhiteSpace(notice)
+                ? state == RegionPreparationState.WaitingForOriginalRegion
+                    ? $"我已切回{RegionName(source)}，开始验证"
+                    : $"我已完成{targetName}更新"
+                : "重新检查",
             ProgressText = progress?.Message ?? ProgressFallback(state, source),
+            WarningSummaryText = status.HasWarnings
+                ? $"{status.SkippedFileCount:N0} 个文件存在异常，已自动跳过" : "",
+            WarningDetailsText = string.Join("\n\n", status.FileIssues.Select(item =>
+                $"{item.RelativePath}\n{item.Reason}")),
             ProgressCurrent = progress is { BytesTotal: > 0 } ? progress.BytesCurrent : progress?.Current ?? 0,
             ProgressTotal = Math.Max(1, progress is { BytesTotal: > 0 } ? progress.BytesTotal : progress?.Total ?? 1),
             ProgressIndeterminate = progress is null || progress.BytesTotal <= 0 && progress.Total <= 0,
@@ -172,21 +222,35 @@ public sealed class RegionPreparationGuide
                                      state is RegionPreparationState.Ready or RegionPreparationState.Mixed &&
                                      (current != CurrentGameRegion.International || !status.ExactSnapshotMatch),
             CanChangePaths = !isOperationallyBusy,
-            CanClear = !isOperationallyBusy && state == RegionPreparationState.Ready,
+            CanClear = !isOperationallyBusy && (status.State != RegionBackupState.Empty ||
+                                                 !string.IsNullOrWhiteSpace(status.ActiveGenerationId)),
             CanChooseCurrentRegion = !isOperationallyBusy && state == RegionPreparationState.NotPrepared && status.GamePathValid,
-            CanContinueOtherRegion = !isOperationallyBusy && state == RegionPreparationState.WaitingForOtherRegion,
+            CanContinueOtherRegion = !isOperationallyBusy &&
+                                     state is RegionPreparationState.WaitingForOtherRegion or
+                                         RegionPreparationState.WaitingForOriginalRegion,
             CanCancel = busy && operation is RegionOperationPhase.PreparingCurrentRegion or RegionOperationPhase.BuildingBackup,
             CanValidate = !isOperationallyBusy && backupCanSwitch && state is RegionPreparationState.Ready or RegionPreparationState.Mixed,
-            CanRestart = !isOperationallyBusy && (state is RegionPreparationState.Ready or RegionPreparationState.Outdated ||
-                                                   state == RegionPreparationState.Error && status.State != RegionBackupState.Preparing),
+            CanRestart = !isOperationallyBusy && state != RegionPreparationState.NotPrepared,
             CanRestore = !isOperationallyBusy && backupCanSwitch && state == RegionPreparationState.Mixed,
             CanRetry = !isOperationallyBusy && state == RegionPreparationState.Error,
+            CanRedoStep1 = !isOperationallyBusy && preparationMode == RegionBackupMode.VerifiedDifference &&
+                           state == RegionPreparationState.WaitingForOtherRegion,
+            CanRedoStep2 = !isOperationallyBusy && preparationMode == RegionBackupMode.VerifiedDifference &&
+                           state is RegionPreparationState.WaitingForOriginalRegion or RegionPreparationState.Error &&
+                           status.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready,
+            CanReturnToStep1 = !isOperationallyBusy && preparationMode == RegionBackupMode.VerifiedDifference &&
+                               status.State == RegionBackupState.Preparing &&
+                               state is RegionPreparationState.WaitingForOriginalRegion or RegionPreparationState.Error,
+            CanUseFullSnapshot = !isOperationallyBusy && preparationMode == RegionBackupMode.VerifiedDifference,
             ShowTopRegionActions = state is RegionPreparationState.Ready or RegionPreparationState.Mixed,
             ShowNotPrepared = state == RegionPreparationState.NotPrepared,
-            ShowWaiting = state == RegionPreparationState.WaitingForOtherRegion,
+            ShowWaiting = state is RegionPreparationState.WaitingForOtherRegion or
+                RegionPreparationState.WaitingForOriginalRegion,
             ShowProgress = state is RegionPreparationState.PreparingCurrentRegion or RegionPreparationState.BuildingBackup or
+                RegionPreparationState.AnalyzingOtherRegion or RegionPreparationState.VerifyingDifferences or
                 RegionPreparationState.SwitchingRegion or RegionPreparationState.ValidatingBackup,
-            ShowCompletedPreparationSteps = state == RegionPreparationState.BuildingBackup,
+            ShowCompletedPreparationSteps = state is RegionPreparationState.BuildingBackup or
+                RegionPreparationState.AnalyzingOtherRegion or RegionPreparationState.VerifyingDifferences,
             ShowReady = state == RegionPreparationState.Ready,
             ShowOutdated = state == RegionPreparationState.Outdated,
             ShowMixed = state == RegionPreparationState.Mixed,
@@ -195,6 +259,7 @@ public sealed class RegionPreparationGuide
             ShowGamePathRequired = state == RegionPreparationState.NotPrepared && !status.GamePathValid,
             ShowNotice = !string.IsNullOrWhiteSpace(notice),
             ShowSuccessNotice = notice.StartsWith("区服备份完整", StringComparison.Ordinal),
+            ShowWarningDetails = state == RegionPreparationState.Ready && status.FileIssues.Count > 0,
             VisibleActions = actions,
         };
     }
@@ -203,12 +268,23 @@ public sealed class RegionPreparationGuide
         RegionSnapshotStatus status, RegionOperationPhase operation, bool restartRequested, string error)
     {
         if (operation == RegionOperationPhase.PreparingCurrentRegion) return RegionPreparationState.PreparingCurrentRegion;
-        if (operation == RegionOperationPhase.BuildingBackup) return RegionPreparationState.BuildingBackup;
+        if (operation == RegionOperationPhase.BuildingBackup)
+        {
+            if (status.BackupMode == RegionBackupMode.VerifiedDifference)
+                return status.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready
+                    ? RegionPreparationState.VerifyingDifferences
+                    : RegionPreparationState.AnalyzingOtherRegion;
+            return RegionPreparationState.BuildingBackup;
+        }
         if (operation == RegionOperationPhase.SwitchingRegion) return RegionPreparationState.SwitchingRegion;
         if (operation == RegionOperationPhase.ValidatingBackup) return RegionPreparationState.ValidatingBackup;
         if (!string.IsNullOrWhiteSpace(error)) return RegionPreparationState.Error;
         if (restartRequested) return RegionPreparationState.NotPrepared;
-        if (status.State == RegionBackupState.Preparing) return RegionPreparationState.WaitingForOtherRegion;
+        if (status.State == RegionBackupState.Preparing)
+            return status.BackupMode == RegionBackupMode.VerifiedDifference &&
+                   status.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready
+                ? RegionPreparationState.WaitingForOriginalRegion
+                : RegionPreparationState.WaitingForOtherRegion;
         if (status.State == RegionBackupState.Stale || status.SwitchEligibility == RegionSwitchEligibility.GameUpdated)
             return RegionPreparationState.Outdated;
         if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable)
@@ -224,14 +300,27 @@ public sealed class RegionPreparationGuide
     }
 
     private static (string Step, string Title, string Description) CopyFor(
-        RegionPreparationState state, OverwatchRegion? source, OverwatchRegion? target) => state switch
+        RegionPreparationState state, OverwatchRegion? source, OverwatchRegion? target,
+        RegionBackupMode backupMode) => state switch
     {
         RegionPreparationState.NotPrepared => ("步骤 1 / 3", "确认当前游戏区服",
-            "首次使用需要准备一次国服和国际服文件。整个过程只需要让 Battle.net 完成一次跨区更新。\n\n请先确认 Battle.net 已经完成当前区服的游戏更新，并且“开始游戏”按钮可以正常使用。然后选择当前电脑上的守望先锋属于哪个区服。"),
+            backupMode == RegionBackupMode.VerifiedDifference
+                ? "智能差异备份需要依次记录当前区服、另一区服，再切回当前区服，用于自动确认真正的区服差异文件。\n\n请先确认 Battle.net 已经完成当前区服的游戏更新，然后选择当前电脑上的守望先锋属于哪个区服。"
+                : "完整备份会先把当前区服的完整游戏文件保存到临时区域，再记录另一区服。\n\n请先确认 Battle.net 已经完成当前区服的游戏更新，然后选择当前电脑上的守望先锋属于哪个区服。"),
         RegionPreparationState.PreparingCurrentRegion => ("步骤 1 / 3", $"正在保存当前{RegionName(source)}文件",
-            $"正在将当前{RegionName(source)}游戏文件保存到本地临时区域。\n\n这是本地磁盘复制，不会使用网络流量。根据磁盘速度可能需要一些时间。"),
+            backupMode == RegionBackupMode.VerifiedDifference
+                ? $"正在记录当前{RegionName(source)}文件的内容状态。此步骤不会复制整个游戏目录。"
+                : $"正在将当前{RegionName(source)}游戏文件保存到本地临时区域。\n\n这是本地磁盘复制，不会使用网络流量。根据磁盘速度可能需要一些时间。"),
         RegionPreparationState.WaitingForOtherRegion => ("步骤 2 / 3", $"请在 Battle.net 中切换到{RegionName(target)}",
-            $"当前{RegionName(source)}文件已经保存完成。\n\n现在请：\n1. 打开 Battle.net\n2. 将《守望先锋》切换到{RegionName(target)}\n3. 等待 Battle.net 完成游戏更新\n4. 确认游戏已经显示“开始游戏”\n5. 回到这里继续"),
+            backupMode == RegionBackupMode.VerifiedDifference
+                ? $"当前{RegionName(source)}文件状态已经记录完成。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新。你可以启动游戏进行验证；退出游戏后再回到这里继续。"
+                : $"当前{RegionName(source)}完整文件已经保存到临时区域。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新，然后回到这里建立完整备份。"),
+        RegionPreparationState.WaitingForOriginalRegion => ("步骤 3 / 3", $"请切回最初的{RegionName(source)}",
+            $"另一区服文件差异已经记录完成。\n\n请在 Battle.net 中切回{RegionName(source)}并等待更新完成。你可以启动游戏进行验证；退出游戏后再回来完成最终确认。"),
+        RegionPreparationState.AnalyzingOtherRegion => ("步骤 2 / 3", "正在分析另一区服文件差异",
+            "正在比较两次记录的文件内容，并保存候选区服差异。游戏启动或关闭造成的变化不会在此时直接判定为最终区服差异。"),
+        RegionPreparationState.VerifyingDifferences => ("步骤 3 / 3", "正在验证区服差异文件",
+            "正在确认候选文件是否已经恢复到最初区服的内容。无法通过往返验证的变化会自动忽略，不会导致整个准备失败。"),
         RegionPreparationState.BuildingBackup => ("步骤 3 / 3", "正在建立区服文件备份",
             "正在比较国服和国际服文件，并保存真正不同的文件。\n\n完成后，以后切换国服和国际服时即可直接使用本地文件，通常不再需要 Battle.net 重复下载这些区服差异。"),
         RegionPreparationState.Ready => ("✓ 准备完成", "区服文件已经准备完成",
@@ -248,11 +337,15 @@ public sealed class RegionPreparationGuide
             "读取或处理区服文件时遇到问题，请重新检查。"),
     };
 
-    private static IReadOnlyList<RegionPreparationAction> ActionsFor(RegionPreparationState state) => state switch
+    private static IReadOnlyList<RegionPreparationAction> ActionsFor(RegionPreparationState state,
+        RegionBackupMode mode) => state switch
     {
         RegionPreparationState.NotPrepared => new[] { RegionPreparationAction.ChooseChina, RegionPreparationAction.ChooseInternational },
-        RegionPreparationState.PreparingCurrentRegion or RegionPreparationState.BuildingBackup => new[] { RegionPreparationAction.Cancel },
-        RegionPreparationState.WaitingForOtherRegion => new[] { RegionPreparationAction.ContinueOtherRegion },
+        RegionPreparationState.PreparingCurrentRegion or RegionPreparationState.BuildingBackup or
+            RegionPreparationState.AnalyzingOtherRegion or RegionPreparationState.VerifyingDifferences => new[] { RegionPreparationAction.Cancel },
+        RegionPreparationState.WaitingForOtherRegion when mode == RegionBackupMode.VerifiedDifference => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.RedoStep1, RegionPreparationAction.Restart },
+        RegionPreparationState.WaitingForOtherRegion => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.Restart },
+        RegionPreparationState.WaitingForOriginalRegion => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.RedoStep2, RegionPreparationAction.ReturnToStep1, RegionPreparationAction.Restart },
         RegionPreparationState.Ready => new[] { RegionPreparationAction.Validate, RegionPreparationAction.Restart },
         RegionPreparationState.Outdated => new[] { RegionPreparationAction.Restart },
         RegionPreparationState.Mixed => new[] { RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational },
@@ -264,6 +357,8 @@ public sealed class RegionPreparationGuide
     {
         RegionPreparationState.PreparingCurrentRegion => $"正在保存当前{RegionName(source)}文件…",
         RegionPreparationState.BuildingBackup => "正在比较国服和国际服文件…",
+        RegionPreparationState.AnalyzingOtherRegion => "正在分析另一区服文件差异……",
+        RegionPreparationState.VerifyingDifferences => "正在验证区服差异文件……",
         RegionPreparationState.SwitchingRegion => "正在恢复区服文件…",
         RegionPreparationState.ValidatingBackup => "正在检查区服备份…",
         _ => "正在准备区服文件…",
@@ -277,7 +372,8 @@ public sealed class RegionPreparationGuide
         RegionSwitchEligibility.GameUpdated => "需要重新准备",
         _ => status.State switch
         {
-            RegionBackupState.Ready => "可以使用",
+            RegionBackupState.Ready => status.BackupFileIssueCount > 0 ? "可用（部分备份文件异常）" :
+                status.HasWarnings ? "可用（部分文件已跳过）" : "可以使用",
             RegionBackupState.Preparing => "正在准备",
             RegionBackupState.Stale => "需要重新准备",
             RegionBackupState.Empty => "尚未准备",

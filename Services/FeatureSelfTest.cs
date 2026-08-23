@@ -29,6 +29,18 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "region-verified", StringComparison.OrdinalIgnoreCase))
+            {
+                RunVerifiedDifferenceRegionTest(workspace, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
+            if (string.Equals(test, "region-guide", StringComparison.OrdinalIgnoreCase))
+            {
+                RunRegionPreparationGuideTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
             RunTwitchConnectionStateTest(report);
@@ -359,7 +371,7 @@ public static class FeatureSelfTest
         var waiting = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.None, false, false, null, backupRoot);
         Assert(waiting.State == RegionPreparationState.WaitingForOtherRegion &&
                waiting.ContinueButtonText == "我已完成国际服更新", "waiting names the target region");
-        AssertActions(waiting, RegionPreparationAction.ContinueOtherRegion);
+        AssertActions(waiting, RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.Restart);
         waitingStatus.PendingSourceRegion = GameRegion.International;
         waitingStatus.PendingTargetRegion = GameRegion.China;
         var waitingForChina = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.None,
@@ -604,6 +616,163 @@ public static class FeatureSelfTest
         Assert((await legacyManager.GetStatusAsync(game)).State == RegionBackupState.Legacy,
             "old schema is rejected");
         report.AppendLine("TEST 6 Generation/Staging: PASS (drift-tolerant China/International detection, strong correction/conflict, successful/failed normalize state, update rejection, strict restore hash, 256MB copies)");
+    }
+
+    private static async Task RunVerifiedDifferenceRegionTest(string workspace, StringBuilder report)
+    {
+        var game = Path.Combine(workspace, "verified-game");
+        var store = Path.Combine(workspace, "verified-store");
+        Directory.CreateDirectory(game);
+        File.WriteAllText(Path.Combine(game, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(game, "foo.txt"), "AAA");
+        File.WriteAllText(Path.Combine(game, "runtime.dat"), "111");
+        File.WriteAllText(Path.Combine(game, "broken.txt"), "CCC");
+        File.WriteAllText(Path.Combine(game, "locked.txt"), "AAA");
+        for (var i = 2; i <= 5; i++) File.WriteAllText(Path.Combine(game, $"different-{i}.txt"), $"A0{i}");
+        File.WriteAllText(Path.Combine(game, "china-only.txt"), "China only");
+
+        var manager = new OverwatchRegionManager(store, () => false, 0);
+        Assert(await manager.StartPreparationAsync(game, GameRegion.China,
+                   RegionBackupMode.VerifiedDifference) == RegionBackupState.Preparing,
+            "verified Step1 enters persistent preparation");
+        var step1 = await manager.GetStatusAsync(game, verifyFiles: false);
+        Assert(step1.BackupMode == RegionBackupMode.VerifiedDifference &&
+               step1.PreparationCheckpoint == RegionPreparationCheckpoint.Step1Ready,
+            "verified Step1Ready survives through state.json");
+        Assert(!Directory.EnumerateFiles(Path.Combine(store, "preparation"), "*",
+                SearchOption.AllDirectories).Any(path => path.EndsWith("foo.txt", StringComparison.OrdinalIgnoreCase)),
+            "verified Step1 writes metadata only and does not copy game contents");
+        manager = new OverwatchRegionManager(store, () => false, 0);
+
+        File.WriteAllText(Path.Combine(game, "foo.txt"), "BBB");
+        File.WriteAllText(Path.Combine(game, "runtime.dat"), "222");
+        File.WriteAllText(Path.Combine(game, "broken.txt"), "DDD");
+        File.WriteAllText(Path.Combine(game, "locked.txt"), "BBB");
+        for (var i = 2; i <= 5; i++) File.WriteAllText(Path.Combine(game, $"different-{i}.txt"), $"B0{i}");
+        File.Delete(Path.Combine(game, "china-only.txt"));
+        File.WriteAllText(Path.Combine(game, "international-only.txt"), "International only");
+        await using (var locked = new FileStream(Path.Combine(game, "locked.txt"), FileMode.Open,
+                         FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Preparing,
+                "one locked candidate does not fail verified Step2");
+        }
+        var step2 = await manager.GetStatusAsync(game, verifyFiles: false);
+        Assert(step2.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready &&
+               File.ReadAllText(Path.Combine(store, "preparation", "current", "candidate",
+                    "international", "foo.txt")) == "BBB" &&
+               step2.HasWarnings && step2.SkippedFileCount == 1,
+            "Step2Ready persists usable B1 candidates and records one unavailable candidate");
+        File.WriteAllText(Path.Combine(store, "preparation", "current", "candidate",
+            "international", "broken.txt"), "XXX");
+        manager = new OverwatchRegionManager(store, () => false, 0);
+
+        File.WriteAllText(Path.Combine(game, "foo.txt"), "AAA");
+        File.WriteAllText(Path.Combine(game, "runtime.dat"), "333");
+        File.WriteAllText(Path.Combine(game, "broken.txt"), "CCC");
+        File.WriteAllText(Path.Combine(game, "locked.txt"), "AAA");
+        for (var i = 2; i <= 5; i++) File.WriteAllText(Path.Combine(game, $"different-{i}.txt"), $"A0{i}");
+        File.WriteAllText(Path.Combine(game, "china-only.txt"), "China only");
+        File.Delete(Path.Combine(game, "international-only.txt"));
+        Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
+            "verified Step3 commits a Ready generation even with a rejected runtime change");
+        var ready = await manager.GetStatusAsync(game);
+        var generationRoot = Path.Combine(store, "generations", ready.ActiveGenerationId!);
+        var generation = OverwatchRegionBackupStore.ReadJson<OverwatchRegionGeneration>(
+            Path.Combine(generationRoot, "pair.json"))!;
+        var differences = generation.Differences.ToDictionary(value => value.RelativePath,
+            StringComparer.OrdinalIgnoreCase);
+        Assert(generation.BackupMode == RegionBackupMode.VerifiedDifference &&
+               generation.State == RegionBackupState.Ready &&
+               differences["foo.txt"].Kind == RegionDifferenceKind.Different,
+            "A1=AAA, B1=BBB, A2=AAA becomes verified Different with Ready generation");
+        Assert(differences["china-only.txt"].Kind == RegionDifferenceKind.ChinaOnly &&
+               differences["international-only.txt"].Kind == RegionDifferenceKind.InternationalOnly,
+            "verified AOnly and BOnly are retained with directional deletion semantics");
+        Assert(!differences.ContainsKey("runtime.dat") && !differences.ContainsKey("broken.txt") &&
+               !differences.ContainsKey("locked.txt") &&
+               generation.VerificationSummary is
+               { RejectedCount: 1, VerifiedCount: 7, SkippedFileCount: 2, HasWarnings: true },
+            "rejected runtime and two file issues are excluded without failing preparation");
+        Assert(generation.VerificationSummary!.Results.Any(item => item.RelativePath == "foo.txt" &&
+                   item.Outcome == CandidateVerificationOutcome.VerifiedUsable) &&
+               generation.VerificationSummary.Results.Any(item => item.RelativePath == "runtime.dat" &&
+                   item.Outcome == CandidateVerificationOutcome.VerificationRejected) &&
+               generation.VerificationSummary.Results.Any(item => item.RelativePath == "broken.txt" &&
+                   item.Outcome == CandidateVerificationOutcome.FileIssueSkipped),
+            "Step3 persists VerifiedUsable, VerificationRejected, and FileIssueSkipped classifications");
+        Assert(File.ReadAllText(Path.Combine(generationRoot, "backups", "china", "foo.txt")) == "AAA" &&
+               File.ReadAllText(Path.Combine(generationRoot, "backups", "international", "foo.txt")) == "BBB",
+            "verified Different stores both A and B contents");
+
+        File.WriteAllText(Path.Combine(game, "unverified-cache.bin"), "must remain untouched");
+        var corruptTargetBackup = Path.Combine(generationRoot, "backups", "international", "foo.txt");
+        File.WriteAllText(corruptTargetBackup, "ZZZ");
+        var damagedStatus = await manager.GetStatusAsync(game, verifyBackupHashes: true);
+        Assert(damagedStatus.SwitchEligibility == RegionSwitchEligibility.Normal &&
+               damagedStatus.BackupFileIssueCount == 1,
+            "one damaged VerifiedDifference entry remains switchable and is reported as a file warning");
+        var partial = await manager.NormalizeToRegionAsync(game, GameRegion.International);
+        Assert(partial.Outcome == RegionSwitchOutcome.PartialSuccess && partial.FailedCount == 1 &&
+               !partial.Verified && File.ReadAllText(Path.Combine(game, "foo.txt")) == "AAA" &&
+               Enumerable.Range(2, 4).All(i =>
+                   File.ReadAllText(Path.Combine(game, $"different-{i}.txt")) == $"B0{i}") &&
+               !File.Exists(Path.Combine(game, "china-only.txt")) &&
+               File.Exists(Path.Combine(game, "international-only.txt")) &&
+               File.Exists(Path.Combine(game, "unverified-cache.bin")),
+            "one corrupt verified backup is skipped while all other independent entries continue");
+
+        var legacyGame = Path.Combine(workspace, "legacy-full-game");
+        var legacyStore = Path.Combine(workspace, "legacy-full-store");
+        Directory.CreateDirectory(legacyGame);
+        File.WriteAllText(Path.Combine(legacyGame, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(legacyGame, "different.txt"), "China");
+        var fullManager = new OverwatchRegionManager(legacyStore, () => false, 0);
+        await fullManager.StartPreparationAsync(legacyGame, GameRegion.China, RegionBackupMode.FullSnapshot);
+        File.WriteAllText(Path.Combine(legacyGame, "different.txt"), "International");
+        await fullManager.ContinuePreparationAsync(legacyGame);
+        var legacyStatus = await fullManager.GetStatusAsync(legacyGame);
+        var pairFile = Path.Combine(legacyStore, "generations", legacyStatus.ActiveGenerationId!, "pair.json");
+        File.WriteAllText(pairFile, File.ReadAllText(pairFile)
+            .Replace("  \"BackupMode\": \"FullSnapshot\",\r\n", "", StringComparison.Ordinal)
+            .Replace("  \"BackupMode\": \"FullSnapshot\",\n", "", StringComparison.Ordinal));
+        var legacyReader = new OverwatchRegionManager(legacyStore, () => false, 0);
+        var legacyReady = await legacyReader.GetStatusAsync(legacyGame);
+        Assert(legacyReady.State == RegionBackupState.Ready &&
+               legacyReady.BackupMode == RegionBackupMode.FullSnapshot,
+            "Generation without BackupMode is read as legacy FullSnapshot");
+        await legacyReader.NormalizeToRegionAsync(legacyGame, GameRegion.China);
+        Assert(File.ReadAllText(Path.Combine(legacyGame, "different.txt")) == "China",
+            "legacy FullSnapshot generation remains switchable without re-preparation");
+        var activeBeforeNewPreparation = File.ReadAllText(Path.Combine(legacyStore, "active-generation.json"));
+        await legacyReader.StartPreparationAsync(legacyGame, GameRegion.China,
+            RegionBackupMode.VerifiedDifference);
+        Assert(File.ReadAllText(Path.Combine(legacyStore, "active-generation.json")) == activeBeforeNewPreparation,
+            "new verified Step1 does not replace the old Ready active generation");
+        await legacyReader.NormalizeToRegionAsync(legacyGame, GameRegion.International);
+        Assert(File.ReadAllText(Path.Combine(legacyGame, "different.txt")) == "International" &&
+               File.ReadAllText(Path.Combine(legacyStore, "active-generation.json"))
+                   .Contains(legacyStatus.ActiveGenerationId!, StringComparison.OrdinalIgnoreCase),
+            "old FullSnapshot active generation remains usable while verified preparation is incomplete");
+
+        Assert(await legacyReader.ContinuePreparationAsync(legacyGame) == RegionBackupState.Preparing,
+            "new verified preparation reaches Step2Ready without replacing old Active");
+        File.WriteAllText(Path.Combine(legacyStore, "preparation", "current", "candidate",
+            "international", "different.txt"), "Broken");
+        await legacyReader.NormalizeToRegionAsync(legacyGame, GameRegion.China);
+        var activeBeforeNoUsable = File.ReadAllText(Path.Combine(legacyStore, "active-generation.json"));
+        try
+        {
+            await legacyReader.ContinuePreparationAsync(legacyGame);
+            throw new InvalidOperationException("zero usable candidates should not activate an empty generation");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("未生成可用", StringComparison.Ordinal)) { }
+        var noUsableStatus = await legacyReader.GetStatusAsync(legacyGame, verifyFiles: false);
+        Assert(File.ReadAllText(Path.Combine(legacyStore, "active-generation.json")) == activeBeforeNoUsable &&
+               noUsableStatus.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready,
+            "zero usable candidates preserve old Active and keep Step3 retryable");
+
+        report.AppendLine("VerifiedDifference region preparation: PASS (per-file Step2/Step3 classification, partial daily restore, zero-usable old Active protection, legacy FullSnapshot)");
     }
 
     private static async Task RunBestEffortRegionTest(string workspace, StringBuilder report)

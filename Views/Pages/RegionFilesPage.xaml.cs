@@ -67,7 +67,8 @@ public partial class RegionFilesPage : UserControl
     private async Task ConfirmAndPrepareAsync(OverwatchRegion region)
     {
         if (_vm?.RegionGuide.CanChooseCurrentRegion != true) return;
-        var confirmed = new RegionActionConfirmWindow(RegionActionConfirmKind.Prepare, region)
+        var confirmed = new RegionActionConfirmWindow(RegionActionConfirmKind.Prepare, region,
+            _vm.IsVerifiedDifferenceMode ? RegionBackupMode.VerifiedDifference : RegionBackupMode.FullSnapshot)
         {
             Owner = Window.GetWindow(this)
         }.ShowDialog() == true;
@@ -88,7 +89,10 @@ public partial class RegionFilesPage : UserControl
     private void OnReprepare(object sender, RoutedEventArgs e)
     {
         if (_vm?.RegionGuide.CanRestart != true) return;
-        if (new RegionActionConfirmWindow(RegionActionConfirmKind.Reprepare)
+        var kind = _vm.HasPendingRegionPreparation
+            ? RegionActionConfirmKind.RestartPreparation
+            : RegionActionConfirmKind.Reprepare;
+        if (new RegionActionConfirmWindow(kind)
             { Owner = Window.GetWindow(this) }.ShowDialog() == true)
             _vm.RequestRegionReprepare();
     }
@@ -106,5 +110,60 @@ public partial class RegionFilesPage : UserControl
     private async void OnRetry(object sender, RoutedEventArgs e)
     {
         if (_vm?.RegionGuide.CanRetry == true) await _vm.RetryRegionStatusAsync();
+    }
+
+    private void OnVerifiedMode(object sender, RoutedEventArgs e) =>
+        ChangeBackupMode(RegionBackupMode.VerifiedDifference);
+
+    private void OnFullMode(object sender, RoutedEventArgs e) =>
+        ChangeBackupMode(RegionBackupMode.FullSnapshot);
+
+    private void OnUseFullSnapshot(object sender, RoutedEventArgs e) =>
+        ChangeBackupMode(RegionBackupMode.FullSnapshot);
+
+    private void ChangeBackupMode(RegionBackupMode mode)
+    {
+        if (_vm is null) return;
+        var alreadySelected = mode == RegionBackupMode.VerifiedDifference
+            ? _vm.IsVerifiedDifferenceMode : _vm.IsFullSnapshotMode;
+        if (alreadySelected)
+        {
+            ResetModeChecks();
+            return;
+        }
+        if (_vm.HasPendingRegionPreparation &&
+            new RegionActionConfirmWindow(RegionActionConfirmKind.SwitchBackupMode)
+                { Owner = Window.GetWindow(this) }.ShowDialog() != true)
+        {
+            ResetModeChecks();
+            return;
+        }
+        _vm.ChangeRegionBackupMode(mode);
+        ResetModeChecks();
+    }
+
+    private void ResetModeChecks()
+    {
+        if (_vm is null) return;
+        VerifiedModeRadio.IsChecked = _vm.IsVerifiedDifferenceMode;
+        FullModeRadio.IsChecked = _vm.IsFullSnapshotMode;
+    }
+
+    private async void OnRedoStep1(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.RegionGuide.CanRedoStep1 == true) await _vm.RedoVerifiedStep1Async();
+    }
+
+    private async void OnRedoStep2(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.RegionGuide.CanRedoStep2 == true) await _vm.RedoVerifiedStep2Async();
+    }
+
+    private void OnReturnStep1(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.RegionGuide.CanReturnToStep1 != true) return;
+        if (new RegionActionConfirmWindow(RegionActionConfirmKind.RestartPreparation)
+            { Owner = Window.GetWindow(this) }.ShowDialog() == true)
+            _vm.ReturnRegionPreparationToStep1();
     }
 }

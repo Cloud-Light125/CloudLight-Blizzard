@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Services.OverwatchRegion;
 
 namespace CloudLightBlizzard.Services;
 
@@ -27,6 +28,7 @@ public sealed class AppSettings
     public List<long> ExpiredAccountIds { get; set; } = new();
     public string? OverwatchGamePath { get; set; }
     public string? RegionStoragePath { get; set; }
+    public RegionBackupMode RegionBackupMode { get; set; } = RegionBackupMode.VerifiedDifference;
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }
     public string LastMainSection { get; set; } = "accounts";

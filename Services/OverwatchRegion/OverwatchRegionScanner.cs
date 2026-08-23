@@ -27,6 +27,10 @@ public sealed class OverwatchRegionScanner
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default) =>
         Task.Run(() => Scan(gameRoot, region, progress, cancellationToken), cancellationToken);
 
+    public Task<RegionScanResult> ScanBestEffortAsync(string gameRoot, OverwatchRegion region,
+        IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default) =>
+        Task.Run(() => ScanBestEffort(gameRoot, region, progress, cancellationToken), cancellationToken);
+
     private static void WaitForQuiescence(string root, IProgress<RegionProgress>? progress, CancellationToken token,
         int observationMilliseconds)
     {
@@ -88,6 +92,39 @@ public sealed class OverwatchRegionScanner
         }
         manifest.BuildFingerprint = ReadBuildFingerprint(root, manifest.Files);
         return manifest;
+    }
+
+    private static RegionScanResult ScanBestEffort(string root, OverwatchRegion region,
+        IProgress<RegionProgress>? progress, CancellationToken token)
+    {
+        root = Path.GetFullPath(root);
+        var files = EnumerateGameFiles(root).ToList();
+        var manifest = new OverwatchRegionManifest { Region = region };
+        var issues = new List<RegionFileIssue>();
+        for (var i = 0; i < files.Count; i++)
+        {
+            token.ThrowIfCancellationRequested();
+            var file = files[i];
+            var relative = Normalize(Path.GetRelativePath(root, file));
+            progress?.Report(new RegionProgress($"正在记录当前{RegionName(region)}文件… {i + 1:N0} / {files.Count:N0}",
+                i + 1, files.Count));
+            try
+            {
+                manifest.Files[relative] = ReadStableEntry(file, relative, token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                issues.Add(new RegionFileIssue { RelativePath = relative, Reason = "文件读取或 Hash 失败：" + ex.Message });
+            }
+        }
+        // VerifiedDifference 会立即去掉 build fingerprint；这里不让单个版本文件异常升级成整次扫描失败。
+        try { manifest.BuildFingerprint = ReadBuildFingerprint(root, manifest.Files); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            issues.Add(new RegionFileIssue { RelativePath = ".build.info", Reason = "版本文件读取失败：" + ex.Message });
+        }
+        return new RegionScanResult(manifest, issues);
     }
 
     private static RegionFileEntry ReadStableEntry(string file, string relative, CancellationToken token)
