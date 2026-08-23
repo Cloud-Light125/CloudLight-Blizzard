@@ -3,6 +3,7 @@
 ## 公告、反馈与网络
 
 - 新增应用内公告入口、未读蓝点、按公告 revision 记录已读状态，以及本地缓存回退。
+- 公告正文支持鼠标选择和复制。
 - 新增用户反馈面板，可选提交经过脱敏和大小限制的诊断日志，并显示真实上传进度与服务端处理阶段。
 - 公告与反馈正式接入已部署的 Cloudflare Worker；桌面端不包含 GitHub Token 或 PAT。
 - 公告、反馈、软件更新和 Drops 统一复用应用的 `EnableProxy`、`ProxyUrl`、`FallbackDirect` 设置。
