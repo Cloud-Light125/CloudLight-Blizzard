@@ -17,6 +17,7 @@
 
 ## Drops 与运行环境
 
+- 修复掉宝页面右上角“刷新”按钮与公告铃铛重叠的问题。
 - 改进 Twitch 登录、清除登录、连接状态、手动领取和刷新流程的稳定性。
 - 改进 SOOP、Twitch、YouTube Worker 的 JSONL 协议、错误分类与敏感信息脱敏。
 - 三个冻结 Worker 统一打包 `_ssl`、OpenSSL 及实际运行依赖，并在完整构建和最终 publish 布局中执行隔离 SSL 自检。

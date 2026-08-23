@@ -270,7 +270,7 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,32">
-            <DockPanel>
+            <DockPanel Margin="0,0,52,0">
                 <Button Content="刷新" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/>
                 <StackPanel>
                     <TextBlock Text="掉宝" Style="{StaticResource PageTitle}"/>
