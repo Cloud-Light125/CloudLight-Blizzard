@@ -25,10 +25,14 @@ public partial class RegionActionConfirmWindow : Window
                 var regionName = region == OverwatchRegion.International ? "国际服" : "国服";
                 Title = TitleText.Text = $"准备{regionName}文件";
                 MessageText.Text = "请确认：";
-                BulletText.Text = $"• Battle.net 当前选择的是{regionName}\n• 游戏已经更新完成\n• Battle.net 显示可以正常启动游戏";
+                BulletBox.Background = (System.Windows.Media.Brush)FindResource("WarnBg");
+                BulletBox.BorderBrush = (System.Windows.Media.Brush)FindResource("WarnBd");
+                BulletBox.BorderThickness = new Thickness(1);
+                BulletText.Foreground = (System.Windows.Media.Brush)FindResource("WarnTx");
+                BulletText.Text = $"• Battle.net 当前选择的是{regionName}\n• Battle.net 可以识别游戏文件并显示“开始游戏”\n• 不要启动《守望先锋》";
                 FooterText.Text = backupMode == RegionBackupMode.VerifiedDifference
-                    ? "接下来只会记录当前游戏文件的内容状态，不会复制整个游戏目录。"
-                    : "接下来软件会先保存当前完整游戏文件到本地临时区域。这个过程只会读取和复制本地文件，不会产生网络流量。";
+                    ? "备份期间请勿启动游戏。接下来只会记录当前游戏文件的内容状态，不会复制整个游戏目录。"
+                    : "备份期间请勿启动游戏。接下来软件会先保存当前完整游戏文件到本地临时区域。这个过程只会读取和复制本地文件，不会产生网络流量。";
                 ConfirmButton.Content = "开始准备";
                 break;
             case RegionActionConfirmKind.Reprepare:

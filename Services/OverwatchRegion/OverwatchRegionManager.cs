@@ -25,11 +25,24 @@ public sealed class OverwatchRegionManager
 
     public static bool IsValidGameRoot(string? root) => !string.IsNullOrWhiteSpace(root) && Directory.Exists(root) &&
                                                         OverwatchRegionScanner.FindExecutable(root) is not null;
-    public static bool IsGameRunning() => Process.GetProcessesByName("Overwatch").Any(process =>
+    public static bool IsGameRunning()
     {
-        process.Dispose();
-        return true;
-    });
+        // Battle.net 和 Agent 负责跨区更新，准备流程中必须允许它们运行。
+        // Blizzard Launcher 是游戏随附的启动进程，需与 Overwatch.exe 一并视为游戏正在启动/运行。
+        foreach (var processName in new[] { "Overwatch", "Blizzard Launcher" })
+        {
+            var processes = Process.GetProcessesByName(processName);
+            try
+            {
+                if (processes.Length > 0) return true;
+            }
+            finally
+            {
+                foreach (var process in processes) process.Dispose();
+            }
+        }
+        return false;
+    }
 
     public async Task<RegionBackupState> CaptureAsync(string gameRoot, OverwatchRegion region,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default,
@@ -1577,7 +1590,8 @@ public sealed class OverwatchRegionManager
     private void EnsureGameReady(string root)
     {
         if (!IsValidGameRoot(root)) throw new DirectoryNotFoundException("守望先锋游戏目录无效，请选择包含 Overwatch.exe 的安装根目录。");
-        if (_isGameRunning()) throw new InvalidOperationException("守望先锋正在运行，请先退出游戏后再继续。");
+        if (_isGameRunning())
+            throw new InvalidOperationException("检测到《守望先锋》正在运行，请关闭游戏后继续。备份期间不要启动游戏。");
     }
 
     private static void ClearReadOnly(string path)

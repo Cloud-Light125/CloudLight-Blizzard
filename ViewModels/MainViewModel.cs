@@ -1121,6 +1121,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task BeginRegionPreparationAsync(OverwatchRegion region)
     {
         if (!RegionGuide.CanChooseCurrentRegion) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
         _regionRestartRequested = false;
         _regionOperationNotice = "";
         _regionOperationError = "";
@@ -1151,9 +1152,9 @@ public sealed class MainViewModel : ObservableObject
             _regionOperationNotice = UpdatingFilesNotice;
             StatusText = "游戏文件仍在更新，请稍后重试。";
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _regionOperationError = "当前区服文件未能保存完成。请确认游戏可以正常启动、磁盘空间充足，然后重试。";
+            _regionOperationError = "当前区服文件未能保存完成。\n\n原因：" + ex.Message;
             StatusText = "区服文件准备未完成。";
         }
         finally
@@ -1170,6 +1171,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task CompleteRegionBackupAsync()
     {
         if (!RegionGuide.CanContinueOtherRegion) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
         var hadActiveGeneration = _regionManager.HasActiveGeneration;
         _regionOperationNotice = "";
         _regionOperationError = "";
@@ -1316,6 +1318,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task RedoVerifiedStep1Async()
     {
         if (!RegionGuide.CanRedoStep1) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
         await RunVerifiedRedoAsync("正在重新记录当前区服文件状态……", RegionOperationPhase.PreparingCurrentRegion,
             (progress, token) => _regionManager.RedoVerifiedStep1Async(
                 _settings.OverwatchGamePath!, progress, token));
@@ -1324,6 +1327,7 @@ public sealed class MainViewModel : ObservableObject
     public async Task RedoVerifiedStep2Async()
     {
         if (!RegionGuide.CanRedoStep2) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
         await RunVerifiedRedoAsync("正在重新分析另一区服文件差异……", RegionOperationPhase.BuildingBackup,
             (progress, token) => _regionManager.RedoVerifiedStep2Async(
                 _settings.OverwatchGamePath!, progress, token));
@@ -1413,7 +1417,18 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private const string UpdatingFilesNotice =
-        "游戏文件似乎还在更新\n\nBattle.net 可能仍在写入守望先锋文件。\n\n请等待 Battle.net 完成更新，确认可以正常启动游戏后再试一次。";
+        "游戏文件似乎还在更新\n\nBattle.net 可能仍在写入守望先锋文件。\n\n请等待 Battle.net 完成更新。当 Battle.net 显示“开始游戏”时，请不要启动游戏，直接返回 CloudLight Blizzard 重试。";
+
+    private bool EnsureGameClosedForRegionPreparation()
+    {
+        if (!OverwatchRegionManager.IsGameRunning()) return true;
+        const string message = "检测到《守望先锋》正在运行，请关闭游戏后继续。备份期间不要启动游戏。";
+        _regionOperationNotice = message;
+        StatusText = "请关闭《守望先锋》后继续区服文件备份。";
+        UpdateRegionGuide();
+        MessageBox.Show(message, "备份期间请勿启动游戏", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
+    }
 
     private static bool GameFilesStillChanging(IOException ex) =>
         ex.Message.Contains("仍在更新", StringComparison.OrdinalIgnoreCase) ||

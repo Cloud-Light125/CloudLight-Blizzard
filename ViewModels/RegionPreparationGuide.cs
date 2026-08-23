@@ -46,6 +46,11 @@ public enum RegionPreparationAction
 
 public sealed class RegionPreparationGuide
 {
+    public string PreparationWarningTitle { get; init; } = "备份期间请勿启动游戏";
+    public string PreparationWarningText { get; init; } =
+        "备份过程需要记录纯净的区服文件差异。启动游戏会产生运行时文件，可能影响备份准确性。\n\n" +
+        "即使 Battle.net 已经显示“开始游戏”，也不要点击启动。请直接返回 CloudLight Blizzard 继续下一步。";
+
     public RegionPreparationState State { get; init; }
     public string CurrentFileText { get; init; } = "尚未识别";
     public string ChinaBackupText { get; init; } = "尚未准备";
@@ -105,6 +110,7 @@ public sealed class RegionPreparationGuide
     public bool ShowNotice { get; init; }
     public bool ShowSuccessNotice { get; init; }
     public bool ShowWarningDetails { get; init; }
+    public bool ShowPreparationWarning { get; init; }
     public IReadOnlyList<RegionPreparationAction> VisibleActions { get; init; } = Array.Empty<RegionPreparationAction>();
 
     public static RegionPreparationGuide Create(
@@ -260,6 +266,10 @@ public sealed class RegionPreparationGuide
             ShowNotice = !string.IsNullOrWhiteSpace(notice),
             ShowSuccessNotice = notice.StartsWith("区服备份完整", StringComparison.Ordinal),
             ShowWarningDetails = state == RegionPreparationState.Ready && status.FileIssues.Count > 0,
+            ShowPreparationWarning = state is RegionPreparationState.NotPrepared or
+                RegionPreparationState.PreparingCurrentRegion or RegionPreparationState.WaitingForOtherRegion or
+                RegionPreparationState.WaitingForOriginalRegion or RegionPreparationState.AnalyzingOtherRegion or
+                RegionPreparationState.VerifyingDifferences or RegionPreparationState.BuildingBackup,
             VisibleActions = actions,
         };
     }
@@ -303,20 +313,20 @@ public sealed class RegionPreparationGuide
         RegionPreparationState state, OverwatchRegion? source, OverwatchRegion? target,
         RegionBackupMode backupMode) => state switch
     {
-        RegionPreparationState.NotPrepared => ("步骤 1 / 3", "确认当前游戏区服",
+        RegionPreparationState.NotPrepared => ("步骤 1 / 3", "记录当前区服文件",
             backupMode == RegionBackupMode.VerifiedDifference
-                ? "智能差异备份需要依次记录当前区服、另一区服，再切回当前区服，用于自动确认真正的区服差异文件。\n\n请先确认 Battle.net 已经完成当前区服的游戏更新，然后选择当前电脑上的守望先锋属于哪个区服。"
-                : "完整备份会先把当前区服的完整游戏文件保存到临时区域，再记录另一区服。\n\n请先确认 Battle.net 已经完成当前区服的游戏更新，然后选择当前电脑上的守望先锋属于哪个区服。"),
-        RegionPreparationState.PreparingCurrentRegion => ("步骤 1 / 3", $"正在保存当前{RegionName(source)}文件",
+                ? "智能差异备份需要依次记录当前区服、另一区服，再切回当前区服，用于自动确认真正的区服差异文件。\n\n确认 Battle.net 可以识别当前游戏文件并显示“开始游戏”即可。不要启动游戏，请选择当前电脑上的守望先锋属于哪个区服。"
+                : "完整备份会先把当前区服的完整游戏文件保存到临时区域，再记录另一区服。\n\n确认 Battle.net 可以识别当前游戏文件并显示“开始游戏”即可。不要启动游戏，请选择当前电脑上的守望先锋属于哪个区服。"),
+        RegionPreparationState.PreparingCurrentRegion => ("步骤 1 / 3", $"正在记录当前{RegionName(source)}文件",
             backupMode == RegionBackupMode.VerifiedDifference
                 ? $"正在记录当前{RegionName(source)}文件的内容状态。此步骤不会复制整个游戏目录。"
                 : $"正在将当前{RegionName(source)}游戏文件保存到本地临时区域。\n\n这是本地磁盘复制，不会使用网络流量。根据磁盘速度可能需要一些时间。"),
-        RegionPreparationState.WaitingForOtherRegion => ("步骤 2 / 3", $"请在 Battle.net 中切换到{RegionName(target)}",
+        RegionPreparationState.WaitingForOtherRegion => ("步骤 2 / 3", $"切换到{RegionName(target)}并记录差异",
             backupMode == RegionBackupMode.VerifiedDifference
-                ? $"当前{RegionName(source)}文件状态已经记录完成。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新。你可以启动游戏进行验证；退出游戏后再回到这里继续。"
-                : $"当前{RegionName(source)}完整文件已经保存到临时区域。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新，然后回到这里建立完整备份。"),
-        RegionPreparationState.WaitingForOriginalRegion => ("步骤 3 / 3", $"请切回最初的{RegionName(source)}",
-            $"另一区服文件差异已经记录完成。\n\n请在 Battle.net 中切回{RegionName(source)}并等待更新完成。你可以启动游戏进行验证；退出游戏后再回来完成最终确认。"),
+                ? $"当前{RegionName(source)}文件状态已经记录完成。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新。当 Battle.net 显示“开始游戏”时，说明文件准备条件满足；不要启动游戏，请直接返回 CloudLight Blizzard 继续操作。"
+                : $"当前{RegionName(source)}完整文件已经保存到临时区域。\n\n请切换到{RegionName(target)}并等待 Battle.net 完成更新。当 Battle.net 显示“开始游戏”时，说明文件准备条件满足；不要启动游戏，请直接返回 CloudLight Blizzard 继续操作。"),
+        RegionPreparationState.WaitingForOriginalRegion => ("步骤 3 / 3", $"返回{RegionName(source)}验证",
+            $"另一区服文件差异已经记录完成。\n\n请在 Battle.net 中切回{RegionName(source)}并等待更新完成。当 Battle.net 显示“开始游戏”时，说明文件准备条件满足；不要启动游戏，请直接返回 CloudLight Blizzard 完成最终验证。"),
         RegionPreparationState.AnalyzingOtherRegion => ("步骤 2 / 3", "正在分析另一区服文件差异",
             "正在比较两次记录的文件内容，并保存候选区服差异。游戏启动或关闭造成的变化不会在此时直接判定为最终区服差异。"),
         RegionPreparationState.VerifyingDifferences => ("步骤 3 / 3", "正在验证区服差异文件",

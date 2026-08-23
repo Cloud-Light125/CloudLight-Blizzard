@@ -351,13 +351,18 @@ public static class FeatureSelfTest
         const string backupRoot = @"D:\RegionBackup";
         var empty = new RegionSnapshotStatus { State = RegionBackupState.Empty, GamePathValid = true };
         var notPrepared = RegionPreparationGuide.Create(empty, RegionOperationPhase.None, false, false, null, backupRoot);
-        Assert(notPrepared.State == RegionPreparationState.NotPrepared, "empty maps to NotPrepared");
+        Assert(notPrepared.State == RegionPreparationState.NotPrepared && notPrepared.ShowPreparationWarning &&
+               notPrepared.Title == "记录当前区服文件" &&
+               notPrepared.PreparationWarningTitle == "备份期间请勿启动游戏" &&
+               notPrepared.PreparationWarningText.Contains("即使 Battle.net 已经显示“开始游戏”", StringComparison.Ordinal),
+            "Step1 shows the no-launch warning");
         AssertActions(notPrepared, RegionPreparationAction.ChooseChina, RegionPreparationAction.ChooseInternational);
 
         var preparingCurrent = RegionPreparationGuide.Create(empty, RegionOperationPhase.PreparingCurrentRegion,
             false, true, new RegionProgress("copying", 1, 2), backupRoot);
-        Assert(preparingCurrent.State == RegionPreparationState.PreparingCurrentRegion && preparingCurrent.CanCancel,
-            "PreparingCurrentRegion only allows cancellation");
+        Assert(preparingCurrent.State == RegionPreparationState.PreparingCurrentRegion && preparingCurrent.CanCancel &&
+               preparingCurrent.ShowPreparationWarning,
+            "PreparingCurrentRegion shows the warning and only allows cancellation");
         AssertActions(preparingCurrent, RegionPreparationAction.Cancel);
 
         var waitingStatus = new RegionSnapshotStatus
@@ -369,8 +374,10 @@ public static class FeatureSelfTest
             ChinaCaptured = true,
         };
         var waiting = RegionPreparationGuide.Create(waitingStatus, RegionOperationPhase.None, false, false, null, backupRoot);
-        Assert(waiting.State == RegionPreparationState.WaitingForOtherRegion &&
-               waiting.ContinueButtonText == "我已完成国际服更新", "waiting names the target region");
+        Assert(waiting.State == RegionPreparationState.WaitingForOtherRegion && waiting.ShowPreparationWarning &&
+               waiting.ContinueButtonText == "我已完成国际服更新" &&
+               waiting.Description.Contains("不要启动游戏", StringComparison.Ordinal),
+            "Step2 names the target region and forbids launching the game");
         AssertActions(waiting, RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.Restart);
         waitingStatus.PendingSourceRegion = GameRegion.International;
         waitingStatus.PendingTargetRegion = GameRegion.China;
@@ -386,6 +393,22 @@ public static class FeatureSelfTest
         Assert(building.State == RegionPreparationState.BuildingBackup && building.CanCancel,
             "BuildingBackup only allows cancellation");
         AssertActions(building, RegionPreparationAction.Cancel);
+
+        var step3Status = new RegionSnapshotStatus
+        {
+            State = RegionBackupState.Preparing,
+            BackupMode = RegionBackupMode.VerifiedDifference,
+            PreparationCheckpoint = RegionPreparationCheckpoint.Step2Ready,
+            GamePathValid = true,
+            PendingSourceRegion = GameRegion.China,
+            PendingTargetRegion = GameRegion.International,
+        };
+        var waitingForOriginal = RegionPreparationGuide.Create(step3Status, RegionOperationPhase.None,
+            false, false, null, backupRoot);
+        Assert(waitingForOriginal.State == RegionPreparationState.WaitingForOriginalRegion &&
+               waitingForOriginal.ShowPreparationWarning && waitingForOriginal.Title == "返回国服验证" &&
+               waitingForOriginal.Description.Contains("不要启动游戏", StringComparison.Ordinal),
+            "Step3 shows the no-launch warning before final verification");
 
         var readyStatus = new RegionSnapshotStatus
         {
@@ -631,6 +654,20 @@ public static class FeatureSelfTest
         for (var i = 2; i <= 5; i++) File.WriteAllText(Path.Combine(game, $"different-{i}.txt"), $"A0{i}");
         File.WriteAllText(Path.Combine(game, "china-only.txt"), "China only");
 
+        var gameRunningManager = new OverwatchRegionManager(store, () => true, 0);
+        var step1Blocked = false;
+        try
+        {
+            await gameRunningManager.StartPreparationAsync(game, GameRegion.China,
+                RegionBackupMode.VerifiedDifference);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("备份期间不要启动游戏", StringComparison.Ordinal))
+        {
+            step1Blocked = true;
+        }
+        Assert(step1Blocked && (await gameRunningManager.GetStatusAsync(game, verifyFiles: false)).State ==
+               RegionBackupState.Empty, "running game blocks Step1 before preparation data is written");
+
         var manager = new OverwatchRegionManager(store, () => false, 0);
         Assert(await manager.StartPreparationAsync(game, GameRegion.China,
                    RegionBackupMode.VerifiedDifference) == RegionBackupState.Preparing,
@@ -642,6 +679,19 @@ public static class FeatureSelfTest
         Assert(!Directory.EnumerateFiles(Path.Combine(store, "preparation"), "*",
                 SearchOption.AllDirectories).Any(path => path.EndsWith("foo.txt", StringComparison.OrdinalIgnoreCase)),
             "verified Step1 writes metadata only and does not copy game contents");
+        gameRunningManager = new OverwatchRegionManager(store, () => true, 0);
+        var step2Blocked = false;
+        try
+        {
+            await gameRunningManager.ContinuePreparationAsync(game);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("备份期间不要启动游戏", StringComparison.Ordinal))
+        {
+            step2Blocked = true;
+        }
+        Assert(step2Blocked && (await gameRunningManager.GetStatusAsync(game, verifyFiles: false))
+                   .PreparationCheckpoint == RegionPreparationCheckpoint.Step1Ready,
+            "running game blocks Step2 and preserves the Step1 checkpoint");
         manager = new OverwatchRegionManager(store, () => false, 0);
 
         File.WriteAllText(Path.Combine(game, "foo.txt"), "BBB");
@@ -665,6 +715,19 @@ public static class FeatureSelfTest
             "Step2Ready persists usable B1 candidates and records one unavailable candidate");
         File.WriteAllText(Path.Combine(store, "preparation", "current", "candidate",
             "international", "broken.txt"), "XXX");
+        gameRunningManager = new OverwatchRegionManager(store, () => true, 0);
+        var step3Blocked = false;
+        try
+        {
+            await gameRunningManager.ContinuePreparationAsync(game);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("备份期间不要启动游戏", StringComparison.Ordinal))
+        {
+            step3Blocked = true;
+        }
+        Assert(step3Blocked && (await gameRunningManager.GetStatusAsync(game, verifyFiles: false))
+                   .PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready,
+            "running game blocks Step3 and preserves the Step2 checkpoint");
         manager = new OverwatchRegionManager(store, () => false, 0);
 
         File.WriteAllText(Path.Combine(game, "foo.txt"), "AAA");

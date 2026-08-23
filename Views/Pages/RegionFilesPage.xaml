@@ -6,6 +6,17 @@
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolVisibility" />
+        <DataTemplate x:Key="PreparationWarningCard">
+            <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}"
+                    BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="{Binding PreparationWarningTitle}" Foreground="{DynamicResource WarnTx}"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding PreparationWarningText}" Foreground="{DynamicResource WarnTx}"
+                               TextWrapping="Wrap" LineHeight="20" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
@@ -82,7 +93,7 @@
                                              IsEnabled="{Binding RegionGuide.CanChangePaths}"
                                              IsChecked="{Binding IsVerifiedDifferenceMode, Mode=OneWay}"
                                              Click="OnVerifiedMode" Content="智能差异备份（推荐）" FontWeight="SemiBold"/>
-                                <TextBlock Text="仅保存经过国服 → 国际服 → 国服往返验证的真实区服差异文件。占用空间更小，并且游戏启动/关闭产生的缓存、日志等变化不会导致整个备份失败。"
+                                <TextBlock Text="仅保存经过国服 → 国际服 → 国服往返验证的真实区服差异文件。占用空间更小。准备期间必须保持游戏关闭，避免缓存、日志等运行时变化影响验证准确性。"
                                            TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="12" LineHeight="18" Margin="22,7,0,0"/>
                                 <TextBlock Text="需要依次记录当前区服、另一区服，再切回当前区服。"
                                            TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" Margin="22,5,0,0"/>
@@ -108,6 +119,8 @@
                         <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,14"/>
+                        <ContentControl Content="{Binding RegionGuide}" ContentTemplate="{StaticResource PreparationWarningCard}"
+                                        Visibility="{Binding RegionGuide.ShowPreparationWarning, Converter={StaticResource BoolVisibility}}"/>
                         <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="11,9" Margin="0,0,0,12"
                                 Visibility="{Binding RegionGuide.ShowGamePathRequired, Converter={StaticResource BoolVisibility}}">
                             <TextBlock Text="请先在上方设置正确的守望先锋安装目录。" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap"/>
@@ -125,12 +138,8 @@
                         <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.PreparationRouteText}" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="22" Margin="0,10,0,13"/>
-                        <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
-                            <StackPanel>
-                                <TextBlock Text="请不要提前点击继续" Foreground="{DynamicResource WarnTx}" FontWeight="SemiBold"/>
-                                <TextBlock Text="只有 Battle.net 已经完成更新，并显示可以正常启动游戏以后，再点击下面的按钮。" Foreground="{DynamicResource WarnTx}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
+                        <ContentControl Content="{Binding RegionGuide}" ContentTemplate="{StaticResource PreparationWarningCard}"
+                                        Visibility="{Binding RegionGuide.ShowPreparationWarning, Converter={StaticResource BoolVisibility}}"/>
                         <WrapPanel>
                             <Button Content="{Binding RegionGuide.ContinueButtonText}" IsEnabled="{Binding RegionGuide.CanContinueOtherRegion}"
                                     Style="{StaticResource PrimaryButton}" Padding="18,0" Margin="0,0,8,8" Click="OnComplete"/>
@@ -156,6 +165,8 @@
                         <TextBlock Text="{Binding RegionGuide.StepText}" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding RegionGuide.Title}" FontSize="19" FontWeight="SemiBold" Margin="0,6,0,0"/>
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
+                        <ContentControl Content="{Binding RegionGuide}" ContentTemplate="{StaticResource PreparationWarningCard}"
+                                        Visibility="{Binding RegionGuide.ShowPreparationWarning, Converter={StaticResource BoolVisibility}}"/>
                         <TextBlock Text="{Binding RegionGuide.ProgressText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <ProgressBar Style="{StaticResource ThemeProgressBar}" Height="9" Minimum="0"
                                      Maximum="{Binding RegionGuide.ProgressTotal}" Value="{Binding RegionGuide.ProgressCurrent}"
