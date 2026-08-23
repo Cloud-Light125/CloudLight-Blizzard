@@ -53,6 +53,7 @@ public partial class DropsPage : UserControl
         main.DropsHost.EventReceived += OnWorkerEvent;
         SoopAutoStart.IsChecked = main.Settings.AutoStartSoop;
         TwitchAutoStart.IsChecked = main.Settings.AutoStartTwitch;
+        _vm.SetSoopAutoStartEnabled(main.Settings.AutoStartSoop);
         _vm.SetTwitchAutoStartEnabled(main.Settings.AutoStartTwitch);
         SoopTab.IsChecked = true;
         SoopPanel.Visibility = Visibility.Visible;
@@ -98,22 +99,16 @@ public partial class DropsPage : UserControl
 
             _vm.Soop.Status = "正在启动主账号…";
             _vm.Soop.Summary = uid;
+            _vm.BeginSoopStart(uid, automatic: true);
             await _vm.RequestAsync(DropsPlatform.Soop, "start_account", new { userid = uid });
 
-            // start_account 与手动按钮完全相同；后续网络、房间、任务和背包状态
-            // 由 Worker 的实时事件更新，不在启动阶段额外等待或重复刷新。
-            if (_platform == DropsPlatform.Soop)
-            {
-                var state = await _vm.LoadAsync(DropsPlatform.Soop);
-                _vm.ApplyState(DropsPlatform.Soop, state);
-                PopulateSettings(DropsPlatform.Soop, state);
-            }
+            // 自动启动成功后复用与手动按钮相同的正式 refresh 入口。
+            // Worker 的结构化 refreshCompleted 状态决定快速开始第三步是否完成。
+            await RefreshSoopAsync(showError: false);
         }
-        catch
+        catch (Exception ex)
         {
-            _vm.Soop.Running = false;
-            _vm.Soop.Status = "启动失败";
-            _vm.Soop.Summary = "SOOP 自动登录失败";
+            _vm.SetSoopFailure(ex.Message);
         }
     }
 
@@ -351,6 +346,7 @@ public partial class DropsPage : UserControl
     private async Task StopPlatformAsync(DropsPlatform platform)
     {
         if (_vm == null) return;
+        if (platform == DropsPlatform.Soop) _vm.StopSoopByUser();
         if (platform == DropsPlatform.Twitch) _vm.StopTwitchByUser();
         try
         {
@@ -370,7 +366,7 @@ public partial class DropsPage : UserControl
 
     private async void OnSoopRefresh(object sender, RoutedEventArgs e) => await RefreshSoopAsync();
 
-    private async Task RefreshSoopAsync()
+    private async Task RefreshSoopAsync(bool showError = true)
     {
         if (_vm == null || _vm.IsSoopRefreshing || _loading) return;
         _vm.BeginSoopRefresh();
@@ -378,14 +374,16 @@ public partial class DropsPage : UserControl
         try
         {
             var state = await _vm.RequestAsync(DropsPlatform.Soop, "refresh");
+            if (!Bool(state, "refreshCompleted"))
+                throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
             _vm.ApplyState(DropsPlatform.Soop, state);
             PopulateSettings(DropsPlatform.Soop, state);
-            _vm.CompleteSoopRefresh();
         }
         catch (Exception ex)
         {
             _vm.FailSoopRefresh();
-            ShowError(ex, "刷新 SOOP 掉宝信息失败");
+            _vm.SetSoopFailure(ex.Message);
+            if (showError) ShowError(ex, "刷新 SOOP 掉宝信息失败");
         }
         finally { _loading = false; }
     }
@@ -534,12 +532,18 @@ public partial class DropsPage : UserControl
     {
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个 SOOP 账号。", $"{action}账号"); return; }
+        if (command == "start_account") _vm.BeginSoopStart(row.Id, automatic: false);
+        if (command == "stop_account") _vm.StopSoopByUser();
         try
         {
             await _vm.RequestAsync(DropsPlatform.Soop, command, new { userid = row.Id });
             await LoadPlatformAsync(DropsPlatform.Soop);
         }
-        catch (Exception ex) { ShowError(ex, $"{action} SOOP 账号失败"); }
+        catch (Exception ex)
+        {
+            if (command == "start_account") _vm.SetSoopFailure(ex.Message);
+            ShowError(ex, $"{action} SOOP 账号失败");
+        }
     }
 
     private async void OnSoopDeleteAccount(object sender, RoutedEventArgs e)
@@ -547,6 +551,7 @@ public partial class DropsPage : UserControl
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个 SOOP 账号。", "删除账号"); return; }
         if (MessageBox.Show($"删除 SOOP 账号「{row.Primary}」的本地登录信息？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        _vm.LogoutSoopByUser(row.Id);
         try { await _vm.RequestAsync(DropsPlatform.Soop, "delete_account", new { userid = row.Id }); await LoadPlatformAsync(DropsPlatform.Soop); }
         catch (Exception ex) { ShowError(ex, "删除 SOOP 账号失败"); }
     }
@@ -795,6 +800,7 @@ public partial class DropsPage : UserControl
         if (!_initialized || _main == null) return;
         _main.Settings.AutoStartSoop = SoopAutoStart.IsChecked == true;
         _main.Settings.AutoStartTwitch = TwitchAutoStart.IsChecked == true;
+        _vm?.SetSoopAutoStartEnabled(_main.Settings.AutoStartSoop);
         _vm?.SetTwitchAutoStartEnabled(_main.Settings.AutoStartTwitch);
         _main.Settings.Save();
     }

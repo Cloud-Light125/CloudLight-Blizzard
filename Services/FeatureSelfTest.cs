@@ -50,9 +50,16 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "drops-recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                RunDropsRecoveryStateTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
             RunTwitchConnectionStateTest(report);
+            RunDropsRecoveryStateTest(report);
             RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
@@ -208,6 +215,58 @@ public static class FeatureSelfTest
             Assert(vm.CanClearTwitchLogin, "Twitch clear-login remains available after reset");
         }
         report.AppendLine("Twitch connection state: PASS");
+    }
+
+    private static void RunDropsRecoveryStateTest(StringBuilder report)
+    {
+        var host = new DropsHostService();
+        var retryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMinutes(1),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), null,
+                   TimeSpan.FromMilliseconds(20), (attempt, _) =>
+                   {
+                       Interlocked.Increment(ref retryCalls);
+                       return attempt < 3
+                           ? Task.FromException(new TimeoutException("simulated SOOP network timeout"))
+                           : Task.CompletedTask;
+                   }))
+        {
+            vm.SetSoopAutoStartEnabled(true);
+            vm.BeginSoopStart("account", automatic: true);
+            vm.SetSoopFailure("connection timeout");
+            vm.SetSoopFailure("same connection timeout");
+            Assert(SpinWait.SpinUntil(() => retryCalls >= 3 && !vm.SoopRetryLoopActive, 1000),
+                "SOOP retry continues after multiple network failures and recovers");
+            Assert(vm.SoopRetryLoopStarts == 1,
+                "SOOP retry supervisor remains single-instance");
+            Assert(vm.Soop.Status == "SOOP 网络连接已恢复",
+                "SOOP recovery restores running status and cancels retry");
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied,
+                "SOOP recovery completes the pending structured channel refresh");
+        }
+
+        using (var vm = new DropsViewModel(host))
+        {
+            using var withChannels = JsonDocument.Parse("""
+                {"running":true,"settings":{},"refreshStatus":"success","refreshCompleted":true,
+                 "accounts":[{"uid":"account","running":true,"channels":[{"id":"one"},{"id":"two"}]}],
+                 "tasks":[],"inventory":[],"currentProgress":[],"runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Soop, withChannels.RootElement);
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied && vm.SoopRefreshStatus.Contains("2 个频道"),
+                "SOOP structured refresh with channels completes quick-start step 3");
+
+            using var withoutChannels = JsonDocument.Parse("""
+                {"running":true,"settings":{},"refreshStatus":"success","refreshCompleted":true,
+                 "accounts":[{"uid":"account","running":true,"channels":[]}],
+                 "tasks":[],"inventory":[],"currentProgress":[],"runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Soop, withoutChannels.RootElement);
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied &&
+                   vm.SoopRefreshStatus.Contains("当前没有符合条件的频道"),
+                "SOOP successful empty refresh still completes quick-start step 3");
+        }
+        report.AppendLine("SOOP network recovery / quick-start refresh state: PASS");
     }
 
     private static async Task RunPlatformLogTailSessionTest(string workspace, StringBuilder report)

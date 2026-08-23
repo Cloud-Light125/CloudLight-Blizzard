@@ -14,6 +14,7 @@ namespace CloudLightBlizzard;
 
 public partial class MainWindow : Window
 {
+    internal static readonly TimeSpan AnnouncementRefreshInterval = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _vm;
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly AnnouncementService _announcementService;
     private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
+    private Task? _announcementRefreshTask;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
     {
@@ -95,19 +97,37 @@ public partial class MainWindow : Window
         _watchTimer.Start();
         _dropsPage.StartAutomaticPlatforms();
         _ = RunAutomaticUpdateCheckAsync();
-        _ = RefreshAnnouncementsAsync();
+        _announcementRefreshTask ??= RunAnnouncementRefreshLoopAsync();
     }
 
-    private async Task RefreshAnnouncementsAsync()
+    private async Task RunAnnouncementRefreshLoopAsync()
     {
-        _announcements = _announcementService.CachedAnnouncements;
-        UpdateAnnouncementBadge();
         try
         {
-            _announcements = await _announcementService.RefreshAsync(_updateCancellation.Token);
-            if (!Dispatcher.HasShutdownStarted) await Dispatcher.InvokeAsync(UpdateAnnouncementBadge);
+            await AnnouncementService.RunPeriodicRefreshAsync(
+                RefreshAnnouncementsAsync, AnnouncementRefreshInterval, _updateCancellation.Token);
+        }
+        catch (OperationCanceledException) when (_updateCancellation.IsCancellationRequested) { }
+    }
+
+    private async Task RefreshAnnouncementsAsync(CancellationToken cancellationToken)
+    {
+        var cached = _announcementService.CachedAnnouncements;
+        if (!Dispatcher.HasShutdownStarted)
+            await Dispatcher.InvokeAsync(() => ApplyAnnouncements(cached));
+        try
+        {
+            var refreshed = await _announcementService.RefreshAsync(cancellationToken);
+            if (!Dispatcher.HasShutdownStarted)
+                await Dispatcher.InvokeAsync(() => ApplyAnnouncements(refreshed));
         }
         catch (OperationCanceledException) { }
+    }
+
+    private void ApplyAnnouncements(IReadOnlyList<Announcement> announcements)
+    {
+        _announcements = announcements;
+        UpdateAnnouncementBadge();
     }
 
     private void UpdateAnnouncementBadge()
@@ -118,7 +138,7 @@ public partial class MainWindow : Window
 
     private async void OnOpenAnnouncements(object sender, RoutedEventArgs e)
     {
-        if (_announcements.Count == 0) await RefreshAnnouncementsAsync();
+        if (_announcements.Count == 0) await RefreshAnnouncementsAsync(_updateCancellation.Token);
         var dialog = new AnnouncementWindow(_announcements, _announcementService) { Owner = this };
         dialog.ShowDialog();
         UpdateAnnouncementBadge();
@@ -364,6 +384,7 @@ public partial class MainWindow : Window
         _exitCleanupStarted = true;
         try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
         try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        try { _announcementService.Dispose(); } catch { }
         try { _vm.CloudHttpClients.Dispose(); } catch { }
         _updateCancellation.Dispose();
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }

@@ -43,6 +43,7 @@ class TwitchWorker(WorkerBase):
         self._login_state = "logged_out"
         self._login_error = ""
         self._automatic_start = False
+        self._supervisor_retry_attempt = 0
         self._authenticated_user_id: int | None = None
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="twitch-asyncio", daemon=True)
@@ -219,7 +220,10 @@ class TwitchWorker(WorkerBase):
                 self._set_login_state("needs_login", runtime_error, runtime_error)
             else:
                 if retryable:
-                    self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                    if self._supervisor_retry_attempt == 0:
+                        self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                    else:
+                        self.logger.debug("Twitch 仍无法连接，后台会继续重试。")
                 self._set_login_state("failed", runtime_error, runtime_error)
             self._publish_connection_error(exc, "startup")
             self._login_transition.set()
@@ -282,7 +286,10 @@ class TwitchWorker(WorkerBase):
                 self._set_login_state("needs_login", runtime_error, runtime_error)
             else:
                 if retryable:
-                    self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                    if self._supervisor_retry_attempt == 0:
+                        self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                    else:
+                        self.logger.debug("Twitch 仍无法连接，后台会继续重试。")
                 self._set_login_state("failed", runtime_error, runtime_error)
             self._publish_connection_error(exc, "login")
         finally:
@@ -363,8 +370,9 @@ class TwitchWorker(WorkerBase):
             return self.load_state({})
         self._automatic_start = bool(payload.get("automatic", False))
         retry_attempt = int(payload.get("retryAttempt", 0) or 0)
+        self._supervisor_retry_attempt = retry_attempt
         if retry_attempt > 0:
-            self.logger.warning("Twitch 正在进行第 %d 次重连…", retry_attempt)
+            self.logger.debug("Twitch 正在进行第 %d 次重连…", retry_attempt)
         self._login_transition.clear()
         self._ready_transition.clear()
         self._login_error = ""
@@ -404,8 +412,9 @@ class TwitchWorker(WorkerBase):
             return {"started": False, "state": self.load_state({})}
         self._automatic_start = False
         retry_attempt = int(payload.get("retryAttempt", 0) or 0)
+        self._supervisor_retry_attempt = retry_attempt
         if retry_attempt > 0:
-            self.logger.warning("Twitch 正在进行第 %d 次重连…", retry_attempt)
+            self.logger.debug("Twitch 正在进行第 %d 次重连…", retry_attempt)
         else:
             self.logger.info("Twitch 登录开始。")
         self._login_transition.clear()

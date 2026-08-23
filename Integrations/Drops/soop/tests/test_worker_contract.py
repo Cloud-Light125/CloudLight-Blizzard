@@ -58,6 +58,8 @@ class SoopWorkerContractTests(unittest.TestCase):
     def _close(worker: SoopWorker) -> None:
         worker._loop.call_soon_threadsafe(worker._loop.stop)
         worker._loop_thread.join(timeout=5)
+        if not worker._loop.is_running():
+            worker._loop.close()
         for handler in list(worker.logger.handlers):
             worker.logger.removeHandler(handler)
             logging.getLogger().removeHandler(handler)
@@ -82,6 +84,18 @@ class SoopWorkerContractTests(unittest.TestCase):
                 state = worker.auto_start({})
                 self.assertTrue(state["missingPrimary"])
                 self.assertFalse(state["autoStartCompleted"])
+            finally:
+                self._close(worker)
+
+    def test_refresh_returns_structured_success_even_when_channels_are_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                state = worker.refresh({})
+                self.assertEqual(state["refreshStatus"], "success")
+                self.assertTrue(state["refreshCompleted"])
+                self.assertEqual(state["accounts"], [])
             finally:
                 self._close(worker)
 

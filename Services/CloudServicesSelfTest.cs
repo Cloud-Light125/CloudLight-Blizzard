@@ -21,6 +21,7 @@ public static class CloudServicesSelfTest
         try
         {
             RunAnnouncementTest(workspace, report);
+            await RunAnnouncementTimerTest(workspace, report);
             await RunConfigurationAndProxyFailureTest(workspace, report);
             await RunUploadProgressAndCancellationTest(workspace, report);
             await RunFeedbackResponseMappingTest(report);
@@ -68,6 +69,89 @@ public static class CloudServicesSelfTest
         Assert(items.Count == 2 && !(settings.ShowAnnouncementBadge && service.HasUnread(items)),
             "disabled badge hides dot without removing announcements");
         report.AppendLine("TEST 1 announcement revision/badge: PASS");
+    }
+
+    private static async Task RunAnnouncementTimerTest(string workspace, StringBuilder report)
+    {
+        static AnnouncementDocument Document(int revision) => new()
+        {
+            SchemaVersion = 1,
+            Announcements =
+            [
+                new Announcement
+                {
+                    Id = "periodic", Revision = revision, Title = "定时公告",
+                    Content = $"revision {revision}", Enabled = true,
+                    PublishedAt = DateTimeOffset.Now, MinVersion = "2.0.0",
+                },
+            ],
+        };
+
+        var calls = 0;
+        var active = 0;
+        var maximumActive = 0;
+        var blockedCheckStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBlockedCheck = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<AnnouncementDocument?> Download(CancellationToken token)
+        {
+            var currentActive = Interlocked.Increment(ref active);
+            maximumActive = Math.Max(maximumActive, currentActive);
+            var call = Interlocked.Increment(ref calls);
+            try
+            {
+                if (call == 1) return Document(1);
+                if (call == 2)
+                {
+                    blockedCheckStarted.TrySetResult(true);
+                    await releaseBlockedCheck.Task.WaitAsync(token);
+                    throw new HttpRequestException("simulated announcement network failure");
+                }
+                return Document(2);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref active);
+            }
+        }
+
+        var settings = new AppSettings { ShowAnnouncementBadge = true };
+        using var service = new AnnouncementService(settings,
+            Path.Combine(workspace, "announcement-periodic-state.json"), "2.0.6", null, Download);
+        var initial = await service.RefreshAsync();
+        service.MarkRead(initial.Single());
+
+        IReadOnlyList<Announcement> latest = initial;
+        var revisionTwoSeen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        var loop = AnnouncementService.RunPeriodicRefreshAsync(async token =>
+        {
+            latest = await service.RefreshAsync(token);
+            if (latest.Any(item => item.Id == "periodic" && item.Revision == 2))
+                revisionTwoSeen.TrySetResult(true);
+        }, TimeSpan.FromMilliseconds(20), cancellation.Token);
+
+        await blockedCheckStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var concurrent = await service.RefreshAsync();
+        Assert(concurrent.Single().Revision == 1,
+            "announcement manual refresh skips an already-running periodic request");
+        releaseBlockedCheck.TrySetResult(true);
+        await revisionTwoSeen.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert(calls >= 3 && maximumActive == 1,
+            "announcement periodic and manual refresh remain single-flight");
+        Assert(service.HasUnread(latest),
+            "announcement revision increase becomes unread after periodic recovery");
+        Assert(settings.ShowAnnouncementBadge && service.HasUnread(latest),
+            "announcement periodic revision displays badge when enabled");
+        settings.ShowAnnouncementBadge = false;
+        Assert(latest.Single().Revision == 2 && !(settings.ShowAnnouncementBadge && service.HasUnread(latest)),
+            "announcement data updates while disabled badge remains hidden");
+        Assert(service.LastFailureMessage is null,
+            "announcement check silently recovers on a later periodic attempt");
+
+        cancellation.Cancel();
+        try { await loop; } catch (OperationCanceledException) { }
+        report.AppendLine("TEST 2 announcement periodic refresh/single-flight/recovery: PASS");
     }
 
     private static async Task RunConfigurationAndProxyFailureTest(string workspace, StringBuilder report)

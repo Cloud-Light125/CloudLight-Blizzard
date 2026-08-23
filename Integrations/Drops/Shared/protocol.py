@@ -47,6 +47,15 @@ class RuntimeDependencyError(RuntimeError):
         self.technical_detail = technical_detail
 
 
+class TransientNetworkError(RuntimeError):
+    """A retryable remote network failure; repeated supervisor attempts are logged at DEBUG."""
+
+    def __init__(self, code: str, public_message: str) -> None:
+        super().__init__(public_message)
+        self.code = code
+        self.public_message = public_message
+
+
 def is_ssl_runtime_error(exc: BaseException) -> bool:
     current: BaseException | None = exc
     visited: set[int] = set()
@@ -410,6 +419,13 @@ class WorkerBase:
                     response = {
                         "id": request_id, "ok": False,
                         "error": exc.public_message, "code": exc.code,
+                    }
+                elif isinstance(exc, TransientNetworkError):
+                    self.logger.debug("后台网络请求暂时失败：%s", exc.code)
+                    response = {
+                        "id": request_id, "ok": False,
+                        "error": exc.public_message, "code": exc.code,
+                        "retryable": True,
                     }
                 else:
                     self.logger.error("后台请求失败：%s", redact(exc))

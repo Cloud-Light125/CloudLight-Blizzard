@@ -170,6 +170,15 @@ public sealed class DropsPlatformViewModel : ObservableObject
 
 public sealed class DropsViewModel : ObservableObject, IDisposable
 {
+    private enum SoopFailureKind
+    {
+        TransientNetwork,
+        Authentication,
+        RuntimeDependency,
+        Configuration,
+        Unknown,
+    }
+
     private readonly DropsHostService _host;
     public DropsPlatformViewModel Soop { get; } = new(DropsPlatform.Soop, "SOOP");
     public DropsPlatformViewModel YouTube { get; } = new(DropsPlatform.YouTube, "YouTube");
@@ -278,6 +287,25 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private bool _twitchRetryAttemptInProgress;
     internal bool TwitchRetryLoopActive => _twitchRetryTask is { IsCompleted: false };
     internal int TwitchRetryLoopStarts => _twitchRetryLoopStarts;
+    private readonly TimeSpan _soopRetryDelay;
+    private readonly Func<int, CancellationToken, Task>? _soopRetryOverride;
+    private CancellationTokenSource? _soopRetryCts;
+    private Task? _soopRetryTask;
+    private readonly object _soopRetrySync = new();
+    private int _soopRetryAttempt;
+    private int _soopRetryLoopStarts;
+    private string _soopRecoveryUid = "";
+    private bool _soopConnectionIntent;
+    private bool _soopManualIntent;
+    private bool _soopAutoStartEnabled;
+    private bool _soopUserStopped;
+    private bool _soopUserLoggedOut;
+    private bool _soopApplicationStopping;
+    private bool _soopRetryBlocked;
+    private bool _soopRefreshPending;
+    private int _soopRecoveryConfirmationInProgress;
+    internal bool SoopRetryLoopActive => _soopRetryTask is { IsCompleted: false };
+    internal int SoopRetryLoopStarts => _soopRetryLoopStarts;
     private bool _soopHasRefreshed;
     private bool _soopSettingsReady;
     private bool _twitchSettingsReady;
@@ -366,19 +394,30 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public DropsViewModel(DropsHostService host)
         : this(host, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(45), null)
+            TimeSpan.FromSeconds(45), null, TimeSpan.FromMinutes(1), null)
     {
     }
 
     internal DropsViewModel(DropsHostService host, TimeSpan retryDelay,
         TimeSpan slowThreshold, TimeSpan failureThreshold,
         Func<int, CancellationToken, Task>? retryOverride)
+        : this(host, retryDelay, slowThreshold, failureThreshold, retryOverride,
+            TimeSpan.FromMinutes(1), null)
+    {
+    }
+
+    internal DropsViewModel(DropsHostService host, TimeSpan twitchRetryDelay,
+        TimeSpan slowThreshold, TimeSpan failureThreshold,
+        Func<int, CancellationToken, Task>? twitchRetryOverride,
+        TimeSpan soopRetryDelay, Func<int, CancellationToken, Task>? soopRetryOverride)
     {
         _host = host;
-        _twitchRetryDelay = retryDelay;
+        _twitchRetryDelay = twitchRetryDelay;
         _twitchSlowThreshold = slowThreshold;
         _twitchFailureThreshold = failureThreshold;
-        _twitchRetryOverride = retryOverride;
+        _twitchRetryOverride = twitchRetryOverride;
+        _soopRetryDelay = soopRetryDelay;
+        _soopRetryOverride = soopRetryOverride;
         Platforms = [Soop, YouTube, Twitch];
         Twitch.Status = "Twitch 尚未连接";
         Twitch.Summary = "尚未登录 Twitch";
@@ -398,6 +437,274 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                              (fallbackDirect ? " · 代理失败时允许直连" : "");
     }
 
+    public void SetSoopAutoStartEnabled(bool enabled)
+    {
+        _soopAutoStartEnabled = enabled;
+        if (!enabled && !_soopManualIntent)
+        {
+            _soopConnectionIntent = false;
+            _soopRefreshPending = false;
+            CancelSoopRetry();
+        }
+    }
+
+    public void BeginSoopStart(string uid, bool automatic)
+    {
+        CancelSoopRetry();
+        _soopConnectionIntent = true;
+        _soopManualIntent |= !automatic;
+        _soopAutoStartEnabled |= automatic;
+        _soopUserStopped = false;
+        _soopUserLoggedOut = false;
+        _soopRetryBlocked = false;
+        _soopRefreshPending = true;
+        _soopRecoveryUid = uid.Trim();
+        _soopRetryAttempt = 0;
+    }
+
+    public void StopSoopByUser()
+    {
+        _soopUserStopped = true;
+        _soopConnectionIntent = false;
+        _soopManualIntent = false;
+        _soopRefreshPending = false;
+        CancelSoopRetry();
+    }
+
+    public void LogoutSoopByUser(string uid)
+    {
+        if (!string.IsNullOrWhiteSpace(uid) &&
+            !string.Equals(_soopRecoveryUid, uid, StringComparison.Ordinal)) return;
+        _soopUserLoggedOut = true;
+        _soopConnectionIntent = false;
+        _soopManualIntent = false;
+        _soopRefreshPending = false;
+        _soopRecoveryUid = "";
+        CancelSoopRetry();
+    }
+
+    public void SetSoopFailure(string message, bool refreshPending = true)
+    {
+        var kind = ClassifySoopFailure(message);
+        switch (kind)
+        {
+            case SoopFailureKind.Authentication:
+                _soopRetryBlocked = true;
+                _soopRefreshPending = false;
+                Soop.Running = false;
+                Soop.Status = "SOOP 登录已失效";
+                Soop.Summary = "请重新添加或登录 SOOP 账号。";
+                CancelSoopRetry();
+                break;
+            case SoopFailureKind.RuntimeDependency:
+                _soopRetryBlocked = true;
+                _soopRefreshPending = false;
+                Soop.Running = false;
+                Soop.Status = "后台组件异常";
+                Soop.Summary = FriendlySoopFailure(kind, message);
+                CancelSoopRetry();
+                break;
+            case SoopFailureKind.Configuration:
+            case SoopFailureKind.Unknown:
+                _soopRetryBlocked = true;
+                _soopRefreshPending = false;
+                Soop.Running = false;
+                Soop.Status = "SOOP 启动失败";
+                Soop.Summary = FriendlySoopFailure(kind, message);
+                CancelSoopRetry();
+                break;
+            default:
+                _soopRetryBlocked = false;
+                _soopRefreshPending |= refreshPending;
+                Soop.Running = false;
+                if (!HasSoopRetryIntent())
+                {
+                    Soop.Status = "SOOP 网络连接异常";
+                    Soop.Summary = FriendlySoopFailure(kind, message);
+                    break;
+                }
+                var alreadyWaiting = SoopRetryLoopActive;
+                Soop.Status = "SOOP 网络连接异常，正在等待恢复…";
+                Soop.Summary = "将在 1 分钟后自动重试";
+                SoopRefreshStatus = "网络异常，等待自动重试";
+                if (!alreadyWaiting)
+                    _host.PublishUserLog(DropsPlatform.Soop, "warning",
+                        "SOOP 网络连接异常，正在自动重试。");
+                ScheduleSoopRetry();
+                break;
+        }
+        UpdateSoopQuickStart();
+    }
+
+    private static SoopFailureKind ClassifySoopFailure(string message)
+    {
+        var value = message.ToLowerInvariant();
+        if (value.Contains("needs_login") || value.Contains("auth_required") ||
+            value.Contains("authentication") || value.Contains("登录已失效") ||
+            value.Contains("session 已失效") || value.Contains("未找到该账号的 session") ||
+            value.Contains("401"))
+            return SoopFailureKind.Authentication;
+        if (value.Contains("ssl_runtime_unavailable") || value.Contains("_ssl") ||
+            value.Contains("dll load failed") || value.Contains("modulenotfounderror") ||
+            value.Contains("no module named") || value.Contains("功能组件加载失败") ||
+            value.Contains("功能组件不可用") || value.Contains("未找到 soop 功能组件"))
+            return SoopFailureKind.RuntimeDependency;
+        if (value.Contains("配置格式") || value.Contains("顶层必须是对象") ||
+            value.Contains("settings 必须是对象") || value.Contains("代理地址只支持") ||
+            value.Contains("代理端口无效") || value.Contains("代理地址不能包含"))
+            return SoopFailureKind.Configuration;
+        if (value.Contains("timeout") || value.Contains("timed out") || value.Contains("超时") ||
+            value.Contains("connection refused") || value.Contains("connection reset") ||
+            value.Contains("connection aborted") || value.Contains("connection closed") ||
+            value.Contains("连接被拒绝") || value.Contains("连接被重置") ||
+            value.Contains("temporary failure") || value.Contains("temporarily unavailable") ||
+            value.Contains("name or service not known") || value.Contains("getaddrinfo") ||
+            value.Contains("dns") || value.Contains("域名解析") || value.Contains("代理连接") ||
+            value.Contains("proxy") || value.Contains("websocket") || value.Contains("网络") ||
+            value.Contains("无法连接") || value.Contains("http 5"))
+            return SoopFailureKind.TransientNetwork;
+        return SoopFailureKind.Unknown;
+    }
+
+    private static string FriendlySoopFailure(SoopFailureKind kind, string fallback) => kind switch
+    {
+        SoopFailureKind.Authentication => "SOOP 登录信息已失效，请重新登录。",
+        SoopFailureKind.RuntimeDependency => fallback.Contains("SSL", StringComparison.OrdinalIgnoreCase)
+            ? "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。"
+            : string.IsNullOrWhiteSpace(fallback) ? "SOOP 本地运行组件不可用。" : fallback,
+        SoopFailureKind.Configuration => string.IsNullOrWhiteSpace(fallback)
+            ? "SOOP 配置无效，请检查当前设置。" : fallback,
+        SoopFailureKind.TransientNetwork => "SOOP 暂时无法连接网络。",
+        _ => string.IsNullOrWhiteSpace(fallback) ? "SOOP 后台请求失败。" : fallback,
+    };
+
+    private bool HasSoopRetryIntent() =>
+        (_soopConnectionIntent || _soopAutoStartEnabled) &&
+        !_soopUserStopped && !_soopUserLoggedOut && !_soopApplicationStopping &&
+        !_soopRetryBlocked && !string.IsNullOrWhiteSpace(_soopRecoveryUid);
+
+    private void ScheduleSoopRetry()
+    {
+        if (!HasSoopRetryIntent()) return;
+        lock (_soopRetrySync)
+        {
+            if (_soopRetryTask is { IsCompleted: false } &&
+                _soopRetryCts is { IsCancellationRequested: false }) return;
+            _soopRetryCts = new CancellationTokenSource();
+            _soopRetryLoopStarts++;
+            _soopRetryTask = RunSoopRetryLoopAsync(_soopRetryCts);
+        }
+    }
+
+    private async Task RunSoopRetryLoopAsync(CancellationTokenSource owner)
+    {
+        var token = owner.Token;
+        try
+        {
+            while (HasSoopRetryIntent())
+            {
+                await Task.Delay(_soopRetryDelay, token).ConfigureAwait(false);
+                if (!HasSoopRetryIntent()) break;
+                var attempt = Interlocked.Increment(ref _soopRetryAttempt);
+                try
+                {
+                    if (_soopRetryOverride is not null)
+                    {
+                        await _soopRetryOverride(attempt, token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            await _host.RequestAsync(DropsPlatform.Soop, "stop_account",
+                                new { userid = _soopRecoveryUid }, token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                        catch { }
+                        await _host.RequestAsync(DropsPlatform.Soop, "start_account",
+                            new { userid = _soopRecoveryUid, retryAttempt = attempt }, token).ConfigureAwait(false);
+                        var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh",
+                            cancellationToken: token).ConfigureAwait(false);
+                        if (!Bool(state, "refreshCompleted"))
+                            throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
+                    }
+                    Dispatch(CompleteSoopNetworkRecovery);
+                    break;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    var kind = ClassifySoopFailure(ex.Message);
+                    if (kind != SoopFailureKind.TransientNetwork)
+                    {
+                        Dispatch(() => SetSoopFailure(ex.Message));
+                        break;
+                    }
+                    Dispatch(() =>
+                    {
+                        Soop.Status = "SOOP 网络连接异常，正在等待恢复…";
+                        Soop.Summary = "仍无法连接，后台会继续重试";
+                        SoopRefreshStatus = "网络异常，等待自动重试";
+                        UpdateSoopQuickStart();
+                    });
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            lock (_soopRetrySync)
+            {
+                if (ReferenceEquals(_soopRetryCts, owner))
+                {
+                    _soopRetryCts = null;
+                    _soopRetryTask = null;
+                }
+            }
+            owner.Dispose();
+        }
+    }
+
+    private void CancelSoopRetry()
+    {
+        lock (_soopRetrySync) _soopRetryCts?.Cancel();
+    }
+
+    private async Task ConfirmSoopNetworkRecoveryAsync()
+    {
+        if (Interlocked.Exchange(ref _soopRecoveryConfirmationInProgress, 1) != 0) return;
+        try
+        {
+            var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh").ConfigureAwait(false);
+            if (!Bool(state, "refreshCompleted"))
+                throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
+            Dispatch(CompleteSoopNetworkRecovery);
+        }
+        catch (Exception ex)
+        {
+            if (!_soopApplicationStopping)
+                Dispatch(() => SetSoopFailure(ex.Message));
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _soopRecoveryConfirmationInProgress, 0);
+        }
+    }
+
+    private void CompleteSoopNetworkRecovery()
+    {
+        var hadRetries = _soopRetryAttempt > 0 || SoopRetryLoopActive;
+        _soopRetryBlocked = false;
+        _soopRefreshPending = false;
+        Soop.Running = true;
+        CompleteSoopRefresh();
+        Soop.Status = "SOOP 网络连接已恢复";
+        Soop.Summary = "账号和掉宝频道已重新加载";
+        CancelSoopRetry();
+        if (hadRetries)
+            _host.PublishUserLog(DropsPlatform.Soop, "info", "SOOP 网络连接已恢复。");
+    }
+
     public void BeginSoopRefresh()
     {
         IsSoopRefreshing = true;
@@ -410,7 +717,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _soopHasRefreshed = true;
         IsSoopRefreshing = false;
         var available = Tasks.Count(row => Bool(row.Payload, "active"));
-        SoopRefreshStatus = $"已刷新 · 发现 {available} 个可用任务";
+        var channels = Accounts.SelectMany(row => row.Payload.TryGetProperty("channels", out var items) &&
+                items.ValueKind == JsonValueKind.Array
+                ? items.EnumerateArray().Select(item => Text(item, "id"))
+                : Array.Empty<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        SoopRefreshStatus = channels == 0
+            ? "已刷新 · 当前没有符合条件的频道"
+            : $"已刷新 · {channels} 个频道 · {available} 个可用任务";
         UpdateSoopQuickStart();
     }
 
@@ -551,8 +867,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     {
         var kind = ClassifyTwitchFailure("", message);
         SetTwitchFailure(kind, FriendlyTwitchFailure(kind, message),
-            retryable: kind is not TwitchConnectionFailureKind.SslRuntime and
-                not TwitchConnectionFailureKind.Authentication,
+            retryable: IsTwitchRetryableFailure(kind, message),
             scheduleRetry: true);
     }
 
@@ -564,8 +879,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void SetTwitchTemporaryFailure(TwitchConnectionFailureKind kind, string message)
     {
-        if (kind is TwitchConnectionFailureKind.SslRuntime or TwitchConnectionFailureKind.Authentication or
-            TwitchConnectionFailureKind.SslCertificate)
+        if (!IsTwitchRetryableFailure(kind, message))
         {
             SetTwitchFailure(kind, message, retryable: false, scheduleRetry: false);
             return;
@@ -670,9 +984,28 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             return TwitchConnectionFailureKind.Timeout;
         if (value.Contains("proxy") || value.Contains("代理"))
             return TwitchConnectionFailureKind.Proxy;
-        if (value.Contains("worker") || value.Contains("后台服务") || value.Contains("后台组件"))
+        if (value.Contains("worker") || value.Contains("后台服务") || value.Contains("后台组件") ||
+            value.Contains("modulenotfounderror") || value.Contains("no module named") ||
+            value.Contains("业务核心加载失败") || value.Contains("业务核心不可用") ||
+            value.Contains("未找到 twitchdropsminer") || value.Contains("配置格式") ||
+            value.Contains("顶层必须是对象") || value.Contains("settings 必须是对象") ||
+            value.Contains("代理地址只支持") || value.Contains("代理端口无效"))
             return TwitchConnectionFailureKind.Worker;
         return TwitchConnectionFailureKind.Network;
+    }
+
+    private static bool IsTwitchRetryableFailure(TwitchConnectionFailureKind kind, string message)
+    {
+        if (kind is TwitchConnectionFailureKind.SslRuntime or TwitchConnectionFailureKind.SslCertificate or
+            TwitchConnectionFailureKind.Authentication) return false;
+        if (kind != TwitchConnectionFailureKind.Worker) return true;
+        var value = message.ToLowerInvariant();
+        return !(value.Contains("modulenotfounderror") || value.Contains("no module named") ||
+                 value.Contains("业务核心加载失败") || value.Contains("业务核心不可用") ||
+                 value.Contains("未找到 twitchdropsminer") || value.Contains("配置格式") ||
+                 value.Contains("顶层必须是对象") || value.Contains("settings 必须是对象") ||
+                 value.Contains("代理地址只支持") || value.Contains("代理端口无效") ||
+                 value.Contains("本地运行"));
     }
 
     private static string FriendlyTwitchFailure(TwitchConnectionFailureKind kind, string fallback) => kind switch
@@ -720,6 +1053,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             var kind = ClassifyTwitchFailure(code, message);
             SetTwitchFailure(kind, FriendlyTwitchFailure(kind, message), retryable: false, scheduleRetry: false);
             return;
+        }
+        if (platform == DropsPlatform.Soop)
+        {
+            _soopRetryBlocked = true;
+            _soopRefreshPending = false;
+            CancelSoopRetry();
         }
         vm.Status = "后台组件异常";
         vm.Summary = platform == DropsPlatform.YouTube
@@ -901,7 +1240,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                         if (!CanRetryTwitchConnection()) return;
                         var kind = ClassifyTwitchFailure("", ex.Message);
                         var message = FriendlyTwitchFailure(kind, ex.Message);
-                        if (kind == TwitchConnectionFailureKind.SslRuntime)
+                        if (!IsTwitchRetryableFailure(kind, message))
                         {
                             SetTwitchFailure(kind, message, retryable: false, scheduleRetry: false);
                             return;
@@ -984,6 +1323,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void ApplySoop(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (Bool(state, "refreshCompleted"))
+        {
+            _soopRefreshPending = false;
+            _soopRetryBlocked = false;
+            _soopHasRefreshed = true;
+        }
         _soopSettingsReady = state.TryGetProperty("settings", out var soopSettings) &&
                              soopSettings.ValueKind == JsonValueKind.Object;
         AddRows(state, "accounts", Accounts, item => new DropsRow
@@ -1011,6 +1356,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             ? "正在运行"
             : Accounts.Count == 0 ? "未配置" : availableTasks > 0 ? "就绪" : "待刷新";
         vm.Summary = $"{Accounts.Count} 个账号 · {availableTasks} 个可用任务";
+        if (Bool(state, "refreshCompleted"))
+        {
+            if (SoopRetryLoopActive) CompleteSoopNetworkRecovery();
+            else CompleteSoopRefresh();
+        }
         UpdateSoopQuickStart(state);
     }
 
@@ -1320,9 +1670,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         SoopQuickStart.Steps[1].Update(hasSettings ? "complete" : "incomplete",
             hasSettings ? "✓ 已完成 · 已采用当前策略" : "○ 未完成", hasSettings,
             hasSettings ? "" : "查看设置");
-        SoopQuickStart.Steps[2].Update(IsSoopRefreshing ? "progress" : _soopHasRefreshed ? "complete" : "incomplete",
-            IsSoopRefreshing ? "● 正在进行" : _soopHasRefreshed ? "✓ 已完成" : "○ 未完成",
-            _soopHasRefreshed, IsSoopRefreshing ? "" : "刷新掉宝信息");
+        var refreshWaiting = _soopRefreshPending && SoopRetryLoopActive;
+        SoopQuickStart.Steps[2].Update(IsSoopRefreshing || refreshWaiting ? "progress" :
+                _soopHasRefreshed ? "complete" : "incomplete",
+            IsSoopRefreshing ? "● 正在进行" : refreshWaiting ? "● 网络异常，等待自动重试" :
+                _soopHasRefreshed ? "✓ 已完成" : "○ 未完成",
+            _soopHasRefreshed, IsSoopRefreshing || refreshWaiting ? "" : "刷新掉宝信息");
         SoopQuickStart.Steps[3].Update(Soop.Running ? "progress" : "incomplete",
             Soop.Running ? "● 正在进行" : "○ 未完成 · 当前未运行", Soop.Running,
             Soop.Running || Accounts.Count == 0 ? "" : "启动选中账号");
@@ -1474,7 +1827,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
+        {
             AddSoopProgressRows(message.Payload, replaceAccount: true);
+            var soopStatus = Text(message.Payload, "status");
+            var failureKind = ClassifySoopFailure(soopStatus);
+            if (failureKind is SoopFailureKind.Authentication or SoopFailureKind.TransientNetwork)
+                SetSoopFailure(soopStatus);
+            else if (SoopRetryLoopActive && Bool(message.Payload, "running") &&
+                     Bool(message.Payload, "connectionHealthy"))
+            {
+                CancelSoopRetry();
+                _ = ConfirmSoopNetworkRecoveryAsync();
+            }
+        }
         if (message.Name == "status" && message.Platform != DropsPlatform.Twitch)
         {
             var vm = For(message.Platform);
@@ -1558,8 +1923,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                     retryable: false, scheduleRetry: false);
             }
             else
-                SetTwitchFailure(kind, FriendlyTwitchFailure(kind, Text(message.Payload, "message")),
-                    retryable: Bool(message.Payload, "retryable", true), scheduleRetry: true);
+            {
+                var errorMessage = Text(message.Payload, "message");
+                SetTwitchFailure(kind, FriendlyTwitchFailure(kind, errorMessage),
+                    retryable: Bool(message.Payload, "retryable", true) &&
+                               IsTwitchRetryableFailure(kind, errorMessage), scheduleRetry: true);
+            }
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
         {
@@ -1597,6 +1966,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _soopApplicationStopping = true;
+        _soopConnectionIntent = false;
+        CancelSoopRetry();
         _twitchApplicationStopping = true;
         _twitchConnectionIntent = false;
         CancelTwitchRetry();
