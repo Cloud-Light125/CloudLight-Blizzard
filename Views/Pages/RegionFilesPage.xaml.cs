@@ -166,4 +166,36 @@ public partial class RegionFilesPage : UserControl
             { Owner = Window.GetWindow(this) }.ShowDialog() == true)
             _vm.ReturnRegionPreparationToStep1();
     }
+
+    private async void OnCheckCurrentFiles(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.CanCheckRegionFiles == true) await _vm.CheckCurrentRegionFilesAsync();
+    }
+
+    private async void OnClearTemporary(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.CanClearTemporaryFiles != true) return;
+        if (MessageBox.Show(
+                $"将只删除本次检查确认的 {_vm.RegionFileCheck?.TemporaryCount ?? 0:N0} 个临时/额外文件候选。\n\n" +
+                "永久区服文件、另一地区文件、当前备份和 Battle.net Agent 数据都不会删除。是否继续？",
+                "清除临时/额外文件？", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+            await _vm.ClearTemporaryFilesAsync();
+    }
+
+    private async void OnResetCurrentRegion(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.CanResetCurrentRegion != true) return;
+        if (MessageBox.Show(
+                "将把当前磁盘状态重新定义为当前区服的新状态，另一个区服的已保存状态和备份保持不变。\n\n" +
+                "无法安全建立的新差异只会报告，不会加入可恢复备份。是否继续？",
+                "重设当前区服状态？", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            await _vm.ResetCurrentRegionStateAsync();
+    }
+
+    private async void OnStep4(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.CanRunStep4 == true) await _vm.RunStep4ManuallyAsync();
+    }
+
+    private void OnRestoreStep4Reminder(object sender, RoutedEventArgs e) => _vm?.RestoreStep4Reminder();
 }

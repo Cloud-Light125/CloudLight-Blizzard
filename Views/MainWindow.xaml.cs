@@ -33,10 +33,13 @@ public partial class MainWindow : Window
     private bool _pagesReady;
     private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
+    private readonly AnnouncementService _announcementService;
+    private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
     {
         _vm = new MainViewModel(logSession);
+        _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
         InitializeComponent();
         ThemeManager.Attach(this);
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
@@ -56,15 +59,8 @@ public partial class MainWindow : Window
         _statsPage.Initialize(_vm);
         _dropsPage.Initialize(_vm);
         _settingsPage.Initialize(_vm);
+        _settingsPage.AnnouncementBadgeSettingChanged += (_, _) => UpdateAnnouncementBadge();
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
-        _vm.MainSectionRequested += section => Dispatcher.Invoke(() =>
-        {
-            if (section == "region") RegionNav.IsChecked = true;
-            else if (section == "stats") StatsNav.IsChecked = true;
-            else if (section == "drops") DropsNav.IsChecked = true;
-            else if (section == "settings") SettingsNav.IsChecked = true;
-            else AccountsNav.IsChecked = true;
-        });
         _pagesReady = true;
         SelectSavedSection();
 
@@ -99,6 +95,33 @@ public partial class MainWindow : Window
         _watchTimer.Start();
         _dropsPage.StartAutomaticPlatforms();
         _ = RunAutomaticUpdateCheckAsync();
+        _ = RefreshAnnouncementsAsync();
+    }
+
+    private async Task RefreshAnnouncementsAsync()
+    {
+        _announcements = _announcementService.CachedAnnouncements;
+        UpdateAnnouncementBadge();
+        try
+        {
+            _announcements = await _announcementService.RefreshAsync(_updateCancellation.Token);
+            if (!Dispatcher.HasShutdownStarted) await Dispatcher.InvokeAsync(UpdateAnnouncementBadge);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void UpdateAnnouncementBadge()
+    {
+        AnnouncementUnreadDot.Visibility = _vm.Settings.ShowAnnouncementBadge &&
+            _announcementService.HasUnread(_announcements) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void OnOpenAnnouncements(object sender, RoutedEventArgs e)
+    {
+        if (_announcements.Count == 0) await RefreshAnnouncementsAsync();
+        var dialog = new AnnouncementWindow(_announcements, _announcementService) { Owner = this };
+        dialog.ShowDialog();
+        UpdateAnnouncementBadge();
     }
 
     private async Task RunAutomaticUpdateCheckAsync()
@@ -155,7 +178,7 @@ public partial class MainWindow : Window
             MessageBox.Show("当前没有可用的正式更新。", "软件更新",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         else if (outcome.Kind == UpdateCheckOutcomeKind.Failed)
-            MessageBox.Show("请检查网络连接后重试。", "暂时无法检查更新",
+            MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新",
                 MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -341,6 +364,7 @@ public partial class MainWindow : Window
         _exitCleanupStarted = true;
         try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
         try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        try { _vm.CloudHttpClients.Dispose(); } catch { }
         _updateCancellation.Dispose();
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }
         _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized; _vm.Settings.Save();

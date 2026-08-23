@@ -27,19 +27,20 @@ public sealed class UpdateService : IUpdateService, IDisposable
         @"^(?<major>\d+)\.(?<minor>\d+)(?:\.(?<build>\d+))?(?:\.(?<revision>\d+))?$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly HttpClient _httpClient;
-    private readonly bool _ownsHttpClient;
+    private readonly CloudHttpClientFactory? _cloudHttpClients;
 
-    public UpdateService(HttpClient? httpClient = null, Assembly? versionAssembly = null)
+    public UpdateService(HttpClient httpClient, Assembly? versionAssembly = null)
     {
-        _ownsHttpClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        if (_ownsHttpClient)
-        {
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("CloudLight-Blizzard");
-            _httpClient.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        }
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
+        CurrentVersion = ReadCurrentVersion(versionAssembly ?? Assembly.GetExecutingAssembly());
+    }
+
+    public UpdateService(AppSettings settings, CloudHttpClientFactory httpClients, Assembly? versionAssembly = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _cloudHttpClients = httpClients;
+        _httpClient = null!;
         CurrentVersion = ReadCurrentVersion(versionAssembly ?? Assembly.GetExecutingAssembly());
     }
 
@@ -56,11 +57,20 @@ public sealed class UpdateService : IUpdateService, IDisposable
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
-            request.Headers.UserAgent.ParseAdd("CloudLight-Blizzard");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
+            HttpResponseMessage response;
+            if (_cloudHttpClients is not null)
+            {
+                response = await _cloudHttpClients.SendGetAsync(CreateRequest, "update", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                using var request = CreateRequest();
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            using (response)
+            {
             if (response.StatusCode == HttpStatusCode.NotFound)
                 return NoRelease();
 
@@ -93,6 +103,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
                 InstallerDownloadUrl = ValidateRepositoryUrl(installerUrl, "/releases/download/") is { Length: > 0 } url
                     ? url : null,
             };
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -101,6 +112,10 @@ public sealed class UpdateService : IUpdateService, IDisposable
         catch (OperationCanceledException)
         {
             return Failed("请求 GitHub Release 超时。");
+        }
+        catch (CloudNetworkException ex)
+        {
+            return Failed(CloudHttpClientFactory.UserMessage(ex.Kind, "update"));
         }
         catch (Exception ex)
         {
@@ -121,7 +136,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
 
     public void Dispose()
     {
-        if (_ownsHttpClient) _httpClient.Dispose();
+        // Injected/shared clients are owned by their caller or CloudHttpClientFactory.
     }
 
     private UpdateCheckResult NoRelease() => new()
@@ -136,6 +151,14 @@ public sealed class UpdateService : IUpdateService, IDisposable
         CurrentVersion = CurrentVersion,
         ErrorMessage = message,
     };
+
+    private static HttpRequestMessage CreateRequest()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
+        request.Headers.UserAgent.ParseAdd("CloudLight-Blizzard");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        return request;
+    }
 
     private static string ReadCurrentVersion(Assembly assembly)
     {

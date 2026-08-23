@@ -53,6 +53,56 @@
                 </Grid>
             </Border>
 
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,18,0,0"
+                    Visibility="{Binding RegionGuide.ShowTopRegionActions, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="区服文件状态" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="检查当前游戏目录与已保存区服状态的差异。可以发现区服永久文件是否缺失、内容是否变化，以及游戏运行后新增的临时/额外文件。该功能只检查，不会自动修改或删除任何文件，可在游戏运行并退出后重复检查。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="20" Margin="0,8,0,12"/>
+                    <Button Content="检查当前区服文件状态" IsEnabled="{Binding CanCheckRegionFiles}"
+                            Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="16,0"
+                            Click="OnCheckCurrentFiles"/>
+                    <Border Background="{DynamicResource Body}" BorderBrush="{DynamicResource Bd}" BorderThickness="1"
+                            CornerRadius="8" Padding="12,10" Margin="0,13,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding RegionFileCheckSummary}" TextWrapping="Wrap" LineHeight="21"/>
+                            <Expander Header="查看详情" Margin="0,10,0,0"
+                                      Visibility="{Binding HasRegionFileCheck, Converter={StaticResource BoolVisibility}}">
+                                <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="{Binding RegionFileCheckDetails}" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource Text.Secondary}" FontSize="12" LineHeight="18"/>
+                                </ScrollViewer>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button Content="清除临时文件" IsEnabled="{Binding CanClearTemporaryFiles}"
+                                Style="{StaticResource DangerButton}" Padding="15,0" Margin="0,0,8,0" Click="OnClearTemporary"/>
+                        <Button Content="重设当前区服状态" IsEnabled="{Binding CanResetCurrentRegion}"
+                                Style="{StaticResource SecondaryButton}" Padding="15,0" Click="OnResetCurrentRegion"/>
+                    </WrapPanel>
+                    <TextBlock Text="清除按钮只处理本次检查中明确标记的临时/额外文件候选；请先检查。任何切服、账号切换、验证或软件启动都不会自动删除文件。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" LineHeight="18" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,18,0,0"
+                    Visibility="{Binding ShowStep4Card, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="可选：进一步验证区服文件" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="当前智能差异备份已经可正常使用。你还可以在切换到另一地区后执行一次第四步验证，进一步确认稳定差异并排除少量动态文件。第四步不是准备完成的必需条件，失败也不会影响当前备份。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="20" Margin="0,8,0,4"/>
+                    <TextBlock Text="{Binding Step4RegionText, StringFormat=需要在当前文件为 {0} 时执行。}"
+                               Foreground="{DynamicResource Text.Muted}" Margin="0,4,0,12"/>
+                    <WrapPanel>
+                        <Button Content="执行第四步验证" IsEnabled="{Binding CanRunStep4}" Style="{StaticResource PrimaryButton}"
+                                Padding="16,0" Margin="0,0,8,0" Click="OnStep4"/>
+                        <Button Content="恢复第四步提醒" IsEnabled="{Binding Step4ReminderIgnored}"
+                                Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnRestoreStep4Reminder"/>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
             <Grid Margin="0,24,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Border Style="{StaticResource SurfaceCard}">
@@ -219,7 +269,8 @@
                         <TextBlock Text="{Binding RegionGuide.Description}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="21" Margin="0,9,0,13"/>
                         <WrapPanel>
                             <Button Content="恢复到国服" IsEnabled="{Binding RegionGuide.CanRestore}" Style="{StaticResource PrimaryButton}" Padding="17,0" Margin="0,0,9,0" Click="OnSwitchChina"/>
-                            <Button Content="恢复到国际服" IsEnabled="{Binding RegionGuide.CanRestore}" Style="{StaticResource PrimaryButton}" Padding="17,0" Click="OnSwitchInternational"/>
+                            <Button Content="恢复到国际服" IsEnabled="{Binding RegionGuide.CanRestore}" Style="{StaticResource PrimaryButton}" Padding="17,0" Margin="0,0,9,0" Click="OnSwitchInternational"/>
+                            <Button Content="重新准备" IsEnabled="{Binding RegionGuide.CanRestart}" Style="{StaticResource SecondaryButton}" Padding="17,0" Click="OnReprepare"/>
                         </WrapPanel>
                     </StackPanel>
 

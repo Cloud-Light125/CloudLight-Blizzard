@@ -40,6 +40,9 @@ public sealed class OverwatchRegionBackupStore
     public string GenerationRoot(string id) => SafeCombine(GenerationsRoot, id);
     public string GenerationManifestFile(string id, OverwatchRegion region) =>
         Path.Combine(GenerationRoot(id), region == OverwatchRegion.China ? "china-manifest.json" : "international-manifest.json");
+    public string GenerationReferenceManifestFile(string id, OverwatchRegion region) =>
+        Path.Combine(GenerationRoot(id), region == OverwatchRegion.China
+            ? "china-reference-manifest.json" : "international-reference-manifest.json");
     public string GenerationFile(string id) => Path.Combine(GenerationRoot(id), "pair.json");
     public string BackupRoot(string id, OverwatchRegion region) => Path.Combine(GenerationRoot(id), "backups",
         region == OverwatchRegion.China ? "china" : "international");
@@ -121,6 +124,13 @@ public sealed class OverwatchRegionBackupStore
             LastSuccessfulRegion = currentRegion,
             LastSuccessfulGenerationId = generationId,
         });
+    }
+    public void SaveGenerationReferenceManifest(string id, OverwatchRegionManifest manifest) =>
+        WriteJson(GenerationReferenceManifestFile(id, manifest.Region), manifest);
+    public OverwatchRegionManifest? LoadGenerationReferenceManifest(string id, OverwatchRegion region)
+    {
+        var value = ReadJson<OverwatchRegionManifest>(GenerationReferenceManifestFile(id, region));
+        return value?.SchemaVersion == 2 ? value : null;
     }
 
     public bool SaveLastSuccessfulRegion(string generationId, OverwatchRegion region)

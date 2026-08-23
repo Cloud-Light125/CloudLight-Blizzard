@@ -100,12 +100,17 @@ class ConnectionStatus:
     def __init__(self, twitch: Any = None) -> None:
         self._twitch = twitch
         self.phase = "unconnected"
+        self.detail = ""
 
     def update(self, phase: str, detail: str = "") -> None:
+        detail = redact(detail)
+        if self.phase == phase and self.detail == detail:
+            return
         self.phase = phase
+        self.detail = detail
         if self._twitch is not None:
             self._twitch._cloudlight_connection_phase = phase
-        event("connection_status", {"phase": phase, "detail": redact(detail)})
+        event("connection_status", {"phase": phase, "detail": detail})
 
 
 class HeadlessSettingsFacade:

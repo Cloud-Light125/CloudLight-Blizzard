@@ -128,7 +128,6 @@ public sealed class AccountRow : ObservableObject
 
 public sealed class MainViewModel : ObservableObject
 {
-    public event Action<string>? MainSectionRequested;
     private readonly BattleNetPaths _paths;
     private readonly AccountReader _reader;
     private readonly AppDataStore _profiles;
@@ -140,6 +139,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly SemaphoreSlim _regionStatusGate = new(1, 1);
 
     public UpdateCheckCoordinator UpdateChecks { get; }
+    public CloudHttpClientFactory CloudHttpClients { get; }
+    public FeedbackService FeedbackService { get; }
     public DropsHostService DropsHost { get; } = new();
     public PlatformLogSession DropsLogSession { get; }
 
@@ -233,11 +234,46 @@ public sealed class MainViewModel : ObservableObject
     private string _regionOperationNotice = "";
     private string _regionOperationError = "";
     public bool IsRegionOperationBusy => _regionOperationPhase != RegionOperationPhase.None;
+    private RegionFileCheckResult? _regionFileCheck;
+    public RegionFileCheckResult? RegionFileCheck
+    {
+        get => _regionFileCheck;
+        private set
+        {
+            Set(ref _regionFileCheck, value);
+            RaiseRegionFileTools();
+        }
+    }
+    public bool HasRegionFileCheck => RegionFileCheck is not null;
+    public bool CanCheckRegionFiles => !Busy && !IsRegionOperationBusy && _regionPageStatus.GamePathValid &&
+                                       _regionPageStatus.State is RegionBackupState.Ready or RegionBackupState.Stale;
+    public bool CanClearTemporaryFiles => CanCheckRegionFiles && RegionFileCheck?.TemporaryCount > 0;
+    public bool CanResetCurrentRegion => CanCheckRegionFiles &&
+                                         _regionPageStatus.BackupMode == RegionBackupMode.VerifiedDifference;
+    public bool ShowStep4Card => _regionPageStatus.Step4Pending;
+    public bool CanRunStep4 => CanCheckRegionFiles && _regionPageStatus.CanRunStep4Now;
+    public bool Step4ReminderIgnored => _settings.Step4ReminderIgnored;
+    public string Step4RegionText => _regionPageStatus.Step4Region == OverwatchRegion.China ? "国服" : "国际服";
+    public string RegionFileCheckSummary => RegionFileCheck is null
+        ? "尚未检查。请主动点击检查，结果不会缓存为后续检查。"
+        : $"当前检测：{RegionName(RegionFileCheck.Region)}\n" +
+          $"永久文件：正常 {RegionFileCheck.NormalCount:N0} · 缺失 {RegionFileCheck.MissingCount:N0}（{FormatBytes(RegionFileCheck.MissingBytes)}） · " +
+          $"内容变化 {RegionFileCheck.ChangedCount:N0}（{FormatBytes(RegionFileCheck.ChangedBytes)}）\n" +
+          $"应当不存在但仍存在：{RegionFileCheck.ShouldBeAbsentCount:N0}\n" +
+          $"临时/额外文件候选：{RegionFileCheck.TemporaryCount:N0}（{FormatBytes(RegionFileCheck.TemporaryBytes)}） · " +
+          $"无法读取 {RegionFileCheck.UnreadableCount:N0}" +
+          (RegionFileCheck.ReferenceManifestComplete ? "" : "\n当前备份缺少完整文件状态基线；已完整检查现有可用 reference 数据。");
+    public string RegionFileCheckDetails => RegionFileCheck is null ? "" : string.Join("\n\n",
+        RegionFileCheck.Items.Where(item => item.Kind != RegionFileCheckKind.PermanentNormal).Select(item =>
+            $"{CheckKindName(item.Kind)}\n{item.RelativePath}\n" +
+            $"原大小：{FormatBytes(item.OriginalSize)} · 当前大小：{FormatBytes(item.CurrentSize)}\n{item.Reason}"));
 
     public MainViewModel(PlatformLogSession? dropsLogSession = null)
     {
         DropsLogSession = dropsLogSession ?? new PlatformLogSession(AppPaths.Current.LogsDir);
         _settings = AppSettings.Load();
+        CloudHttpClients = new CloudHttpClientFactory(_settings);
+        FeedbackService = new FeedbackService(_settings, httpClients: CloudHttpClients);
         DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
         DropsHost.EventReceived += (sender, message) =>
         {
@@ -250,7 +286,7 @@ public sealed class MainViewModel : ObservableObject
             _settings.Save();
             DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
         };
-        UpdateChecks = new UpdateCheckCoordinator(new UpdateService(), _settings);
+        UpdateChecks = new UpdateCheckCoordinator(new UpdateService(_settings, CloudHttpClients), _settings);
         _paths = new BattleNetPaths();
         if (!string.IsNullOrEmpty(_settings.ClientExe) && File.Exists(_settings.ClientExe))
             _paths.ClientExe = _settings.ClientExe;
@@ -569,11 +605,7 @@ public sealed class MainViewModel : ObservableObject
             if (!_staleNotified && regionStatus?.State == RegionBackupState.Stale)
             {
                 _staleNotified = true;
-                StatusText = "检测到守望先锋已经更新，需要重新准备区服文件。";
-                if (MessageBox.Show(
-                    "当前游戏文件与之前记录的版本不一致。\n\n可能是 Battle.net 仍在更新，或者《守望先锋》已经发布了新版本。\n\n请等待 Battle.net 完成更新后重新准备区服文件。现在打开区服文件页面吗？",
-                    "需要重新准备区服文件", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
-                    MainSectionRequested?.Invoke("region");
+                StatusText = "检测到守望先锋文件可能已经更新；现有区服备份仍可尽可能使用，建议在区服文件页面重设当前状态或重新准备。";
             }
         }
         catch (Exception ex)
@@ -699,9 +731,11 @@ public sealed class MainViewModel : ObservableObject
             regionSkipReason = "无法检查本地区服文件：" + ex.Message;
         }
 
+        var runStep4AfterSwitch = shouldSwitchRegion && PromptForStep4(targetRegion);
         Busy = true;
         var stage = "关闭 Battle.net";
         string? regionFileWarning = null;
+        var regionNormalizeSucceeded = false;
         _switchLog.Write("SwitchStarted", currentId, target.AccountId,
             Accounts.FirstOrDefault(a => a.AccountId == currentId)?.RegionText, target.RegionText);
         _pendingLogCursor = await Task.Run(() => _authLogProbe.CaptureCursor());
@@ -742,6 +776,7 @@ public sealed class MainViewModel : ObservableObject
                                                        FormatRegionFileIssues(result.Issues));
                     if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
                         regionFileWarning = $"{result.FailedCount:N0} 个区服文件存在异常，已跳过；其他文件已继续处理。";
+                    regionNormalizeSucceeded = result.Outcome == RegionSwitchOutcome.Success;
                     _switchLog.Write("RegionFilesSwitchCompleted", currentId, target.AccountId,
                         targetRegion: target.RegionText,
                         detail: $"outcome={result.Outcome};restored={result.Restored};deleted={result.Deleted};" +
@@ -763,6 +798,26 @@ public sealed class MainViewModel : ObservableObject
                     _switchLog.Write("BattleNetStarted", currentId, target.AccountId);
                     RegionSwitchLog.Write("Battle.net restart", targetRegion);
                 });
+
+            if (runStep4AfterSwitch && regionNormalizeSucceeded)
+            {
+                try
+                {
+                    stage = "可选的第四步验证";
+                    var result = await _regionManager.VerifyFourthStepAsync(_settings.OverwatchGamePath!,
+                        new Progress<RegionProgress>(p => StatusText = p.Message));
+                    regionFileWarning = $"第四步验证完成：确认 {result.DoubleVerified:N0} 个，排除 {result.Rejected:N0} 个，" +
+                                        $"{result.Unverified:N0} 个本次无法验证。";
+                }
+                catch (Exception ex)
+                {
+                    // 账号、区服 Normalize 和 Battle.net 启动均已完成；第四步绝不能回滚或改判账号切换。
+                    regionFileWarning = "账号与区服切换已完成；可选的第四步验证未完成，原备份未受影响：" + ex.Message;
+                    _switchLog.Write("OptionalStep4Failed", currentId, target.AccountId,
+                        targetRegion: target.RegionText, detail: ex.ToString());
+                }
+                finally { stage = "Battle.net 启动"; }
+            }
 
             foreach (var a in Accounts) a.IsActive = a.AccountId == target.AccountId;
             _lastActiveId = target.AccountId;
@@ -952,6 +1007,21 @@ public sealed class MainViewModel : ObservableObject
             _regionOperationSource,
             _settings.RegionBackupMode);
         Raise(nameof(IsRegionOperationBusy));
+        RaiseRegionFileTools();
+    }
+
+    private void RaiseRegionFileTools()
+    {
+        Raise(nameof(HasRegionFileCheck));
+        Raise(nameof(CanCheckRegionFiles));
+        Raise(nameof(CanClearTemporaryFiles));
+        Raise(nameof(CanResetCurrentRegion));
+        Raise(nameof(ShowStep4Card));
+        Raise(nameof(CanRunStep4));
+        Raise(nameof(Step4ReminderIgnored));
+        Raise(nameof(Step4RegionText));
+        Raise(nameof(RegionFileCheckSummary));
+        Raise(nameof(RegionFileCheckDetails));
     }
 
     private void SetRegionOperation(RegionOperationPhase phase, RegionProgress? progress = null)
@@ -1014,13 +1084,13 @@ public sealed class MainViewModel : ObservableObject
                 RegionBackupState.Empty => "首次设置只需要让 Battle.net 完成一次跨区更新。",
                 RegionBackupState.Preparing => $"{RegionName(status.PendingSourceRegion)}文件已经保存在本地。请在 Battle.net 中切换到{RegionName(status.PendingTargetRegion)}并等待更新完成，然后回来继续。",
                 RegionBackupState.Ready when status.SwitchEligibility == RegionSwitchEligibility.BestEffort =>
-                    "当前版本无法确认，但区服备份可以使用。切换时只会修改已知的国服 / 国际服差异文件，当前目录中的其它文件不会参与处理。",
+                    "当前版本无法确认，但区服备份仍可尽可能使用。建议重设当前区服状态或重新准备。",
                 RegionBackupState.Ready when status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable =>
                     "区服备份文件缺失或损坏，当前不能切换。请检查备份或重新准备。",
                 RegionBackupState.Ready when status.CurrentRegion == CurrentGameRegion.Mixed =>
                     $"当前游戏文件处于未完成的区服切换状态，可以直接使用本地备份恢复到国服或国际服。已保存 {status.DifferenceCount} 个差异文件 · {FormatBytes(status.BackupBytes)}",
                 RegionBackupState.Ready => $"已保存 {status.DifferenceCount} 个区服差异文件 · {FormatBytes(status.BackupBytes)}",
-                RegionBackupState.Stale => "游戏已经更新，需要重新准备区服文件。",
+                RegionBackupState.Stale => "检测到游戏文件可能已经更新；现有备份仍可尽可能切换，建议重设当前区服状态或重新准备。",
                 RegionBackupState.Legacy => "区服文件功能已经升级，需要重新准备一次本地文件。",
                 _ => "本地文件不完整，请重新准备。",
             };
@@ -1032,9 +1102,9 @@ public sealed class MainViewModel : ObservableObject
                 _ => "重新准备区服文件",
             };
             var switchEligible = status.SwitchEligibility is RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
-            CanSwitchChina = status.GamePathValid && status.State == RegionBackupState.Ready && switchEligible &&
+            CanSwitchChina = status.GamePathValid && (status.State is RegionBackupState.Ready or RegionBackupState.Stale) && switchEligible &&
                              (status.CurrentRegion != CurrentGameRegion.China || !status.ExactSnapshotMatch);
-            CanSwitchInternational = status.GamePathValid && status.State == RegionBackupState.Ready && switchEligible &&
+            CanSwitchInternational = status.GamePathValid && (status.State is RegionBackupState.Ready or RegionBackupState.Stale) && switchEligible &&
                                      (status.CurrentRegion != CurrentGameRegion.International || !status.ExactSnapshotMatch);
             SwitchChinaText = status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown ||
                               status.CurrentRegion == CurrentGameRegion.China && !status.ExactSnapshotMatch ? "恢复到国服" :
@@ -1042,7 +1112,7 @@ public sealed class MainViewModel : ObservableObject
             SwitchInternationalText = status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown ||
                                       status.CurrentRegion == CurrentGameRegion.International && !status.ExactSnapshotMatch ? "恢复到国际服" :
                 status.CurrentRegion == CurrentGameRegion.International ? "当前为国际服" : "切换到国际服";
-            RegionSetupVisibility = status.State == RegionBackupState.Ready ? Visibility.Collapsed : Visibility.Visible;
+            RegionSetupVisibility = status.State is RegionBackupState.Ready or RegionBackupState.Stale ? Visibility.Collapsed : Visibility.Visible;
             return status;
         }
         catch
@@ -1062,6 +1132,7 @@ public sealed class MainViewModel : ObservableObject
         if (Busy || IsRegionOperationBusy ||
             (target == OverwatchRegion.China && !RegionGuide.CanSwitchChina) ||
             (target == OverwatchRegion.International && !RegionGuide.CanSwitchInternational)) return;
+        var runStep4 = PromptForStep4(target);
         _regionOperationNotice = "";
         _regionOperationError = "";
         SetRegionOperation(RegionOperationPhase.SwitchingRegion,
@@ -1101,6 +1172,23 @@ public sealed class MainViewModel : ObservableObject
                 MessageBox.Show($"{result.FailedCount:N0} 个文件存在异常，已自动跳过。\n其他区服差异文件已继续处理。" +
                                 FormatRegionFileIssues(result.Issues), "区服文件部分完成",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (runStep4 && result.Outcome == RegionSwitchOutcome.Success)
+            {
+                try
+                {
+                    var step4 = await _regionManager.VerifyFourthStepAsync(
+                        _settings.OverwatchGamePath!, progress);
+                    MessageBox.Show($"第四步验证完成。\n\n已再次确认稳定区服差异：{step4.DoubleVerified:N0} 个\n" +
+                                    $"进一步排除非稳定文件：{step4.Rejected:N0} 个\n本次无法验证：{step4.Unverified:N0} 个\n\n" +
+                                    "被确认不稳定的文件将不再参与区服切换，但不会自动删除游戏目录中的文件。",
+                        "第四步验证完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("区服切换已经完成，但可选的第四步验证未完成。当前可用备份没有受到影响。\n\n" + ex.Message,
+                        "第四步验证未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -1114,6 +1202,152 @@ public sealed class MainViewModel : ObservableObject
             await RefreshHomeRegionAsync();
         }
     }
+
+    private bool PromptForStep4(OverwatchRegion target)
+    {
+        if (_settings.Step4ReminderIgnored || !_regionManager.ShouldOfferStep4(target)) return false;
+        var dialog = new CloudLightBlizzard.Views.Step4ReminderWindow(target)
+        {
+            Owner = Application.Current?.MainWindow,
+        };
+        dialog.ShowDialog();
+        if (dialog.Choice == CloudLightBlizzard.Views.Step4ReminderChoice.Ignore)
+        {
+            _settings.Step4ReminderIgnored = true;
+            _settings.Save();
+            RaiseRegionFileTools();
+        }
+        return dialog.Choice == CloudLightBlizzard.Views.Step4ReminderChoice.Verify;
+    }
+
+    public void RestoreStep4Reminder()
+    {
+        _settings.Step4ReminderIgnored = false;
+        _settings.Save();
+        RaiseRegionFileTools();
+        StatusText = "已恢复第四步验证提醒。";
+    }
+
+    public async Task RunStep4ManuallyAsync()
+    {
+        if (!CanRunStep4 || string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
+        Busy = true;
+        SetRegionOperation(RegionOperationPhase.ValidatingBackup,
+            new RegionProgress("正在进行可选的第四步验证……"));
+        try
+        {
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
+            var result = await _regionManager.VerifyFourthStepAsync(_settings.OverwatchGamePath, progress);
+            _regionOperationNotice = $"第四步验证完成：再次确认 {result.DoubleVerified:N0} 个，" +
+                                     $"排除 {result.Rejected:N0} 个，本次无法验证 {result.Unverified:N0} 个。";
+            StatusText = _regionOperationNotice;
+        }
+        catch (Exception ex)
+        {
+            _regionOperationError = "第四步验证未完成，当前可用备份未受影响：" + ex.Message;
+            MessageBox.Show(_regionOperationError, "第四步验证未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            await RefreshHomeRegionAsync(verifyFiles: true);
+        }
+    }
+
+    public async Task CheckCurrentRegionFilesAsync()
+    {
+        if (!CanCheckRegionFiles || string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) return;
+        Busy = true;
+        SetRegionOperation(RegionOperationPhase.ValidatingBackup,
+            new RegionProgress("正在检查当前区服文件状态……"));
+        try
+        {
+            var progress = new Progress<RegionProgress>(UpdateRegionProgress);
+            RegionFileCheck = await _regionManager.CheckCurrentRegionFilesAsync(
+                _settings.OverwatchGamePath, progress: progress);
+            StatusText = "当前区服文件状态检查完成。";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "状态检查未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+        }
+    }
+
+    public async Task ClearTemporaryFilesAsync()
+    {
+        if (!CanClearTemporaryFiles || RegionFileCheck is null ||
+            string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) return;
+        Busy = true;
+        try
+        {
+            var result = await _regionManager.ClearTemporaryFilesAsync(_settings.OverwatchGamePath,
+                RegionFileCheck, new Progress<RegionProgress>(UpdateRegionProgress));
+            MessageBox.Show($"已清除 {result.Deleted:N0} 个临时/额外文件，共 {FormatBytes(result.DeletedBytes)}。\n" +
+                            $"{result.Skipped:N0} 个文件正在使用或不再满足安全条件，已跳过。",
+                "清除完成", MessageBoxButton.OK,
+                result.Skipped > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            RegionFileCheck = null;
+            StatusText = "临时/额外文件清除完成；如需查看最新状态，请重新检查。";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("清除过程中遇到问题，已完成的文件不会回滚；其余文件保持不变。\n\n" + ex.Message,
+                "清除未完全完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Busy = false;
+            RaiseRegionFileTools();
+        }
+    }
+
+    public async Task ResetCurrentRegionStateAsync()
+    {
+        if (!CanResetCurrentRegion || string.IsNullOrWhiteSpace(_settings.OverwatchGamePath)) return;
+        if (!EnsureGameClosedForRegionPreparation()) return;
+        Busy = true;
+        SetRegionOperation(RegionOperationPhase.BuildingBackup,
+            new RegionProgress("正在重设当前区服状态……"));
+        try
+        {
+            var result = await _regionManager.ResetCurrentRegionStateAsync(_settings.OverwatchGamePath,
+                new Progress<RegionProgress>(UpdateRegionProgress));
+            _regionOperationNotice = $"已重设当前{RegionName(result.Region)}状态；更新 {result.Updated:N0} 个，" +
+                                     $"{result.Degraded:N0} 个异常项已按方向降级。" +
+                                     (result.PotentialDifferences > 0
+                                         ? $" 检测到 {result.PotentialDifferences:N0} 个无法安全建立备份的新潜在差异。" : "");
+            RegionFileCheck = null;
+            StatusText = _regionOperationNotice;
+        }
+        catch (Exception ex)
+        {
+            _regionOperationError = "重设当前区服状态失败，原备份未受影响：" + ex.Message;
+            MessageBox.Show(_regionOperationError, "重设未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Busy = false;
+            SetRegionOperation(RegionOperationPhase.None);
+            await RefreshHomeRegionAsync(verifyFiles: true);
+        }
+    }
+
+    private static string CheckKindName(RegionFileCheckKind kind) => kind switch
+    {
+        RegionFileCheckKind.PermanentMissing => "永久文件缺失",
+        RegionFileCheckKind.PermanentChanged => "永久文件内容变化",
+        RegionFileCheckKind.ShouldBeAbsent => "应当不存在但当前存在",
+        RegionFileCheckKind.TemporaryCandidate => "临时/额外文件候选",
+        RegionFileCheckKind.Unreadable => "无法读取",
+        _ => "正常永久文件",
+    };
 
     public static string FormatBytes(long bytes) => bytes < 1024 * 1024
         ? $"{bytes / 1024.0:0.0} KB" : $"{bytes / 1024.0 / 1024.0:0.0} MB";

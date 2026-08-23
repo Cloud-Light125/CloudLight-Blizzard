@@ -1421,23 +1421,35 @@ class Twitch:
                 self.print(_("error", "site_down").format(seconds=round(delay)))
             except aiohttp.ClientConnectorCertificateError:
                 # for a case where SSL verification fails
+                self.gui.connection.update("ssl_certificate_failed", "certificate_verify_failed")
                 raise
             except (
                 aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError
-            ):
+            ) as exc:
                 if proxy_fallback_pending:
                     proxy_fallback_pending = False
                     kwargs.pop("proxy", None)
                     proxy_failure_logged = True
                     logger.warning("Twitch 代理连接失败，正在尝试直连。")
                     self.print("代理连接失败，本次请求回退直连。")
+                    self.gui.connection.update("proxy_fallback", "proxy_failure")
                     continue
                 if kwargs.get("proxy") and not proxy_failure_logged:
                     proxy_failure_logged = True
                     logger.warning("Twitch 代理连接失败。")
+                    self.gui.connection.update("proxy_failed", "proxy_failure")
                 elif not kwargs.get("proxy") and not direct_failure_logged:
                     direct_failure_logged = True
                     logger.warning("Twitch 直连失败。")
+                    error_name = exc.__class__.__name__.casefold()
+                    if proxy_failure_logged:
+                        self.gui.connection.update("proxy_and_direct_failed", "proxy_and_direct_failure")
+                    elif isinstance(exc, asyncio.TimeoutError) or "timeout" in error_name:
+                        self.gui.connection.update("network_failed", "connection_timeout")
+                    elif "dns" in error_name or "gaierror" in error_name:
+                        self.gui.connection.update("network_failed", "dns_failure")
+                    else:
+                        self.gui.connection.update("network_failed", "network_unavailable")
                 # connection problems, retry
                 if backoff.steps > 1:
                     # just so that quick retries that sometimes happen, aren't shown

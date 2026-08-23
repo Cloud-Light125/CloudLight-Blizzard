@@ -140,10 +140,12 @@ public sealed class RegionPreparationGuide
         var (step, title, description) = CopyFor(state, source, target, preparationMode);
         if (status.SwitchEligibility == RegionSwitchEligibility.BestEffort && state == RegionPreparationState.Mixed)
         {
-            step = "可以宽容恢复";
-            title = "当前游戏版本无法确认";
-            description = "区服备份可以使用。当前目录可能包含未记录的新文件，或缺少未记录的旧文件。\n\n" +
-                          "恢复时只会修改 Active Generation 已知的国服 / 国际服差异文件，其它文件不会参与处理。";
+            step = "可以尽可能恢复";
+            title = status.PossibleGameUpdate ? "检测到游戏文件可能已经更新" : "当前游戏版本无法确认";
+            description = status.PossibleGameUpdate
+                ? "现有区服备份仍可继续尝试使用，但部分区服差异文件可能已经变化。建议使用“重设当前区服状态”，或重新进行智能差异备份，以减少 Battle.net 后续补充下载。\n\n切换时会逐文件处理，可用文件继续恢复，异常文件会跳过。"
+                : "区服备份可以使用。当前目录可能包含未记录的新文件，或缺少未记录的旧文件。\n\n" +
+                  "恢复时只会修改 Active Generation 已知的国服 / 国际服差异文件，其它文件不会参与处理。";
         }
         if (status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable &&
             status.State == RegionBackupState.Ready && state == RegionPreparationState.Error &&
@@ -295,15 +297,15 @@ public sealed class RegionPreparationGuide
                    status.PreparationCheckpoint == RegionPreparationCheckpoint.Step2Ready
                 ? RegionPreparationState.WaitingForOriginalRegion
                 : RegionPreparationState.WaitingForOtherRegion;
-        if (status.State == RegionBackupState.Stale || status.SwitchEligibility == RegionSwitchEligibility.GameUpdated)
-            return RegionPreparationState.Outdated;
-        if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable)
+        if ((status.State is RegionBackupState.Ready or RegionBackupState.Stale) &&
+            status.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable)
             return RegionPreparationState.Error;
-        if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.BestEffort)
+        if ((status.State is RegionBackupState.Ready or RegionBackupState.Stale) &&
+            status.SwitchEligibility == RegionSwitchEligibility.BestEffort)
             return RegionPreparationState.Mixed;
         if (status.State == RegionBackupState.Ready && status.SwitchEligibility == RegionSwitchEligibility.Normal &&
             status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown) return RegionPreparationState.Mixed;
-        if (status.State == RegionBackupState.Ready) return RegionPreparationState.Ready;
+        if (status.State is RegionBackupState.Ready or RegionBackupState.Stale) return RegionPreparationState.Ready;
         if (status.State is RegionBackupState.Legacy) return RegionPreparationState.Outdated;
         if (status.State is RegionBackupState.Error) return RegionPreparationState.Error;
         return RegionPreparationState.NotPrepared;
@@ -379,13 +381,13 @@ public sealed class RegionPreparationGuide
     {
         RegionSwitchEligibility.BestEffort => "可以使用（宽容恢复）",
         RegionSwitchEligibility.BackupUnavailable when status.State == RegionBackupState.Ready => "备份不可用",
-        RegionSwitchEligibility.GameUpdated => "需要重新准备",
+        RegionSwitchEligibility.GameUpdated => "可以尝试（建议重设）",
         _ => status.State switch
         {
             RegionBackupState.Ready => status.BackupFileIssueCount > 0 ? "可用（部分备份文件异常）" :
                 status.HasWarnings ? "可用（部分文件已跳过）" : "可以使用",
             RegionBackupState.Preparing => "正在准备",
-            RegionBackupState.Stale => "需要重新准备",
+            RegionBackupState.Stale => "可以尝试（建议重设）",
             RegionBackupState.Empty => "尚未准备",
             RegionBackupState.Legacy => "需要重新准备",
             _ => "需要检查",

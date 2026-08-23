@@ -166,6 +166,14 @@ public sealed class OverwatchRegionScanner
     public static IEnumerable<string> EnumerateGameFiles(string root) =>
         Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Where(path => !IsIgnored(path, root));
 
+    public static IEnumerable<string> EnumerateStatusFiles(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Where(path =>
+        {
+            var relative = Normalize(Path.GetRelativePath(root, path));
+            return !relative.StartsWith(".battle.net/", StringComparison.OrdinalIgnoreCase) &&
+                   !relative.Contains("/.cloudlightblizzard-", StringComparison.OrdinalIgnoreCase);
+        });
+
     public static string? FindExecutable(string root)
     {
         foreach (var path in new[] { Path.Combine(root, "Overwatch.exe"), Path.Combine(root, "_retail_", "Overwatch.exe") })
@@ -242,6 +250,10 @@ public sealed class OverwatchRegionScanner
                (fileName.Equals("shmem", StringComparison.OrdinalIgnoreCase) ||
                 fileName.StartsWith("shmem.", StringComparison.OrdinalIgnoreCase));
     }
+
+    public static bool IsHighConfidenceTemporaryPath(string relativePath) =>
+        IsIgnoredRelativePath(relativePath) &&
+        !Normalize(relativePath).StartsWith(".battle.net/", StringComparison.OrdinalIgnoreCase);
 
     private static string RegionName(OverwatchRegion region) => region == OverwatchRegion.China ? "国服" : "国际服";
 }

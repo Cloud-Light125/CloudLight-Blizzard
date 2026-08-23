@@ -1,0 +1,53 @@
+<UserControl x:Class="CloudLightBlizzard.Views.Pages.FeedbackPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Foreground="{DynamicResource Text.Primary}">
+    <Border Style="{StaticResource SurfaceCard}">
+        <StackPanel>
+            <TextBlock Text="反馈与错误报告" Style="{StaticResource SectionTitle}"/>
+            <TextBlock Text="错误主题" FontWeight="SemiBold" Margin="0,14,0,5"/>
+            <TextBox x:Name="TitleBox" Style="{StaticResource InputBox}" MaxLength="160"/>
+            <TextBlock Text="错误描述" FontWeight="SemiBold" Margin="0,12,0,5"/>
+            <TextBox x:Name="DescriptionBox" Style="{StaticResource InputBox}" AcceptsReturn="True"
+                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="110" MaxLength="10000"/>
+            <TextBlock Text="联系方式（选填）" FontWeight="SemiBold" Margin="0,12,0,5"/>
+            <TextBox x:Name="ContactBox" Style="{StaticResource InputBox}" MaxLength="200"/>
+            <CheckBox x:Name="AttachLogsBox" Style="{StaticResource ThemeCheckBox}" Content="附加运行日志"
+                      IsChecked="True" Margin="0,14,0,0"/>
+            <TextBlock Text="提交反馈时，仅在你勾选后上传运行日志。日志会在上传前自动隐藏常见的账号令牌、Cookie 和本机用户名等敏感信息。"
+                       Foreground="{DynamicResource Text.Muted}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+            <WrapPanel Margin="0,14,0,0">
+                <Button x:Name="PreviewButton" Content="查看将提交的日志" Style="{StaticResource SecondaryButton}"
+                        Padding="14,0" Margin="0,0,8,0" Click="OnPreviewLogs"/>
+                <Button x:Name="SubmitButton" Content="提交反馈" Style="{StaticResource PrimaryButton}"
+                        Padding="17,0" Click="OnSubmit"/>
+            </WrapPanel>
+
+            <StackPanel x:Name="ProgressPanel" Margin="0,16,0,0" Visibility="Collapsed">
+                <TextBlock x:Name="ProgressStatusText" Text="正在上传日志……"/>
+                <ProgressBar x:Name="UploadProgressBar" Style="{StaticResource ThemeProgressBar}"
+                             Minimum="0" Maximum="100" Height="7" Margin="0,9,0,0"/>
+                <DockPanel Margin="0,7,0,0">
+                    <TextBlock x:Name="UploadBytesText" DockPanel.Dock="Right" Foreground="{DynamicResource Text.Muted}"/>
+                    <TextBlock x:Name="UploadPercentText" Foreground="{DynamicResource Text.Secondary}"/>
+                </DockPanel>
+                <Button x:Name="CancelUploadButton" Content="取消上传" Style="{StaticResource SecondaryButton}"
+                        HorizontalAlignment="Left" Padding="14,0" Margin="0,10,0,0" Click="OnCancelUpload"/>
+            </StackPanel>
+
+            <StackPanel x:Name="ResultPanel" Margin="0,16,0,0" Visibility="Collapsed">
+                <TextBlock x:Name="ResultTitleText" FontWeight="SemiBold"/>
+                <TextBlock x:Name="ResultDetailText" Foreground="{DynamicResource Text.Secondary}"
+                           TextWrapping="Wrap" Margin="0,5,0,0"/>
+                <WrapPanel Margin="0,10,0,0">
+                    <Button x:Name="CopyReportButton" Content="复制反馈编号" Style="{StaticResource SecondaryButton}"
+                            Padding="14,0" Margin="0,0,8,0" Visibility="Collapsed" Click="OnCopyReportId"/>
+                    <Button x:Name="RetryButton" Content="重试" Style="{StaticResource PrimaryButton}"
+                            Padding="14,0" Margin="0,0,8,0" Visibility="Collapsed" Click="OnSubmit"/>
+                    <Button x:Name="CopyQqButton" Content="复制QQ群号" Style="{StaticResource SecondaryButton}"
+                            Padding="14,0" Visibility="Collapsed" Click="OnCopyQqGroup"/>
+                </WrapPanel>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

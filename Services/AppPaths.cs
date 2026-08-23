@@ -12,6 +12,7 @@ public sealed class AppPaths
     public string SettingsFile => Path.Combine(Root, "settings.json");
     public string AccountsDir => Path.Combine(Root, "accounts");
     public string LogsDir => Path.Combine(Root, "logs");
+    public string AnnouncementsDir => Path.Combine(Root, "announcements");
     public string DropsDir => Path.Combine(Root, "drops");
     public string SoopDropsDir => Path.Combine(DropsDir, "soop");
     public string YouTubeDropsDir => Path.Combine(DropsDir, "youtube");
@@ -37,6 +38,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(AccountsDir);
         Directory.CreateDirectory(LogsDir);
+        Directory.CreateDirectory(AnnouncementsDir);
         Directory.CreateDirectory(SoopDropsDir);
         Directory.CreateDirectory(YouTubeDropsDir);
         Directory.CreateDirectory(TwitchDropsDir);

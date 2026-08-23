@@ -1,0 +1,16 @@
+<Window x:Class="CloudLightBlizzard.Views.UploadStalledWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="上传无响应" Width="430" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource App.Background}" Foreground="{DynamicResource Text.Primary}">
+    <StackPanel Margin="24">
+        <TextBlock Text="反馈上传长时间无响应。" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock Text="网络可能暂时较慢。你可以继续等待，或取消本次上传。"
+                   TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,9,0,20"/>
+        <WrapPanel HorizontalAlignment="Right">
+            <Button Content="继续等待" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,0" Click="OnWait"/>
+            <Button Content="取消上传" Style="{StaticResource PrimaryButton}" Padding="15,0" Click="OnCancel"/>
+        </WrapPanel>
+    </StackPanel>
+</Window>

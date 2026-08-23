@@ -49,6 +49,15 @@ public enum CandidateBackupStatus { Available, Unavailable }
 public enum CandidateVerificationOutcome { VerifiedUsable, VerificationRejected, FileIssueSkipped }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionVerificationLevel { RoundTrip, DoubleRoundTrip }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum Step4VerificationOutcome { DoubleVerified, Step4Rejected, Step4Unverified }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RegionFileCheckKind { PermanentNormal, PermanentMissing, PermanentChanged, ShouldBeAbsent, TemporaryCandidate, Unreadable }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RegionSwitchOutcome { Success, PartialSuccess, Failed }
 
 public sealed class RegionFileEntry
@@ -85,6 +94,9 @@ public sealed class RegionDifference
     public RegionDifferenceKind Kind { get; set; }
     public RegionFileEntry? China { get; set; }
     public RegionFileEntry? International { get; set; }
+    // null 表示旧数据，按原有语义视为可用；false 只由逐侧重设显式写入。
+    public bool? ChinaAvailable { get; set; }
+    public bool? InternationalAvailable { get; set; }
 }
 
 public sealed class OverwatchRegionGeneration
@@ -105,6 +117,27 @@ public sealed class OverwatchRegionGeneration
     public bool InternationalBackupComplete { get; set; }
     public List<RegionDifference> Differences { get; set; } = new();
     public RegionVerificationSummary? VerificationSummary { get; set; }
+    public RegionVerificationLevel VerificationLevel { get; set; } = RegionVerificationLevel.RoundTrip;
+    public Step4VerificationSummary? Step4Summary { get; set; }
+    public bool ChinaReferenceComplete { get; set; }
+    public bool InternationalReferenceComplete { get; set; }
+    public List<RegionFileIssue> ResetWarnings { get; set; } = new();
+}
+
+public sealed class Step4VerificationSummary
+{
+    public DateTime CompletedAtUtc { get; set; } = DateTime.UtcNow;
+    public int DoubleVerifiedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int UnverifiedCount { get; set; }
+    public List<Step4EntryResult> Results { get; set; } = new();
+}
+
+public sealed class Step4EntryResult
+{
+    public string RelativePath { get; set; } = "";
+    public Step4VerificationOutcome Outcome { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 public sealed class RegionVerificationSummary
@@ -207,6 +240,49 @@ public sealed class RegionSnapshotStatus
     public int BackupFileIssueCount { get; set; }
     public bool HasWarnings { get; set; }
     public IReadOnlyList<RegionFileIssue> FileIssues { get; set; } = Array.Empty<RegionFileIssue>();
+    public RegionVerificationLevel VerificationLevel { get; set; } = RegionVerificationLevel.RoundTrip;
+    public bool Step4Pending { get; set; }
+    public OverwatchRegion? Step4Region { get; set; }
+    public bool CanRunStep4Now { get; set; }
+    public bool ChinaReferenceAvailable { get; set; }
+    public bool InternationalReferenceAvailable { get; set; }
+    public bool PossibleGameUpdate { get; set; }
 }
 
 public sealed record RegionScanResult(OverwatchRegionManifest Manifest, IReadOnlyList<RegionFileIssue> Issues);
+
+public sealed class RegionFileCheckItem
+{
+    public string RelativePath { get; set; } = "";
+    public RegionFileCheckKind Kind { get; set; }
+    public long OriginalSize { get; set; }
+    public long CurrentSize { get; set; }
+    public string Reason { get; set; } = "";
+}
+
+public sealed class RegionFileCheckResult
+{
+    public OverwatchRegion Region { get; set; }
+    public DateTime CheckedAtUtc { get; set; } = DateTime.UtcNow;
+    public bool HasReferenceManifest { get; set; }
+    public bool ReferenceManifestComplete { get; set; }
+    public IReadOnlyList<RegionFileCheckItem> Items { get; set; } = Array.Empty<RegionFileCheckItem>();
+    public int NormalCount => Items.Count(item => item.Kind == RegionFileCheckKind.PermanentNormal);
+    public int MissingCount => Items.Count(item => item.Kind == RegionFileCheckKind.PermanentMissing);
+    public long MissingBytes => Items.Where(item => item.Kind == RegionFileCheckKind.PermanentMissing).Sum(item => item.OriginalSize);
+    public int ChangedCount => Items.Count(item => item.Kind == RegionFileCheckKind.PermanentChanged);
+    public long ChangedBytes => Items.Where(item => item.Kind == RegionFileCheckKind.PermanentChanged).Sum(item => Math.Max(item.OriginalSize, item.CurrentSize));
+    public int ShouldBeAbsentCount => Items.Count(item => item.Kind == RegionFileCheckKind.ShouldBeAbsent);
+    public int TemporaryCount => Items.Count(item => item.Kind == RegionFileCheckKind.TemporaryCandidate);
+    public long TemporaryBytes => Items.Where(item => item.Kind == RegionFileCheckKind.TemporaryCandidate).Sum(item => item.CurrentSize);
+    public int UnreadableCount => Items.Count(item => item.Kind == RegionFileCheckKind.Unreadable);
+}
+
+public sealed record TemporaryCleanupResult(int Deleted, long DeletedBytes, int Skipped,
+    IReadOnlyList<RegionFileIssue> Issues);
+
+public sealed record Step4VerificationResult(string GenerationId, int DoubleVerified, int Rejected,
+    int Unverified);
+
+public sealed record RegionResetResult(string GenerationId, OverwatchRegion Region, int Updated,
+    int Degraded, int PotentialDifferences, IReadOnlyList<RegionFileIssue> Warnings);

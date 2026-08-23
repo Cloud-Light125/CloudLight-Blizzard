@@ -66,8 +66,41 @@ class HeadlessGuiContractTests(unittest.TestCase):
                 self.assertTrue(worker.ssl_check({})["contextCreated"])
                 self.assertEqual(
                     worker._friendly_runtime_error(RuntimeError("SSL is not supported.")),
-                    "Twitch 网络初始化失败，请检查代理设置或 Twitch 运行组件。",
+                    "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
                 )
+            finally:
+                worker._loop.call_soon_threadsafe(worker._loop.stop)
+                worker._loop_thread.join(timeout=5)
+                for handler in list(worker.logger.handlers):
+                    worker.logger.removeHandler(handler)
+                    logging.getLogger("TwitchDrops").removeHandler(handler)
+                    handler.close()
+
+    def test_clear_auth_removes_only_credentials_and_resets_pending_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = TwitchWorker(root / "data", root / "twitch.log")
+            try:
+                worker.cookies_path.write_bytes(b"saved-auth-cookie")
+                worker._settings.priority = ["Overwatch 2"]
+                worker._settings.exclude = {"Excluded Game"}
+                worker._settings.save(force=True)
+                worker._login_state = "checking"
+                worker._login_error = "connection timeout"
+                worker._login_transition.clear()
+                worker._ready_transition.clear()
+
+                result = worker.clear_auth({})
+
+                self.assertTrue(result["credentialsCleared"])
+                self.assertFalse(worker.cookies_path.exists())
+                self.assertTrue(worker.settings_path.exists())
+                self.assertEqual(worker._settings.priority, ["Overwatch 2"])
+                self.assertEqual(worker._settings.exclude, {"Excluded Game"})
+                self.assertEqual(worker._login_state, "logged_out")
+                self.assertEqual(worker._login_error, "")
+                self.assertTrue(worker._login_transition.is_set())
+                self.assertTrue(worker._ready_transition.is_set())
             finally:
                 worker._loop.call_soon_threadsafe(worker._loop.stop)
                 worker._loop_thread.join(timeout=5)

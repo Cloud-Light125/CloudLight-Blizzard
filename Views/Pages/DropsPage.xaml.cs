@@ -761,6 +761,11 @@ public partial class DropsPage : UserControl
     private async Task LoginTwitchAsync()
     {
         if (_vm == null || !_vm.CanTwitchLogin) return;
+        if (!string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationUrl))
+        {
+            OpenTwitchAuthorizationUrl(_vm.TwitchAuthorizationUrl);
+            return;
+        }
         _vm.BeginTwitchLogin();
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "login"); await LoadPlatformAsync(DropsPlatform.Twitch); }
         catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
@@ -769,8 +774,13 @@ public partial class DropsPage : UserControl
     private void OnOpenTwitchAuthorization(object sender, RoutedEventArgs e)
     {
         if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationUrl)) return;
-        try { Process.Start(new ProcessStartInfo { FileName = _vm.TwitchAuthorizationUrl, UseShellExecute = true }); }
-        catch { _ = CopyLoginUrlAsync(_vm.TwitchAuthorizationUrl); }
+        OpenTwitchAuthorizationUrl(_vm.TwitchAuthorizationUrl);
+    }
+
+    private void OpenTwitchAuthorizationUrl(string url)
+    {
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch { _ = CopyLoginUrlAsync(url); }
     }
 
     private async void OnCopyTwitchAuthorizationCode(object sender, RoutedEventArgs e)
@@ -791,10 +801,41 @@ public partial class DropsPage : UserControl
 
     private async void OnTwitchLogout(object sender, RoutedEventArgs e)
     {
-        if (_vm == null || MessageBox.Show("退出 Twitch 并删除本地登录信息？", "退出登录", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        _vm.LogoutTwitchByUser();
-        try { await _vm.RequestAsync(DropsPlatform.Twitch, "logout"); await LoadPlatformAsync(DropsPlatform.Twitch); }
-        catch (Exception ex) { ShowError(ex, "Twitch 退出登录失败"); }
+        if (_vm == null || !_vm.CanClearTwitchLogin ||
+            MessageBox.Show("清除 Twitch 本地登录信息并停止当前登录/连接尝试？\n\n优先游戏、排除游戏、自动启动、代理和其它界面设置都会保留。",
+                "清除 Twitch 登录信息", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        _vm.BeginClearTwitchLogin();
+        try
+        {
+            var state = await _vm.ClearTwitchAuthenticationAsync();
+            _vm.CompleteClearTwitchLogin(state);
+            PopulateSettings(DropsPlatform.Twitch, state);
+        }
+        catch (Exception ex)
+        {
+            _vm.FailClearTwitchLogin(ex.Message);
+            ShowError(ex, "清除 Twitch 登录信息失败");
+        }
+    }
+
+    private async void OnTwitchRetry(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || _vm.IsTwitchLoginInProgress || _vm.IsClearingTwitchLogin) return;
+        try
+        {
+            await _vm.RequestAsync(DropsPlatform.Twitch, "ssl_check");
+            if (_vm.IsTwitchLoggedIn)
+            {
+                _vm.BeginTwitchStart(automatic: false);
+                var state = await _vm.RequestAsync(DropsPlatform.Twitch, "start", new { automatic = false });
+                _vm.ApplyState(DropsPlatform.Twitch, state);
+            }
+            else
+            {
+                await LoginTwitchAsync();
+            }
+        }
+        catch (Exception ex) { _vm.SetTwitchFailure(ex.Message); }
     }
 
     private async void OnTwitchReload(object sender, RoutedEventArgs e)

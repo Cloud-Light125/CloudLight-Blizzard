@@ -5,7 +5,6 @@ import importlib
 import json
 import logging
 import os
-import ssl
 import sys
 import threading
 import time
@@ -14,7 +13,13 @@ from types import SimpleNamespace
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from Shared.protocol import WorkerBase, event, run_worker
+from Shared.protocol import (
+    RuntimeDependencyError,
+    WorkerBase,
+    event,
+    is_ssl_runtime_error,
+    run_worker,
+)
 
 
 class TwitchWorker(WorkerBase):
@@ -42,7 +47,10 @@ class TwitchWorker(WorkerBase):
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="twitch-asyncio", daemon=True)
         self._loop_thread.start()
-        self._load_core()
+        if self.runtime_available:
+            self._load_core()
+        else:
+            self._core_error = self.runtime_error.public_message if self.runtime_error else ""
         self.commands.update({
             "get_campaigns": self.get_campaigns,
             "get_channels": self.get_channels,
@@ -52,8 +60,8 @@ class TwitchWorker(WorkerBase):
             "get_games": self.get_games,
             "get_languages": self.get_languages,
             "auto_start": self.auto_start,
-            "ssl_check": self.ssl_check,
             "network_check": self.network_check,
+            "clear_auth": self.clear_auth,
         })
         self._migrate_legacy_proxy()
 
@@ -118,6 +126,7 @@ class TwitchWorker(WorkerBase):
             self.logger.exception(self._core_error)
 
     def _require_core(self) -> None:
+        self.require_runtime()
         if not self._core:
             raise RuntimeError(self._core_error or "Twitch 业务核心不可用")
 
@@ -139,18 +148,47 @@ class TwitchWorker(WorkerBase):
 
     @staticmethod
     def _friendly_runtime_error(exc: BaseException) -> str:
-        message = str(exc)
-        if "SSL is not supported" in message or "ssl" in message.lower() and "supported" in message.lower():
-            return "Twitch 网络初始化失败，请检查代理设置或 Twitch 运行组件。"
-        return "Twitch 掉宝服务启动失败，请检查网络或运行日志。"
+        return TwitchWorker._connection_error(exc)[2]
 
     @staticmethod
     def _runtime_error_category(exc: BaseException) -> str:
-        if exc.__class__.__name__ in {"LoginException", "CaptchaRequired"}:
-            return "authentication"
-        if getattr(exc, "status", None) == 401:
-            return "authentication"
-        return "network"
+        return TwitchWorker._connection_error(exc)[0]
+
+    @staticmethod
+    def _connection_error(exc: BaseException) -> tuple[str, str, str, bool]:
+        name = exc.__class__.__name__.casefold()
+        message = str(exc).casefold()
+        if is_ssl_runtime_error(exc):
+            return (
+                "runtime_dependency", "ssl_runtime_unavailable",
+                "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
+                False,
+            )
+        if "certificate_verify_failed" in message or "certificate" in name:
+            return "ssl_certificate", "certificate_verify_failed", "Twitch HTTPS 证书验证失败。", False
+        if exc.__class__.__name__ in {"LoginException", "CaptchaRequired"} or getattr(exc, "status", None) == 401:
+            return "authentication", "authentication_expired", "Twitch 登录信息已失效，请重新登录。", False
+        if "timeout" in name or isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+            return "network", "connection_timeout", "Twitch 连接失败：连接超时。", True
+        if "gaierror" in name or any(marker in message for marker in ("name or service not known", "getaddrinfo failed", "nodename nor servname")):
+            return "network", "dns_failure", "Twitch 连接失败：域名解析失败。", True
+        if "proxy" in name or "proxy" in message:
+            return "proxy", "proxy_failure", "Twitch 代理连接失败。", True
+        return "network", "network_unavailable", "Twitch 连接失败：无法连接服务器。", True
+
+    def _publish_connection_error(self, exc: BaseException, phase: str) -> None:
+        category, code, message, retryable = self._connection_error(exc)
+        if category == "runtime_dependency":
+            runtime_error = RuntimeDependencyError("ssl", code, message, str(exc))
+            self.runtime_error = runtime_error
+            self._report_runtime_error(runtime_error)
+        event("error", {
+            "message": message,
+            "phase": phase,
+            "category": category,
+            "code": code,
+            "retryable": retryable,
+        })
 
     async def _start_client(self) -> None:
         self._set_connection_state("connecting")
@@ -171,17 +209,19 @@ class TwitchWorker(WorkerBase):
         try:
             await client.run()
         except Exception as exc:
-            self.logger.exception("Twitch 掉宝服务运行异常")
-            runtime_error = self._friendly_runtime_error(exc)
-            category = self._runtime_error_category(exc)
+            category, _, runtime_error, retryable = self._connection_error(exc)
+            if category == "runtime_dependency":
+                self.logger.debug("Twitch HTTPS 初始化被本地 SSL runtime 错误终止")
+            else:
+                self.logger.exception("Twitch 掉宝服务运行异常")
             if category == "authentication":
-                runtime_error = "Twitch 登录已失效，请重新登录。"
                 self._authenticated_user_id = None
                 self._set_login_state("needs_login", runtime_error, runtime_error)
             else:
-                self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                if retryable:
+                    self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
                 self._set_login_state("failed", runtime_error, runtime_error)
-            event("error", {"message": runtime_error, "phase": "startup", "category": category})
+            self._publish_connection_error(exc, "startup")
             self._login_transition.set()
             self._ready_transition.set()
         finally:
@@ -232,17 +272,19 @@ class TwitchWorker(WorkerBase):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self.logger.exception("Twitch 登录失败")
-            runtime_error = self._friendly_runtime_error(exc)
-            category = self._runtime_error_category(exc)
+            category, _, runtime_error, retryable = self._connection_error(exc)
+            if category == "runtime_dependency":
+                self.logger.debug("Twitch 登录被本地 SSL runtime 错误终止")
+            else:
+                self.logger.exception("Twitch 登录失败")
             if category == "authentication":
-                runtime_error = "Twitch 登录已失效，请重新登录。"
                 self._authenticated_user_id = None
                 self._set_login_state("needs_login", runtime_error, runtime_error)
             else:
-                self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
+                if retryable:
+                    self.logger.warning("Twitch 暂时无法连接，将在 60 秒后重试。")
                 self._set_login_state("failed", runtime_error, runtime_error)
-            event("error", {"message": runtime_error, "phase": "login", "category": category})
+            self._publish_connection_error(exc, "login")
         finally:
             try:
                 await self._shutdown_client_safely(client)
@@ -312,6 +354,7 @@ class TwitchWorker(WorkerBase):
             "connectionState": str(
                 getattr(self._client, "_cloudlight_connection_phase", "unconnected")
             ),
+            "runtime": self.runtime_state(),
         }
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -401,22 +444,26 @@ class TwitchWorker(WorkerBase):
         return refreshed
 
     def logout(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.clear_auth(payload)
+
+    def clear_auth(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._automatic_start = False
+        self._login_transition.set()
+        self._ready_transition.set()
         self.stop({})
         self.cookies_path.unlink(missing_ok=True)
         self._authenticated_user_id = None
+        self._login_error = ""
         self._set_login_state("logged_out", "尚未登录 Twitch")
-        return {"loggedOut": True}
-
-    def ssl_check(self, payload: dict[str, Any]) -> dict[str, Any]:
-        context = ssl.create_default_context()
-        return {
-            "contextCreated": isinstance(context, ssl.SSLContext),
-            "openssl": ssl.OPENSSL_VERSION,
-        }
+        self._set_connection_state("unconnected")
+        self.status("未登录", "Twitch 登录信息已清除")
+        return {"loggedOut": True, "credentialsCleared": True}
 
     def network_check(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Build/runtime diagnostic for HTTPS over the configured HTTP proxy."""
+        self.require_runtime()
         import aiohttp
+        import ssl
 
         url = str(payload.get("url", "https://www.twitch.tv")).strip()
 

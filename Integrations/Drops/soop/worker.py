@@ -57,7 +57,10 @@ class SoopWorker(WorkerBase):
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="soop-asyncio", daemon=True)
         self._loop_thread.start()
-        self._load_core()
+        if self.runtime_available:
+            self._load_core()
+        else:
+            self._core_error = self.runtime_error.public_message if self.runtime_error else ""
         self.commands.update({
             "add_account": self.add_account,
             "delete_account": self.delete_account,
@@ -136,6 +139,7 @@ class SoopWorker(WorkerBase):
             self.logger.exception(self._core_error)
 
     def _require_core(self) -> None:
+        self.require_runtime()
         if not self._core:
             raise RuntimeError(self._core_error or "SOOP 功能组件不可用")
 
@@ -265,6 +269,7 @@ class SoopWorker(WorkerBase):
             "coreAvailable": bool(self._core),
             "coreError": self._core_error,
             "proxy": self.proxy,
+            "runtime": self.runtime_state(),
         }
 
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:

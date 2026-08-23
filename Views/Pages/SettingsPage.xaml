@@ -1,6 +1,7 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:pages="clr-namespace:CloudLightBlizzard.Views.Pages"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
@@ -31,9 +32,9 @@
             <Border x:Name="NetworkProxyCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="网络代理" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="SOOP、YouTube、Twitch 共用这一套代理；第一阶段支持 HTTP / HTTPS 代理。"
+                    <TextBlock Text="公告、反馈、软件更新与 SOOP、YouTube、Twitch 共用这一套 HTTP / HTTPS 代理。"
                                Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,13"/>
-                    <CheckBox x:Name="EnableProxyBox" Style="{StaticResource ThemeCheckBox}" Content="启用掉宝网络代理"
+                    <CheckBox x:Name="EnableProxyBox" Style="{StaticResource ThemeCheckBox}" Content="启用网络代理"
                               Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged"/>
                     <TextBlock Text="代理地址" FontWeight="SemiBold" Margin="0,12,0,5"/>
                     <TextBox x:Name="ProxyUrlBox" Style="{StaticResource InputBox}" ToolTip="例如 http://127.0.0.1:7897"
@@ -45,6 +46,19 @@
                             Padding="15,0" Margin="0,12,0,0" Click="OnSaveProxy"/>
                 </StackPanel>
             </Border>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="公告提醒" Style="{StaticResource SectionTitle}"/>
+                    <CheckBox x:Name="AnnouncementBadgeBox" Style="{StaticResource ThemeCheckBox}"
+                              Content="有新公告时显示小蓝点" Margin="0,14,0,0"
+                              Checked="OnAnnouncementBadgeChanged" Unchecked="OnAnnouncementBadgeChanged"/>
+                    <TextBlock Text="关闭后仍会获取公告，铃铛和公告列表也会保留。"
+                               Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <pages:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0"/>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                 <StackPanel>

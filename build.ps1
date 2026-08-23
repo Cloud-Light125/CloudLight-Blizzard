@@ -19,6 +19,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'dotnet publish failed.'
     }
+    & (Join-Path $root 'Integrations\Drops\test-worker-ssl.ps1') -Root (Join-Path $root 'publish\_internal\drops')
     Remove-Item publish\*.pdb -ErrorAction SilentlyContinue
 
     $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'

@@ -16,7 +16,15 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from Shared.protocol import WorkerBase, atomic_write_json, event, read_json, run_worker
+from Shared.protocol import (
+    RuntimeDependencyError,
+    WorkerBase,
+    atomic_write_json,
+    event,
+    is_ssl_runtime_error,
+    read_json,
+    run_worker,
+)
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -207,6 +215,7 @@ class YouTubeWorker(WorkerBase):
             "config": self.config,
             "history": self._history_snapshot(),
             "proxy": self.proxy,
+            "runtime": self.runtime_state(),
         }
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -237,6 +246,7 @@ class YouTubeWorker(WorkerBase):
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._thread and self._thread.is_alive():
             return self._state()
+        self.require_runtime()
         self._validate_runtime_dependencies()
         self.config = self._load_config()
         if self.config["mode"] == "manual":
@@ -255,7 +265,16 @@ class YouTubeWorker(WorkerBase):
         try:
             for module in ("yt_dlp", "requests", "websocket"):
                 importlib.import_module(module)
-        except ModuleNotFoundError as exc:
+        except (ImportError, ModuleNotFoundError) as exc:
+            if is_ssl_runtime_error(exc):
+                runtime_error = RuntimeDependencyError(
+                    "ssl", "ssl_runtime_unavailable",
+                    "Python SSL 组件无法加载，无法访问 YouTube。缺少或无法加载 SSL 运行库，请重新安装 CloudLight Blizzard。",
+                    str(exc),
+                )
+                self.runtime_error = runtime_error
+                self._report_runtime_error(runtime_error)
+                raise runtime_error from exc
             self.logger.exception("YouTube 观看服务缺少运行组件")
             raise RuntimeError("YouTube 观看服务组件不完整，请重新构建或安装后台组件。") from exc
 
@@ -432,6 +451,11 @@ class YouTubeWorker(WorkerBase):
                     else:
                         self.status("等待直播", f"{enabled_channels} 个频道")
                     self._stop.wait(self.config["check_interval"])
+        except RuntimeDependencyError as exc:
+            self.running = False
+            self._stop.set()
+            self.status("后台组件异常", "Python SSL 组件无法加载，无法访问 YouTube。")
+            self._report_runtime_error(exc)
         except Exception as exc:
             self.logger.exception("YouTube 观看服务运行异常")
             self.running = False
@@ -518,6 +542,15 @@ class YouTubeWorker(WorkerBase):
                 }, False, None)
             return None, True, None
         except Exception as exc:
+            if is_ssl_runtime_error(exc):
+                runtime_error = RuntimeDependencyError(
+                    "ssl", "ssl_runtime_unavailable",
+                    "Python SSL 组件无法加载，无法访问 YouTube。缺少或无法加载 SSL 运行库，请重新安装 CloudLight Blizzard。",
+                    str(exc),
+                )
+                self.runtime_error = runtime_error
+                self._report_runtime_error(runtime_error)
+                raise runtime_error from exc
             if self._is_no_live_error(exc):
                 return None, True, None
             self.logger.debug("yt-dlp detection failed for %s: %s", channel.get("name", ""), exc)
@@ -541,6 +574,15 @@ class YouTubeWorker(WorkerBase):
             found = ids[-1]
             return ({"title": "正在直播", "channel": channel.get("name", ""), "url": f"https://www.youtube.com/watch?v={found}", "videoId": found, "source": "public-page"}, True)
         except Exception as exc:
+            if is_ssl_runtime_error(exc):
+                runtime_error = RuntimeDependencyError(
+                    "ssl", "ssl_runtime_unavailable",
+                    "Python SSL 组件无法加载，无法访问 YouTube。缺少或无法加载 SSL 运行库，请重新安装 CloudLight Blizzard。",
+                    str(exc),
+                )
+                self.runtime_error = runtime_error
+                self._report_runtime_error(runtime_error)
+                raise runtime_error from exc
             self.logger.debug("YouTube public page detection failed for %s: %s", channel.get("name", ""), exc)
             return None, False
 

@@ -11,6 +11,7 @@ namespace CloudLightBlizzard.Views.Pages;
 
 public partial class SettingsPage : UserControl
 {
+    public event EventHandler? AnnouncementBadgeSettingChanged;
     private MainViewModel? _vm;
     private bool _loading = true;
     public SettingsPage() => InitializeComponent();
@@ -21,7 +22,9 @@ public partial class SettingsPage : UserControl
         EnableProxyBox.IsChecked = vm.Settings.EnableProxy;
         ProxyUrlBox.Text = vm.Settings.ProxyUrl;
         FallbackDirectBox.IsChecked = vm.Settings.FallbackDirect;
-        ProxyNoticeText.Text = "Chrome / Brave 正在观看时，代理变更将在下次重新启动观看窗口后生效；127.0.0.1 DevTools 始终直连。";
+        AnnouncementBadgeBox.IsChecked = vm.Settings.ShowAnnouncementBadge;
+        FeedbackPanel.Initialize(vm.Settings, vm.FeedbackService);
+        ProxyNoticeText.Text = "公告、反馈和更新会在下一次请求时读取当前代理；Chrome / Brave 正在观看时需重新启动观看窗口后生效。";
         DataPathText.Text = AppPaths.Current.Root;
         CacheText.Text = "打开设置页后统计";
         IsVisibleChanged += async (_, _) =>
@@ -63,6 +66,13 @@ public partial class SettingsPage : UserControl
         CacheText.Text = bytes >= 1024 * 1024 ? $"当前缓存约 {bytes / 1024d / 1024:0.0} MB" : $"当前缓存约 {bytes / 1024d:0.0} KB";
     }
     private void OnSettingChanged(object sender, RoutedEventArgs e) => Save();
+    private void OnAnnouncementBadgeChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _vm == null) return;
+        _vm.Settings.ShowAnnouncementBadge = AnnouncementBadgeBox.IsChecked == true;
+        _vm.Settings.Save();
+        AnnouncementBadgeSettingChanged?.Invoke(this, EventArgs.Empty);
+    }
     private void OnThemeChanged(object sender, RoutedEventArgs e) { if (_loading || _vm == null) return; _vm.Settings.DarkMode = DarkModeBox.IsChecked == true; _vm.Settings.Save(); ThemeManager.Apply(_vm.Settings.DarkMode); }
     private void Save()
     {
@@ -79,7 +89,7 @@ public partial class SettingsPage : UserControl
         ProxyNoticeText.Text = EnableProxyBox.IsChecked == true &&
                                !ProxyValidator.TryNormalize(ProxyUrlBox.Text, out _, out var error)
             ? error
-            : "代理设置只对掉宝模块生效；本机 Chrome DevTools 始终直连。";
+            : "代理设置用于公告、反馈、软件更新和掉宝网络请求；本机 Chrome DevTools 始终直连。";
     }
 
     private async void OnSaveProxy(object sender, RoutedEventArgs e)
@@ -101,8 +111,8 @@ public partial class SettingsPage : UserControl
         _vm.DropsHost.ConfigureProxy(settings);
         await _vm.DropsHost.ApplyProxyAsync(settings);
         ProxyNoticeText.Text = enabled
-            ? "代理已应用。正在运行的 YouTube 浏览器需重新启动观看窗口后生效。"
-            : "掉宝模块代理已关闭。";
+            ? "代理已应用；公告、反馈和更新将在下一次请求时使用。正在运行的 YouTube 浏览器需重新启动观看窗口后生效。"
+            : "网络代理已关闭，下一次云服务请求将使用直连。";
     }
 
     private async void OnCheckUpdate(object sender, RoutedEventArgs e)

@@ -131,7 +131,25 @@ public enum TwitchConnectionStage
     RetryWaiting,
     AuthenticationExpired,
     NetworkFailed,
+    ProxyUnavailable,
+    SslCertificateError,
+    SslRuntimeError,
+    WorkerError,
     Stopped,
+}
+
+public enum TwitchConnectionFailureKind
+{
+    None,
+    Timeout,
+    Dns,
+    Network,
+    Proxy,
+    ProxyAndDirect,
+    SslCertificate,
+    SslRuntime,
+    Authentication,
+    Worker,
 }
 
 public sealed class DropsPlatformViewModel : ObservableObject
@@ -172,12 +190,22 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private TwitchCampaignScope _twitchCampaignScope = TwitchCampaignScope.Available;
     private bool _twitchCampaignScopeInitialized;
     private bool _twitchLoggedIn;
+    public bool IsTwitchLoggedIn => _twitchLoggedIn;
     public Visibility TwitchLoginVisibility => _twitchLoggedIn ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility TwitchLogoutVisibility => _twitchLoggedIn ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TwitchLogoutVisibility => Visibility.Visible;
     private string _twitchAuthState = "logged_out";
     public string TwitchAuthState => _twitchAuthState;
     private string _twitchAuthorizationUrl = "";
-    public string TwitchAuthorizationUrl { get => _twitchAuthorizationUrl; private set => Set(ref _twitchAuthorizationUrl, value); }
+    public string TwitchAuthorizationUrl
+    {
+        get => _twitchAuthorizationUrl;
+        private set
+        {
+            if (_twitchAuthorizationUrl == value) return;
+            Set(ref _twitchAuthorizationUrl, value);
+            Raise(nameof(TwitchLoginButtonText));
+        }
+    }
     private string _twitchAuthorizationCode = "";
     public string TwitchAuthorizationCode { get => _twitchAuthorizationCode; private set => Set(ref _twitchAuthorizationCode, value); }
     public Visibility TwitchAuthorizationVisibility => _twitchAuthState == "authorization_required"
@@ -190,6 +218,23 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public DateTimeOffset? LastTwitchConnectedAt => _lastTwitchConnectedAt;
     private string _twitchLastError = "";
     public string TwitchLastError => _twitchLastError;
+    private TwitchConnectionFailureKind _twitchLastFailureKind;
+    public TwitchConnectionFailureKind TwitchLastConnectionFailureKind => _twitchLastFailureKind;
+    private bool _twitchRetryBlocked;
+    private bool _isClearingTwitchLogin;
+    public bool IsClearingTwitchLogin
+    {
+        get => _isClearingTwitchLogin;
+        private set
+        {
+            if (_isClearingTwitchLogin == value) return;
+            Set(ref _isClearingTwitchLogin, value);
+            Raise(nameof(CanClearTwitchLogin));
+            Raise(nameof(CanTwitchLogin));
+            Raise(nameof(TwitchLoginButtonText));
+        }
+    }
+    public bool CanClearTwitchLogin => !IsClearingTwitchLogin;
     private bool _isTwitchLoginInProgress;
     public bool IsTwitchLoginInProgress
     {
@@ -202,10 +247,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(TwitchLoginButtonText));
         }
     }
-    public bool CanTwitchLogin => !IsTwitchLoginInProgress &&
-                                  _twitchAuthState != "authorization_required";
-    public string TwitchLoginButtonText => IsTwitchLoginInProgress ? "正在登录…"
+    public bool CanTwitchLogin => !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !_twitchLoggedIn;
+    public string TwitchLoginButtonText => IsClearingTwitchLogin ? "正在清除…"
+        : IsTwitchLoginInProgress ? "正在登录…"
+        : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开登录页面"
         : _twitchAuthState == "needs_login" ? "重新登录" : "登录 Twitch";
+    public Visibility TwitchRetryVisibility => _twitchConnectionStage is
+        TwitchConnectionStage.NetworkFailed or TwitchConnectionStage.ProxyUnavailable or
+        TwitchConnectionStage.SslCertificateError or TwitchConnectionStage.SslRuntimeError or
+        TwitchConnectionStage.WorkerError or TwitchConnectionStage.RetryWaiting
+        ? Visibility.Visible : Visibility.Collapsed;
     private readonly TimeSpan _twitchRetryDelay;
     private readonly TimeSpan _twitchSlowThreshold;
     private readonly TimeSpan _twitchFailureThreshold;
@@ -378,6 +429,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public Task<JsonElement> StartAsync(DropsPlatform platform) => _host.StartAsync(platform);
     public Task<JsonElement> StopAsync(DropsPlatform platform) => _host.StopAsync(platform);
+    public Task<JsonElement> ClearTwitchAuthenticationAsync(CancellationToken token = default) =>
+        _host.ClearTwitchAuthenticationAsync(token);
 
     public void BeginTwitchRefresh()
     {
@@ -394,10 +447,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchUserStopped = false;
         _twitchUserLoggedOut = false;
         _twitchRetryAttempt = 0;
+        _twitchRetryBlocked = false;
         SetTwitchAuthState("checking");
         IsTwitchLoginInProgress = true;
         SetTwitchStage(TwitchConnectionStage.Connecting,
-            "正在连接 Twitch 服务器…", "正在启动登录流程", monitor: true);
+            "正在连接 Twitch 服务器并请求登录验证码…", "正在启动 Twitch Device Code 登录流程", monitor: true);
         UpdateTwitchQuickStart(default, false);
     }
 
@@ -437,22 +491,50 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     }
 
     public void LogoutTwitchByUser()
+        => BeginClearTwitchLogin();
+
+    public void BeginClearTwitchLogin()
     {
         _twitchUserLoggedOut = true;
         _twitchConnectionIntent = false;
         _twitchManualIntent = false;
         _twitchStartIntent = false;
-        _twitchLoggedIn = false;
+        SetTwitchLoggedIn(false);
         CancelTwitchRetry();
+        ClearTwitchFailure();
+        IsTwitchLoginInProgress = false;
+        IsClearingTwitchLogin = true;
         SetTwitchAuthState("logged_out");
         SetTwitchStage(TwitchConnectionStage.Unconnected,
-            "Twitch 尚未连接", "尚未登录 Twitch");
+            "正在清除 Twitch 登录信息…", "正在停止当前登录与连接流程");
         Raise(nameof(TwitchLoginVisibility));
         Raise(nameof(TwitchLogoutVisibility));
     }
 
+    public void CompleteClearTwitchLogin(JsonElement state)
+    {
+        IsClearingTwitchLogin = false;
+        _twitchUserLoggedOut = false;
+        _twitchRetryBlocked = false;
+        ApplyState(DropsPlatform.Twitch, state);
+        if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
+            !Bool(runtime, "available", true)) return;
+        SetTwitchAuthState("logged_out");
+        SetTwitchStage(TwitchConnectionStage.Unconnected,
+            "未登录 Twitch", "登录信息已清除，可以重新登录");
+    }
+
+    public void FailClearTwitchLogin(string message)
+    {
+        IsClearingTwitchLogin = false;
+        SetTwitchFailure(TwitchConnectionFailureKind.Worker,
+            string.IsNullOrWhiteSpace(message) ? "清除 Twitch 登录信息失败。" : message,
+            retryable: false, scheduleRetry: false);
+    }
+
     public void SetTwitchAuthorization(string url, string code, bool automatic)
     {
+        if (automatic) SetTwitchLoggedIn(false);
         TwitchAuthorizationUrl = url;
         TwitchAuthorizationCode = code;
         SetTwitchAuthState(automatic ? "needs_login" : "authorization_required", clearAuthorization: false);
@@ -467,40 +549,182 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void SetTwitchFailure(string message)
     {
-        SetTwitchAuthState("failed");
-        Twitch.Running = false;
-        IsTwitchLoginInProgress = false;
-        _twitchLastError = string.IsNullOrWhiteSpace(message)
-            ? "Twitch 掉宝服务启动失败，请查看运行日志。" : message;
-        Raise(nameof(TwitchLastError));
-        SetTwitchStage(TwitchConnectionStage.NetworkFailed,
-            "无法连接 Twitch", "请检查网络或代理设置。");
-        ScheduleTwitchRetry(showWaiting: true);
-        UpdateTwitchQuickStart(default, false);
+        var kind = ClassifyTwitchFailure("", message);
+        SetTwitchFailure(kind, FriendlyTwitchFailure(kind, message),
+            retryable: kind is not TwitchConnectionFailureKind.SslRuntime and
+                not TwitchConnectionFailureKind.Authentication,
+            scheduleRetry: true);
     }
 
     internal void SetTwitchTemporaryNetworkFailure(string message)
     {
+        var kind = ClassifyTwitchFailure("", message);
+        SetTwitchTemporaryFailure(kind, FriendlyTwitchFailure(kind, message));
+    }
+
+    private void SetTwitchTemporaryFailure(TwitchConnectionFailureKind kind, string message)
+    {
+        if (kind is TwitchConnectionFailureKind.SslRuntime or TwitchConnectionFailureKind.Authentication or
+            TwitchConnectionFailureKind.SslCertificate)
+        {
+            SetTwitchFailure(kind, message, retryable: false, scheduleRetry: false);
+            return;
+        }
         if (!HasTwitchRetryIntent())
         {
-            _twitchLastError = message;
-            Raise(nameof(TwitchLastError));
+            RecordTwitchFailure(kind, message, retryable: true);
             IsTwitchLoginInProgress = false;
-            SetTwitchStage(TwitchConnectionStage.NetworkFailed,
-                "无法连接 Twitch", "请检查网络或代理设置。");
+            SetTwitchStage(StageForFailure(kind), StatusForFailure(kind), message);
             return;
         }
         var alreadyWaiting = _twitchConnectionStage == TwitchConnectionStage.RetryWaiting &&
                              TwitchRetryLoopActive;
-        _twitchLastError = message;
-        Raise(nameof(TwitchLastError));
+        RecordTwitchFailure(kind, message, retryable: true);
         IsTwitchLoginInProgress = false;
         SetTwitchStage(TwitchConnectionStage.RetryWaiting,
-            "暂时无法连接 Twitch", "将于 1 分钟后自动重试，请检查网络或代理设置。");
+            "暂时无法连接 Twitch", $"{message} 将于 1 分钟后自动重试。");
         if (!alreadyWaiting)
             _host.PublishUserLog(DropsPlatform.Twitch, "warning",
                 "Twitch 连接超时，将在 60 秒后自动重试。");
         ScheduleTwitchRetry(showWaiting: false);
+    }
+
+    private void SetTwitchFailure(TwitchConnectionFailureKind kind, string message, bool retryable,
+        bool scheduleRetry)
+    {
+        RecordTwitchFailure(kind, message, retryable);
+        if (kind == TwitchConnectionFailureKind.Authentication) SetTwitchLoggedIn(false);
+        SetTwitchAuthState(kind == TwitchConnectionFailureKind.Authentication ? "needs_login" : "failed");
+        Twitch.Running = false;
+        IsTwitchLoginInProgress = false;
+        SetTwitchStage(StageForFailure(kind), StatusForFailure(kind),
+            retryable ? $"{message} 将于 1 分钟后自动重试。" : kind == TwitchConnectionFailureKind.SslRuntime
+                ? $"{message} 自动重试已停止。"
+                : message);
+        if (retryable && scheduleRetry)
+            ScheduleTwitchRetry(showWaiting: false);
+        else if (!retryable)
+            CancelTwitchRetry();
+        UpdateTwitchQuickStart(default, false);
+    }
+
+    private void RecordTwitchFailure(TwitchConnectionFailureKind kind, string message, bool retryable)
+    {
+        if (_twitchLastFailureKind != TwitchConnectionFailureKind.None &&
+            FailureSpecificity(_twitchLastFailureKind) > FailureSpecificity(kind)) return;
+        _twitchLastFailureKind = kind;
+        _twitchLastError = message;
+        _twitchRetryBlocked = !retryable;
+        Raise(nameof(TwitchLastConnectionFailureKind));
+        Raise(nameof(TwitchLastError));
+    }
+
+    private void ClearTwitchFailure()
+    {
+        _twitchLastFailureKind = TwitchConnectionFailureKind.None;
+        _twitchLastError = "";
+        _twitchRetryBlocked = false;
+        Raise(nameof(TwitchLastConnectionFailureKind));
+        Raise(nameof(TwitchLastError));
+    }
+
+    private void SetTwitchLoggedIn(bool value)
+    {
+        if (_twitchLoggedIn == value) return;
+        _twitchLoggedIn = value;
+        Raise(nameof(IsTwitchLoggedIn));
+        Raise(nameof(TwitchLoginVisibility));
+        Raise(nameof(TwitchLogoutVisibility));
+        Raise(nameof(CanTwitchLogin));
+    }
+
+    private static int FailureSpecificity(TwitchConnectionFailureKind kind) => kind switch
+    {
+        TwitchConnectionFailureKind.SslRuntime => 100,
+        TwitchConnectionFailureKind.SslCertificate => 90,
+        TwitchConnectionFailureKind.Authentication => 90,
+        TwitchConnectionFailureKind.ProxyAndDirect => 80,
+        TwitchConnectionFailureKind.Dns => 70,
+        TwitchConnectionFailureKind.Timeout => 70,
+        TwitchConnectionFailureKind.Proxy => 60,
+        TwitchConnectionFailureKind.Worker => 50,
+        TwitchConnectionFailureKind.Network => 10,
+        _ => 0,
+    };
+
+    private static TwitchConnectionFailureKind ClassifyTwitchFailure(string code, string message)
+    {
+        var value = $"{code} {message}".ToLowerInvariant();
+        if (value.Contains("ssl_runtime_unavailable") || value.Contains("_ssl") ||
+            value.Contains("ssl is not supported") || value.Contains("python ssl"))
+            return TwitchConnectionFailureKind.SslRuntime;
+        if (value.Contains("certificate_verify_failed") || value.Contains("证书"))
+            return TwitchConnectionFailureKind.SslCertificate;
+        if (value.Contains("authentication") || value.Contains("401") || value.Contains("登录信息已失效"))
+            return TwitchConnectionFailureKind.Authentication;
+        if (value.Contains("proxy_and_direct") || value.Contains("代理和直连") || value.Contains("代理失败，直连"))
+            return TwitchConnectionFailureKind.ProxyAndDirect;
+        if (value.Contains("dns") || value.Contains("域名解析") || value.Contains("getaddrinfo"))
+            return TwitchConnectionFailureKind.Dns;
+        if (value.Contains("timeout") || value.Contains("超时") || value.Contains("长时间没有进展"))
+            return TwitchConnectionFailureKind.Timeout;
+        if (value.Contains("proxy") || value.Contains("代理"))
+            return TwitchConnectionFailureKind.Proxy;
+        if (value.Contains("worker") || value.Contains("后台服务") || value.Contains("后台组件"))
+            return TwitchConnectionFailureKind.Worker;
+        return TwitchConnectionFailureKind.Network;
+    }
+
+    private static string FriendlyTwitchFailure(TwitchConnectionFailureKind kind, string fallback) => kind switch
+    {
+        TwitchConnectionFailureKind.Timeout => "Twitch 连接失败：连接超时。",
+        TwitchConnectionFailureKind.Dns => "Twitch 连接失败：域名解析失败。",
+        TwitchConnectionFailureKind.Proxy => "Twitch 代理连接失败。",
+        TwitchConnectionFailureKind.ProxyAndDirect => "Twitch 无法连接：代理失败，直连也不可用。",
+        TwitchConnectionFailureKind.SslCertificate => "Twitch HTTPS 证书验证失败。",
+        TwitchConnectionFailureKind.SslRuntime =>
+            "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
+        TwitchConnectionFailureKind.Authentication => "Twitch 登录信息已失效，请重新登录。",
+        TwitchConnectionFailureKind.Worker => string.IsNullOrWhiteSpace(fallback)
+            ? "Twitch 后台组件异常。" : fallback,
+        _ => string.IsNullOrWhiteSpace(fallback) ? "Twitch 连接失败：无法连接服务器。" : fallback,
+    };
+
+    private static TwitchConnectionStage StageForFailure(TwitchConnectionFailureKind kind) => kind switch
+    {
+        TwitchConnectionFailureKind.Proxy or TwitchConnectionFailureKind.ProxyAndDirect =>
+            TwitchConnectionStage.ProxyUnavailable,
+        TwitchConnectionFailureKind.SslCertificate => TwitchConnectionStage.SslCertificateError,
+        TwitchConnectionFailureKind.SslRuntime => TwitchConnectionStage.SslRuntimeError,
+        TwitchConnectionFailureKind.Worker => TwitchConnectionStage.WorkerError,
+        TwitchConnectionFailureKind.Authentication => TwitchConnectionStage.AuthenticationExpired,
+        _ => TwitchConnectionStage.NetworkFailed,
+    };
+
+    private static string StatusForFailure(TwitchConnectionFailureKind kind) => kind switch
+    {
+        TwitchConnectionFailureKind.SslRuntime => "Twitch 后台组件异常",
+        TwitchConnectionFailureKind.SslCertificate => "Twitch HTTPS 连接失败",
+        TwitchConnectionFailureKind.Authentication => "Twitch 登录已失效",
+        TwitchConnectionFailureKind.Proxy or TwitchConnectionFailureKind.ProxyAndDirect => "Twitch 代理连接失败",
+        TwitchConnectionFailureKind.Worker => "Twitch 后台组件异常",
+        _ => "Twitch 连接失败",
+    };
+
+    private void ApplyRuntimeError(DropsPlatform platform, string code, string message)
+    {
+        var vm = For(platform);
+        vm.Running = false;
+        if (platform == DropsPlatform.Twitch)
+        {
+            var kind = ClassifyTwitchFailure(code, message);
+            SetTwitchFailure(kind, FriendlyTwitchFailure(kind, message), retryable: false, scheduleRetry: false);
+            return;
+        }
+        vm.Status = "后台组件异常";
+        vm.Summary = platform == DropsPlatform.YouTube
+            ? "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。"
+            : "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。";
     }
 
     private void SetTwitchAuthState(string state, bool clearAuthorization = true)
@@ -526,18 +750,24 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchConnectionStage = stage;
         _twitchStageStartedAt = DateTimeOffset.Now;
         var revision = ++_twitchStageRevision;
+        if (!string.IsNullOrWhiteSpace(_twitchLastError) && stage is
+            TwitchConnectionStage.WorkerStarting or TwitchConnectionStage.Connecting or
+            TwitchConnectionStage.CheckingSession or TwitchConnectionStage.RestoringSession or
+            TwitchConnectionStage.RequestingAuthorization or TwitchConnectionStage.Slow or
+            TwitchConnectionStage.Reconnecting)
+            summary = $"{summary} · 最近失败原因：{_twitchLastError}";
         Twitch.Status = status;
         Twitch.Summary = summary;
         Raise(nameof(TwitchConnectionStage));
         Raise(nameof(TwitchStageStartedAt));
+        Raise(nameof(TwitchRetryVisibility));
 
         if (stage is TwitchConnectionStage.Connected or TwitchConnectionStage.Running)
         {
             var wasRetrying = _twitchRetryAttempt > 0;
             _lastTwitchConnectedAt = DateTimeOffset.Now;
-            _twitchLastError = "";
+            ClearTwitchFailure();
             Raise(nameof(LastTwitchConnectedAt));
-            Raise(nameof(TwitchLastError));
             CancelTwitchRetry();
             if (wasRetrying)
             {
@@ -571,8 +801,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 if (revision != _twitchStageRevision || !CanRetryTwitchConnection()) return;
                 _twitchConnectionStage = TwitchConnectionStage.Slow;
                 Twitch.Status = "Twitch 连接较慢，仍在尝试…";
-                Twitch.Summary = "网络响应较慢，连接仍在继续";
+                Twitch.Summary = string.IsNullOrWhiteSpace(_twitchLastError)
+                    ? "网络响应较慢，连接仍在继续"
+                    : $"仍在尝试 · 最近失败原因：{_twitchLastError}";
                 Raise(nameof(TwitchConnectionStage));
+                Raise(nameof(TwitchRetryVisibility));
             });
             var remaining = _twitchFailureThreshold - _twitchSlowThreshold;
             if (remaining > TimeSpan.Zero)
@@ -580,7 +813,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Dispatch(() =>
             {
                 if (revision == _twitchStageRevision && CanRetryTwitchConnection())
-                    SetTwitchTemporaryNetworkFailure("Twitch 连接阶段长时间没有进展。");
+                {
+                    var kind = _twitchLastFailureKind == TwitchConnectionFailureKind.None
+                        ? TwitchConnectionFailureKind.Timeout : _twitchLastFailureKind;
+                    var message = string.IsNullOrWhiteSpace(_twitchLastError)
+                        ? FriendlyTwitchFailure(kind, "") : _twitchLastError;
+                    SetTwitchTemporaryFailure(kind, message);
+                }
             });
         }
         catch (OperationCanceledException) { }
@@ -597,7 +836,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     {
         if ((!_twitchConnectionIntent && !_twitchAutoStartEnabled) ||
             _twitchUserStopped || _twitchUserLoggedOut ||
-            _twitchApplicationStopping || _twitchAuthState is "authorization_required" or "needs_login")
+            _twitchApplicationStopping || _twitchRetryBlocked ||
+            _twitchAuthState is "authorization_required" or "needs_login")
             return false;
         return _twitchStartIntent || !_twitchLoggedIn;
     }
@@ -607,7 +847,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (!HasTwitchRetryIntent()) return;
         if (showWaiting)
             SetTwitchStage(TwitchConnectionStage.RetryWaiting,
-                "暂时无法连接 Twitch", "将于 1 分钟后自动重试，请检查网络或代理设置。");
+                "暂时无法连接 Twitch", string.IsNullOrWhiteSpace(_twitchLastError)
+                    ? "将于 1 分钟后自动重试，请检查网络或代理设置。"
+                    : $"{_twitchLastError} 将于 1 分钟后自动重试。");
         if (!CanRetryTwitchConnection()) return;
         lock (_twitchRetrySync)
         {
@@ -657,10 +899,18 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                     Dispatch(() =>
                     {
                         if (!CanRetryTwitchConnection()) return;
-                        _twitchLastError = ex.Message;
-                        Raise(nameof(TwitchLastError));
+                        var kind = ClassifyTwitchFailure("", ex.Message);
+                        var message = FriendlyTwitchFailure(kind, ex.Message);
+                        if (kind == TwitchConnectionFailureKind.SslRuntime)
+                        {
+                            SetTwitchFailure(kind, message, retryable: false, scheduleRetry: false);
+                            return;
+                        }
+                        RecordTwitchFailure(kind, message, retryable: true);
                         SetTwitchStage(TwitchConnectionStage.RetryWaiting,
-                            "暂时无法连接 Twitch", "将在 1 分钟后继续自动重试");
+                            "暂时无法连接 Twitch", string.IsNullOrWhiteSpace(_twitchLastError)
+                                ? "将在 1 分钟后继续自动重试"
+                                : $"{_twitchLastError} 将在 1 分钟后继续自动重试");
                     });
                 }
                 finally { _twitchRetryAttemptInProgress = false; }
@@ -727,6 +977,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             case DropsPlatform.YouTube: ApplyYouTube(state, vm); break;
             case DropsPlatform.Twitch: ApplyTwitch(state, vm); break;
         }
+        if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
+            !Bool(runtime, "available", true))
+            ApplyRuntimeError(platform, Text(runtime, "code"), Text(runtime, "message"));
     }
 
     private void ApplySoop(JsonElement state, DropsPlatformViewModel vm)
@@ -882,7 +1135,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             SetTwitchAuthorization(Text(authRequired, "url"), Text(authRequired, "code"), Bool(authRequired, "automatic"));
         else
             SetTwitchAuthState(authState);
-        _twitchLoggedIn = loggedIn;
+        SetTwitchLoggedIn(loggedIn);
         if (loggedIn) IsTwitchLoginInProgress = false;
         Raise(nameof(TwitchLoginVisibility));
         Raise(nameof(TwitchLogoutVisibility));
@@ -946,7 +1199,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         UpdateTwitchQuickStart(state, loggedIn);
     }
 
-    private void ApplyTwitchConnectionPhase(string phase)
+    private void ApplyTwitchConnectionPhase(string phase, string detail = "")
     {
         switch (phase)
         {
@@ -971,7 +1224,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                     "正在获取 Twitch 登录授权…", "正在向 Twitch 请求授权信息", monitor: true);
                 break;
             case "login_succeeded":
-                _twitchLoggedIn = true;
+                SetTwitchLoggedIn(true);
                 IsTwitchLoginInProgress = false;
                 SetTwitchAuthState("logged_in");
                 SetTwitchStage(TwitchConnectionStage.LoginSucceeded,
@@ -1020,6 +1273,37 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             case "running":
                 SetTwitchStage(TwitchConnectionStage.Running,
                     "Twitch 掉宝正在运行", "实时连接已建立");
+                break;
+            case "proxy_fallback":
+                RecordTwitchFailure(TwitchConnectionFailureKind.Proxy,
+                    "Twitch 代理连接失败，正在尝试直连。", retryable: true);
+                SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "Twitch 代理连接失败，正在尝试直连", "正在尝试不使用代理连接 Twitch", monitor: true);
+                break;
+            case "proxy_failed":
+                RecordTwitchFailure(TwitchConnectionFailureKind.Proxy,
+                    FriendlyTwitchFailure(TwitchConnectionFailureKind.Proxy, ""), retryable: true);
+                SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "Twitch 代理连接失败，仍在尝试…", _twitchLastError, monitor: true);
+                break;
+            case "proxy_and_direct_failed":
+                RecordTwitchFailure(TwitchConnectionFailureKind.ProxyAndDirect,
+                    FriendlyTwitchFailure(TwitchConnectionFailureKind.ProxyAndDirect, ""), retryable: true);
+                SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "Twitch 无法连接，仍在尝试…", _twitchLastError, monitor: true);
+                break;
+            case "network_failed":
+            {
+                var networkKind = ClassifyTwitchFailure(detail, detail);
+                RecordTwitchFailure(networkKind, FriendlyTwitchFailure(networkKind, ""), retryable: true);
+                SetTwitchStage(TwitchConnectionStage.Connecting,
+                    "Twitch 连接失败，仍在尝试…", _twitchLastError, monitor: true);
+                break;
+            }
+            case "ssl_certificate_failed":
+                SetTwitchFailure(TwitchConnectionFailureKind.SslCertificate,
+                    FriendlyTwitchFailure(TwitchConnectionFailureKind.SslCertificate, ""),
+                    retryable: false, scheduleRetry: false);
                 break;
         }
     }
@@ -1174,7 +1458,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
             vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "Twitch 连接中断" : "运行异常";
             vm.Running = false;
-            if (snapshot.Platform == DropsPlatform.Twitch)
+            if (snapshot.Platform == DropsPlatform.Twitch &&
+                _twitchLastFailureKind != TwitchConnectionFailureKind.SslRuntime)
                 SetTwitchTemporaryNetworkFailure("Twitch 后台服务意外退出。");
         }
         else if (snapshot.Lifecycle == WorkerLifecycle.Stopped)
@@ -1202,7 +1487,24 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             message.Payload.TryGetProperty("running", out var twitchRunning))
             Twitch.Running = twitchRunning.GetBoolean();
         if (message.Platform == DropsPlatform.Twitch && message.Name == "connection_status")
-            ApplyTwitchConnectionPhase(Text(message.Payload, "phase"));
+            ApplyTwitchConnectionPhase(Text(message.Payload, "phase"), Text(message.Payload, "detail"));
+        if (message.Name == "runtime_error" && Text(message.Payload, "component") == "ssl")
+            ApplyRuntimeError(message.Platform, Text(message.Payload, "code"), Text(message.Payload, "message"));
+        if (message.Name == "runtime_recovered" && Text(message.Payload, "component") == "ssl")
+        {
+            if (message.Platform == DropsPlatform.Twitch)
+            {
+                ClearTwitchFailure();
+                SetTwitchStage(TwitchConnectionStage.Unconnected,
+                    "Twitch SSL 组件已恢复", "可以重新检测或登录 Twitch");
+            }
+            else
+            {
+                var recovered = For(message.Platform);
+                recovered.Status = "后台组件已恢复";
+                recovered.Summary = "可以重新启动 Drops 后台。";
+            }
+        }
         if (message.Platform == DropsPlatform.Twitch && message.Name == "auth_state")
         {
             var state = Text(message.Payload, "state", "logged_out");
@@ -1227,7 +1529,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             message.Payload.TryGetProperty("userId", out var twitchUserId) &&
             twitchUserId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
         {
-            _twitchLoggedIn = true;
+            SetTwitchLoggedIn(true);
             IsTwitchLoginInProgress = false;
             SetTwitchAuthState("logged_in");
             SetTwitchStage(TwitchConnectionStage.LoginSucceeded,
@@ -1245,14 +1547,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 "Twitch 掉宝正在运行", "实时连接已建立");
         if (message.Platform == DropsPlatform.Twitch && message.Name == "error")
         {
-            if (Text(message.Payload, "category") == "authentication")
+            var category = Text(message.Payload, "category");
+            var code = Text(message.Payload, "code");
+            var kind = ClassifyTwitchFailure(code, Text(message.Payload, "message"));
+            if (category == "authentication")
             {
                 SetTwitchAuthState("needs_login");
-                SetTwitchStage(TwitchConnectionStage.AuthenticationExpired,
-                    "Twitch 登录已失效", "请重新完成 Twitch 授权");
+                SetTwitchFailure(TwitchConnectionFailureKind.Authentication,
+                    FriendlyTwitchFailure(TwitchConnectionFailureKind.Authentication, ""),
+                    retryable: false, scheduleRetry: false);
             }
             else
-                SetTwitchTemporaryNetworkFailure(Text(message.Payload, "message", "Twitch 暂时无法连接。"));
+                SetTwitchFailure(kind, FriendlyTwitchFailure(kind, Text(message.Payload, "message")),
+                    retryable: Bool(message.Payload, "retryable", true), scheduleRetry: true);
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
         {

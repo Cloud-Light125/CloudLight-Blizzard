@@ -561,6 +561,10 @@
                                         <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Stopped"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
                                         <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="AuthenticationExpired"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
                                         <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="NetworkFailed"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="ProxyUnavailable"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="SslCertificateError"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="SslRuntimeError"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="WorkerError"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </ProgressBar.Style>
@@ -575,7 +579,12 @@
                         <Button Content="{Binding TwitchLoginButtonText}" IsEnabled="{Binding CanTwitchLogin}"
                                 Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}"
                                 Padding="14,0" Click="OnTwitchLogin"/>
-                        <Button Content="退出登录" Visibility="{Binding TwitchLogoutVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout"/>
+                        <Button Content="清除登录信息" IsEnabled="{Binding CanClearTwitchLogin}"
+                                Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
+                                Click="OnTwitchLogout"/>
+                        <Button Content="重新检测" Visibility="{Binding TwitchRetryVisibility}"
+                                Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
+                                Click="OnTwitchRetry"/>
                         <Button Content="开始 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
                         <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/>
                         <Button x:Name="TwitchRefreshButton" Content="{Binding TwitchRefreshButtonText}"

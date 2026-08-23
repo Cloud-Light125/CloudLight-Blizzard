@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import logging
 import logging.handlers
@@ -27,6 +28,65 @@ _SECRET = re.compile(
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+")
 _SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth)=)[^&#\s]+")
 _URL_CREDENTIALS = re.compile(r"(?i)(https?://)[^/\s:@]+:[^@/\s]+@")
+
+
+class RuntimeDependencyError(RuntimeError):
+    """A local Worker runtime failure that cannot be repaired by network retry."""
+
+    def __init__(
+        self,
+        component: str,
+        code: str,
+        public_message: str,
+        technical_detail: str = "",
+    ) -> None:
+        super().__init__(public_message)
+        self.component = component
+        self.code = code
+        self.public_message = public_message
+        self.technical_detail = technical_detail
+
+
+def is_ssl_runtime_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        name = current.__class__.__name__.casefold()
+        message = str(current).casefold()
+        if (
+            isinstance(current, RuntimeDependencyError)
+            and current.component == "ssl"
+        ) or (
+            "_ssl" in message
+            and any(marker in message for marker in ("dll load failed", "module", "import"))
+        ) or "ssl is not supported" in message or name == "modulenotfounderror" and "_ssl" in message:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def check_ssl_runtime(import_module: Callable[[str], Any] = importlib.import_module) -> dict[str, Any]:
+    """Import the native SSL extension and create a real TLS context."""
+    try:
+        ssl_module = import_module("ssl")
+        ssl_extension = import_module("_ssl")
+        context = ssl_module.create_default_context()
+        return {
+            "available": True,
+            "contextCreated": isinstance(context, ssl_module.SSLContext),
+            "openssl": str(ssl_module.OPENSSL_VERSION),
+            "sslModule": str(getattr(ssl_extension, "__file__", "")),
+            "frozen": bool(getattr(sys, "frozen", False)),
+            "python": sys.version.split()[0],
+        }
+    except Exception as exc:
+        raise RuntimeDependencyError(
+            "ssl",
+            "ssl_runtime_unavailable",
+            "Python SSL 组件无法加载，Drops 后台无法建立 HTTPS 连接。缺少或无法加载 SSL 运行库，请重新安装 CloudLight Blizzard。",
+            redact(exc),
+        ) from exc
 
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8")
@@ -100,6 +160,16 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def parse_protocol_request(line: str) -> dict[str, Any]:
+    # Windows PowerShell 5.1 may prepend a UTF-8 BOM when piping text to a
+    # native executable. Accept it at the JSONL boundary without weakening
+    # normal JSON validation.
+    request = json.loads(line.lstrip("\ufeff"))
+    if not isinstance(request, dict):
+        raise ValueError("请求必须是 JSON 对象")
+    return request
+
+
 def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -134,6 +204,7 @@ def configure_logging(path: Path) -> logging.Logger:
 
 class WorkerBase:
     platform = "unknown"
+    needs_https = True
 
     def __init__(self, data_dir: Path, log_file: Path) -> None:
         self.data_dir = data_dir.resolve()
@@ -142,6 +213,8 @@ class WorkerBase:
         self.logger = configure_logging(self.log_file)
         self.running = False
         self.shutdown_requested = False
+        self.runtime_error: RuntimeDependencyError | None = None
+        self._reported_runtime_errors: set[str] = set()
         self.proxy = {"enableProxy": False, "proxyUrl": "", "fallbackDirect": False}
         self.commands: dict[str, Callable[[dict[str, Any]], Any]] = {
             "hello": self.hello,
@@ -157,8 +230,77 @@ class WorkerBase:
             "get_inventory": self.get_inventory,
             "get_logs": self.get_logs,
             "set_proxy": self.set_proxy,
+            "ssl_check": self.ssl_check,
             "shutdown": self.shutdown,
         }
+        if self.needs_https:
+            self._initialize_ssl_runtime()
+
+    @property
+    def runtime_available(self) -> bool:
+        return self.runtime_error is None
+
+    def runtime_state(self) -> dict[str, Any]:
+        if self.runtime_error is None:
+            return {"available": True}
+        return {
+            "available": False,
+            "component": self.runtime_error.component,
+            "code": self.runtime_error.code,
+            "message": self.runtime_error.public_message,
+            "retryable": False,
+        }
+
+    def _initialize_ssl_runtime(self) -> None:
+        try:
+            diagnostic = check_ssl_runtime()
+            self.runtime_error = None
+            self.logger.debug(
+                "SSL runtime ready: python=%s frozen=%s openssl=%s _ssl=%s _MEIPASS=%s",
+                diagnostic["python"], diagnostic["frozen"], diagnostic["openssl"],
+                diagnostic["sslModule"], getattr(sys, "_MEIPASS", ""),
+            )
+        except RuntimeDependencyError as exc:
+            self.runtime_error = exc
+            self._report_runtime_error(exc)
+
+    def _report_runtime_error(self, exc: RuntimeDependencyError) -> None:
+        fingerprint = f"{exc.component}:{exc.code}:{exc.technical_detail}"
+        first = fingerprint not in self._reported_runtime_errors
+        self._reported_runtime_errors.add(fingerprint)
+        if first:
+            self.logger.error(
+                "Python SSL 运行库无法加载，网络功能不可用。技术原因：%s",
+                exc.technical_detail or exc.__class__.__name__,
+            )
+        else:
+            self.logger.debug("已抑制重复的运行时依赖错误：%s", exc.code)
+        event("runtime_error", {
+            "component": exc.component,
+            "code": exc.code,
+            "message": exc.public_message,
+            "retryable": False,
+            "firstOccurrence": first,
+        })
+
+    def require_runtime(self) -> None:
+        if self.runtime_error is not None:
+            self._report_runtime_error(self.runtime_error)
+            raise self.runtime_error
+
+    def ssl_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            result = check_ssl_runtime()
+            recovered = self.runtime_error is not None
+            self.runtime_error = None
+            if recovered:
+                self.logger.info("Python SSL 组件已恢复。")
+                event("runtime_recovered", {"component": "ssl"})
+            return result
+        except RuntimeDependencyError as exc:
+            self.runtime_error = exc
+            self._report_runtime_error(exc)
+            raise
 
     def status(self, status: str, summary: str = "") -> None:
         event("status", {"status": status, "summary": summary, "running": self.running})
@@ -172,12 +314,14 @@ class WorkerBase:
             "protocol": PROTOCOL_VERSION,
             "commands": sorted(self.commands),
             "pid": os.getpid(),
+            "runtime": self.runtime_state(),
         }
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"running": self.running, "proxy": self.proxy}
+        return {"running": self.running, "proxy": self.proxy, "runtime": self.runtime_state()}
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.require_runtime()
         self.running = True
         self.status("运行中")
         return self.load_state({})
@@ -250,19 +394,27 @@ class WorkerBase:
         return {"id": request_id, "ok": True, "result": result if result is not None else {}}
 
     def run(self) -> int:
-        self.status("就绪")
+        if self.runtime_error is not None:
+            self.status("后台组件异常", self.runtime_error.public_message)
+        else:
+            self.status("就绪")
         for line in sys.stdin:
             request_id = ""
             try:
-                request = json.loads(line)
-                if not isinstance(request, dict):
-                    raise ValueError("请求必须是 JSON 对象")
+                request = parse_protocol_request(line)
                 request_id = str(request.get("id", ""))
                 response = self.dispatch(request)
             except Exception as exc:
-                self.logger.error("后台请求失败：%s", redact(exc))
-                self.logger.debug("%s", traceback.format_exc())
-                response = {"id": request_id, "ok": False, "error": redact(exc)}
+                if isinstance(exc, RuntimeDependencyError):
+                    self._report_runtime_error(exc)
+                    response = {
+                        "id": request_id, "ok": False,
+                        "error": exc.public_message, "code": exc.code,
+                    }
+                else:
+                    self.logger.error("后台请求失败：%s", redact(exc))
+                    self.logger.debug("%s", traceback.format_exc())
+                    response = {"id": request_id, "ok": False, "error": redact(exc)}
             emit(response)
             if self.shutdown_requested:
                 break

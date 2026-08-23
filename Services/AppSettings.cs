@@ -19,6 +19,8 @@ public sealed class AppSettings
     public bool EnableProxy { get; set; }
     public string ProxyUrl { get; set; } = "";
     public bool FallbackDirect { get; set; }
+    public bool ShowAnnouncementBadge { get; set; } = true;
+    public string CloudServiceBaseUrl { get; set; } = CloudServiceConfiguration.DefaultBaseUrl;
     public bool AutoStartSoop { get; set; }
     public bool AutoStartTwitch { get; set; }
     public double WindowWidth { get; set; }
@@ -29,6 +31,7 @@ public sealed class AppSettings
     public string? OverwatchGamePath { get; set; }
     public string? RegionStoragePath { get; set; }
     public RegionBackupMode RegionBackupMode { get; set; } = RegionBackupMode.VerifiedDifference;
+    public bool Step4ReminderIgnored { get; set; }
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }
     public string LastMainSection { get; set; } = "accounts";
@@ -85,6 +88,7 @@ public sealed class AppSettings
         s.ExpiredAccountIds ??= new();
         s.AccountPreferences ??= new();
         s.ProxyUrl ??= "";
+        s.CloudServiceBaseUrl = CloudServiceConfiguration.NormalizeBaseUrl(s.CloudServiceBaseUrl);
 
         // 重写时会丢弃旧版本不再识别的字段。
         if (rewrite) s.SaveTo(path);

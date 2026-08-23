@@ -24,10 +24,12 @@ public sealed class DropsHostService : IAsyncDisposable
         public string? LastError { get; set; }
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.Now;
         public bool BusinessRunning { get; set; }
+        public bool RuntimeErrorReported { get; set; }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<DropsPlatform, WorkerConnection> _workers = new();
+    private readonly List<WorkerConnection> _retiredWorkers = [];
     private readonly object _sync = new();
     private bool _disposing;
     private DropsProxySettings _proxySettings = new(false, "", false);
@@ -106,6 +108,40 @@ public sealed class DropsHostService : IAsyncDisposable
 
     public Task<JsonElement> StopAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
         RequestAsync(platform, "stop", cancellationToken: cancellationToken);
+
+    public async Task<JsonElement> ClearTwitchAuthenticationAsync(CancellationToken cancellationToken = default)
+    {
+        WorkerConnection? worker;
+        lock (_sync) _workers.TryGetValue(DropsPlatform.Twitch, out worker);
+        if (worker is not null && !worker.Process.HasExited)
+        {
+            using var graceful = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            graceful.CancelAfter(TimeSpan.FromSeconds(8));
+            try { await RequestAsync(DropsPlatform.Twitch, "clear_auth", cancellationToken: graceful.Token).ConfigureAwait(false); }
+            catch { /* A stuck login/network call is terminated below. */ }
+
+            worker.Lifecycle = WorkerLifecycle.Stopping;
+            worker.BusinessRunning = false;
+            TryTerminate(worker);
+            try { await worker.Process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch { }
+            lock (_sync)
+            {
+                if (_workers.TryGetValue(DropsPlatform.Twitch, out var current) && ReferenceEquals(current, worker))
+                {
+                    _workers.Remove(DropsPlatform.Twitch);
+                    _retiredWorkers.Add(worker);
+                }
+            }
+        }
+
+        var paths = AppPaths.Current;
+        paths.EnsureDirectories();
+        File.Delete(Path.Combine(paths.TwitchDropsDir, "cookies.jar"));
+        File.Delete(Path.Combine(paths.TwitchDropsDir, "cookies.jar.tmp"));
+        return await RequestAsync(DropsPlatform.Twitch, "load_state", cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task StopAllAsync(CancellationToken cancellationToken = default)
     {
@@ -269,6 +305,32 @@ public sealed class DropsHostService : IAsyncDisposable
             {
                 var safe = SensitiveDataRedactor.Redact(line);
                 if (string.IsNullOrWhiteSpace(safe)) continue;
+                if (IsSslRuntimeError(safe))
+                {
+                    if (!worker.RuntimeErrorReported)
+                    {
+                        worker.RuntimeErrorReported = true;
+                        worker.LastError = "Python SSL 运行库无法加载。";
+                        var message = worker.Platform switch
+                        {
+                            DropsPlatform.Twitch => "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
+                            DropsPlatform.YouTube => "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。",
+                            _ => "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。",
+                        };
+                        EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "runtime_error",
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                component = "ssl",
+                                code = "ssl_runtime_unavailable",
+                                message,
+                                retryable = false,
+                                firstOccurrence = true,
+                            })));
+                        PublishSnapshot(worker);
+                    }
+                    continue;
+                }
+                if (worker.RuntimeErrorReported) continue;
                 worker.LastError = safe;
                 EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "log",
                     JsonSerializer.SerializeToElement(new { level = "error", message = safe })));
@@ -366,11 +428,17 @@ public sealed class DropsHostService : IAsyncDisposable
 
     private static string Quote(string value) => '"' + value.Replace("\"", "\\\"") + '"';
 
+    private static bool IsSslRuntimeError(string value) =>
+        value.Contains("DLL load failed while importing _ssl", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("ModuleNotFoundError: _ssl", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("No module named '_ssl'", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("SSL is not supported", StringComparison.OrdinalIgnoreCase);
+
     public async ValueTask DisposeAsync()
     {
         _disposing = true;
         WorkerConnection[] workers;
-        lock (_sync) workers = _workers.Values.ToArray();
+        lock (_sync) workers = _workers.Values.Concat(_retiredWorkers).ToArray();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         foreach (var worker in workers)
         {
@@ -392,6 +460,10 @@ public sealed class DropsHostService : IAsyncDisposable
             worker.WriteGate.Dispose();
             worker.Process.Dispose();
         }
-        lock (_sync) _workers.Clear();
+        lock (_sync)
+        {
+            _workers.Clear();
+            _retiredWorkers.Clear();
+        }
     }
 }

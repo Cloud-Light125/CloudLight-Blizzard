@@ -134,6 +134,8 @@ public sealed class OverwatchRegionManager
             InternationalBuildFingerprint = international.BuildFingerprint,
             CommonBaselineFingerprint = ComputeCommonBaseline(differences),
             Differences = changed,
+            ChinaReferenceComplete = true,
+            InternationalReferenceComplete = true,
         };
 
         var required = changed.Sum(item => (item.China?.Size ?? 0) + (item.International?.Size ?? 0));
@@ -203,13 +205,11 @@ public sealed class OverwatchRegionManager
             $"Reason={compatibility.Reason}; SwitchMode={eligibility.Status}; " +
             $"EligibilityReason={eligibility.Reason}; KnownDifferences={generation.Differences.Count:N0}; " +
             "IgnoredUnknownFiles=未枚举，未参与处理");
-        if (eligibility.Status is RegionSwitchEligibility.GameUpdated or RegionSwitchEligibility.BackupUnavailable)
+        if (eligibility.Status == RegionSwitchEligibility.BackupUnavailable)
         {
             RegionSwitchLog.Write("NormalizeRejected", target, current, compatibility.Status,
                 generation.GenerationId, $"SwitchMode={eligibility.Status}; Reason={eligibility.Reason}");
-            throw new InvalidDataException(eligibility.Status == RegionSwitchEligibility.GameUpdated
-                ? "检测到《守望先锋》已经更新。当前本地区服文件基于旧版本，为了避免覆盖新版游戏，需要重新准备一次区服文件。原因：" + compatibility.Reason
-                : "本地区服备份不完整，已停止切换。原因：" + eligibility.Reason);
+            throw new InvalidDataException("本地区服备份不完整，已停止切换。原因：" + eligibility.Reason);
         }
         if (current == ToCurrent(target) && detection.ExactSnapshotMatch)
         {
@@ -244,6 +244,10 @@ public sealed class OverwatchRegionManager
             try
             {
                 var expected = target == OverwatchRegion.China ? difference.China : difference.International;
+                var sideAvailable = target == OverwatchRegion.China
+                    ? difference.ChinaAvailable != false : difference.InternationalAvailable != false;
+                if (!sideAvailable)
+                    throw new InvalidDataException("目标区服的此文件没有可用本地备份");
                 var destination = OverwatchRegionBackupStore.SafeCombine(gameRoot, difference.RelativePath);
                 if (expected is null)
                 {
@@ -429,6 +433,8 @@ public sealed class OverwatchRegionManager
             _store.SaveGeneration(generation);
         }
         var backups = Path.Combine(_store.GenerationRoot(generation.GenerationId), "backups");
+        var chinaReference = LoadReferenceManifest(generation, OverwatchRegion.China, out _);
+        var internationalReference = LoadReferenceManifest(generation, OverwatchRegion.International, out _);
         return new RegionSnapshotStatus
         {
             GamePath = gameRoot ?? "", GamePathValid = valid,
@@ -475,6 +481,18 @@ public sealed class OverwatchRegionManager
                         RelativePath = item.RelativePath,
                         Reason = item.Reason,
                     })).ToList(),
+            VerificationLevel = generation.VerificationLevel,
+            Step4Pending = generation.BackupMode == RegionBackupMode.VerifiedDifference &&
+                           generation.VerificationLevel == RegionVerificationLevel.RoundTrip,
+            Step4Region = generation.BackupMode == RegionBackupMode.VerifiedDifference
+                ? generation.TargetRegion : null,
+            CanRunStep4Now = generation.BackupMode == RegionBackupMode.VerifiedDifference &&
+                             generation.VerificationLevel == RegionVerificationLevel.RoundTrip &&
+                             pointer.LastSuccessfulRegion == generation.TargetRegion,
+            ChinaReferenceAvailable = chinaReference is not null,
+            InternationalReferenceAvailable = internationalReference is not null,
+            PossibleGameUpdate = compatibility.Status == GenerationCompatibility.Updated ||
+                                 generation.State == RegionBackupState.Stale,
         };
     }
 
@@ -813,6 +831,13 @@ public sealed class OverwatchRegionManager
     private static bool IsPerFileException(Exception ex) =>
         ex is IOException or UnauthorizedAccessException or InvalidDataException;
 
+    private static bool IsUserProtectedExtraPath(string relativePath)
+    {
+        var relative = OverwatchRegionScanner.Normalize(relativePath);
+        return new[] { "screenshots/", "replays/", "videos/", "workshop/", "mods/", "custom/" }
+            .Any(prefix => relative.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static void AddCandidateResult(List<RegionCandidateResult> results, string relativePath,
         CandidateVerificationOutcome outcome, string reason)
     {
@@ -881,6 +906,115 @@ public sealed class OverwatchRegionManager
         return manifest;
     }
 
+    private static OverwatchRegionManifest CreateManifestFromDifferences(OverwatchRegion region,
+        OverwatchRegionGeneration generation)
+    {
+        var manifest = new OverwatchRegionManifest
+        {
+            Region = region,
+            BuildFingerprint = region == OverwatchRegion.China
+                ? generation.ChinaBuildFingerprint : generation.InternationalBuildFingerprint,
+        };
+        foreach (var difference in generation.Differences)
+        {
+            var entry = region == OverwatchRegion.China ? difference.China : difference.International;
+            if (entry is not null) manifest.Files[difference.RelativePath] = entry;
+        }
+        return manifest;
+    }
+
+    private OverwatchRegionManifest? LoadReferenceManifest(OverwatchRegionGeneration generation,
+        OverwatchRegion region, out bool complete)
+    {
+        var reference = _store.LoadGenerationReferenceManifest(generation.GenerationId, region);
+        if (reference is not null)
+        {
+            complete = region == OverwatchRegion.China
+                ? generation.ChinaReferenceComplete : generation.InternationalReferenceComplete;
+            return reference;
+        }
+        // 旧智能差异 Generation 只有差异 manifest；仍可完整检查这些已保存项。
+        var fallback = _store.LoadGenerationManifest(generation.GenerationId, region);
+        complete = generation.BackupMode == RegionBackupMode.FullSnapshot && fallback is not null;
+        return fallback;
+    }
+
+    private static void SetSideEntry(RegionDifference difference, OverwatchRegion region, RegionFileEntry? entry)
+    {
+        if (region == OverwatchRegion.China) difference.China = entry;
+        else difference.International = entry;
+    }
+
+    private static void SetSideAvailability(RegionDifference difference, OverwatchRegion region, bool available)
+    {
+        if (region == OverwatchRegion.China) difference.ChinaAvailable = available;
+        else difference.InternationalAvailable = available;
+    }
+
+    private static RegionDifferenceKind DifferenceKind(RegionFileEntry? china, RegionFileEntry? international) =>
+        china is null ? RegionDifferenceKind.InternationalOnly :
+        international is null ? RegionDifferenceKind.ChinaOnly :
+        FilesEqual(china, international) ? RegionDifferenceKind.Same : RegionDifferenceKind.Different;
+
+    private async Task CopyGenerationDirectoryAsync(string sourceId, string destinationId, CancellationToken token)
+    {
+        var sourceRoot = _store.GenerationRoot(sourceId);
+        var destinationRoot = _store.GenerationRoot(destinationId);
+        if (!Directory.Exists(sourceRoot)) throw new DirectoryNotFoundException("Active Generation 目录缺失。");
+        Directory.CreateDirectory(destinationRoot);
+        foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        {
+            token.ThrowIfCancellationRequested();
+            var relative = Path.GetRelativePath(sourceRoot, source);
+            await CopyFileAsync(source, OverwatchRegionBackupStore.SafeCombine(destinationRoot, relative), token);
+        }
+    }
+
+    private static RegionDifference CloneDifference(RegionDifference value) => new()
+    {
+        RelativePath = value.RelativePath,
+        Kind = value.Kind,
+        China = CloneEntry(value.China),
+        International = CloneEntry(value.International),
+        ChinaAvailable = value.ChinaAvailable,
+        InternationalAvailable = value.InternationalAvailable,
+    };
+
+    private static RegionFileEntry? CloneEntry(RegionFileEntry? value) => value is null ? null : new RegionFileEntry
+    {
+        RelativePath = value.RelativePath,
+        Size = value.Size,
+        LastWriteTimeUtc = value.LastWriteTimeUtc,
+        Sha256 = value.Sha256,
+    };
+
+    private static OverwatchRegionGeneration CloneGeneration(OverwatchRegionGeneration value, string id) => new()
+    {
+        GenerationId = id,
+        CreatedAtUtc = value.CreatedAtUtc,
+        State = value.State,
+        BackupMode = value.BackupMode,
+        SourceRegion = value.SourceRegion,
+        TargetRegion = value.TargetRegion,
+        ChinaManifestId = value.ChinaManifestId,
+        InternationalManifestId = value.InternationalManifestId,
+        ChinaBuildFingerprint = value.ChinaBuildFingerprint,
+        InternationalBuildFingerprint = value.InternationalBuildFingerprint,
+        CommonBaselineFingerprint = value.CommonBaselineFingerprint,
+        ChinaBackupComplete = value.ChinaBackupComplete,
+        InternationalBackupComplete = value.InternationalBackupComplete,
+        Differences = value.Differences.Select(CloneDifference).ToList(),
+        VerificationSummary = value.VerificationSummary,
+        VerificationLevel = value.VerificationLevel,
+        Step4Summary = value.Step4Summary,
+        ChinaReferenceComplete = value.ChinaReferenceComplete,
+        InternationalReferenceComplete = value.InternationalReferenceComplete,
+        ResetWarnings = value.ResetWarnings.ToList(),
+    };
+
+    private static string NewGenerationId() =>
+        DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+
     private async Task<CompatibilityResult> EvaluateCompatibilityAsync(string root,
         OverwatchRegionGeneration generation, CancellationToken token)
     {
@@ -894,6 +1028,15 @@ public sealed class OverwatchRegionManager
                 if (chinaVerified is null || internationalVerified is null)
                     return new CompatibilityResult(GenerationCompatibility.Unknown,
                         "智能差异 Generation Manifest 缺失");
+                if (generation.ChinaBuildFingerprint.ExecutableSize > 0 ||
+                    generation.InternationalBuildFingerprint.ExecutableSize > 0)
+                {
+                    var actualBuild = OverwatchRegionScanner.ReadBuildFingerprint(root);
+                    if (!ExecutableMatches(actualBuild, generation.ChinaBuildFingerprint) &&
+                        !ExecutableMatches(actualBuild, generation.InternationalBuildFingerprint))
+                        return new CompatibilityResult(GenerationCompatibility.Updated,
+                            $"Overwatch.exe 版本或大小变化（当前 ProductVersion={actualBuild.ExecutableProductVersion}, Size={actualBuild.ExecutableSize}）");
+                }
                 return new CompatibilityResult(GenerationCompatibility.Compatible,
                     "智能差异备份只校验已确认的区服差异文件，不要求完整游戏目录匹配");
             }
@@ -1248,6 +1391,13 @@ public sealed class OverwatchRegionManager
                 InternationalBuildFingerprint = internationalFull.BuildFingerprint,
                 CommonBaselineFingerprint = "",
                 Differences = usable,
+                VerificationLevel = RegionVerificationLevel.RoundTrip,
+                ChinaReferenceComplete = pending.SourceRegion == OverwatchRegion.China
+                    ? pending.Step1Warnings.Count == 0
+                    : pending.CandidateBackups.All(item => item.Status == CandidateBackupStatus.Available),
+                InternationalReferenceComplete = pending.SourceRegion == OverwatchRegion.International
+                    ? pending.Step1Warnings.Count == 0
+                    : pending.CandidateBackups.All(item => item.Status == CandidateBackupStatus.Available),
                 VerificationSummary = new RegionVerificationSummary
                 {
                     CandidateCount = candidateCount,
@@ -1271,6 +1421,8 @@ public sealed class OverwatchRegionManager
             generation.State = RegionBackupState.Ready;
             _store.SaveGenerationManifest(generation.GenerationId, china);
             _store.SaveGenerationManifest(generation.GenerationId, international);
+            _store.SaveGenerationReferenceManifest(generation.GenerationId, chinaFull);
+            _store.SaveGenerationReferenceManifest(generation.GenerationId, internationalFull);
             _store.SaveGeneration(generation);
             var validation = await ValidateGenerationBackupsAsync(generation, null, true, cancellationToken);
             if (!validation.Available && validation.Issues is { Count: > 0 })
@@ -1382,26 +1534,483 @@ public sealed class OverwatchRegionManager
         }
     }
 
+    public bool ShouldOfferStep4(OverwatchRegion target)
+    {
+        var active = _store.LoadActive();
+        return active is { Generation.BackupMode: RegionBackupMode.VerifiedDifference } &&
+               active.Value.Generation.VerificationLevel == RegionVerificationLevel.RoundTrip &&
+               active.Value.Generation.TargetRegion == target;
+    }
+
+    public async Task<Step4VerificationResult> VerifyFourthStepAsync(string gameRoot,
+        IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        EnsureGameReady(gameRoot);
+        var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的智能差异备份。");
+        var original = active.Generation;
+        if (original.BackupMode != RegionBackupMode.VerifiedDifference)
+            throw new InvalidOperationException("可选的进一步验证只适用于智能差异备份。");
+        if (original.VerificationLevel == RegionVerificationLevel.DoubleRoundTrip)
+            throw new InvalidOperationException("当前智能差异备份已经完成进一步验证。");
+        if (active.Pointer.LastSuccessfulRegion != original.TargetRegion)
+            throw new InvalidOperationException($"请先切换到{RegionName(original.TargetRegion)}，再执行进一步验证。");
+
+        progress?.Report(new RegionProgress($"正在再次验证{RegionName(original.TargetRegion)}文件……"));
+        await _scanner.WaitForQuiescenceAsync(gameRoot, progress, cancellationToken, _quiescenceMilliseconds);
+        var scan = await _scanner.ScanBestEffortAsync(gameRoot, original.TargetRegion, progress, cancellationToken);
+        KeepContentIdentityOnly(scan.Manifest);
+        var scanIssues = scan.Issues.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => string.Join("；", group.Select(item => item.Reason).Distinct()),
+                StringComparer.OrdinalIgnoreCase);
+        var retained = new List<RegionDifference>();
+        var results = new List<Step4EntryResult>();
+        for (var i = 0; i < original.Differences.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var difference = CloneDifference(original.Differences[i]);
+            progress?.Report(new RegionProgress(
+                $"正在进一步验证区服差异… {i + 1:N0} / {original.Differences.Count:N0}",
+                i + 1, original.Differences.Count));
+            var expected = original.TargetRegion == OverwatchRegion.China
+                ? difference.China : difference.International;
+            var path = OverwatchRegionBackupStore.SafeCombine(gameRoot, difference.RelativePath);
+            var inspection = scanIssues.TryGetValue(difference.RelativePath, out var scanReason)
+                ? new FileInspectionResult(FileInspectionStatus.Issue, scanReason)
+                : InspectFile(path, expected, cancellationToken);
+            if (inspection.Status == FileInspectionStatus.Match)
+            {
+                retained.Add(difference);
+                results.Add(new Step4EntryResult
+                {
+                    RelativePath = difference.RelativePath,
+                    Outcome = Step4VerificationOutcome.DoubleVerified,
+                    Reason = "再次回到另一地区后与已保存状态一致",
+                });
+            }
+            else if (inspection.Status == FileInspectionStatus.Mismatch)
+            {
+                results.Add(new Step4EntryResult
+                {
+                    RelativePath = difference.RelativePath,
+                    Outcome = Step4VerificationOutcome.Step4Rejected,
+                    Reason = "再次回到另一地区后与已保存状态不一致，已从新的区服差异备份排除",
+                });
+            }
+            else
+            {
+                retained.Add(difference);
+                results.Add(new Step4EntryResult
+                {
+                    RelativePath = difference.RelativePath,
+                    Outcome = Step4VerificationOutcome.Step4Unverified,
+                    Reason = "本次无法进一步验证：" + inspection.Reason,
+                });
+            }
+            await Task.Yield();
+        }
+
+        var generationId = NewGenerationId();
+        var generationRoot = _store.GenerationRoot(generationId);
+        try
+        {
+            await CopyGenerationDirectoryAsync(original.GenerationId, generationId, cancellationToken);
+            var generation = CloneGeneration(original, generationId);
+            generation.CreatedAtUtc = DateTime.UtcNow;
+            generation.State = RegionBackupState.Ready;
+            generation.VerificationLevel = RegionVerificationLevel.DoubleRoundTrip;
+            generation.Differences = retained;
+            generation.Step4Summary = new Step4VerificationSummary
+            {
+                DoubleVerifiedCount = results.Count(item => item.Outcome == Step4VerificationOutcome.DoubleVerified),
+                RejectedCount = results.Count(item => item.Outcome == Step4VerificationOutcome.Step4Rejected),
+                UnverifiedCount = results.Count(item => item.Outcome == Step4VerificationOutcome.Step4Unverified),
+                Results = results.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase).ToList(),
+            };
+            if (original.TargetRegion == OverwatchRegion.China)
+                generation.ChinaReferenceComplete = scan.Issues.Count == 0;
+            else
+                generation.InternationalReferenceComplete = scan.Issues.Count == 0;
+
+            foreach (var rejected in results.Where(item => item.Outcome == Step4VerificationOutcome.Step4Rejected))
+            {
+                TryDeleteGenerationEntryBackups(generationId, rejected.RelativePath);
+                scan.Manifest.Files.Remove(rejected.RelativePath);
+            }
+            var retainedReference = _store.LoadGenerationReferenceManifest(generationId, Other(original.TargetRegion));
+            if (retainedReference is not null)
+            {
+                foreach (var rejected in results.Where(item => item.Outcome == Step4VerificationOutcome.Step4Rejected))
+                    retainedReference.Files.Remove(rejected.RelativePath);
+                _store.SaveGenerationReferenceManifest(generationId, retainedReference);
+            }
+            var china = CreateManifestFromDifferences(OverwatchRegion.China, generation);
+            var international = CreateManifestFromDifferences(OverwatchRegion.International, generation);
+            generation.ChinaManifestId = china.ManifestId;
+            generation.InternationalManifestId = international.ManifestId;
+            _store.SaveGenerationManifest(generationId, china);
+            _store.SaveGenerationManifest(generationId, international);
+            _store.SaveGenerationReferenceManifest(generationId, scan.Manifest);
+            _store.SaveGeneration(generation);
+            var validation = await ValidateGenerationBackupsAsync(generation, null, true, cancellationToken,
+                allowPerFileIssues: true);
+            if (!validation.Available) throw new InvalidDataException(validation.Reason);
+            _store.Activate(generationId, original.TargetRegion);
+            RegionSwitchLog.Write("VerifiedDifferenceStep4Ready", current: ToCurrent(original.TargetRegion),
+                generationId: generationId,
+                detail: $"Previous={original.GenerationId}; DoubleVerified={generation.Step4Summary.DoubleVerifiedCount}; " +
+                        $"Rejected={generation.Step4Summary.RejectedCount}; Unverified={generation.Step4Summary.UnverifiedCount}");
+            return new Step4VerificationResult(generationId, generation.Step4Summary.DoubleVerifiedCount,
+                generation.Step4Summary.RejectedCount, generation.Step4Summary.UnverifiedCount);
+        }
+        catch
+        {
+            if (_store.LoadPointer()?.GenerationId != generationId)
+                try { if (Directory.Exists(generationRoot)) Directory.Delete(generationRoot, true); } catch { }
+            throw;
+        }
+    }
+
+    public async Task<RegionFileCheckResult> CheckCurrentRegionFilesAsync(string gameRoot,
+        OverwatchRegion? region = null, IProgress<RegionProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsValidGameRoot(gameRoot)) throw new DirectoryNotFoundException("守望先锋游戏目录无效。");
+        var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的区服文件。");
+        var checkedRegion = region ?? active.Pointer.LastSuccessfulRegion ??
+            throw new InvalidOperationException("当前区服尚未识别，请先切换或恢复到一个明确区服后再检查。");
+        progress?.Report(new RegionProgress($"正在检查当前{RegionName(checkedRegion)}文件状态……"));
+        var scan = await _scanner.ScanBestEffortAsync(gameRoot, checkedRegion, progress, cancellationToken);
+        KeepContentIdentityOnly(scan.Manifest);
+        var generation = active.Generation;
+        var reference = LoadReferenceManifest(generation, checkedRegion, out var referenceComplete);
+        var otherReference = LoadReferenceManifest(generation, Other(checkedRegion), out var otherReferenceComplete);
+        var items = new List<RegionFileCheckItem>();
+        var issues = scan.Issues.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => string.Join("；", group.Select(item => item.Reason).Distinct()),
+                StringComparer.OrdinalIgnoreCase);
+
+        if (reference is not null)
+        {
+            foreach (var expected in reference.Files.Values.OrderBy(item => item.RelativePath,
+                         StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (issues.TryGetValue(expected.RelativePath, out var reason))
+                {
+                    items.Add(new RegionFileCheckItem
+                    {
+                        RelativePath = expected.RelativePath, Kind = RegionFileCheckKind.Unreadable,
+                        OriginalSize = expected.Size, Reason = reason,
+                    });
+                }
+                else if (!scan.Manifest.Files.TryGetValue(expected.RelativePath, out var actual))
+                {
+                    items.Add(new RegionFileCheckItem
+                    {
+                        RelativePath = expected.RelativePath, Kind = RegionFileCheckKind.PermanentMissing,
+                        OriginalSize = expected.Size, Reason = "保存的区服状态要求此文件存在",
+                    });
+                }
+                else
+                {
+                    var equal = FilesEqual(expected, actual);
+                    items.Add(new RegionFileCheckItem
+                    {
+                        RelativePath = expected.RelativePath,
+                        Kind = equal ? RegionFileCheckKind.PermanentNormal : RegionFileCheckKind.PermanentChanged,
+                        OriginalSize = expected.Size,
+                        CurrentSize = actual.Size,
+                        Reason = equal ? "与保存状态一致" : "文件大小或内容与保存状态不同",
+                    });
+                }
+            }
+        }
+
+        var differencePaths = generation.Differences.Select(item => item.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var difference in generation.Differences)
+        {
+            var expected = checkedRegion == OverwatchRegion.China ? difference.China : difference.International;
+            if (expected is not null) continue;
+            var path = OverwatchRegionBackupStore.SafeCombine(gameRoot, difference.RelativePath);
+            if (!File.Exists(path)) continue;
+            items.RemoveAll(item => string.Equals(item.RelativePath, difference.RelativePath,
+                StringComparison.OrdinalIgnoreCase));
+            items.Add(new RegionFileCheckItem
+            {
+                RelativePath = difference.RelativePath,
+                Kind = RegionFileCheckKind.ShouldBeAbsent,
+                CurrentSize = new FileInfo(path).Length,
+                Reason = $"保存的{RegionName(checkedRegion)}状态要求此文件不存在",
+            });
+        }
+
+        var protectedPaths = new HashSet<string>(differencePaths, StringComparer.OrdinalIgnoreCase);
+        if (reference is not null) protectedPaths.UnionWith(reference.Files.Keys);
+        if (otherReference is not null) protectedPaths.UnionWith(otherReference.Files.Keys);
+        var unstablePaths = generation.Step4Summary?.Results
+            .Where(item => item.Outcome == Step4VerificationOutcome.Step4Rejected)
+            .Select(item => item.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var completeBaselinesProveExtras = referenceComplete && otherReferenceComplete &&
+                                           reference is not null && otherReference is not null;
+        foreach (var path in OverwatchRegionScanner.EnumerateStatusFiles(gameRoot))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = OverwatchRegionScanner.Normalize(Path.GetRelativePath(gameRoot, path));
+            if (protectedPaths.Contains(relative)) continue;
+            if (IsUserProtectedExtraPath(relative)) continue;
+            if (!unstablePaths.Contains(relative) &&
+                !OverwatchRegionScanner.IsHighConfidenceTemporaryPath(relative) &&
+                !completeBaselinesProveExtras) continue;
+            try
+            {
+                items.Add(new RegionFileCheckItem
+                {
+                    RelativePath = relative,
+                    Kind = RegionFileCheckKind.TemporaryCandidate,
+                    CurrentSize = new FileInfo(path).Length,
+                    Reason = unstablePaths.Contains(relative)
+                        ? "进一步验证已确认此路径在区服往返中不稳定"
+                        : OverwatchRegionScanner.IsHighConfidenceTemporaryPath(relative)
+                            ? "位于明确的运行时目录或使用明确的临时文件扩展名"
+                            : "国服和国际服的完整文件状态基线中都不存在，此后才出现在游戏目录",
+                });
+            }
+            catch (Exception ex) when (IsPerFileException(ex))
+            {
+                items.Add(new RegionFileCheckItem
+                {
+                    RelativePath = relative, Kind = RegionFileCheckKind.Unreadable, Reason = ex.Message,
+                });
+            }
+        }
+
+        return new RegionFileCheckResult
+        {
+            Region = checkedRegion,
+            HasReferenceManifest = reference is not null,
+            ReferenceManifestComplete = referenceComplete,
+            Items = items.OrderBy(item => item.Kind).ThenBy(item => item.RelativePath,
+                StringComparer.OrdinalIgnoreCase).ToList(),
+        };
+    }
+
+    public async Task<TemporaryCleanupResult> ClearTemporaryFilesAsync(string gameRoot,
+        RegionFileCheckResult checkedResult, IProgress<RegionProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的区服文件。");
+        var generation = active.Generation;
+        var currentReference = LoadReferenceManifest(generation, checkedResult.Region, out var currentComplete);
+        var otherReference = LoadReferenceManifest(generation, Other(checkedResult.Region), out var otherComplete);
+        var protectedPaths = generation.Differences.Select(item => item.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (currentReference is not null) protectedPaths.UnionWith(currentReference.Files.Keys);
+        if (otherReference is not null) protectedPaths.UnionWith(otherReference.Files.Keys);
+        var unstablePaths = generation.Step4Summary?.Results
+            .Where(item => item.Outcome == Step4VerificationOutcome.Step4Rejected)
+            .Select(item => item.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = checkedResult.Items.Where(item => item.Kind == RegionFileCheckKind.TemporaryCandidate)
+            .ToList();
+        var deleted = 0;
+        long deletedBytes = 0;
+        var issues = new List<RegionFileIssue>();
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var item = candidates[i];
+            progress?.Report(new RegionProgress($"正在清除临时/额外文件… {i + 1:N0} / {candidates.Count:N0}",
+                i + 1, candidates.Count));
+            var baselinesStillProveExtra = currentComplete && otherComplete &&
+                                           currentReference is not null && otherReference is not null &&
+                                           !currentReference.Files.ContainsKey(item.RelativePath) &&
+                                           !otherReference.Files.ContainsKey(item.RelativePath);
+            if (protectedPaths.Contains(item.RelativePath) || IsUserProtectedExtraPath(item.RelativePath) ||
+                !unstablePaths.Contains(item.RelativePath) &&
+                !OverwatchRegionScanner.IsHighConfidenceTemporaryPath(item.RelativePath) &&
+                !baselinesStillProveExtra)
+            {
+                issues.Add(new RegionFileIssue { RelativePath = item.RelativePath, Reason = "路径已受区服状态保护" });
+                continue;
+            }
+            try
+            {
+                var path = OverwatchRegionBackupStore.SafeCombine(gameRoot, item.RelativePath);
+                if (!File.Exists(path)) continue;
+                var size = new FileInfo(path).Length;
+                DeleteFilePreservingOnFailure(path);
+                deleted++;
+                deletedBytes += size;
+            }
+            catch (Exception ex) when (IsPerFileException(ex))
+            {
+                issues.Add(new RegionFileIssue { RelativePath = item.RelativePath, Reason = ex.Message });
+            }
+            await Task.Yield();
+        }
+        return new TemporaryCleanupResult(deleted, deletedBytes, issues.Count, issues);
+    }
+
+    public async Task<RegionResetResult> ResetCurrentRegionStateAsync(string gameRoot,
+        IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        EnsureGameReady(gameRoot);
+        var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的区服文件。");
+        var original = active.Generation;
+        if (original.BackupMode != RegionBackupMode.VerifiedDifference)
+            throw new InvalidOperationException("完整备份模式需要重新准备完整区服文件。");
+        var current = active.Pointer.LastSuccessfulRegion ??
+            throw new InvalidOperationException("当前区服尚未识别，请先恢复到国服或国际服后再重设。");
+        progress?.Report(new RegionProgress($"正在记录当前{RegionName(current)}的新状态……"));
+        await _scanner.WaitForQuiescenceAsync(gameRoot, progress, cancellationToken, _quiescenceMilliseconds);
+        var scan = await _scanner.ScanBestEffortAsync(gameRoot, current, progress, cancellationToken);
+        KeepContentIdentityOnly(scan.Manifest);
+        var issuesByPath = scan.Issues.GroupBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => string.Join("；", group.Select(item => item.Reason).Distinct()),
+                StringComparer.OrdinalIgnoreCase);
+        var generationId = NewGenerationId();
+        var generationRoot = _store.GenerationRoot(generationId);
+        var warnings = new List<RegionFileIssue>();
+        var updated = 0;
+        var degraded = 0;
+        try
+        {
+            await CopyGenerationDirectoryAsync(original.GenerationId, generationId, cancellationToken);
+            var generation = CloneGeneration(original, generationId);
+            generation.CreatedAtUtc = DateTime.UtcNow;
+            generation.State = RegionBackupState.Ready;
+            generation.Differences = original.Differences.Select(CloneDifference).ToList();
+            for (var i = 0; i < generation.Differences.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var difference = generation.Differences[i];
+                progress?.Report(new RegionProgress(
+                    $"正在重设当前{RegionName(current)}状态… {i + 1:N0} / {generation.Differences.Count:N0}",
+                    i + 1, generation.Differences.Count));
+                var oldExpected = current == OverwatchRegion.China ? difference.China : difference.International;
+                if (issuesByPath.TryGetValue(difference.RelativePath, out var issueReason))
+                {
+                    SetSideAvailability(difference, current, false);
+                    warnings.Add(new RegionFileIssue { RelativePath = difference.RelativePath, Reason = issueReason });
+                    degraded++;
+                    continue;
+                }
+                var path = OverwatchRegionBackupStore.SafeCombine(gameRoot, difference.RelativePath);
+                var inspection = InspectFile(path, oldExpected, cancellationToken);
+                if (inspection.Status == FileInspectionStatus.Issue)
+                {
+                    SetSideAvailability(difference, current, false);
+                    warnings.Add(new RegionFileIssue { RelativePath = difference.RelativePath, Reason = inspection.Reason });
+                    degraded++;
+                    continue;
+                }
+                if (!File.Exists(path))
+                {
+                    if (oldExpected is not null)
+                    {
+                        SetSideAvailability(difference, current, false);
+                        warnings.Add(new RegionFileIssue
+                        {
+                            RelativePath = difference.RelativePath,
+                            Reason = "当前文件缺失；另一地区状态仍保留，此方向以后按单文件跳过处理",
+                        });
+                        degraded++;
+                    }
+                    else SetSideAvailability(difference, current, true);
+                    continue;
+                }
+                if (!scan.Manifest.Files.TryGetValue(difference.RelativePath, out var actual))
+                {
+                    SetSideAvailability(difference, current, false);
+                    warnings.Add(new RegionFileIssue { RelativePath = difference.RelativePath, Reason = "当前文件未能写入新状态记录" });
+                    degraded++;
+                    continue;
+                }
+                SetSideEntry(difference, current, CloneEntry(actual));
+                SetSideAvailability(difference, current, true);
+                difference.Kind = DifferenceKind(difference.China, difference.International);
+                await RestoreAtomicallyAsync(path,
+                    _store.BackupFile(generationId, current, difference.RelativePath), actual, cancellationToken);
+                updated++;
+            }
+
+            foreach (var same in generation.Differences.Where(item => item.Kind == RegionDifferenceKind.Same).ToList())
+            {
+                generation.Differences.Remove(same);
+                TryDeleteGenerationEntryBackups(generationId, same.RelativePath);
+            }
+
+            var knownPaths = original.Differences.Select(item => item.RelativePath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var otherReference = LoadReferenceManifest(original, Other(current), out _);
+            var potential = 0;
+            if (otherReference is not null)
+            {
+                foreach (var path in scan.Manifest.Files.Keys.Union(otherReference.Files.Keys,
+                             StringComparer.OrdinalIgnoreCase).Where(path => !knownPaths.Contains(path)))
+                {
+                    scan.Manifest.Files.TryGetValue(path, out var currentEntry);
+                    otherReference.Files.TryGetValue(path, out var otherEntry);
+                    if (EntriesEqual(currentEntry, otherEntry)) continue;
+                    potential++;
+                    warnings.Add(new RegionFileIssue
+                    {
+                        RelativePath = path,
+                        Reason = "检测到新的潜在区服差异，但另一区服文件内容未保存，未加入可恢复备份",
+                    });
+                }
+            }
+            generation.ResetWarnings = warnings;
+            if (current == OverwatchRegion.China)
+            {
+                generation.ChinaReferenceComplete = scan.Issues.Count == 0;
+                generation.ChinaBuildFingerprint = scan.Manifest.BuildFingerprint;
+            }
+            else
+            {
+                generation.InternationalReferenceComplete = scan.Issues.Count == 0;
+                generation.InternationalBuildFingerprint = scan.Manifest.BuildFingerprint;
+            }
+            var china = CreateManifestFromDifferences(OverwatchRegion.China, generation);
+            var international = CreateManifestFromDifferences(OverwatchRegion.International, generation);
+            generation.ChinaManifestId = china.ManifestId;
+            generation.InternationalManifestId = international.ManifestId;
+            _store.SaveGenerationManifest(generationId, china);
+            _store.SaveGenerationManifest(generationId, international);
+            _store.SaveGenerationReferenceManifest(generationId, scan.Manifest);
+            _store.SaveGeneration(generation);
+            var validation = await ValidateGenerationBackupsAsync(generation, Other(current), true,
+                cancellationToken, allowPerFileIssues: true);
+            if (!validation.Available) throw new InvalidDataException(validation.Reason);
+            _store.Activate(generationId, current);
+            return new RegionResetResult(generationId, current, updated, degraded, potential, warnings);
+        }
+        catch
+        {
+            if (_store.LoadPointer()?.GenerationId != generationId)
+                try { if (Directory.Exists(generationRoot)) Directory.Delete(generationRoot, true); } catch { }
+            throw;
+        }
+    }
+
     private async Task<SwitchEligibilityResult> EvaluateSwitchEligibilityAsync(
         OverwatchRegionGeneration generation, CompatibilityResult compatibility, OverwatchRegion? target,
         bool hashBackups, CancellationToken token)
     {
-        if (compatibility.Status == GenerationCompatibility.Updated ||
-            generation.State == RegionBackupState.Stale && compatibility.Status != GenerationCompatibility.Compatible)
-            return new SwitchEligibilityResult(RegionSwitchEligibility.GameUpdated,
-                compatibility.Status == GenerationCompatibility.Updated
-                    ? compatibility.Reason
-                    : "Active Generation 已被标记为旧游戏版本，当前无法重新确认兼容性");
         var backup = await ValidateGenerationBackupsAsync(generation, target, hashBackups, token,
             allowPerFileIssues: generation.BackupMode == RegionBackupMode.VerifiedDifference);
         if (!backup.Available)
             return new SwitchEligibilityResult(RegionSwitchEligibility.BackupUnavailable, backup.Reason);
-        return compatibility.Status == GenerationCompatibility.Compatible
+        return compatibility.Status == GenerationCompatibility.Compatible && generation.State != RegionBackupState.Stale
             ? new SwitchEligibilityResult(RegionSwitchEligibility.Normal,
                 backup.FileIssueCount > 0 ? backup.Reason : "游戏版本与区服备份均已确认",
                 backup.FileIssueCount)
             : new SwitchEligibilityResult(RegionSwitchEligibility.BestEffort,
-                "当前游戏版本无法确认；将只处理 Active Generation 中可用的已知 Difference" +
+                (compatibility.Status == GenerationCompatibility.Updated || generation.State == RegionBackupState.Stale
+                    ? "检测到游戏文件可能已经更新；仍将尽可能处理现有区服差异"
+                    : "当前游戏版本无法确认；将只处理 Active Generation 中可用的已知 Difference") +
                 (backup.FileIssueCount > 0 ? $"；{backup.FileIssueCount:N0} 个目标备份文件将跳过" : ""),
                 backup.FileIssueCount);
     }
@@ -1455,6 +2064,17 @@ public sealed class OverwatchRegionManager
                     token.ThrowIfCancellationRequested();
                     var expected = backupRegion == OverwatchRegion.China
                         ? difference.China : difference.International;
+                    var sideAvailable = backupRegion == OverwatchRegion.China
+                        ? difference.ChinaAvailable != false : difference.InternationalAvailable != false;
+                    if (!sideAvailable)
+                    {
+                        fileIssues.Add(new RegionFileIssue
+                        {
+                            RelativePath = difference.RelativePath,
+                            Reason = $"{RegionName(backupRegion)}侧已标记为没有可用本地备份",
+                        });
+                        continue;
+                    }
                     if (expected is null) continue;
                     var source = _store.BackupFile(generation.GenerationId, backupRegion,
                         difference.RelativePath);
@@ -1540,7 +2160,6 @@ public sealed class OverwatchRegionManager
     private static void KeepContentIdentityOnly(OverwatchRegionManifest manifest)
     {
         foreach (var entry in manifest.Files.Values) entry.LastWriteTimeUtc = default;
-        manifest.BuildFingerprint = new GameBuildFingerprint();
     }
 
     private static string ComputeCommonBaseline(IEnumerable<RegionDifference> differences)

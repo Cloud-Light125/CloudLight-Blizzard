@@ -1,0 +1,16 @@
+name = "cloudlight-feedback"
+main = "src/index.ts"
+compatibility_date = "2026-08-23"
+
+[vars]
+ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/yundan125/CloudLight-Blizzard/main/announcements.json"
+GITHUB_OWNER = "yundan125"
+GITHUB_REPO = "CloudLight-Blizzard-Feedback"
+
+[[ratelimits]]
+name = "FEEDBACK_RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60

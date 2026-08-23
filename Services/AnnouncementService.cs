@@ -1,0 +1,141 @@
+using System.Reflection;
+using System.IO;
+using System.Net.Http;
+using System.Text.Json;
+using CloudLightBlizzard.Models;
+
+namespace CloudLightBlizzard.Services;
+
+public sealed class AnnouncementService : IDisposable
+{
+    private readonly AppSettings _settings;
+    private readonly string _stateFile;
+    private readonly string _appVersion;
+    private readonly CloudHttpClientFactory _httpClients;
+    private readonly bool _ownsHttpClients;
+    private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+    private AnnouncementLocalState _state;
+
+    public AnnouncementService(AppSettings settings, string? stateFile = null, string? appVersion = null,
+        CloudHttpClientFactory? httpClients = null)
+    {
+        _settings = settings;
+        _ownsHttpClients = httpClients is null;
+        _httpClients = httpClients ?? new CloudHttpClientFactory(settings);
+        _stateFile = stateFile ?? Path.Combine(AppPaths.Current.AnnouncementsDir, "state.json");
+        _appVersion = appVersion ?? Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+        _state = LoadState();
+    }
+
+    public IReadOnlyList<Announcement> CachedAnnouncements => Filter(_state.Cache);
+    public DateTimeOffset? LastSuccessfulCheck => _state.LastSuccessfulCheck;
+    public string? LastFailureMessage { get; private set; }
+
+    public async Task<IReadOnlyList<Announcement>> RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var downloaded = await DownloadAsync(cancellationToken).ConfigureAwait(false);
+            if (IsValid(downloaded))
+            {
+                _state.Cache = downloaded;
+                _state.LastSuccessfulCheck = DateTimeOffset.Now;
+                SaveState();
+                LastFailureMessage = null;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (CloudNetworkException ex)
+        {
+            LastFailureMessage = CloudHttpClientFactory.UserMessage(ex.Kind, "announcement");
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            LastFailureMessage = "公告服务暂时不可用。";
+        }
+        return Filter(_state.Cache);
+    }
+
+    public bool IsUnread(Announcement item) =>
+        !_state.ReadRevisions.TryGetValue(item.Id, out var revision) || revision < item.Revision;
+
+    public bool HasUnread(IEnumerable<Announcement> items) => items.Any(IsUnread);
+
+    public void MarkRead(Announcement item)
+    {
+        if (_state.ReadRevisions.TryGetValue(item.Id, out var revision) && revision >= item.Revision) return;
+        _state.ReadRevisions[item.Id] = item.Revision;
+        SaveState();
+    }
+
+    private async Task<AnnouncementDocument?> DownloadAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        var endpoint = new Uri(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(_settings.CloudServiceBaseUrl)), "v1/announcements");
+        using var response = await _httpClients.SendGetAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, endpoint), "announcement", timeout.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync<AnnouncementDocument>(stream, _json, timeout.Token).ConfigureAwait(false);
+    }
+
+    private IReadOnlyList<Announcement> Filter(AnnouncementDocument? document)
+    {
+        if (!SemanticVersion.TryParse(_appVersion, out var current) || !IsValid(document)) return Array.Empty<Announcement>();
+        return document!.Announcements.Where(item => item.Enabled && InVersionRange(item, current))
+            .OrderByDescending(item => item.PublishedAt).ToArray();
+    }
+
+    private static bool InVersionRange(Announcement item, SemanticVersion current)
+    {
+        if (!string.IsNullOrWhiteSpace(item.MinVersion) &&
+            (!SemanticVersion.TryParse(item.MinVersion, out var min) || current.CompareTo(min) < 0)) return false;
+        if (!string.IsNullOrWhiteSpace(item.MaxVersion) &&
+            (!SemanticVersion.TryParse(item.MaxVersion, out var max) || current.CompareTo(max) > 0)) return false;
+        return true;
+    }
+
+    private static bool IsValid(AnnouncementDocument? document) => document is { SchemaVersion: 1 } &&
+        document.Announcements.Count <= 100 && document.Announcements.All(item =>
+            item.Revision > 0 && item.Id.Length is > 0 and <= 100 && item.Title.Length is > 0 and <= 200 &&
+            item.Content.Length <= 20_000 && item.PublishedAt != default);
+
+    private AnnouncementLocalState LoadState()
+    {
+        try
+        {
+            var state = File.Exists(_stateFile)
+                ? JsonSerializer.Deserialize<AnnouncementLocalState>(File.ReadAllText(_stateFile), _json)
+                : null;
+            if (state is null || (state.Cache is not null && !IsValid(state.Cache))) throw new InvalidDataException();
+            state.ReadRevisions ??= new(StringComparer.Ordinal);
+            return state;
+        }
+        catch
+        {
+            try { if (File.Exists(_stateFile)) File.Delete(_stateFile); } catch { }
+            return new AnnouncementLocalState();
+        }
+    }
+
+    private void SaveState()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_stateFile)!);
+            var temp = _stateFile + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(_state, _json));
+            File.Move(temp, _stateFile, overwrite: true);
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        if (_ownsHttpClients) _httpClients.Dispose();
+    }
+}

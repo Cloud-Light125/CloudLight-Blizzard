@@ -1,7 +1,9 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.OverwatchRegion;
@@ -32,12 +34,19 @@ public static class FeatureSelfTest
             if (string.Equals(test, "region-verified", StringComparison.OrdinalIgnoreCase))
             {
                 RunVerifiedDifferenceRegionTest(workspace, report).GetAwaiter().GetResult();
+                RunRegionMaintenanceTests(workspace, report).GetAwaiter().GetResult();
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
             if (string.Equals(test, "region-guide", StringComparison.OrdinalIgnoreCase))
             {
                 RunRegionPreparationGuideTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
+            if (string.Equals(test, "twitch-connection", StringComparison.OrdinalIgnoreCase))
+            {
+                RunTwitchConnectionStateTest(report);
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
@@ -49,6 +58,7 @@ public static class FeatureSelfTest
             RunRegionPreparationGuideTest(report);
             RunRegionGenerationTest(workspace, report).GetAwaiter().GetResult();
             RunBestEffortRegionTest(workspace, report).GetAwaiter().GetResult();
+            RunRegionMaintenanceTests(workspace, report).GetAwaiter().GetResult();
             RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
             RunAccountPreferenceTest(workspace, report);
             RunAppPathsMigrationTest(workspace, report);
@@ -161,7 +171,41 @@ public static class FeatureSelfTest
             Assert(retryCalls == 0, "Twitch auth-required cancels network retry");
             Assert(vm.TwitchConnectionStage == TwitchConnectionStage.WaitingAuthorization,
                 "Twitch auth-required remains waiting for the current device code");
-            Assert(!vm.CanTwitchLogin, "Twitch auth-required blocks duplicate device-code requests");
+            Assert(vm.CanTwitchLogin && vm.TwitchLoginButtonText == "打开登录页面",
+                "Twitch auth-required lets the login button reopen the real device authorization URL");
+        }
+
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMilliseconds(80),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2),
+                   (_, _) => Task.CompletedTask))
+        {
+            vm.BeginTwitchLogin();
+            vm.SetTwitchTemporaryNetworkFailure("connection timeout");
+            Assert(vm.TwitchLastConnectionFailureKind == TwitchConnectionFailureKind.Timeout,
+                "Twitch timeout remains a network timeout");
+            Assert(SpinWait.SpinUntil(() => vm.TwitchRetryLoopActive, 500),
+                "Twitch timeout remains retryable");
+
+            using var runtimeState = JsonDocument.Parse("""
+                {"running":false,"accounts":[],"runtime":{"available":false,"component":"ssl","code":"ssl_runtime_unavailable","message":"DLL load failed while importing _ssl"}}
+                """);
+            vm.ApplyState(DropsPlatform.Twitch, runtimeState.RootElement);
+            Assert(vm.TwitchConnectionStage == TwitchConnectionStage.SslRuntimeError,
+                "Twitch SSL runtime failure has a dedicated state");
+            Assert(vm.Twitch.Summary.Contains("Python SSL 运行库无法加载", StringComparison.Ordinal),
+                "Twitch SSL runtime failure is not shown as a normal network error");
+            Assert(SpinWait.SpinUntil(() => !vm.TwitchRetryLoopActive, 500),
+                "Twitch SSL runtime failure cancels automatic retry");
+
+            vm.BeginClearTwitchLogin();
+            Assert(!vm.CanClearTwitchLogin, "Twitch clear-login blocks duplicate clicks only while clearing");
+            using var clearedState = JsonDocument.Parse("""
+                {"running":false,"accounts":[],"authState":"logged_out","runtime":{"available":true}}
+                """);
+            vm.CompleteClearTwitchLogin(clearedState.RootElement);
+            Assert(vm.TwitchConnectionStage == TwitchConnectionStage.Unconnected && vm.CanTwitchLogin,
+                "Twitch clear-login resets checking state and enables login again");
+            Assert(vm.CanClearTwitchLogin, "Twitch clear-login remains available after reset");
         }
         report.AppendLine("Twitch connection state: PASS");
     }
@@ -436,11 +480,27 @@ public static class FeatureSelfTest
             State = RegionBackupState.Stale,
             GamePathValid = true,
             GenerationCompatibility = GenerationCompatibility.Updated,
+            SwitchEligibility = RegionSwitchEligibility.BestEffort,
+            PossibleGameUpdate = true,
+            ChinaBackupComplete = true,
+            InternationalBackupComplete = true,
             ActiveGenerationId = "existing-active",
         };
         var outdated = RegionPreparationGuide.Create(outdatedStatus, RegionOperationPhase.None, false, false, null, backupRoot);
-        Assert(outdated.State == RegionPreparationState.Outdated, "updated generation maps to Outdated");
-        AssertActions(outdated, RegionPreparationAction.Restart);
+        Assert(outdated.State == RegionPreparationState.Mixed &&
+               outdated.Title == "检测到游戏文件可能已经更新",
+            "updated generation maps to BestEffort recovery");
+        AssertActions(outdated, RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational);
+
+        var legacyStatus = new RegionSnapshotStatus
+        {
+            State = RegionBackupState.Legacy,
+            GamePathValid = true,
+            ActiveGenerationId = "legacy-active",
+        };
+        var legacy = RegionPreparationGuide.Create(legacyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
+        Assert(legacy.State == RegionPreparationState.Outdated, "legacy generation maps to Outdated");
+        AssertActions(legacy, RegionPreparationAction.Restart);
 
         readyStatus.CurrentRegion = CurrentGameRegion.Mixed;
         readyStatus.ExactSnapshotMatch = false;
@@ -613,16 +673,15 @@ public static class FeatureSelfTest
         File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch_loader.dll"), "new game version");
         var updatedStatus = await manager.GetStatusAsync(game);
         Assert(updatedStatus.GenerationCompatibility == GenerationCompatibility.Updated &&
-               updatedStatus.State == RegionBackupState.Stale, "changed common Same core marks generation updated");
-        var differentBefore = File.ReadAllText(Path.Combine(game, "different.txt"));
+               updatedStatus.State == RegionBackupState.Stale &&
+               updatedStatus.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable,
+            "changed common Same core marks generation updated while corrupt FullSnapshot remains blocked");
         try
         {
             await manager.NormalizeToRegionAsync(game, GameRegion.China);
-            throw new InvalidOperationException("updated generation should have been rejected");
+            throw new InvalidOperationException("corrupt FullSnapshot should remain blocked after a game update");
         }
         catch (InvalidDataException) { }
-        Assert(File.ReadAllText(Path.Combine(game, "different.txt")) == differentBefore,
-            "updated common baseline is rejected before region files are overwritten");
 
         var pointerBefore = File.ReadAllText(Path.Combine(store, "active-generation.json"));
         using var cancelled = new CancellationTokenSource();
@@ -638,7 +697,7 @@ public static class FeatureSelfTest
         var legacyManager = new OverwatchRegionManager(legacyRoot, () => false, 0);
         Assert((await legacyManager.GetStatusAsync(game)).State == RegionBackupState.Legacy,
             "old schema is rejected");
-        report.AppendLine("TEST 6 Generation/Staging: PASS (drift-tolerant China/International detection, strong correction/conflict, successful/failed normalize state, update rejection, strict restore hash, 256MB copies)");
+        report.AppendLine("TEST 6 Generation/Staging: PASS (drift-tolerant detection, successful/failed normalize state, strict FullSnapshot restore hash, 256MB copies)");
     }
 
     private static async Task RunVerifiedDifferenceRegionTest(string workspace, StringBuilder report)
@@ -838,6 +897,181 @@ public static class FeatureSelfTest
         report.AppendLine("VerifiedDifference region preparation: PASS (per-file Step2/Step3 classification, partial daily restore, zero-usable old Active protection, legacy FullSnapshot)");
     }
 
+    private static async Task RunRegionMaintenanceTests(string workspace, StringBuilder report)
+    {
+        static RegionFileEntry Entry(string path, string content)
+        {
+            var bytes = Encoding.UTF8.GetBytes(content);
+            return new RegionFileEntry
+            {
+                RelativePath = path,
+                Size = bytes.Length,
+                Sha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+            };
+        }
+
+        static void WriteBackup(OverwatchRegionBackupStore store, string generationId,
+            GameRegion region, string path, string content)
+        {
+            var file = store.BackupFile(generationId, region, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, content);
+        }
+
+        static OverwatchRegionGeneration SeedGeneration(string root, string id,
+            IReadOnlyList<RegionDifference> differences, GameRegion current,
+            OverwatchRegionManifest? chinaReference = null,
+            OverwatchRegionManifest? internationalReference = null)
+        {
+            var store = new OverwatchRegionBackupStore(root);
+            var generation = new OverwatchRegionGeneration
+            {
+                GenerationId = id,
+                State = RegionBackupState.Ready,
+                BackupMode = RegionBackupMode.VerifiedDifference,
+                SourceRegion = GameRegion.China,
+                TargetRegion = GameRegion.International,
+                ChinaBackupComplete = true,
+                InternationalBackupComplete = true,
+                Differences = differences.ToList(),
+                ChinaReferenceComplete = chinaReference is not null,
+                InternationalReferenceComplete = internationalReference is not null,
+            };
+            var china = new OverwatchRegionManifest { Region = GameRegion.China };
+            var international = new OverwatchRegionManifest { Region = GameRegion.International };
+            foreach (var difference in differences)
+            {
+                if (difference.China is not null) china.Files[difference.RelativePath] = difference.China;
+                if (difference.International is not null) international.Files[difference.RelativePath] = difference.International;
+            }
+            generation.ChinaManifestId = china.ManifestId;
+            generation.InternationalManifestId = international.ManifestId;
+            store.SaveGenerationManifest(id, china);
+            store.SaveGenerationManifest(id, international);
+            if (chinaReference is not null) store.SaveGenerationReferenceManifest(id, chinaReference);
+            if (internationalReference is not null) store.SaveGenerationReferenceManifest(id, internationalReference);
+            store.SaveGeneration(generation);
+            store.Activate(id, current);
+            return generation;
+        }
+
+        // Test 1: a pair.json without a Step4 field remains Ready and can derive a new generation.
+        var step4Game = Path.Combine(workspace, "step4-game");
+        var step4Root = Path.Combine(workspace, "step4-store");
+        Directory.CreateDirectory(step4Game);
+        File.WriteAllText(Path.Combine(step4Game, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(step4Game, "foo.dat"), "BBB");
+        File.WriteAllText(Path.Combine(step4Game, "unstable.dat"), "B2 changed");
+        var foo = new RegionDifference
+        {
+            RelativePath = "foo.dat", Kind = RegionDifferenceKind.Different,
+            China = Entry("foo.dat", "AAA"), International = Entry("foo.dat", "BBB"),
+        };
+        var unstable = new RegionDifference
+        {
+            RelativePath = "unstable.dat", Kind = RegionDifferenceKind.Different,
+            China = Entry("unstable.dat", "A stable"), International = Entry("unstable.dat", "B1 stable"),
+        };
+        SeedGeneration(step4Root, "legacy-roundtrip", new[] { foo, unstable }, GameRegion.International);
+        var step4Store = new OverwatchRegionBackupStore(step4Root);
+        WriteBackup(step4Store, "legacy-roundtrip", GameRegion.China, "foo.dat", "AAA");
+        WriteBackup(step4Store, "legacy-roundtrip", GameRegion.International, "foo.dat", "BBB");
+        WriteBackup(step4Store, "legacy-roundtrip", GameRegion.China, "unstable.dat", "A stable");
+        WriteBackup(step4Store, "legacy-roundtrip", GameRegion.International, "unstable.dat", "B1 stable");
+        var legacyPair = step4Store.GenerationFile("legacy-roundtrip");
+        File.WriteAllLines(legacyPair, File.ReadAllLines(legacyPair)
+            .Where(line => !line.Contains("\"VerificationLevel\"", StringComparison.Ordinal)));
+        var step4Manager = new OverwatchRegionManager(step4Root, () => false, 0);
+        var legacyStatus = await step4Manager.GetStatusAsync(step4Game, verifyFiles: false);
+        Assert(legacyStatus.State == RegionBackupState.Ready && legacyStatus.Step4Pending,
+            "legacy three-step Ready defaults to RoundTrip and Step4Pending");
+        var pointerBefore = File.ReadAllText(step4Store.ActiveGenerationFile);
+        using (var cancelled = new CancellationTokenSource())
+        {
+            cancelled.Cancel();
+            try { await step4Manager.VerifyFourthStepAsync(step4Game, cancellationToken: cancelled.Token); }
+            catch (OperationCanceledException) { }
+        }
+        Assert(File.ReadAllText(step4Store.ActiveGenerationFile) == pointerBefore,
+            "cancelled Step4 leaves old Active unchanged");
+        var step4 = await step4Manager.VerifyFourthStepAsync(step4Game);
+        var upgraded = step4Store.LoadGeneration(step4.GenerationId)!;
+        Assert(step4.DoubleVerified == 1 && step4.Rejected == 1 && step4.Unverified == 0 &&
+               upgraded.State == RegionBackupState.Ready &&
+               upgraded.VerificationLevel == RegionVerificationLevel.DoubleRoundTrip &&
+               upgraded.Differences.Count == 1 && upgraded.Differences[0].RelativePath == "foo.dat" &&
+               step4Store.LoadGeneration("legacy-roundtrip")?.State == RegionBackupState.Ready,
+            "legacy Step4 derives Ready G2, retains B2=B1, rejects B2!=B1, and preserves G1");
+        report.AppendLine("CORE TEST 1 legacy Ready -> Step4: PASS");
+
+        // Test 2: checking is read-only and cleanup only deletes a high-confidence temporary candidate.
+        var checkGame = Path.Combine(workspace, "check-game");
+        var checkRoot = Path.Combine(workspace, "check-store");
+        Directory.CreateDirectory(checkGame);
+        File.WriteAllText(Path.Combine(checkGame, "Overwatch.exe"), "stable executable");
+        CreateLargeFile(Path.Combine(checkGame, "runtime.tmp"), 5L * 1024 * 1024, 0x54);
+        var permanent = new RegionFileEntry
+        {
+            RelativePath = "permanent.dat", Size = 10L * 1024 * 1024,
+            Sha256 = new string('A', 64),
+        };
+        var reference = new OverwatchRegionManifest { Region = GameRegion.China };
+        reference.Files[permanent.RelativePath] = permanent;
+        SeedGeneration(checkRoot, "check", Array.Empty<RegionDifference>(), GameRegion.China,
+            chinaReference: reference);
+        var checkManager = new OverwatchRegionManager(checkRoot, () => false, 0);
+        var check = await checkManager.CheckCurrentRegionFilesAsync(checkGame, GameRegion.China);
+        Assert(check.MissingCount == 1 && check.MissingBytes == 10L * 1024 * 1024 &&
+               check.TemporaryCount == 1 && check.TemporaryBytes == 5L * 1024 * 1024 &&
+               File.Exists(Path.Combine(checkGame, "runtime.tmp")) &&
+               !File.Exists(Path.Combine(checkGame, "permanent.dat")),
+            "status check reports missing permanent size and temporary candidate without modifying files");
+        var cleanup = await checkManager.ClearTemporaryFilesAsync(checkGame, check);
+        Assert(cleanup.Deleted == 1 && cleanup.DeletedBytes == 5L * 1024 * 1024 &&
+               !File.Exists(Path.Combine(checkGame, "runtime.tmp")) &&
+               !File.Exists(Path.Combine(checkGame, "permanent.dat")),
+            "explicit cleanup deletes only runtime.tmp and never touches permanent.dat");
+        report.AppendLine("CORE TEST 2 status check + temporary cleanup: PASS");
+
+        // Test 3: reset updates only the current side and a degraded current entry does not block the other side.
+        var resetGame = Path.Combine(workspace, "reset-game");
+        var resetRoot = Path.Combine(workspace, "reset-store");
+        Directory.CreateDirectory(resetGame);
+        File.WriteAllText(Path.Combine(resetGame, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(resetGame, "foo.dat"), "CCC");
+        var resetFoo = new RegionDifference
+        {
+            RelativePath = "foo.dat", Kind = RegionDifferenceKind.Different,
+            China = Entry("foo.dat", "AAA"), International = Entry("foo.dat", "BBB"),
+        };
+        var resetMissing = new RegionDifference
+        {
+            RelativePath = "missing.dat", Kind = RegionDifferenceKind.Different,
+            China = Entry("missing.dat", "China missing"), International = Entry("missing.dat", "International kept"),
+        };
+        SeedGeneration(resetRoot, "reset-old", new[] { resetFoo, resetMissing }, GameRegion.China);
+        var resetStore = new OverwatchRegionBackupStore(resetRoot);
+        WriteBackup(resetStore, "reset-old", GameRegion.China, "foo.dat", "AAA");
+        WriteBackup(resetStore, "reset-old", GameRegion.International, "foo.dat", "BBB");
+        WriteBackup(resetStore, "reset-old", GameRegion.China, "missing.dat", "China missing");
+        WriteBackup(resetStore, "reset-old", GameRegion.International, "missing.dat", "International kept");
+        var resetManager = new OverwatchRegionManager(resetRoot, () => false, 0);
+        var reset = await resetManager.ResetCurrentRegionStateAsync(resetGame);
+        var resetGeneration = resetStore.LoadGeneration(reset.GenerationId)!;
+        var resetFooAfter = resetGeneration.Differences.Single(item => item.RelativePath == "foo.dat");
+        var resetMissingAfter = resetGeneration.Differences.Single(item => item.RelativePath == "missing.dat");
+        Assert(resetFooAfter.China?.Sha256 == Entry("foo.dat", "CCC").Sha256 &&
+               resetFooAfter.International?.Sha256 == Entry("foo.dat", "BBB").Sha256 &&
+               resetMissingAfter.ChinaAvailable == false && resetMissingAfter.InternationalAvailable != false,
+            "reset updates China, keeps International metadata, and directionally degrades missing China file");
+        var toInternational = await resetManager.NormalizeToRegionAsync(resetGame, GameRegion.International);
+        Assert(toInternational.Outcome == RegionSwitchOutcome.Success &&
+               File.ReadAllText(Path.Combine(resetGame, "foo.dat")) == "BBB" &&
+               File.ReadAllText(Path.Combine(resetGame, "missing.dat")) == "International kept",
+            "degraded current side still permits direct restore to intact other side");
+        report.AppendLine("CORE TEST 3 reset current side + switch other side: PASS");
+    }
+
     private static async Task RunBestEffortRegionTest(string workspace, StringBuilder report)
     {
         var game = Path.Combine(workspace, "best-effort-game");
@@ -966,8 +1200,8 @@ public static class FeatureSelfTest
         File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch_loader.dll"), "updated common loader");
         var updated = await manager.GetStatusAsync(game);
         Assert(updated.GenerationCompatibility == GenerationCompatibility.Updated &&
-               updated.SwitchEligibility == RegionSwitchEligibility.GameUpdated,
-            "Updated remains blocked independently from BestEffort Unknown");
+               updated.SwitchEligibility == RegionSwitchEligibility.BestEffort,
+            "updated FullSnapshot remains visible as BestEffort until strict target hash validation");
 
         var log = File.ReadAllText(RegionSwitchLog.FileOverride!);
         Assert(log.Contains("GenerationCompatibility=Unknown", StringComparison.Ordinal) &&
@@ -975,7 +1209,7 @@ public static class FeatureSelfTest
                log.Contains("IgnoredUnknownFiles=未枚举，未参与处理", StringComparison.Ordinal) &&
                log.Contains("Verification=passed", StringComparison.Ordinal),
             "BestEffort logs record Unknown reason, mode, known-only handling, and verification");
-        report.AppendLine("TEST 7 BestEffort/volatile/staging/account: PASS (A-H: unknown-file preservation, known-file repair, strict backup hash, Updated block, Unknown direct normalize, account order, volatile filtering, source staging reuse)");
+        report.AppendLine("TEST 7 BestEffort/volatile/staging/account: PASS (A-H: unknown-file preservation, known-file repair, strict FullSnapshot backup hash, Unknown direct normalize, account order, volatile filtering, source staging reuse)");
     }
 
     private static async Task RunAccountSwitchOrderTest(StringBuilder report)
