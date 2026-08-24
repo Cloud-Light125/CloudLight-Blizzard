@@ -12,6 +12,7 @@ public partial class App : Application
 {
     /// <summary>第二个实例用它唤起已运行的窗口。</summary>
     public const string ShowEventName = @"Local\CloudLight Blizzard.Show";
+    internal static bool IsHeadlessSelfTest { get; private set; }
     private const string MutexName = @"Local\CloudLight Blizzard.SingleInstance";
     private Mutex? _singleInstance;
 
@@ -19,6 +20,7 @@ public partial class App : Application
     {
         if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-selftest")
         {
+            IsHeadlessSelfTest = true;
             Task.Run(() => CloudServicesSelfTest.RunAsync(e.Args[1])).GetAwaiter().GetResult();
             Shutdown(0);
             return;
@@ -26,6 +28,7 @@ public partial class App : Application
 
         if (e.Args.Length >= 2 && e.Args[0] == "--feature-selftest")
         {
+            IsHeadlessSelfTest = true;
             Task.Run(() => FeatureSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2))).GetAwaiter().GetResult();
             Shutdown(0);
             return;

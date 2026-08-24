@@ -2143,7 +2143,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private static void Dispatch(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null || dispatcher.CheckAccess()) action(); else dispatcher.BeginInvoke(action);
+        // Headless self-tests run before WPF starts its dispatcher loop, so
+        // queuing here would leave recovery state unapplied.
+        if (dispatcher == null || App.IsHeadlessSelfTest || dispatcher.CheckAccess()) action();
+        else dispatcher.BeginInvoke(action);
     }
 
     public void Dispose()
