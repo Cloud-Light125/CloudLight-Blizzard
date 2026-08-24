@@ -14,6 +14,8 @@ public partial class SettingsPage : UserControl
     public event EventHandler? AnnouncementBadgeSettingChanged;
     private MainViewModel? _vm;
     private bool _loading = true;
+    private NetworkDiagnosticReport? _lastNetworkDiagnostic;
+    private CancellationTokenSource? _networkDiagnosticCancellation;
     public SettingsPage() => InitializeComponent();
     public void Initialize(MainViewModel vm)
     {
@@ -113,6 +115,65 @@ public partial class SettingsPage : UserControl
         ProxyNoticeText.Text = enabled
             ? "代理已应用；公告、反馈和更新将在下一次请求时使用。正在运行的 YouTube 浏览器需重新启动观看窗口后生效。"
             : "网络代理已关闭，下一次云服务请求将使用直连。";
+        _lastNetworkDiagnostic = null;
+        CopyDiagnosticButton.IsEnabled = false;
+        NetworkDiagnosticPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private async void OnTestNetwork(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        _networkDiagnosticCancellation?.Cancel();
+        _networkDiagnosticCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _networkDiagnosticCancellation = cancellation;
+        NetworkTestButton.IsEnabled = false;
+        NetworkTestButton.Content = "正在测试…";
+        CopyDiagnosticButton.IsEnabled = false;
+        NetworkDiagnosticPanel.Visibility = Visibility.Visible;
+        NetworkDiagnosticText.Text = "正在使用已保存的代理设置测试正式网络路径……";
+        try
+        {
+            var diagnostics = new NetworkDiagnosticService(_vm.Settings, _vm.CloudHttpClients);
+            _lastNetworkDiagnostic = await diagnostics.RunAsync(cancellation.Token);
+            NetworkDiagnosticText.Text = _lastNetworkDiagnostic.ToDisplayText();
+            CopyDiagnosticButton.IsEnabled = true;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            NetworkDiagnosticText.Text = "网络诊断已取消。";
+        }
+        finally
+        {
+            if (ReferenceEquals(_networkDiagnosticCancellation, cancellation))
+                _networkDiagnosticCancellation = null;
+            cancellation.Dispose();
+            NetworkTestButton.IsEnabled = true;
+            NetworkTestButton.Content = "测试连接";
+        }
+    }
+
+    private void OnCopyDiagnostic(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        var diagnostics = new NetworkDiagnosticService(_vm.Settings, _vm.CloudHttpClients);
+        var context = new RuntimeDiagnosticContext(
+            _vm.UpdateChecks.CurrentVersion,
+            _vm.BattleNetPathValid,
+            _vm.OverwatchPathValid,
+            _vm.RegionGuide.CurrentFileText,
+            _vm.RegionGuide.BackupModeText,
+            _vm.RegionGuide.BackupStateText,
+            _vm.GetDropsDiagnosticSnapshot());
+        try
+        {
+            Clipboard.SetText(diagnostics.BuildCopyText(context, _lastNetworkDiagnostic));
+            ProxyNoticeText.Text = "诊断摘要已复制；凭据、用户目录和代理认证信息已自动脱敏。";
+        }
+        catch
+        {
+            ProxyNoticeText.Text = "无法写入剪贴板，请稍后重试。";
+        }
     }
 
     private async void OnCheckUpdate(object sender, RoutedEventArgs e)

@@ -8,6 +8,15 @@ public enum WorkerLifecycle { Stopped, Starting, Running, Stopping, Crashed }
 
 public sealed record DropsProxySettings(bool EnableProxy, string ProxyUrl, bool FallbackDirect);
 
+public sealed record DropsRuntimeDiagnosticSnapshot(
+    string SoopStatus,
+    string TwitchStatus,
+    string YouTubeStatus,
+    string SoopLastSuccess,
+    string TwitchLastSuccess,
+    string YouTubeLastSuccess,
+    string RecentNetworkError);
+
 public sealed record WorkerEvent(DropsPlatform Platform, string Name, JsonElement Payload);
 
 public sealed record WorkerSnapshot(

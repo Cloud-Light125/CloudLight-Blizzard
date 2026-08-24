@@ -214,6 +214,38 @@ public static class FeatureSelfTest
                 "Twitch clear-login resets checking state and enables login again");
             Assert(vm.CanClearTwitchLogin, "Twitch clear-login remains available after reset");
         }
+
+        var immediateRetryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromSeconds(5),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2),
+                   (_, _) =>
+                   {
+                       Interlocked.Increment(ref immediateRetryCalls);
+                       return Task.CompletedTask;
+                   }))
+        {
+            vm.BeginTwitchLogin();
+            vm.SetTwitchTemporaryNetworkFailure("connection timeout");
+            Assert(SpinWait.SpinUntil(() => vm.TwitchRetryNowVisibility == System.Windows.Visibility.Visible, 500),
+                "Twitch retry wait exposes one immediate-retry action");
+            vm.RefreshTemporalStatus(DateTimeOffset.Now);
+            Assert(vm.TwitchRetryStatusText.Contains("秒后自动重试", StringComparison.Ordinal),
+                "Twitch retry wait exposes a display-only countdown");
+            Assert(vm.RetryTwitchNow(), "Twitch immediate retry wakes the pending delay");
+            Assert(SpinWait.SpinUntil(() => immediateRetryCalls == 1, 500),
+                "Twitch immediate retry enters the existing retry flow once");
+            using var recoveredState = JsonDocument.Parse("""
+                {"running":true,"accounts":[{"userId":"test","loggedIn":true}],
+                 "authState":"logged_in","connectionState":"running","runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Twitch, recoveredState.RootElement);
+            Assert(SpinWait.SpinUntil(() => !vm.TwitchRetryLoopActive, 500),
+                "Twitch success cancels the retry flow and countdown");
+            Assert(vm.TwitchRetryLoopStarts == 1 && immediateRetryCalls == 1,
+                "Twitch immediate retry does not create a parallel reconnect loop");
+            Assert(vm.TwitchRetryStatusVisibility == System.Windows.Visibility.Collapsed,
+                "Twitch success hides the retry countdown");
+        }
         report.AppendLine("Twitch connection state: PASS");
     }
 
@@ -265,6 +297,32 @@ public static class FeatureSelfTest
             Assert(vm.SoopQuickStart.Steps[2].Satisfied &&
                    vm.SoopRefreshStatus.Contains("当前没有符合条件的频道"),
                 "SOOP successful empty refresh still completes quick-start step 3");
+        }
+
+        var immediateRetryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMinutes(1),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), null,
+                   TimeSpan.FromSeconds(5), (_, _) =>
+                   {
+                       Interlocked.Increment(ref immediateRetryCalls);
+                       return Task.CompletedTask;
+                   }))
+        {
+            vm.SetSoopAutoStartEnabled(true);
+            vm.BeginSoopStart("account", automatic: true);
+            vm.SetSoopFailure("connection timeout");
+            Assert(SpinWait.SpinUntil(() => vm.SoopRetryNowVisibility == System.Windows.Visibility.Visible, 500),
+                "SOOP retry wait exposes one immediate-retry action");
+            vm.RefreshTemporalStatus(DateTimeOffset.Now);
+            Assert(vm.SoopRetryStatusText.Contains("秒后自动重试", StringComparison.Ordinal),
+                "SOOP retry wait exposes a display-only countdown");
+            Assert(vm.RetrySoopNow(), "SOOP immediate retry wakes the pending delay");
+            Assert(SpinWait.SpinUntil(() => immediateRetryCalls == 1 && !vm.SoopRetryLoopActive, 500),
+                "SOOP immediate retry recovers through the existing retry flow");
+            Assert(vm.SoopRetryLoopStarts == 1 && immediateRetryCalls == 1,
+                "SOOP immediate retry does not create a parallel reconnect loop");
+            Assert(vm.SoopRetryStatusVisibility == System.Windows.Visibility.Collapsed,
+                "SOOP success hides the retry countdown");
         }
         report.AppendLine("SOOP network recovery / quick-start refresh state: PASS");
     }

@@ -143,6 +143,7 @@ public sealed class MainViewModel : ObservableObject
     public FeedbackService FeedbackService { get; }
     public DropsHostService DropsHost { get; } = new();
     public PlatformLogSession DropsLogSession { get; }
+    private Func<DropsRuntimeDiagnosticSnapshot>? _dropsDiagnosticSnapshotProvider;
 
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
@@ -196,10 +197,19 @@ public sealed class MainViewModel : ObservableObject
     public string LaunchText => _clientRunning ? "打开战网窗口" : "启动战网";
     public string AppVersion => "v" + UpdateChecks.CurrentVersion;
     public AppSettings Settings => _settings;
+    public bool BattleNetPathValid => !string.IsNullOrWhiteSpace(_paths.ClientExe) && File.Exists(_paths.ClientExe);
+    public bool OverwatchPathValid => _regionPageStatus.GamePathValid;
     public string RegionBackupRoot => _regionManager.BackupRoot;
     public bool IsVerifiedDifferenceMode => _settings.RegionBackupMode == RegionBackupMode.VerifiedDifference;
     public bool IsFullSnapshotMode => _settings.RegionBackupMode == RegionBackupMode.FullSnapshot;
     public bool HasPendingRegionPreparation => _regionPageStatus.State == RegionBackupState.Preparing;
+
+    internal void SetDropsDiagnosticSnapshotProvider(Func<DropsRuntimeDiagnosticSnapshot>? provider) =>
+        _dropsDiagnosticSnapshotProvider = provider;
+
+    public DropsRuntimeDiagnosticSnapshot GetDropsDiagnosticSnapshot() =>
+        _dropsDiagnosticSnapshotProvider?.Invoke() ?? new DropsRuntimeDiagnosticSnapshot(
+            "未初始化", "未初始化", "未初始化", "无", "无", "无", "无");
 
     private string _gameRegionTitle = "当前文件：尚未识别";
     public string GameRegionTitle { get => _gameRegionTitle; set => Set(ref _gameRegionTitle, value); }

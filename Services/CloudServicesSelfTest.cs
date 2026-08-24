@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.Services;
 
@@ -23,6 +24,7 @@ public static class CloudServicesSelfTest
             RunAnnouncementTest(workspace, report);
             await RunAnnouncementTimerTest(workspace, report);
             await RunConfigurationAndProxyFailureTest(workspace, report);
+            await RunNetworkDiagnosticTest(workspace, report);
             await RunUploadProgressAndCancellationTest(workspace, report);
             await RunFeedbackResponseMappingTest(report);
             await RunRedactionPackageTest(workspace, report);
@@ -197,6 +199,56 @@ public static class CloudServicesSelfTest
         report.AppendLine("TEST 2 cloud endpoint/shared proxy/error logging: PASS");
     }
 
+    private static async Task RunNetworkDiagnosticTest(string workspace, StringBuilder report)
+    {
+        static HttpClient SuccessClient() => new(new StubHandler(request =>
+            new HttpResponseMessage(request.RequestUri?.Host == "api.github.com"
+                ? HttpStatusCode.NotFound : HttpStatusCode.OK)));
+
+        var proxySettings = new AppSettings
+        {
+            EnableProxy = true,
+            ProxyUrl = "http://127.0.0.1:7897",
+            FallbackDirect = true,
+        };
+        using (var clients = new CloudHttpClientFactory(proxySettings,
+                   Path.Combine(workspace, "diagnostic-proxy.log"), _ => SuccessClient()))
+        {
+            var result = await new NetworkDiagnosticService(proxySettings, clients).RunAsync();
+            Assert(result.Proxy.Success && result.Proxy.Route == "Proxy",
+                "network diagnostic checks the configured proxy itself");
+            Assert(result.Announcement.Success && result.Announcement.Route == "Proxy" &&
+                   result.Update.Success && result.Update.Route == "Proxy",
+                "announcement and update diagnostics report the actual Proxy route");
+        }
+
+        using (var clients = new CloudHttpClientFactory(proxySettings,
+                   Path.Combine(workspace, "diagnostic-fallback.log"), proxy => proxy is null
+                       ? SuccessClient()
+                       : new HttpClient(new ThrowingHandler())))
+        {
+            var service = new NetworkDiagnosticService(proxySettings, clients);
+            var result = await service.RunAsync();
+            Assert(!result.Proxy.Success && result.Announcement.Success &&
+                   result.Announcement.Route == "DirectFallback" && result.Update.Route == "DirectFallback",
+                "bad proxy with fallback reports DirectFallback for successful GET diagnostics");
+
+            proxySettings.ProxyUrl = "http://user:password@127.0.0.1:7897";
+            var copy = service.BuildCopyText(new RuntimeDiagnosticContext(
+                "2.0.6", true, true, "国服", "VerifiedDifference", "Ready",
+                new DropsRuntimeDiagnosticSnapshot(
+                    "运行中 cookie=session-secret", "等待网络恢复 token=oauth-secret", "已停止",
+                    "刚刚", "5 分钟前", "无", @"C:\Users\Alice\secret token=diagnostic-secret")), result);
+            Assert(!copy.Contains("session-secret", StringComparison.Ordinal) &&
+                   !copy.Contains("oauth-secret", StringComparison.Ordinal) &&
+                   !copy.Contains("diagnostic-secret", StringComparison.Ordinal) &&
+                   !copy.Contains("Alice", StringComparison.Ordinal) &&
+                   !copy.Contains("user:password", StringComparison.Ordinal),
+                "copied diagnostics redact tokens, cookies, proxy credentials, and Windows user paths");
+        }
+        report.AppendLine("TEST 3 network diagnostic routes/redacted copy: PASS");
+    }
+
     private static async Task RunUploadProgressAndCancellationTest(string workspace, StringBuilder report)
     {
         var zip = Path.Combine(workspace, "large.zip");
@@ -295,5 +347,12 @@ public static class CloudServicesSelfTest
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromResult(response(request));
+    }
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(new HttpRequestException("simulated proxy failure"));
     }
 }

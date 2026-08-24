@@ -42,8 +42,24 @@
                     <CheckBox x:Name="FallbackDirectBox" Style="{StaticResource ThemeCheckBox}" Content="代理连接失败时允许直连"
                               Margin="0,12,0,0" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged"/>
                     <TextBlock x:Name="ProxyNoticeText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap"/>
-                    <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
-                            Padding="15,0" Margin="0,12,0,0" Click="OnSaveProxy"/>
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}"
+                                Padding="15,0" Click="OnSaveProxy"/>
+                        <Button x:Name="NetworkTestButton" Content="测试连接"
+                                Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0"
+                                Click="OnTestNetwork"/>
+                        <Button x:Name="CopyDiagnosticButton" Content="复制诊断结果" IsEnabled="False"
+                                Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0"
+                                Click="OnCopyDiagnostic"/>
+                    </WrapPanel>
+                    <Border x:Name="NetworkDiagnosticPanel" Background="{DynamicResource App.SurfaceAlt}"
+                            CornerRadius="8" Padding="12,10" Margin="0,12,0,0" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="网络诊断" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="NetworkDiagnosticText" TextWrapping="Wrap" LineHeight="20"
+                                       Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 

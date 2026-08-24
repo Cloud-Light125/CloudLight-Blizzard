@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using CloudLightBlizzard.Services;
 using CloudLightBlizzard.Services.Drops;
@@ -27,11 +28,13 @@ public partial class DropsPage : UserControl
         .ToDictionary(platform => platform, _ => 0L);
     private readonly SemaphoreSlim _logStartGate = new(1, 1);
     private readonly HashSet<string> _twitchClaimsInProgress = new(StringComparer.Ordinal);
+    private readonly DispatcherTimer _retryDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _logTailStarted;
 
     public DropsPage()
     {
         InitializeComponent();
+        _retryDisplayTimer.Tick += (_, _) => _vm?.RefreshTemporalStatus(DateTimeOffset.Now);
         IsVisibleChanged += async (_, _) =>
         {
             if (!IsVisible || !_initialized) return;
@@ -48,6 +51,7 @@ public partial class DropsPage : UserControl
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
+        main.SetDropsDiagnosticSnapshotProvider(_vm.CreateDiagnosticSnapshot);
         DataContext = _vm;
         _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
         main.DropsHost.EventReceived += OnWorkerEvent;
@@ -57,6 +61,8 @@ public partial class DropsPage : UserControl
         _vm.SetTwitchAutoStartEnabled(main.Settings.AutoStartTwitch);
         SoopTab.IsChecked = true;
         SoopPanel.Visibility = Visibility.Visible;
+        _vm.RefreshTemporalStatus(DateTimeOffset.Now);
+        _retryDisplayTimer.Start();
         _initialized = true;
     }
 
@@ -844,6 +850,10 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { _vm.SetTwitchFailure(ex.Message); }
     }
 
+    private void OnSoopRetryNow(object sender, RoutedEventArgs e) => _vm?.RetrySoopNow();
+
+    private void OnTwitchRetryNow(object sender, RoutedEventArgs e) => _vm?.RetryTwitchNow();
+
     private async void OnTwitchReload(object sender, RoutedEventArgs e)
         => await RefreshTwitchAsync();
 
@@ -1192,7 +1202,9 @@ public partial class DropsPage : UserControl
 
     public async ValueTask DisposeAsync()
     {
+        _retryDisplayTimer.Stop();
         if (_main is not null) _main.DropsHost.EventReceived -= OnWorkerEvent;
+        _main?.SetDropsDiagnosticSnapshotProvider(null);
         _vm?.Dispose();
         if (_logTail is not null)
         {

@@ -225,6 +225,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public DateTimeOffset TwitchStageStartedAt => _twitchStageStartedAt;
     private DateTimeOffset? _lastTwitchConnectedAt;
     public DateTimeOffset? LastTwitchConnectedAt => _lastTwitchConnectedAt;
+    private DateTimeOffset? _lastSoopSuccessfulAt;
+    private DateTimeOffset? _lastYouTubeSuccessfulAt;
+    private string _soopLastSuccessText = "";
+    public string SoopLastSuccessText { get => _soopLastSuccessText; private set { Set(ref _soopLastSuccessText, value); Raise(nameof(SoopLastSuccessVisibility)); } }
+    public Visibility SoopLastSuccessVisibility => string.IsNullOrWhiteSpace(SoopLastSuccessText) ? Visibility.Collapsed : Visibility.Visible;
+    private string _twitchLastSuccessText = "";
+    public string TwitchLastSuccessText { get => _twitchLastSuccessText; private set { Set(ref _twitchLastSuccessText, value); Raise(nameof(TwitchLastSuccessVisibility)); } }
+    public Visibility TwitchLastSuccessVisibility => string.IsNullOrWhiteSpace(TwitchLastSuccessText) ? Visibility.Collapsed : Visibility.Visible;
+    private string _youtubeLastSuccessText = "";
+    public string YouTubeLastSuccessText { get => _youtubeLastSuccessText; private set { Set(ref _youtubeLastSuccessText, value); Raise(nameof(YouTubeLastSuccessVisibility)); } }
+    public Visibility YouTubeLastSuccessVisibility => string.IsNullOrWhiteSpace(YouTubeLastSuccessText) ? Visibility.Collapsed : Visibility.Visible;
     private string _twitchLastError = "";
     public string TwitchLastError => _twitchLastError;
     private TwitchConnectionFailureKind _twitchLastFailureKind;
@@ -261,7 +272,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         : IsTwitchLoginInProgress ? "正在登录…"
         : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开登录页面"
         : _twitchAuthState == "needs_login" ? "重新登录" : "登录 Twitch";
-    public Visibility TwitchRetryVisibility => _twitchConnectionStage is
+    public Visibility TwitchRetryVisibility => TwitchRetryNowVisibility == Visibility.Visible
+        ? Visibility.Collapsed : _twitchConnectionStage is
         TwitchConnectionStage.NetworkFailed or TwitchConnectionStage.ProxyUnavailable or
         TwitchConnectionStage.SslCertificateError or TwitchConnectionStage.SslRuntimeError or
         TwitchConnectionStage.WorkerError or TwitchConnectionStage.RetryWaiting
@@ -273,6 +285,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _twitchStageMonitorCts;
     private CancellationTokenSource? _twitchRetryCts;
     private Task? _twitchRetryTask;
+    private TaskCompletionSource<bool>? _twitchRetryWakeSignal;
+    private DateTimeOffset? _twitchNextRetryAt;
+    private string _twitchRetryStatusText = "";
+    public string TwitchRetryStatusText { get => _twitchRetryStatusText; private set { Set(ref _twitchRetryStatusText, value); Raise(nameof(TwitchRetryStatusVisibility)); } }
+    public Visibility TwitchRetryStatusVisibility => string.IsNullOrWhiteSpace(TwitchRetryStatusText) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility TwitchRetryNowVisibility => _twitchNextRetryAt.HasValue && HasTwitchRetryIntent()
+        ? Visibility.Visible : Visibility.Collapsed;
     private readonly object _twitchRetrySync = new();
     private long _twitchStageRevision;
     private int _twitchRetryAttempt;
@@ -291,6 +310,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private readonly Func<int, CancellationToken, Task>? _soopRetryOverride;
     private CancellationTokenSource? _soopRetryCts;
     private Task? _soopRetryTask;
+    private TaskCompletionSource<bool>? _soopRetryWakeSignal;
+    private DateTimeOffset? _soopNextRetryAt;
+    private string _soopRetryStatusText = "";
+    public string SoopRetryStatusText { get => _soopRetryStatusText; private set { Set(ref _soopRetryStatusText, value); Raise(nameof(SoopRetryStatusVisibility)); } }
+    public Visibility SoopRetryStatusVisibility => string.IsNullOrWhiteSpace(SoopRetryStatusText) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility SoopRetryNowVisibility => _soopNextRetryAt.HasValue && HasSoopRetryIntent()
+        ? Visibility.Visible : Visibility.Collapsed;
     private readonly object _soopRetrySync = new();
     private int _soopRetryAttempt;
     private int _soopRetryLoopStarts;
@@ -310,6 +336,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private bool _soopSettingsReady;
     private bool _twitchSettingsReady;
     private string _youtubeCurrentLabel = "YouTube";
+    private string _recentNetworkError = "";
+    private DateTimeOffset? _recentNetworkErrorAt;
 
     public DropsQuickStartGuide SoopQuickStart { get; } = new(
         new("①", "添加 SOOP 账号", "首次使用请先添加 SOOP 账号。账号信息仅保存在本机。", "soop_add_account"),
@@ -437,6 +465,81 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                              (fallbackDirect ? " · 代理失败时允许直连" : "");
     }
 
+    public void RefreshTemporalStatus(DateTimeOffset now)
+    {
+        if (_soopNextRetryAt is { } soopDeadline)
+        {
+            var seconds = Math.Max(0, (int)Math.Ceiling((soopDeadline - now).TotalSeconds));
+            SoopRetryStatusText = _soopRetryAttempt == 0
+                ? $"网络异常，{seconds} 秒后自动重试"
+                : $"网络仍不可用，{seconds} 秒后继续尝试";
+        }
+        if (_twitchNextRetryAt is { } twitchDeadline)
+        {
+            var seconds = Math.Max(0, (int)Math.Ceiling((twitchDeadline - now).TotalSeconds));
+            TwitchRetryStatusText = _twitchRetryAttempt == 0
+                ? $"网络异常，{seconds} 秒后自动重试"
+                : $"网络仍不可用，{seconds} 秒后继续尝试";
+        }
+        SoopLastSuccessText = _lastSoopSuccessfulAt.HasValue ? LastSuccessText(_lastSoopSuccessfulAt, now) : "";
+        TwitchLastSuccessText = _lastTwitchConnectedAt.HasValue ? LastSuccessText(_lastTwitchConnectedAt, now) : "";
+        YouTubeLastSuccessText = _lastYouTubeSuccessfulAt.HasValue ? LastSuccessText(_lastYouTubeSuccessfulAt, now) : "";
+    }
+
+    public bool RetrySoopNow()
+    {
+        TaskCompletionSource<bool>? signal;
+        lock (_soopRetrySync)
+        {
+            if (!_soopNextRetryAt.HasValue || !HasSoopRetryIntent()) return false;
+            signal = _soopRetryWakeSignal;
+        }
+        SoopRetryStatusText = "正在重新连接……";
+        return signal?.TrySetResult(true) == true;
+    }
+
+    public bool RetryTwitchNow()
+    {
+        TaskCompletionSource<bool>? signal;
+        lock (_twitchRetrySync)
+        {
+            if (!_twitchNextRetryAt.HasValue || !HasTwitchRetryIntent()) return false;
+            signal = _twitchRetryWakeSignal;
+        }
+        TwitchRetryStatusText = "正在重新连接……";
+        return signal?.TrySetResult(true) == true;
+    }
+
+    public DropsRuntimeDiagnosticSnapshot CreateDiagnosticSnapshot()
+    {
+        var now = DateTimeOffset.Now;
+        var recentError = string.IsNullOrWhiteSpace(_recentNetworkError) ? "无" :
+            $"{_recentNetworkError}（{LastSuccessText(_recentNetworkErrorAt, now).Replace("最后成功：", "", StringComparison.Ordinal)}）";
+        return new DropsRuntimeDiagnosticSnapshot(
+            Soop.Status, Twitch.Status, YouTube.Status,
+            LastSuccessText(_lastSoopSuccessfulAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
+            LastSuccessText(_lastTwitchConnectedAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
+            LastSuccessText(_lastYouTubeSuccessfulAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
+            recentError);
+    }
+
+    private static string LastSuccessText(DateTimeOffset? timestamp, DateTimeOffset now)
+    {
+        if (timestamp is null) return "无";
+        var elapsed = now - timestamp.Value;
+        var relative = elapsed.TotalSeconds < 60 ? "刚刚" : elapsed.TotalMinutes < 60
+            ? $"{Math.Max(1, (int)elapsed.TotalMinutes)} 分钟前"
+            : elapsed.TotalHours < 24 ? $"{Math.Max(1, (int)elapsed.TotalHours)} 小时前"
+            : timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        return $"最后成功：{relative}";
+    }
+
+    private void RecordRecentNetworkError(string message)
+    {
+        _recentNetworkError = SensitiveDataRedactor.Redact(message);
+        _recentNetworkErrorAt = DateTimeOffset.Now;
+    }
+
     public void SetSoopAutoStartEnabled(bool enabled)
     {
         _soopAutoStartEnabled = enabled;
@@ -516,6 +619,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             default:
                 _soopRetryBlocked = false;
                 _soopRefreshPending |= refreshPending;
+                RecordRecentNetworkError(FriendlySoopFailure(kind, message));
                 Soop.Running = false;
                 if (!HasSoopRetryIntent())
                 {
@@ -596,6 +700,38 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task WaitForSoopRetryAsync(CancellationTokenSource owner, CancellationToken token)
+    {
+        var signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_soopRetrySync)
+        {
+            if (!ReferenceEquals(_soopRetryCts, owner)) throw new OperationCanceledException(token);
+            _soopRetryWakeSignal = signal;
+        }
+        Dispatch(() => SetSoopRetryDeadline(DateTimeOffset.Now + _soopRetryDelay));
+        try
+        {
+            var delay = Task.Delay(_soopRetryDelay, token);
+            await Task.WhenAny(delay, signal.Task).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_soopRetrySync)
+                if (ReferenceEquals(_soopRetryWakeSignal, signal)) _soopRetryWakeSignal = null;
+            Dispatch(() => SetSoopRetryDeadline(null,
+                token.IsCancellationRequested ? "" : "正在重新连接……"));
+        }
+    }
+
+    private void SetSoopRetryDeadline(DateTimeOffset? deadline, string status = "")
+    {
+        _soopNextRetryAt = deadline;
+        SoopRetryStatusText = status;
+        Raise(nameof(SoopRetryNowVisibility));
+        if (deadline.HasValue) RefreshTemporalStatus(DateTimeOffset.Now);
+    }
+
     private async Task RunSoopRetryLoopAsync(CancellationTokenSource owner)
     {
         var token = owner.Token;
@@ -603,7 +739,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
             while (HasSoopRetryIntent())
             {
-                await Task.Delay(_soopRetryDelay, token).ConfigureAwait(false);
+                await WaitForSoopRetryAsync(owner, token).ConfigureAwait(false);
                 if (!HasSoopRetryIntent()) break;
                 var attempt = Interlocked.Increment(ref _soopRetryAttempt);
                 try
@@ -668,6 +804,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void CancelSoopRetry()
     {
         lock (_soopRetrySync) _soopRetryCts?.Cancel();
+        Dispatch(() => SetSoopRetryDeadline(null));
     }
 
     private async Task ConfirmSoopNetworkRecoveryAsync()
@@ -715,6 +852,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public void CompleteSoopRefresh()
     {
         _soopHasRefreshed = true;
+        _lastSoopSuccessfulAt = DateTimeOffset.Now;
+        RefreshTemporalStatus(DateTimeOffset.Now);
         IsSoopRefreshing = false;
         var available = Tasks.Count(row => Bool(row.Payload, "active"));
         var channels = Accounts.SelectMany(row => row.Payload.TryGetProperty("channels", out var items) &&
@@ -929,6 +1068,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchLastFailureKind = kind;
         _twitchLastError = message;
         _twitchRetryBlocked = !retryable;
+        if (retryable) RecordRecentNetworkError(message);
         Raise(nameof(TwitchLastConnectionFailureKind));
         Raise(nameof(TwitchLastError));
     }
@@ -1105,6 +1245,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
             var wasRetrying = _twitchRetryAttempt > 0;
             _lastTwitchConnectedAt = DateTimeOffset.Now;
+            RefreshTemporalStatus(DateTimeOffset.Now);
             ClearTwitchFailure();
             Raise(nameof(LastTwitchConnectedAt));
             CancelTwitchRetry();
@@ -1200,6 +1341,39 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task WaitForTwitchRetryAsync(CancellationTokenSource owner, CancellationToken token)
+    {
+        var signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_twitchRetrySync)
+        {
+            if (!ReferenceEquals(_twitchRetryCts, owner)) throw new OperationCanceledException(token);
+            _twitchRetryWakeSignal = signal;
+        }
+        Dispatch(() => SetTwitchRetryDeadline(DateTimeOffset.Now + _twitchRetryDelay));
+        try
+        {
+            var delay = Task.Delay(_twitchRetryDelay, token);
+            await Task.WhenAny(delay, signal.Task).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            lock (_twitchRetrySync)
+                if (ReferenceEquals(_twitchRetryWakeSignal, signal)) _twitchRetryWakeSignal = null;
+            Dispatch(() => SetTwitchRetryDeadline(null,
+                token.IsCancellationRequested ? "" : "正在重新连接……"));
+        }
+    }
+
+    private void SetTwitchRetryDeadline(DateTimeOffset? deadline, string status = "")
+    {
+        _twitchNextRetryAt = deadline;
+        TwitchRetryStatusText = status;
+        Raise(nameof(TwitchRetryNowVisibility));
+        Raise(nameof(TwitchRetryVisibility));
+        if (deadline.HasValue) RefreshTemporalStatus(DateTimeOffset.Now);
+    }
+
     private async Task RunTwitchRetryLoopAsync(CancellationTokenSource owner)
     {
         var token = owner.Token;
@@ -1207,7 +1381,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
             while (CanRetryTwitchConnection())
             {
-                await Task.Delay(_twitchRetryDelay, token).ConfigureAwait(false);
+                await WaitForTwitchRetryAsync(owner, token).ConfigureAwait(false);
                 if (!CanRetryTwitchConnection()) break;
                 var attempt = Interlocked.Increment(ref _twitchRetryAttempt);
                 Dispatch(() => SetTwitchStage(TwitchConnectionStage.Connecting,
@@ -1276,10 +1450,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchStageMonitorCts?.Dispose();
         _twitchStageMonitorCts = null;
         lock (_twitchRetrySync) _twitchRetryCts?.Cancel();
+        Dispatch(() => SetTwitchRetryDeadline(null));
     }
 
     public void CompleteTwitchRefresh(DateTimeOffset completedAt)
     {
+        _lastTwitchConnectedAt = completedAt;
+        Raise(nameof(LastTwitchConnectedAt));
+        RefreshTemporalStatus(DateTimeOffset.Now);
         TwitchRefreshStatus = $"最后刷新：{completedAt.ToLocalTime():HH:mm:ss}";
         IsTwitchRefreshing = false;
     }
@@ -1932,12 +2110,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
         {
+            _lastYouTubeSuccessfulAt = DateTimeOffset.Now;
+            RefreshTemporalStatus(DateTimeOffset.Now);
             _youtubeCurrentLabel = Text(message.Payload, "channel", Text(message.Payload, "title", "YouTube"));
             YouTube.Status = "正在观看";
             YouTube.Summary = $"{_youtubeCurrentLabel} · 刚刚开始观看";
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "watch_time")
         {
+            _lastYouTubeSuccessfulAt = DateTimeOffset.Now;
+            RefreshTemporalStatus(DateTimeOffset.Now);
             YouTube.Status = "正在观看";
             YouTube.Summary = $"{_youtubeCurrentLabel} · 已观看 {FormatSeconds(Number(message.Payload, "seconds"))}";
         }

@@ -109,13 +109,16 @@ public sealed class AnnouncementService : IDisposable
             return await _downloadOverride(cancellationToken).ConfigureAwait(false);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        var endpoint = new Uri(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(_settings.CloudServiceBaseUrl)), "v1/announcements");
+        var endpoint = EndpointFor(_settings);
         using var response = await _httpClients.SendGetAsync(
             () => new HttpRequestMessage(HttpMethod.Get, endpoint), "announcement", timeout.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         return await JsonSerializer.DeserializeAsync<AnnouncementDocument>(stream, _json, timeout.Token).ConfigureAwait(false);
     }
+
+    internal static Uri EndpointFor(AppSettings settings) =>
+        new(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(settings.CloudServiceBaseUrl)), "v1/announcements");
 
     internal static async Task RunPeriodicRefreshAsync(Func<CancellationToken, Task> refresh,
         TimeSpan interval, CancellationToken cancellationToken)

@@ -60,12 +60,12 @@ public sealed class UpdateService : IUpdateService, IDisposable
             HttpResponseMessage response;
             if (_cloudHttpClients is not null)
             {
-                response = await _cloudHttpClients.SendGetAsync(CreateRequest, "update", cancellationToken)
+                response = await _cloudHttpClients.SendGetAsync(CreateLatestReleaseRequest, "update", cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                using var request = CreateRequest();
+                using var request = CreateLatestReleaseRequest();
                 response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -152,7 +152,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
         ErrorMessage = message,
     };
 
-    private static HttpRequestMessage CreateRequest()
+    internal static HttpRequestMessage CreateLatestReleaseRequest()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
         request.Headers.UserAgent.ParseAdd("CloudLight-Blizzard");
