@@ -1,6 +1,7 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.RegionFilesPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
@@ -20,8 +21,8 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
-            <TextBlock Text="区服文件" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="使用本地备份快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。" Style="{StaticResource PageDescription}"/>
+            <ctrl:PageHeader Title="区服文件"
+                             Description="使用本地备份快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。"/>
 
             <TextBlock Text="当前状态" Style="{StaticResource SectionTitle}" Margin="0,26,0,12"/>
             <Border Style="{StaticResource SurfaceCard}">

@@ -7,6 +7,17 @@ public enum UpdateCheckResultStatus
     Failed,
 }
 
+public enum UpdateFailureKind
+{
+    None,
+    NetworkUnavailable,
+    ProxyUnavailable,
+    Timeout,
+    Http5xx,
+    RateLimited,
+    InvalidResponse,
+}
+
 public sealed class UpdateCheckResult
 {
     public UpdateCheckResultStatus Status { get; init; }
@@ -19,4 +30,7 @@ public sealed class UpdateCheckResult
     public DateTimeOffset? PublishedAt { get; init; }
     public string? InstallerDownloadUrl { get; init; }
     public string? ErrorMessage { get; init; }
+    public UpdateFailureKind FailureKind { get; init; }
+    public DateTimeOffset? RetryAt { get; init; }
+    public string? TechnicalDetail { get; init; }
 }

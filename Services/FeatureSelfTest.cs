@@ -31,6 +31,12 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "update", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             if (string.Equals(test, "region-verified", StringComparison.OrdinalIgnoreCase))
             {
                 RunVerifiedDifferenceRegionTest(workspace, report).GetAwaiter().GetResult();
@@ -394,25 +400,27 @@ public static class FeatureSelfTest
         Assert(UpdateService.NormalizeVersion("v1.0.1-rc.1") is null, "prerelease tag is not a stable version");
 
         HttpRequestMessage? capturedRequest = null;
+        var updateCalls = 0;
         var releaseJson = """
             {
-              "tag_name": "v1.0.1",
+              "version": "1.0.1",
+              "tag": "v1.0.1",
               "name": "CloudLight Blizzard 1.0.1",
-              "body": "修复与改进",
-              "html_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v1.0.1",
-              "published_at": "2026-08-14T08:00:00Z",
-              "draft": false,
-              "prerelease": false,
+              "notes": "修复与改进",
+              "htmlUrl": "https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v1.0.1",
+              "publishedAt": "2026-08-14T08:00:00Z",
               "assets": [
                 {
                   "name": "CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
-                  "browser_download_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe"
+                  "downloadUrl": "https://github.com/yundan125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
+                  "size": 123456
                 }
               ]
             }
             """;
         using (var client = new HttpClient(new StubHttpHandler(request =>
                {
+                   updateCalls++;
                    capturedRequest = request;
                    return JsonResponse(releaseJson);
                })))
@@ -420,7 +428,7 @@ public static class FeatureSelfTest
         {
             var result = await service.CheckAsync();
             Assert(result.Status == UpdateCheckResultStatus.Success && result.HasUpdate &&
-                   result.LatestVersion == "1.0.1", "formal GitHub release is parsed and compared");
+                   result.LatestVersion == "1.0.1", "Worker latest release is parsed and compared");
             Assert(result.ReleaseUrl.EndsWith("/releases/tag/v1.0.1", StringComparison.Ordinal),
                 "release html_url is retained");
             Assert(result.ReleaseNotes == "修复与改进" && result.PublishedAt.HasValue,
@@ -428,22 +436,45 @@ public static class FeatureSelfTest
             Assert(result.InstallerDownloadUrl?.EndsWith("Setup.exe", StringComparison.Ordinal) == true,
                 "conventional installer asset is parsed without downloading");
             Assert(capturedRequest?.RequestUri?.AbsoluteUri == UpdateService.LatestReleaseApiUrl,
-                "only the fixed latest-release API is requested");
+                "only the fixed Worker update endpoint is requested");
             Assert(capturedRequest?.Headers.UserAgent.ToString().Contains("CloudLight-Blizzard", StringComparison.Ordinal) == true &&
-                   capturedRequest.Headers.Accept.Any(value => value.MediaType == "application/vnd.github+json"),
-                "GitHub request headers are present");
+                   capturedRequest.Headers.Accept.Any(value => value.MediaType == "application/json"),
+                "Worker request headers are present");
+            var cached = await service.CheckAsync();
+            Assert(cached.LatestVersion == "1.0.1" && updateCalls == 1,
+                "successful update result is reused without another HTTP request");
         }
 
-        var prereleaseJson = releaseJson.Replace("\"prerelease\": false", "\"prerelease\": true");
-        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(prereleaseJson))))
+        var invalidJson = releaseJson.Replace("\"version\": \"1.0.1\"", "\"version\": \"preview\"")
+            .Replace("\"tag\": \"v1.0.1\"", "\"tag\": \"preview\"");
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(invalidJson))))
         using (var service = new UpdateService(client, "1.0.0"))
-            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
-                "prerelease response is ignored");
-        var draftJson = releaseJson.Replace("\"draft\": false", "\"draft\": true");
-        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(draftJson))))
+            Assert((await service.CheckAsync()).FailureKind == UpdateFailureKind.InvalidResponse,
+                "invalid Worker response is classified");
+
+        var olderReleaseJson = releaseJson.Replace("1.0.1", "2.0.6", StringComparison.Ordinal);
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(olderReleaseJson))))
+        using (var service = new UpdateService(client, "2.0.7"))
+        {
+            var olderRemote = await service.CheckAsync();
+            Assert(olderRemote.Status == UpdateCheckResultStatus.Success && !olderRemote.HasUpdate &&
+                   olderRemote.LatestVersion == "2.0.6" && olderRemote.FailureKind == UpdateFailureKind.None,
+                "local 2.0.7 newer than remote 2.0.6 is a successful up-to-date result");
+        }
+
+        using (var client = new HttpClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+               {
+                   Content = new StringContent("{\"success\":false,\"error\":\"rate_limited\",\"resetAt\":\"2026-08-24T18:00:00Z\"}"),
+                   Headers = { { "X-Update-Error", "rate_limited" } }
+               })))
         using (var service = new UpdateService(client, "1.0.0"))
-            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
-                "draft response is ignored");
+        {
+            var limited = await service.CheckAsync();
+            Assert(limited.FailureKind == UpdateFailureKind.RateLimited &&
+                   limited.ErrorMessage?.StartsWith("GitHub 更新服务请求过于频繁", StringComparison.Ordinal) == true &&
+                   !limited.ErrorMessage.Contains("Response status code", StringComparison.Ordinal),
+                "rate limit is classified and shown as a safe Chinese message");
+        }
 
         var updateLog = new UpdateLog(Path.Combine(workspace, "update-test.log"));
         var skippedSettings = new AppSettings { SkippedUpdateVersion = "1.0.1" };
@@ -497,7 +528,7 @@ public static class FeatureSelfTest
         await Task.WhenAll(automaticTask, manualTask);
         Assert(concurrentService.Calls == 1, "shared check does not send a duplicate HTTP request");
 
-        report.AppendLine("TEST 4 GitHub updates: PASS (semantic versions/stable release/assets/skip/manual/failure/delay/single-flight)");
+        report.AppendLine("TEST 4 Worker updates: PASS (semantic versions/release/assets/rate-limit/cache/skip/manual/failure/delay/single-flight)");
     }
 
     private static void RunRegionPreparationGuideTest(StringBuilder report)

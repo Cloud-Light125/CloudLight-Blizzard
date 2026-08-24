@@ -11,6 +11,41 @@ namespace CloudLightBlizzard.Services;
 
 public static class CloudServicesSelfTest
 {
+    public static async Task RunLiveUpdateAsync(string outputRoot)
+    {
+        outputRoot = Path.GetFullPath(outputRoot);
+        Directory.CreateDirectory(outputRoot);
+        var settings = AppSettings.Load();
+        var networkLog = Path.Combine(outputRoot, "live-network.log");
+        var report = new StringBuilder();
+        try
+        {
+            using var clients = new CloudHttpClientFactory(settings, networkLog);
+            using var update = new UpdateService(settings, clients);
+            var updateResult = await update.CheckAsync();
+            var diagnostics = await new NetworkDiagnosticService(settings, clients).RunAsync();
+            report.AppendLine($"Endpoint: {UpdateService.EndpointFor(settings)}");
+            report.AppendLine($"ProxyEnabled: {settings.EnableProxy}");
+            report.AppendLine($"UpdateStatus: {updateResult.Status}");
+            report.AppendLine($"CurrentVersion: {updateResult.CurrentVersion}");
+            report.AppendLine($"LatestVersion: {updateResult.LatestVersion}");
+            report.AppendLine($"HasUpdate: {updateResult.HasUpdate}");
+            report.AppendLine($"FailureKind: {updateResult.FailureKind}");
+            report.AppendLine(diagnostics.ToDisplayText());
+            if (updateResult.Status != UpdateCheckResultStatus.Success ||
+                updateResult.HasUpdate != UpdateService.IsNewerVersion(
+                    updateResult.CurrentVersion, updateResult.LatestVersion) || !diagnostics.Update.Success)
+                throw new InvalidOperationException("Live Worker update validation did not return the expected result.");
+            report.AppendLine("OVERALL: PASS");
+        }
+        catch (Exception ex)
+        {
+            report.AppendLine("OVERALL: FAIL");
+            report.AppendLine(ex.ToString());
+        }
+        await File.WriteAllTextAsync(Path.Combine(outputRoot, "cloud-services-live-selftest.txt"), report.ToString());
+    }
+
     public static async Task RunAsync(string outputRoot)
     {
         outputRoot = Path.GetFullPath(outputRoot);
@@ -64,13 +99,32 @@ public static class CloudServicesSelfTest
         var settings = new AppSettings { ShowAnnouncementBadge = true };
         using var service = new AnnouncementService(settings, stateFile, "2.0.6");
         var items = service.CachedAnnouncements;
+        var firstHeaderUpdates = 0;
+        var secondHeaderUpdates = 0;
+        service.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AnnouncementService.IsBadgeVisible)) firstHeaderUpdates++;
+        };
+        service.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AnnouncementService.IsBadgeVisible)) secondHeaderUpdates++;
+        };
         Assert(!service.IsUnread(first), "revision 1 already read");
         Assert(service.IsUnread(revised), "revision 2 becomes unread after revision 1 was read");
-        Assert(settings.ShowAnnouncementBadge && service.HasUnread(items), "enabled badge shows for unread revision");
+        Assert(service.HasUnreadAnnouncements && service.IsBadgeVisible,
+            "shared state shows the badge for an unread revision");
         settings.ShowAnnouncementBadge = false;
-        Assert(items.Count == 2 && !(settings.ShowAnnouncementBadge && service.HasUnread(items)),
-            "disabled badge hides dot without removing announcements");
-        report.AppendLine("TEST 1 announcement revision/badge: PASS");
+        service.NotifyBadgeSettingChanged();
+        Assert(items.Count == 2 && service.HasUnreadAnnouncements && !service.IsBadgeVisible,
+            "disabled badge hides every bound dot without removing unread announcements");
+        settings.ShowAnnouncementBadge = true;
+        service.NotifyBadgeSettingChanged();
+        Assert(service.IsBadgeVisible, "re-enabling the badge restores every bound dot while unread remains");
+        service.MarkRead(revised);
+        Assert(!service.HasUnreadAnnouncements && !service.IsBadgeVisible &&
+               firstHeaderUpdates == secondHeaderUpdates && firstHeaderUpdates >= 3,
+            "marking the final unread revision notifies every page binding immediately");
+        report.AppendLine("TEST 1 announcement shared unread/revision/badge: PASS");
     }
 
     private static async Task RunAnnouncementTimerTest(string workspace, StringBuilder report)
@@ -141,12 +195,13 @@ public static class CloudServicesSelfTest
 
         Assert(calls >= 3 && maximumActive == 1,
             "announcement periodic and manual refresh remain single-flight");
-        Assert(service.HasUnread(latest),
+        Assert(service.HasUnreadAnnouncements,
             "announcement revision increase becomes unread after periodic recovery");
-        Assert(settings.ShowAnnouncementBadge && service.HasUnread(latest),
+        Assert(service.IsBadgeVisible,
             "announcement periodic revision displays badge when enabled");
         settings.ShowAnnouncementBadge = false;
-        Assert(latest.Single().Revision == 2 && !(settings.ShowAnnouncementBadge && service.HasUnread(latest)),
+        service.NotifyBadgeSettingChanged();
+        Assert(latest.Single().Revision == 2 && service.HasUnreadAnnouncements && !service.IsBadgeVisible,
             "announcement data updates while disabled badge remains hidden");
         Assert(service.LastFailureMessage is null,
             "announcement check silently recovers on a later periodic attempt");
@@ -220,6 +275,25 @@ public static class CloudServicesSelfTest
             Assert(result.Announcement.Success && result.Announcement.Route == "Proxy" &&
                    result.Update.Success && result.Update.Route == "Proxy",
                 "announcement and update diagnostics report the actual Proxy route");
+        }
+
+        static HttpClient RateLimitedClient() => new(new StubHandler(request =>
+        {
+            if (request.RequestUri?.AbsolutePath == "/v1/update/latest")
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                response.Headers.Add("X-Update-Error", "rate_limited");
+                return response;
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }));
+        using (var clients = new CloudHttpClientFactory(proxySettings,
+                   Path.Combine(workspace, "diagnostic-rate-limit.log"), _ => RateLimitedClient()))
+        {
+            var result = await new NetworkDiagnosticService(proxySettings, clients).RunAsync();
+            Assert(!result.Update.Success && result.Update.Message == "GitHub API 请求频率限制" &&
+                   result.ToDisplayText().Contains("更新服务：受限", StringComparison.Ordinal),
+                "network diagnostic classifies the Worker GitHub rate limit");
         }
 
         using (var clients = new CloudHttpClientFactory(proxySettings,

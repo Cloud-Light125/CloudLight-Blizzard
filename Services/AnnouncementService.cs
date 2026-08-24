@@ -1,12 +1,14 @@
 using System.Reflection;
 using System.IO;
 using System.Net.Http;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
 
 namespace CloudLightBlizzard.Services;
 
-public sealed class AnnouncementService : IDisposable
+public sealed class AnnouncementService : IDisposable, INotifyPropertyChanged
 {
     private readonly AppSettings _settings;
     private readonly string _stateFile;
@@ -16,6 +18,7 @@ public sealed class AnnouncementService : IDisposable
     private readonly Func<CancellationToken, Task<AnnouncementDocument?>>? _downloadOverride;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly object _stateSync = new();
+    private readonly SynchronizationContext? _notificationContext;
     private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
     private AnnouncementLocalState _state;
 
@@ -36,6 +39,7 @@ public sealed class AnnouncementService : IDisposable
         _stateFile = stateFile ?? Path.Combine(AppPaths.Current.AnnouncementsDir, "state.json");
         _appVersion = appVersion ?? Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
         _state = LoadState();
+        _notificationContext = SynchronizationContext.Current;
     }
 
     public IReadOnlyList<Announcement> CachedAnnouncements
@@ -47,6 +51,9 @@ public sealed class AnnouncementService : IDisposable
         get { lock (_stateSync) return _state.LastSuccessfulCheck; }
     }
     public string? LastFailureMessage { get; private set; }
+    public bool HasUnreadAnnouncements => HasUnread(CachedAnnouncements);
+    public bool IsBadgeVisible => _settings.ShowAnnouncementBadge && HasUnreadAnnouncements;
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public async Task<IReadOnlyList<Announcement>> RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -64,6 +71,7 @@ public sealed class AnnouncementService : IDisposable
                     SaveState();
                 }
                 LastFailureMessage = null;
+                NotifyAnnouncementStateChanged();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -95,13 +103,36 @@ public sealed class AnnouncementService : IDisposable
 
     public void MarkRead(Announcement item)
     {
+        var changed = false;
         lock (_stateSync)
         {
             if (_state.ReadRevisions.TryGetValue(item.Id, out var revision) && revision >= item.Revision) return;
             _state.ReadRevisions[item.Id] = item.Revision;
             SaveState();
+            changed = true;
         }
+        if (changed) NotifyAnnouncementStateChanged();
     }
+
+    public void NotifyBadgeSettingChanged() => NotifyAnnouncementStateChanged();
+
+    private void NotifyAnnouncementStateChanged()
+    {
+        void Raise()
+        {
+            OnPropertyChanged(nameof(CachedAnnouncements));
+            OnPropertyChanged(nameof(HasUnreadAnnouncements));
+            OnPropertyChanged(nameof(IsBadgeVisible));
+        }
+
+        if (_notificationContext is not null && SynchronizationContext.Current != _notificationContext)
+            _notificationContext.Post(_ => Raise(), null);
+        else
+            Raise();
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private async Task<AnnouncementDocument?> DownloadAsync(CancellationToken cancellationToken)
     {

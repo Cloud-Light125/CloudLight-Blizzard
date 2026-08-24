@@ -1,14 +1,14 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:pages="clr-namespace:CloudLightBlizzard.Views.Pages"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
-            <TextBlock Text="设置" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="调整应用行为、Battle.net 路径与本地数据。" Style="{StaticResource PageDescription}"/>
+            <ctrl:PageHeader Title="设置" Description="调整应用行为、Battle.net 路径与本地数据。"/>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
                 <StackPanel>

@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly AnnouncementService _announcementService;
     private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
     private Task? _announcementRefreshTask;
+    public AnnouncementService AnnouncementState => _announcementService;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
     {
@@ -61,7 +62,8 @@ public partial class MainWindow : Window
         _statsPage.Initialize(_vm);
         _dropsPage.Initialize(_vm);
         _settingsPage.Initialize(_vm);
-        _settingsPage.AnnouncementBadgeSettingChanged += (_, _) => UpdateAnnouncementBadge();
+        _settingsPage.AnnouncementBadgeSettingChanged += (_, _) =>
+            _announcementService.NotifyBadgeSettingChanged();
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _pagesReady = true;
         SelectSavedSection();
@@ -127,21 +129,13 @@ public partial class MainWindow : Window
     private void ApplyAnnouncements(IReadOnlyList<Announcement> announcements)
     {
         _announcements = announcements;
-        UpdateAnnouncementBadge();
     }
 
-    private void UpdateAnnouncementBadge()
-    {
-        AnnouncementUnreadDot.Visibility = _vm.Settings.ShowAnnouncementBadge &&
-            _announcementService.HasUnread(_announcements) ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async void OnOpenAnnouncements(object sender, RoutedEventArgs e)
+    internal async Task OpenAnnouncementsAsync()
     {
         if (_announcements.Count == 0) await RefreshAnnouncementsAsync(_updateCancellation.Token);
         var dialog = new AnnouncementWindow(_announcements, _announcementService) { Owner = this };
         dialog.ShowDialog();
-        UpdateAnnouncementBadge();
     }
 
     private async Task RunAutomaticUpdateCheckAsync()

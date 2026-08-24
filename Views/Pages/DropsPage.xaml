@@ -1,6 +1,7 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.DropsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}"
@@ -270,13 +271,12 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,32">
-            <DockPanel Margin="0,0,52,0">
-                <Button Content="刷新" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/>
-                <StackPanel>
-                    <TextBlock Text="掉宝" Style="{StaticResource PageTitle}"/>
-                    <TextBlock Text="统一管理 SOOP、YouTube 与 Twitch 的观看与掉宝。" Style="{StaticResource PageDescription}"/>
-                </StackPanel>
-            </DockPanel>
+            <ctrl:PageHeader Title="掉宝" Description="统一管理 SOOP、YouTube 与 Twitch 的观看与掉宝。">
+                <ctrl:PageHeader.HeaderActions>
+                    <Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0"
+                            VerticalAlignment="Top" Click="OnRefresh"/>
+                </ctrl:PageHeader.HeaderActions>
+            </ctrl:PageHeader>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="16,13">
                 <DockPanel>

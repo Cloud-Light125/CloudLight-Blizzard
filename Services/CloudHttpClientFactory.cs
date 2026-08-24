@@ -78,7 +78,7 @@ public sealed class CloudHttpClientFactory : IDisposable
                 var status = routed.Response.StatusCode;
                 var success = acceptableStatus?.Invoke(status) ?? routed.Response.IsSuccessStatusCode;
                 return new CloudNetworkProbeResult(success, routed.Route, stopwatch.ElapsedMilliseconds,
-                    (int)status, null, success ? "正常" : $"HTTP {(int)status}");
+                    (int)status, null, success ? "正常" : ProbeResponseMessage(routed.Response));
             }
         }
         catch (CloudNetworkException ex)
@@ -226,6 +226,19 @@ public sealed class CloudHttpClientFactory : IDisposable
         _ => "直连失败",
     };
 
+    private static string ProbeResponseMessage(HttpResponseMessage response)
+    {
+        var updateError = response.Headers.TryGetValues("X-Update-Error", out var errors)
+            ? errors.FirstOrDefault() : null;
+        var remaining = response.Headers.TryGetValues("X-RateLimit-Remaining", out var remainingValues)
+            ? remainingValues.FirstOrDefault() : null;
+        if (response.StatusCode == HttpStatusCode.TooManyRequests ||
+            string.Equals(updateError, "rate_limited", StringComparison.OrdinalIgnoreCase) ||
+            response.StatusCode == HttpStatusCode.Forbidden && remaining == "0")
+            return "GitHub API 请求频率限制";
+        return $"HTTP {(int)response.StatusCode}";
+    }
+
     private async Task<HttpResponseMessage> SendAttemptAsync(HttpClient client, HttpRequestMessage request,
         string service, string route, Uri? proxyUrl, CancellationToken cancellationToken)
     {
@@ -235,7 +248,7 @@ public sealed class CloudHttpClientFactory : IDisposable
             {
                 var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken).ConfigureAwait(false);
-                Log(service, route, proxyUrl, (int)response.StatusCode, null);
+                Log(service, route, proxyUrl, (int)response.StatusCode, null, response);
                 if (proxyUrl is not null && response.StatusCode == HttpStatusCode.ProxyAuthenticationRequired)
                 {
                     response.Dispose();
@@ -292,7 +305,8 @@ public sealed class CloudHttpClientFactory : IDisposable
     private HttpClient CreateClientFor(Uri? proxyUrl) =>
         _clientFactoryOverride?.Invoke(proxyUrl) ?? CreateClient(proxyUrl);
 
-    private void Log(string service, string route, Uri? proxyUrl, int? status, string? exceptionType)
+    private void Log(string service, string route, Uri? proxyUrl, int? status, string? exceptionType,
+        HttpResponseMessage? response = null)
     {
         try
         {
@@ -306,10 +320,22 @@ public sealed class CloudHttpClientFactory : IDisposable
                 proxy,
                 status,
                 exceptionType,
+                rateLimitLimit = SafeResponseHeader(response, "X-RateLimit-Limit"),
+                rateLimitRemaining = SafeResponseHeader(response, "X-RateLimit-Remaining"),
+                rateLimitReset = SafeResponseHeader(response, "X-RateLimit-Reset"),
+                retryAfter = SafeResponseHeader(response, "Retry-After"),
+                updateError = SafeResponseHeader(response, "X-Update-Error"),
             });
             lock (_gate) File.AppendAllText(_logFile, record + Environment.NewLine);
         }
         catch { }
+    }
+
+    private static string? SafeResponseHeader(HttpResponseMessage? response, string name)
+    {
+        if (response is null || !response.Headers.TryGetValues(name, out var values)) return null;
+        var value = values.FirstOrDefault()?.Trim();
+        return string.IsNullOrEmpty(value) ? null : value[..Math.Min(value.Length, 100)];
     }
 
     public void Dispose()

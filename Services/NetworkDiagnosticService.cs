@@ -30,6 +30,9 @@ public sealed record NetworkDiagnosticReport(
             return $"{name}：{result.Message}";
         var elapsed = result.ElapsedMilliseconds > 0 ? $" · {result.ElapsedMilliseconds} ms" : "";
         var route = proxyLine ? "" : $" · {RouteName(result.Route)}";
+        if (!result.Success && name == "更新服务" &&
+            result.Message == "GitHub API 请求频率限制")
+            return $"{name}：受限{elapsed}{route} · {result.Message}";
         return result.Success
             ? $"{name}：{(proxyLine ? "可用" : "正常")}{elapsed}{route}"
             : $"{name}：失败{elapsed}{route} · {result.Message}";
@@ -73,6 +76,7 @@ public sealed class NetworkDiagnosticService
     public async Task<NetworkDiagnosticReport> RunAsync(CancellationToken cancellationToken = default)
     {
         var announcementEndpoint = AnnouncementService.EndpointFor(_settings);
+        var updateEndpoint = UpdateService.EndpointFor(_settings);
         var proxy = await ProbeWithTimeoutAsync(
             token => _httpClients.ProbeProxyAsync(
                 () => new HttpRequestMessage(HttpMethod.Get, announcementEndpoint),
@@ -83,7 +87,7 @@ public sealed class NetworkDiagnosticService
                 () => new HttpRequestMessage(HttpMethod.Get, announcementEndpoint),
                 "diagnostic-announcement", IsSuccess, token), DefaultRoute(), cancellationToken);
         var updateTask = ProbeWithTimeoutAsync(
-            token => _httpClients.ProbeGetAsync(UpdateService.CreateLatestReleaseRequest,
+            token => _httpClients.ProbeGetAsync(() => UpdateService.CreateLatestReleaseRequest(updateEndpoint),
                 "diagnostic-update", status => IsSuccess(status) || status == HttpStatusCode.NotFound, token),
             DefaultRoute(), cancellationToken);
         await Task.WhenAll(announcementTask, updateTask).ConfigureAwait(false);

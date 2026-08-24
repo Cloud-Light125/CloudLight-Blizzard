@@ -18,6 +18,14 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-live-selftest")
+        {
+            IsHeadlessSelfTest = true;
+            Task.Run(() => CloudServicesSelfTest.RunLiveUpdateAsync(e.Args[1])).GetAwaiter().GetResult();
+            Shutdown(0);
+            return;
+        }
+
         if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-selftest")
         {
             IsHeadlessSelfTest = true;

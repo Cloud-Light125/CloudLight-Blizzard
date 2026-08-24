@@ -94,7 +94,7 @@ public sealed class UpdateCheckCoordinator
             var result = await _service.CheckAsync(cancellationToken);
             _log.Write(result.Status == UpdateCheckResultStatus.Failed ? "Update check failed" : "Update check completed",
                 mode, result.CurrentVersion, result.LatestVersion, _settings.SkippedUpdateVersion,
-                result.HasUpdate, result.ErrorMessage);
+                result.HasUpdate, result.TechnicalDetail ?? result.ErrorMessage);
             return result;
         }
         finally
