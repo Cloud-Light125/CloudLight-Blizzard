@@ -18,4 +18,4 @@
 - 适用于 Windows x64。
 - 需要 .NET 8 Windows Desktop Runtime x64；未安装时安装程序会提供官方下载入口。
 
-**完整变更**：https://github.com/yundan125/CloudLight-Blizzard/compare/v2.0.3...v2.0.4
+**完整变更**：https://github.com/Cloud-Light125/CloudLight-Blizzard/compare/v2.0.3...v2.0.4

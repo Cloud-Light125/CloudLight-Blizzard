@@ -1,7 +1,6 @@
 <Window x:Class="CloudLightBlizzard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
         Title="CloudLight Blizzard"
         Width="1200" Height="760" MinWidth="1000" MinHeight="660"
         WindowStartupLocation="CenterScreen"
@@ -33,16 +32,6 @@
         <Grid Grid.Column="1">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <ContentControl x:Name="PageHost"/>
-            <Button x:Name="AnnouncementButton" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Width="40" Height="40" Margin="0,18,22,0" Padding="0" Panel.ZIndex="20"
-                    Style="{StaticResource SecondaryButton}" ToolTip="公告" Click="OnOpenAnnouncements">
-                <Grid Width="24" Height="24">
-                    <ctrl:IconView Geometry="{StaticResource GeoBell}" Stroke="{DynamicResource Text.Primary}"
-                                   IconSize="22" Thickness="1.8"/>
-                    <Ellipse x:Name="AnnouncementUnreadDot" Width="7" Height="7" HorizontalAlignment="Right"
-                             VerticalAlignment="Top" Fill="{DynamicResource Accent.Primary}" Visibility="Collapsed"/>
-                </Grid>
-            </Button>
             <Border x:Name="AccountFooter" Grid.Row="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="18,9">
                 <DockPanel>
                     <Button Content="刷新账号" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="28" Padding="11,0" Click="OnRefresh"/>

@@ -1,6 +1,7 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -14,6 +15,7 @@ namespace CloudLightBlizzard;
 
 public partial class MainWindow : Window
 {
+    internal static readonly TimeSpan AnnouncementRefreshInterval = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _vm;
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
@@ -35,6 +37,8 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly AnnouncementService _announcementService;
     private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
+    private Task? _announcementRefreshTask;
+    public AnnouncementService AnnouncementState => _announcementService;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
     {
@@ -59,7 +63,8 @@ public partial class MainWindow : Window
         _statsPage.Initialize(_vm);
         _dropsPage.Initialize(_vm);
         _settingsPage.Initialize(_vm);
-        _settingsPage.AnnouncementBadgeSettingChanged += (_, _) => UpdateAnnouncementBadge();
+        _settingsPage.AnnouncementBadgeSettingChanged += (_, _) =>
+            _announcementService.NotifyBadgeSettingChanged();
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _pagesReady = true;
         SelectSavedSection();
@@ -95,33 +100,43 @@ public partial class MainWindow : Window
         _watchTimer.Start();
         _dropsPage.StartAutomaticPlatforms();
         _ = RunAutomaticUpdateCheckAsync();
-        _ = RefreshAnnouncementsAsync();
+        _announcementRefreshTask ??= RunAnnouncementRefreshLoopAsync();
     }
 
-    private async Task RefreshAnnouncementsAsync()
+    private async Task RunAnnouncementRefreshLoopAsync()
     {
-        _announcements = _announcementService.CachedAnnouncements;
-        UpdateAnnouncementBadge();
         try
         {
-            _announcements = await _announcementService.RefreshAsync(_updateCancellation.Token);
-            if (!Dispatcher.HasShutdownStarted) await Dispatcher.InvokeAsync(UpdateAnnouncementBadge);
+            await AnnouncementService.RunPeriodicRefreshAsync(
+                RefreshAnnouncementsAsync, AnnouncementRefreshInterval, _updateCancellation.Token);
+        }
+        catch (OperationCanceledException) when (_updateCancellation.IsCancellationRequested) { }
+    }
+
+    private async Task RefreshAnnouncementsAsync(CancellationToken cancellationToken)
+    {
+        var cached = _announcementService.CachedAnnouncements;
+        if (!Dispatcher.HasShutdownStarted)
+            await Dispatcher.InvokeAsync(() => ApplyAnnouncements(cached));
+        try
+        {
+            var refreshed = await _announcementService.RefreshAsync(cancellationToken);
+            if (!Dispatcher.HasShutdownStarted)
+                await Dispatcher.InvokeAsync(() => ApplyAnnouncements(refreshed));
         }
         catch (OperationCanceledException) { }
     }
 
-    private void UpdateAnnouncementBadge()
+    private void ApplyAnnouncements(IReadOnlyList<Announcement> announcements)
     {
-        AnnouncementUnreadDot.Visibility = _vm.Settings.ShowAnnouncementBadge &&
-            _announcementService.HasUnread(_announcements) ? Visibility.Visible : Visibility.Collapsed;
+        _announcements = announcements;
     }
 
-    private async void OnOpenAnnouncements(object sender, RoutedEventArgs e)
+    internal async Task OpenAnnouncementsAsync()
     {
-        if (_announcements.Count == 0) await RefreshAnnouncementsAsync();
+        if (_announcements.Count == 0) await RefreshAnnouncementsAsync(_updateCancellation.Token);
         var dialog = new AnnouncementWindow(_announcements, _announcementService) { Owner = this };
         dialog.ShowDialog();
-        UpdateAnnouncementBadge();
     }
 
     private async Task RunAutomaticUpdateCheckAsync()
@@ -150,22 +165,15 @@ public partial class MainWindow : Window
         if (automatic && !IsVisible) return;
         if (outcome.Kind == UpdateCheckOutcomeKind.UpdateAvailable && outcome.Result is { } result)
         {
-            var dialog = new UpdateDialog(result) { Owner = this };
+            var dialog = new UpdateDialog(result, _vm.UpdateDownloader) { Owner = this };
             dialog.ShowDialog();
             if (dialog.SkipVersion) _vm.UpdateChecks.SkipVersion(result.LatestVersion);
             _settingsPage.RefreshUpdateInfo();
-            if (dialog.Action == UpdateDialogAction.OpenRelease && !string.IsNullOrWhiteSpace(result.ReleaseUrl))
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo { FileName = result.ReleaseUrl, UseShellExecute = true });
-                }
-                catch
-                {
-                    MessageBox.Show("无法打开系统浏览器，请稍后重试。", "前往更新",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
+            if (dialog.Action == UpdateDialogAction.OpenRelease)
+                OpenUpdateRelease(result.ReleaseUrl);
+            else if (dialog.Action == UpdateDialogAction.InstallDownloaded &&
+                     !string.IsNullOrWhiteSpace(dialog.DownloadedInstallerPath))
+                InstallDownloadedUpdate(dialog.DownloadedInstallerPath);
             return;
         }
 
@@ -180,6 +188,45 @@ public partial class MainWindow : Window
         else if (outcome.Kind == UpdateCheckOutcomeKind.Failed)
             MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新",
                 MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    internal void OpenUpdateRelease(string? releaseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(releaseUrl)) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = releaseUrl, UseShellExecute = true });
+        }
+        catch
+        {
+            MessageBox.Show("无法打开系统浏览器，请稍后重试。", "打开更新链接",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    internal bool InstallDownloadedUpdate(string installerPath)
+    {
+        if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
+        {
+            MessageBox.Show("已下载的安装程序不存在，请重新下载。", "在线更新",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = installerPath, UseShellExecute = true });
+            _exitRequested = true;
+            BeginExit();
+            Close();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"无法启动更新安装程序：{ex.Message}", "在线更新",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
     }
 
     private void SelectSavedSection()
@@ -364,6 +411,7 @@ public partial class MainWindow : Window
         _exitCleanupStarted = true;
         try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
         try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        try { _announcementService.Dispose(); } catch { }
         try { _vm.CloudHttpClients.Dispose(); } catch { }
         _updateCancellation.Dispose();
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }

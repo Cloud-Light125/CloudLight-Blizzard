@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleAnnouncements, handleFeedback } from "../src/index";
+﻿import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleAnnouncements, handleFeedback, handleLatestUpdate } from "../src/index";
 import type { Env } from "../src/index";
 
 const release = {
@@ -170,5 +170,79 @@ describe("GET /v1/announcements", () => {
     expect(response.status).toBe(200);
     expect(payload.announcements).toHaveLength(1);
     expect(cache.put).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GET /v1/update/latest", () => {
+  function latestRelease() {
+    return {
+      id: 99,
+      tag_name: "v2.0.7",
+      name: "CloudLight Blizzard 2.0.7",
+      body: "修复更新检查",
+      published_at: "2026-08-24T08:00:00Z",
+      draft: false,
+      prerelease: false,
+      upload_url: "https://uploads.github.com/repos/Cloud-Light125/CloudLight-Blizzard/releases/99/assets{?name,label}",
+      html_url: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v2.0.7",
+      assets: [{
+        id: 100,
+        name: "CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
+        size: 123456,
+        browser_download_url: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.7/CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
+      }],
+    };
+  }
+
+  it("returns only the latest release fields needed by the client", async () => {
+    const cache = { put: vi.fn(async () => undefined), match: vi.fn(async () => undefined) };
+    vi.stubGlobal("caches", { open: vi.fn(async () => cache) });
+    const github = vi.fn(async () => Response.json(latestRelease()));
+    vi.stubGlobal("fetch", github);
+
+    const response = await handleLatestUpdate();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      version: "2.0.7",
+      tag: "v2.0.7",
+      name: "CloudLight Blizzard 2.0.7",
+      notes: "修复更新检查",
+      publishedAt: "2026-08-24T08:00:00Z",
+      htmlUrl: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v2.0.7",
+      assets: [{
+        name: "CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
+        downloadUrl: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.7/CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
+        size: 123456,
+      }],
+    });
+    expect(github).toHaveBeenCalledOnce();
+    expect(cache.put).toHaveBeenCalledOnce();
+  });
+
+  it("serves a cache hit without requesting GitHub", async () => {
+    const cached = Response.json({ version: "2.0.7" });
+    const cache = { put: vi.fn(), match: vi.fn(async () => cached) };
+    vi.stubGlobal("caches", { open: vi.fn(async () => cache) });
+    const github = vi.fn();
+    vi.stubGlobal("fetch", github);
+
+    const response = await handleLatestUpdate();
+    expect(await response.json()).toEqual({ version: "2.0.7" });
+    expect(github).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [403, { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1787558400" }, "rate_limited", 503],
+    [500, {}, "upstream_unavailable", 502],
+  ])("maps GitHub HTTP %i to a structured failure", async (status, headers, error, expectedStatus) => {
+    const cache = { put: vi.fn(), match: vi.fn(async () => undefined) };
+    vi.stubGlobal("caches", { open: vi.fn(async () => cache) });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ message: "rate limit exceeded" },
+      { status, headers })));
+
+    const response = await handleLatestUpdate();
+    expect(response.status).toBe(expectedStatus);
+    expect(await response.json()).toMatchObject({ success: false, error });
+    expect(cache.put).not.toHaveBeenCalled();
   });
 });

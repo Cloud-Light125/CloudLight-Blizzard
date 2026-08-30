@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.IO;
+using System.Diagnostics;
 using System.Text.Json;
 using CloudLightBlizzard.Services.Drops;
 
@@ -22,6 +23,14 @@ public sealed class CloudNetworkException : HttpRequestException
     public CloudNetworkFailureKind Kind { get; }
 }
 
+public sealed record CloudNetworkProbeResult(
+    bool Success,
+    string Route,
+    long ElapsedMilliseconds,
+    int? StatusCode,
+    CloudNetworkFailureKind? FailureKind,
+    string Message);
+
 /// <summary>
 /// Reuses direct/proxy clients while selecting the current application proxy settings for every request.
 /// Idempotent GET requests may retry once without the proxy; request bodies are never replayed here.
@@ -30,6 +39,7 @@ public sealed class CloudHttpClientFactory : IDisposable
 {
     private readonly AppSettings _settings;
     private readonly string _logFile;
+    private readonly Func<Uri?, HttpClient>? _clientFactoryOverride;
     private readonly object _gate = new();
     private readonly HttpClient _directClient;
     private readonly List<HttpClient> _retiredProxyClients = new();
@@ -38,13 +48,74 @@ public sealed class CloudHttpClientFactory : IDisposable
     private bool _disposed;
 
     public CloudHttpClientFactory(AppSettings settings, string? logFile = null)
+        : this(settings, logFile, null)
+    {
+    }
+
+    internal CloudHttpClientFactory(AppSettings settings, string? logFile,
+        Func<Uri?, HttpClient>? clientFactoryOverride)
     {
         _settings = settings;
         _logFile = logFile ?? Path.Combine(AppPaths.Current.LogsDir, "network.log");
-        _directClient = CreateClient(null);
+        _clientFactoryOverride = clientFactoryOverride;
+        _directClient = CreateClientFor(null);
     }
 
     public async Task<HttpResponseMessage> SendGetAsync(Func<HttpRequestMessage> requestFactory,
+        string service, CancellationToken cancellationToken)
+        => (await SendGetWithRouteAsync(requestFactory, service, cancellationToken).ConfigureAwait(false)).Response;
+
+    public async Task<CloudNetworkProbeResult> ProbeGetAsync(Func<HttpRequestMessage> requestFactory,
+        string service, Func<HttpStatusCode, bool>? acceptableStatus, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var routed = await SendGetWithRouteAsync(requestFactory, service, cancellationToken)
+                .ConfigureAwait(false);
+            using (routed.Response)
+            {
+                var status = routed.Response.StatusCode;
+                var success = acceptableStatus?.Invoke(status) ?? routed.Response.IsSuccessStatusCode;
+                return new CloudNetworkProbeResult(success, routed.Route, stopwatch.ElapsedMilliseconds,
+                    (int)status, null, success ? "正常" : ProbeResponseMessage(routed.Response));
+            }
+        }
+        catch (CloudNetworkException ex)
+        {
+            return new CloudNetworkProbeResult(false, RouteForFailure(ex.Kind), stopwatch.ElapsedMilliseconds,
+                null, ex.Kind, ProbeFailureMessage(ex.Kind));
+        }
+    }
+
+    public async Task<CloudNetworkProbeResult> ProbeProxyAsync(Func<HttpRequestMessage> requestFactory,
+        string service, Func<HttpStatusCode, bool>? acceptableStatus, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var route = ReadRoute();
+        if (!route.ProxyEnabled)
+            return new CloudNetworkProbeResult(true, "Direct", 0, null, null, "未启用（当前使用直连）");
+        if (route.ProxyUrl is null)
+            return new CloudNetworkProbeResult(false, "Proxy", 0, null,
+                CloudNetworkFailureKind.InvalidProxy, ProbeFailureMessage(CloudNetworkFailureKind.InvalidProxy));
+        try
+        {
+            using var response = await SendAttemptAsync(GetProxyClient(route.ProxyUrl), requestFactory(), service,
+                "Proxy", route.ProxyUrl, cancellationToken).ConfigureAwait(false);
+            var status = response.StatusCode;
+            var success = acceptableStatus?.Invoke(status) ?? response.IsSuccessStatusCode;
+            return new CloudNetworkProbeResult(success, "Proxy", stopwatch.ElapsedMilliseconds, (int)status, null,
+                success ? "可用" : $"HTTP {(int)status}");
+        }
+        catch (HttpRequestException)
+        {
+            return new CloudNetworkProbeResult(false, "Proxy", stopwatch.ElapsedMilliseconds, null,
+                CloudNetworkFailureKind.ProxyConnectionFailed,
+                ProbeFailureMessage(CloudNetworkFailureKind.ProxyConnectionFailed));
+        }
+    }
+
+    private async Task<RoutedResponse> SendGetWithRouteAsync(Func<HttpRequestMessage> requestFactory,
         string service, CancellationToken cancellationToken)
     {
         var route = ReadRoute();
@@ -52,8 +123,9 @@ public sealed class CloudHttpClientFactory : IDisposable
         {
             try
             {
-                return await SendAttemptAsync(_directClient, requestFactory(), service, "Direct", null,
+                var response = await SendAttemptAsync(_directClient, requestFactory(), service, "Direct", null,
                     cancellationToken).ConfigureAwait(false);
+                return new RoutedResponse(response, "Direct");
             }
             catch (HttpRequestException ex)
             {
@@ -68,15 +140,17 @@ public sealed class CloudHttpClientFactory : IDisposable
 
         try
         {
-            return await SendAttemptAsync(GetProxyClient(route.ProxyUrl), requestFactory(), service, "Proxy",
+            var response = await SendAttemptAsync(GetProxyClient(route.ProxyUrl), requestFactory(), service, "Proxy",
                 route.ProxyUrl, cancellationToken).ConfigureAwait(false);
+            return new RoutedResponse(response, "Proxy");
         }
         catch (HttpRequestException proxyError) when (route.FallbackDirect && !cancellationToken.IsCancellationRequested)
         {
             try
             {
-                return await SendAttemptAsync(_directClient, requestFactory(), service, "DirectFallback", null,
+                var response = await SendAttemptAsync(_directClient, requestFactory(), service, "DirectFallback", null,
                     cancellationToken).ConfigureAwait(false);
+                return new RoutedResponse(response, "DirectFallback");
             }
             catch (HttpRequestException directError)
             {
@@ -137,6 +211,34 @@ public sealed class CloudHttpClientFactory : IDisposable
         _ => "暂时无法连接更新服务器。",
     };
 
+    private static string RouteForFailure(CloudNetworkFailureKind kind) => kind switch
+    {
+        CloudNetworkFailureKind.InvalidProxy or CloudNetworkFailureKind.ProxyConnectionFailed => "Proxy",
+        CloudNetworkFailureKind.ProxyAndDirectConnectionFailed => "Proxy→DirectFallback",
+        _ => "Direct",
+    };
+
+    private static string ProbeFailureMessage(CloudNetworkFailureKind kind) => kind switch
+    {
+        CloudNetworkFailureKind.InvalidProxy => "代理地址无效",
+        CloudNetworkFailureKind.ProxyConnectionFailed => "代理连接失败",
+        CloudNetworkFailureKind.ProxyAndDirectConnectionFailed => "代理和直连回退均失败",
+        _ => "直连失败",
+    };
+
+    private static string ProbeResponseMessage(HttpResponseMessage response)
+    {
+        var updateError = response.Headers.TryGetValues("X-Update-Error", out var errors)
+            ? errors.FirstOrDefault() : null;
+        var remaining = response.Headers.TryGetValues("X-RateLimit-Remaining", out var remainingValues)
+            ? remainingValues.FirstOrDefault() : null;
+        if (response.StatusCode == HttpStatusCode.TooManyRequests ||
+            string.Equals(updateError, "rate_limited", StringComparison.OrdinalIgnoreCase) ||
+            response.StatusCode == HttpStatusCode.Forbidden && remaining == "0")
+            return "GitHub API 请求频率限制";
+        return $"HTTP {(int)response.StatusCode}";
+    }
+
     private async Task<HttpResponseMessage> SendAttemptAsync(HttpClient client, HttpRequestMessage request,
         string service, string route, Uri? proxyUrl, CancellationToken cancellationToken)
     {
@@ -146,7 +248,7 @@ public sealed class CloudHttpClientFactory : IDisposable
             {
                 var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken).ConfigureAwait(false);
-                Log(service, route, proxyUrl, (int)response.StatusCode, null);
+                Log(service, route, proxyUrl, (int)response.StatusCode, null, response);
                 if (proxyUrl is not null && response.StatusCode == HttpStatusCode.ProxyAuthenticationRequired)
                 {
                     response.Dispose();
@@ -179,7 +281,7 @@ public sealed class CloudHttpClientFactory : IDisposable
             if (_proxyClient is not null && string.Equals(_proxyKey, key, StringComparison.OrdinalIgnoreCase))
                 return _proxyClient;
             if (_proxyClient is not null) _retiredProxyClients.Add(_proxyClient);
-            _proxyClient = CreateClient(proxyUrl);
+            _proxyClient = CreateClientFor(proxyUrl);
             _proxyKey = key;
             return _proxyClient;
         }
@@ -200,7 +302,11 @@ public sealed class CloudHttpClientFactory : IDisposable
         return client;
     }
 
-    private void Log(string service, string route, Uri? proxyUrl, int? status, string? exceptionType)
+    private HttpClient CreateClientFor(Uri? proxyUrl) =>
+        _clientFactoryOverride?.Invoke(proxyUrl) ?? CreateClient(proxyUrl);
+
+    private void Log(string service, string route, Uri? proxyUrl, int? status, string? exceptionType,
+        HttpResponseMessage? response = null)
     {
         try
         {
@@ -214,10 +320,22 @@ public sealed class CloudHttpClientFactory : IDisposable
                 proxy,
                 status,
                 exceptionType,
+                rateLimitLimit = SafeResponseHeader(response, "X-RateLimit-Limit"),
+                rateLimitRemaining = SafeResponseHeader(response, "X-RateLimit-Remaining"),
+                rateLimitReset = SafeResponseHeader(response, "X-RateLimit-Reset"),
+                retryAfter = SafeResponseHeader(response, "Retry-After"),
+                updateError = SafeResponseHeader(response, "X-Update-Error"),
             });
             lock (_gate) File.AppendAllText(_logFile, record + Environment.NewLine);
         }
         catch { }
+    }
+
+    private static string? SafeResponseHeader(HttpResponseMessage? response, string name)
+    {
+        if (response is null || !response.Headers.TryGetValues(name, out var values)) return null;
+        var value = values.FirstOrDefault()?.Trim();
+        return string.IsNullOrEmpty(value) ? null : value[..Math.Min(value.Length, 100)];
     }
 
     public void Dispose()
@@ -234,4 +352,5 @@ public sealed class CloudHttpClientFactory : IDisposable
     }
 
     private sealed record RouteSnapshot(bool ProxyEnabled, Uri? ProxyUrl, bool FallbackDirect);
+    private sealed record RoutedResponse(HttpResponseMessage Response, string Route);
 }

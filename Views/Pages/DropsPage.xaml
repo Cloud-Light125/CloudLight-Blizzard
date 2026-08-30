@@ -1,6 +1,7 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.DropsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}"
@@ -270,13 +271,12 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,32">
-            <DockPanel Margin="0,0,52,0">
-                <Button Content="刷新" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/>
-                <StackPanel>
-                    <TextBlock Text="掉宝" Style="{StaticResource PageTitle}"/>
-                    <TextBlock Text="统一管理 SOOP、YouTube 与 Twitch 的观看与掉宝。" Style="{StaticResource PageDescription}"/>
-                </StackPanel>
-            </DockPanel>
+            <ctrl:PageHeader Title="掉宝" Description="统一管理 SOOP、YouTube 与 Twitch 的观看与掉宝。">
+                <ctrl:PageHeader.HeaderActions>
+                    <Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0"
+                            VerticalAlignment="Top" Click="OnRefresh"/>
+                </ctrl:PageHeader.HeaderActions>
+            </ctrl:PageHeader>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="16,13">
                 <DockPanel>
@@ -348,7 +348,21 @@
 
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
-                        <TextBlock Text="当前掉宝进度" Style="{StaticResource SectionTitle}"/>
+                        <DockPanel LastChildFill="True">
+                            <Button Content="立即重试" DockPanel.Dock="Right"
+                                    Visibility="{Binding SoopRetryNowVisibility}"
+                                    Style="{StaticResource SecondaryButton}" Padding="12,0"
+                                    Click="OnSoopRetryNow"/>
+                            <StackPanel>
+                                <TextBlock Text="当前掉宝进度" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="{Binding SoopRetryStatusText}"
+                                           Visibility="{Binding SoopRetryStatusVisibility}"
+                                           Foreground="{DynamicResource Status.Warning}" Margin="0,5,10,0"/>
+                                <TextBlock Text="{Binding SoopLastSuccessText}"
+                                           Visibility="{Binding SoopLastSuccessVisibility}"
+                                           Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,10,0"/>
+                            </StackPanel>
+                        </DockPanel>
                         <Grid Margin="0,10,0,0" MinHeight="92">
                             <ListBox ItemsSource="{Binding SoopCurrentProgress}"
                                      ItemTemplate="{StaticResource SoopProgressRowTemplate}" MaxHeight="300"/>
@@ -369,6 +383,32 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+
+                <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0" VerticalAlignment="Top"><StackPanel><TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="120"><ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280"/><TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
+                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0" VerticalAlignment="Top">
+                        <StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <Button Content="打开背包" DockPanel.Dock="Right"
+                                        Style="{StaticResource SecondaryButton}" Height="26" Padding="10,0"
+                                        FontSize="11" Click="OnOpenSoopInventory"/>
+                                <TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <Grid Margin="0,10,0,10" MinHeight="96">
+                                <ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}"
+                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
+                                <TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <WrapPanel>
+                                <Button Content="领取选中奖励" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
+                                <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
                 <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
@@ -411,31 +451,6 @@
                         <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnSaveSoop"/><Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/><ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/></WrapPanel>
                     </StackPanel>
                 </Border>
-                <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0" VerticalAlignment="Top"><StackPanel><TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="120"><ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280"/><TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
-                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0" VerticalAlignment="Top">
-                        <StackPanel>
-                            <DockPanel LastChildFill="True">
-                                <Button Content="打开背包" DockPanel.Dock="Right"
-                                        Style="{StaticResource SecondaryButton}" Height="26" Padding="10,0"
-                                        FontSize="11" Click="OnOpenSoopInventory"/>
-                                <TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                            </DockPanel>
-                            <Grid Margin="0,10,0,10" MinHeight="96">
-                                <ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}"
-                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
-                                <TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                            <WrapPanel>
-                                <Button Content="领取选中奖励" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
-                                <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
-                </Grid>
             </StackPanel>
 
             <StackPanel x:Name="YouTubePanel" Visibility="Collapsed">
@@ -464,8 +479,41 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Text="直播与浏览器状态" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="{Binding YouTubeLastSuccessText}"
+                                   Visibility="{Binding YouTubeLastSuccessVisibility}"
+                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0"/>
+                        <Grid Margin="0,10,0,0" MinHeight="110">
+                            <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
+                            <TextBlock Text="当前没有正在观看的直播。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Border x:Name="YouTubeAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel>
+                        <TextBlock Text="观看账号" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="每个观看账号使用独立的 Chrome / Brave 浏览器资料目录，登录状态互不影响。" Style="{StaticResource FieldHint}"/>
+                        <Grid Margin="0,10,0,10" MinHeight="110"><ListBox x:Name="YouTubeProfilesList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/><TextBlock Text="暂无观看账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Accounts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
+                        <TextBlock Text="账号名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeProfileName" Style="{StaticResource HintTextBox}" Tag="例如：主账号" Width="240" HorizontalAlignment="Left"/>
+                        <WrapPanel Margin="0,10,0,0"><Button Content="添加账号" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddProfile"/><Button Content="打开登录窗口" Style="{StaticResource PrimaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeLogin"/><Button Content="删除账号" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteProfile"/></WrapPanel>
+                        <TextBlock Text="首次使用请在打开的浏览器中完成 YouTube 登录。" Style="{StaticResource FieldHint}"/>
+                    </StackPanel></Border>
+                    <Border x:Name="YouTubeChannelsCard" Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel>
+                        <TextBlock Text="频道列表" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="程序只会自动检查已启用的频道。绿色圆点表示启用，灰色圆点表示停用。" Style="{StaticResource FieldHint}"/>
+                        <Grid Margin="0,10,0,10" MinHeight="100"><ListBox x:Name="YouTubeChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource YouTubeChannelRowTemplate}" MaxHeight="180"/><TextBlock Text="尚未添加频道。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
+                        <TextBlock Text="频道名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeChannelName" Style="{StaticResource HintTextBox}" Tag="例如：Overwatch Esports"/>
+                        <TextBlock Text="频道 ID" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/><TextBox x:Name="YouTubeChannelId" Style="{StaticResource HintTextBox}" Tag="例如：UC..."/>
+                        <TextBlock Text="频道地址" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/><TextBox x:Name="YouTubeChannelUrl" Style="{StaticResource HintTextBox}" Tag="也可以直接粘贴频道 URL"/>
+                        <TextBlock Text="频道 ID 与频道地址填写任意一项即可。" Style="{StaticResource FieldHint}"/>
+                        <WrapPanel Margin="0,10,0,0"><Button Content="添加频道" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddChannel"/><Button Content="启用 / 停用" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeToggleChannel"/><Button Content="删除" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteChannel"/></WrapPanel>
+                    </StackPanel></Border>
+                </Grid>
                 <Border x:Name="YouTubeBrowserCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
-                    <TextBlock Text="浏览器与观看" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="浏览器与观看设置" Style="{StaticResource SectionTitle}"/>
                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition/></Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,8,0"><TextBlock Text="浏览器" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="YouTubeBrowser" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnYouTubeBrowserChanged"><ComboBoxItem Content="Google Chrome" Tag="chrome"/><ComboBoxItem Content="Brave" Tag="brave"/></ComboBox></StackPanel>
                         <Expander Grid.Column="1" Header="自定义浏览器路径（可选）"
@@ -488,30 +536,15 @@
                     <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveYouTube"/>
                 </StackPanel></Border>
 
-                <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border x:Name="YouTubeAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel>
-                        <TextBlock Text="观看账号" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock Text="每个观看账号使用独立的 Chrome / Brave 浏览器资料目录，登录状态互不影响。" Style="{StaticResource FieldHint}"/>
-                        <Grid Margin="0,10,0,10" MinHeight="110"><ListBox x:Name="YouTubeProfilesList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/><TextBlock Text="暂无观看账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Accounts.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
-                        <TextBlock Text="账号名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeProfileName" Style="{StaticResource HintTextBox}" Tag="例如：主账号" Width="240" HorizontalAlignment="Left"/>
-                        <WrapPanel Margin="0,10,0,0"><Button Content="添加账号" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddProfile"/><Button Content="打开登录窗口" Style="{StaticResource PrimaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeLogin"/><Button Content="删除账号" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteProfile"/></WrapPanel>
-                        <TextBlock Text="首次使用请在打开的浏览器中完成 YouTube 登录。" Style="{StaticResource FieldHint}"/>
-                    </StackPanel></Border>
-                    <Border x:Name="YouTubeChannelsCard" Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel>
-                        <TextBlock Text="频道列表" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock Text="程序只会自动检查已启用的频道。绿色圆点表示启用，灰色圆点表示停用。" Style="{StaticResource FieldHint}"/>
-                        <Grid Margin="0,10,0,10" MinHeight="100"><ListBox x:Name="YouTubeChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource YouTubeChannelRowTemplate}" MaxHeight="180"/><TextBlock Text="尚未添加频道。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
-                        <TextBlock Text="频道名称" Style="{StaticResource FieldLabel}"/><TextBox x:Name="YouTubeChannelName" Style="{StaticResource HintTextBox}" Tag="例如：Overwatch Esports"/>
-                        <TextBlock Text="频道 ID" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/><TextBox x:Name="YouTubeChannelId" Style="{StaticResource HintTextBox}" Tag="例如：UC..."/>
-                        <TextBlock Text="频道地址" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/><TextBox x:Name="YouTubeChannelUrl" Style="{StaticResource HintTextBox}" Tag="也可以直接粘贴频道 URL"/>
-                        <TextBlock Text="频道 ID 与频道地址填写任意一项即可。" Style="{StaticResource FieldHint}"/>
-                        <WrapPanel Margin="0,10,0,0"><Button Content="添加频道" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddChannel"/><Button Content="启用 / 停用" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeToggleChannel"/><Button Content="删除" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteChannel"/></WrapPanel>
-                    </StackPanel></Border>
-                </Grid>
-                <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0"><StackPanel><TextBlock Text="直播与浏览器状态" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="110"><ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/><TextBlock Text="当前没有正在观看的直播。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
-                    <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0"><StackPanel><TextBlock Text="观看时间与历史" Style="{StaticResource SectionTitle}"/><Grid Margin="0,10,0,0" MinHeight="110"><ListBox ItemsSource="{Binding History}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/><TextBlock Text="暂无观看记录。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding History.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></StackPanel></Border>
-                </Grid>
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Text="观看时间与历史" Style="{StaticResource SectionTitle}"/>
+                        <Grid Margin="0,10,0,0" MinHeight="110">
+                            <ListBox ItemsSource="{Binding History}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
+                            <TextBlock Text="暂无观看记录。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding History.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <StackPanel x:Name="TwitchPanel" Visibility="Collapsed">
@@ -598,6 +631,21 @@
                                    Foreground="{DynamicResource Text.Secondary}"
                                    Visibility="{Binding TwitchRefreshStatusVisibility}"/>
                     </WrapPanel>
+                    <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="10,8"
+                            Margin="0,12,0,0" Visibility="{Binding TwitchRetryStatusVisibility}">
+                        <DockPanel LastChildFill="True">
+                            <Button Content="立即重试" DockPanel.Dock="Right"
+                                    Visibility="{Binding TwitchRetryNowVisibility}"
+                                    Style="{StaticResource SecondaryButton}" Height="28" Padding="11,0"
+                                    Click="OnTwitchRetryNow"/>
+                            <TextBlock Text="{Binding TwitchRetryStatusText}"
+                                       Foreground="{DynamicResource Status.Warning}" VerticalAlignment="Center"
+                                       TextWrapping="Wrap" Margin="0,0,10,0"/>
+                        </DockPanel>
+                    </Border>
+                    <TextBlock Text="{Binding TwitchLastSuccessText}"
+                               Visibility="{Binding TwitchLastSuccessVisibility}"
+                               Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,7,0,0"/>
                     <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="14"
                             Margin="0,14,0,0" Visibility="{Binding TwitchAuthorizationVisibility}">
                         <StackPanel>
@@ -621,22 +669,43 @@
                               Margin="0,14,0,0" Click="OnAutoStartChanged"/>
                 </StackPanel></Border>
 
-                <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
-                    <TextBlock Text="Twitch 设置" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}"/>
-                    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <StackPanel Margin="0,0,8,0"><TextBlock Text="界面语言" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchLanguage" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag"/></StackPanel>
-                        <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="掉宝优先策略" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchPriorityMode" Style="{StaticResource ThemeComboBox}"><ComboBoxItem Content="仅挂机优先游戏" Tag="PRIORITY_ONLY"/><ComboBoxItem Content="最早结束的活动优先" Tag="ENDING_SOONEST"/><ComboBoxItem Content="剩余可用时间最少优先" Tag="LOW_AVBL_FIRST"/></ComboBox></StackPanel>
-                        <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="连接质量" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchConnectionQuality" Style="{StaticResource ThemeComboBox}"><ComboBoxItem Content="等级 1" Tag="1"/><ComboBoxItem Content="等级 2" Tag="2"/><ComboBoxItem Content="等级 3" Tag="3"/><ComboBoxItem Content="等级 4" Tag="4"/><ComboBoxItem Content="等级 5" Tag="5"/><ComboBoxItem Content="等级 6" Tag="6"/></ComboBox></StackPanel>
-                    </Grid>
-                    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <StackPanel Margin="0,0,8,0"><TextBlock Text="优先游戏" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddPriorityGame"/><ComboBox x:Name="TwitchPriorityPicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchPriorityChoices}"/></DockPanel><ListBox x:Name="TwitchPriorityList" ItemsSource="{Binding TwitchPriorityGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0"><ListBox.ItemTemplate><DataTemplate><DockPanel Margin="6,4"><WrapPanel DockPanel.Dock="Right"><Button Content="↑" ToolTip="上移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Click="OnPriorityUp"/><Button Content="↓" ToolTip="下移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Margin="4,0,0,0" Click="OnPriorityDown"/><Button Content="移除" Tag="{Binding}" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Margin="4,0,0,0" Click="OnRemovePriorityGame"/></WrapPanel><TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="排除游戏" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddExcludedGame"/><ComboBox x:Name="TwitchExcludePicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchExcludeChoices}"/></DockPanel><ListBox x:Name="TwitchExcludeList" ItemsSource="{Binding TwitchExcludedGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0"><ListBox.ItemTemplate><DataTemplate><DockPanel Margin="6,4"><Button Content="移除" Tag="{Binding}" DockPanel.Dock="Right" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Click="OnRemoveExcludedGame"/><TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></StackPanel>
-                    </Grid>
-                    <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed"/>
-                    <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveTwitch"/>
-                </StackPanel></Border>
+                <StackPanel Margin="0,14,0,0">
+                    <Border Style="{StaticResource SurfaceCard}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="打开背包" Style="{StaticResource SecondaryButton}"
+                                        Padding="12,0" Click="OnOpenTwitchInventory"/>
+                            </Grid>
+                            <Grid Margin="0,10,0,0" MinHeight="145">
+                                <ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource TwitchDropRowTemplate}"
+                                         MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                                <TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}"
+                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}"/>
+                            <Grid Margin="0,10,0,10" MinHeight="145">
+                                <ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}"
+                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250"/>
+                                <TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}"
+                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}"
+                                    Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
@@ -679,43 +748,22 @@
                     </StackPanel>
                 </Border>
 
-                <StackPanel Margin="0,14,0,0">
-                    <Border Style="{StaticResource SurfaceCard}">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="打开背包" Style="{StaticResource SecondaryButton}"
-                                        Padding="12,0" Click="OnOpenTwitchInventory"/>
-                            </Grid>
-                            <Grid Margin="0,10,0,0" MinHeight="145">
-                                <ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource TwitchDropRowTemplate}"
-                                         MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-                                <TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}"
-                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
-                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
-                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Inventory.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}"/>
-                            <Grid Margin="0,10,0,10" MinHeight="145">
-                                <ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}"
-                                         ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250"/>
-                                <TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}"
-                                           TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center"
-                                           VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
-                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Channels.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                            <Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}"
-                                    Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+                <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
+                    <TextBlock Text="Twitch 设置" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}"/>
+                    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,8,0"><TextBlock Text="界面语言" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchLanguage" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag"/></StackPanel>
+                        <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="掉宝优先策略" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchPriorityMode" Style="{StaticResource ThemeComboBox}"><ComboBoxItem Content="仅挂机优先游戏" Tag="PRIORITY_ONLY"/><ComboBoxItem Content="最早结束的活动优先" Tag="ENDING_SOONEST"/><ComboBoxItem Content="剩余可用时间最少优先" Tag="LOW_AVBL_FIRST"/></ComboBox></StackPanel>
+                        <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="连接质量" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="TwitchConnectionQuality" Style="{StaticResource ThemeComboBox}"><ComboBoxItem Content="等级 1" Tag="1"/><ComboBoxItem Content="等级 2" Tag="2"/><ComboBoxItem Content="等级 3" Tag="3"/><ComboBoxItem Content="等级 4" Tag="4"/><ComboBoxItem Content="等级 5" Tag="5"/><ComboBoxItem Content="等级 6" Tag="6"/></ComboBox></StackPanel>
+                    </Grid>
+                    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,8,0"><TextBlock Text="优先游戏" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddPriorityGame"/><ComboBox x:Name="TwitchPriorityPicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchPriorityChoices}"/></DockPanel><ListBox x:Name="TwitchPriorityList" ItemsSource="{Binding TwitchPriorityGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0"><ListBox.ItemTemplate><DataTemplate><DockPanel Margin="6,4"><WrapPanel DockPanel.Dock="Right"><Button Content="↑" ToolTip="上移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Click="OnPriorityUp"/><Button Content="↓" ToolTip="下移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Margin="4,0,0,0" Click="OnPriorityDown"/><Button Content="移除" Tag="{Binding}" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Margin="4,0,0,0" Click="OnRemovePriorityGame"/></WrapPanel><TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></StackPanel>
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="排除游戏" Style="{StaticResource FieldLabel}"/><DockPanel><Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddExcludedGame"/><ComboBox x:Name="TwitchExcludePicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchExcludeChoices}"/></DockPanel><ListBox x:Name="TwitchExcludeList" ItemsSource="{Binding TwitchExcludedGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0"><ListBox.ItemTemplate><DataTemplate><DockPanel Margin="6,4"><Button Content="移除" Tag="{Binding}" DockPanel.Dock="Right" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Click="OnRemoveExcludedGame"/><TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed"/>
+                    <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveTwitch"/>
+                </StackPanel></Border>
             </StackPanel>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">

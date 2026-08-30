@@ -1,4 +1,4 @@
-export interface Env {
+﻿export interface Env {
   FEEDBACK_RATE_LIMITER: RateLimit;
   ANNOUNCEMENTS_URL: string;
   GITHUB_OWNER: string;
@@ -10,8 +10,13 @@ interface GitHubRelease {
   id: number;
   tag_name: string;
   name: string | null;
+  body?: string | null;
+  published_at?: string | null;
+  draft?: boolean;
+  prerelease?: boolean;
   upload_url: string;
   html_url: string;
+  assets?: GitHubAsset[];
 }
 
 interface GitHubAsset {
@@ -52,6 +57,9 @@ const MAX_LOG_BYTES = 25 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_LOG_BYTES + 512 * 1024;
 const GITHUB_TIMEOUT_MS = 15_000;
 const ANNOUNCEMENT_CACHE_KEY = "https://cloudlight.internal-cache/v1/announcements";
+const UPDATE_CACHE_KEY = "https://cloudlight.internal-cache/v1/update/latest";
+const UPDATE_CACHE_TTL_SECONDS = 15 * 60;
+const UPDATE_REPOSITORY_API = "https://api.github.com/repos/Cloud-Light125/CloudLight-Blizzard/releases/latest";
 const GITHUB_API_VERSION = "2026-03-10";
 
 export default {
@@ -59,6 +67,8 @@ export default {
     const path = new URL(request.url).pathname;
     if (request.method === "GET" && path === "/v1/announcements")
       return handleAnnouncements(env);
+    if (request.method === "GET" && path === "/v1/update/latest")
+      return handleLatestUpdate();
     if (request.method === "POST" && path === "/v1/feedback")
       return handleFeedback(request, env);
     return json({ error: "not_found" }, 404);
@@ -86,6 +96,68 @@ export async function handleAnnouncements(env: Env): Promise<Response> {
       "Cache-Control": "no-store", "X-Announcement-Source": "empty-fallback",
     });
   }
+}
+
+export async function handleLatestUpdate(): Promise<Response> {
+  const cache = await caches.open("cloudlight-update");
+  const cacheKey = new Request(UPDATE_CACHE_KEY);
+  const cached = await cache.match(cacheKey);
+  if (cached) return new Response(cached.body, cached);
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(UPDATE_REPOSITORY_API, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "CloudLight-Feedback-Worker/2.0",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+      },
+      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+    });
+  } catch (error) {
+    return updateError(isTimeoutError(error) ? "timeout" : "network_unavailable",
+      isTimeoutError(error) ? 504 : 502);
+  }
+
+  if (!upstream.ok) {
+    const remaining = upstream.headers.get("x-ratelimit-remaining");
+    const retryAfter = upstream.headers.get("retry-after");
+    const resetAt = rateLimitResetIso(upstream.headers.get("x-ratelimit-reset"));
+    const message = await githubMessage(upstream);
+    console.error(`Update GitHub request failed: HTTP ${upstream.status}; remaining=${remaining ?? "n/a"}; ` +
+      `reset=${resetAt ?? "n/a"}; retryAfter=${retryAfter ?? "n/a"}; message=${message || "n/a"}`);
+    if (upstream.status === 429 ||
+        (upstream.status === 403 && (remaining === "0" || /rate limit/i.test(message))))
+      return updateError("rate_limited", 503, resetAt, retryAfter);
+    if (upstream.status >= 500) return updateError("upstream_unavailable", 502);
+    return updateError("upstream_http_error", 502);
+  }
+
+  let release: GitHubRelease;
+  try { release = await upstream.json<GitHubRelease>(); }
+  catch { return updateError("invalid_response", 502); }
+  if (!isPublicRelease(release)) return updateError("invalid_response", 502);
+
+  const payload = {
+    version: release.tag_name.replace(/^v/i, ""),
+    tag: release.tag_name,
+    name: release.name ?? release.tag_name,
+    notes: (release.body?.trim() ?? "").slice(0, 20_000),
+    publishedAt: release.published_at ?? null,
+    htmlUrl: release.html_url,
+    assets: (release.assets ?? [])
+      .filter(asset => asset.name === `CloudLight-Blizzard-${release.tag_name.replace(/^v/i, "")}-win-x64-Setup.exe`)
+      .map(asset => ({
+      name: asset.name,
+      downloadUrl: asset.browser_download_url,
+      size: asset.size,
+      })),
+  };
+  const response = Response.json(payload, {
+    headers: { "Cache-Control": `public, max-age=${UPDATE_CACHE_TTL_SECONDS}` },
+  });
+  await cache.put(cacheKey, response.clone());
+  return response;
 }
 
 export async function handleFeedback(request: Request, env: Env): Promise<Response> {
@@ -383,6 +455,39 @@ async function isZip(file: File): Promise<boolean> {
     ((signature[2] === 0x03 && signature[3] === 0x04) ||
      (signature[2] === 0x05 && signature[3] === 0x06) ||
      (signature[2] === 0x07 && signature[3] === 0x08));
+}
+
+function isPublicRelease(value: unknown): value is GitHubRelease {
+  if (!value || typeof value !== "object") return false;
+  const release = value as Partial<GitHubRelease>;
+  return typeof release.tag_name === "string" && /^v?\d+\.\d+(?:\.\d+){0,2}$/.test(release.tag_name) &&
+    typeof release.html_url === "string" &&
+    release.html_url.startsWith("https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/") &&
+    release.draft !== true && release.prerelease !== true && Array.isArray(release.assets) &&
+    release.assets.every(asset => typeof asset.name === "string" && typeof asset.size === "number" &&
+      typeof asset.browser_download_url === "string" &&
+      asset.browser_download_url.startsWith(
+        "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/"));
+}
+
+async function githubMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.clone().json<{ message?: unknown }>();
+    return typeof payload.message === "string" ? payload.message.slice(0, 200) : "";
+  } catch { return ""; }
+}
+
+function rateLimitResetIso(value: string | null): string | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const date = new Date(Number(value) * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function updateError(error: string, status: number, resetAt: string | null = null,
+    retryAfter: string | null = null): Response {
+  const headers: Record<string, string> = { "X-Update-Error": error };
+  if (retryAfter && /^\d+$/.test(retryAfter)) headers["Retry-After"] = retryAfter;
+  return json({ success: false, error, resetAt }, status, headers);
 }
 
 function isAnnouncementDocument(value: unknown): value is { schemaVersion: 1; announcements: unknown[] } {

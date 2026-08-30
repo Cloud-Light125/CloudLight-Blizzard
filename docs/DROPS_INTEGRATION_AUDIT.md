@@ -4,7 +4,7 @@
 
 审计基线：
 
-- `yundan125/CloudLight-Blizzard` `main`：`a3617f6efe200d7472e54a36016bb56bf4e3c0cb`
+- `Cloud-Light125/CloudLight-Blizzard` `main`：`a3617f6efe200d7472e54a36016bb56bf4e3c0cb`
 - `yundan125/cloudlight-soop-drops-miner` `main`：`2959a35c6ad8e1d807dad465c1cd8896719e5086`（本地业务代码与远端一致，仅 README 落后一行）
 - `yundan125/CloudLight-Overwatch-YouTube-Watcher` `main`：`8768e8e407a02aa0ee8333e1beb82f87c1960bb2`
 - `yundan125/TwitchDropsMiner-NoAutoClaim` `main`：`3071a8a43488da9dbf06a6e9ca0e4057a5ad47cf`

@@ -1,4 +1,4 @@
-using CloudLightBlizzard.Models;
+﻿using CloudLightBlizzard.Models;
 
 namespace CloudLightBlizzard.Services;
 
@@ -94,7 +94,7 @@ public sealed class UpdateCheckCoordinator
             var result = await _service.CheckAsync(cancellationToken);
             _log.Write(result.Status == UpdateCheckResultStatus.Failed ? "Update check failed" : "Update check completed",
                 mode, result.CurrentVersion, result.LatestVersion, _settings.SkippedUpdateVersion,
-                result.HasUpdate, result.ErrorMessage);
+                result.HasUpdate, result.TechnicalDetail ?? result.ErrorMessage);
             return result;
         }
         finally
@@ -115,14 +115,16 @@ public sealed class UpdateCheckCoordinator
             return new UpdateCheckOutcome(mode == UpdateCheckMode.Automatic
                 ? UpdateCheckOutcomeKind.Suppressed : UpdateCheckOutcomeKind.UpToDate, result);
 
-        lock (_gate)
+        if (mode == UpdateCheckMode.Automatic)
         {
-            if (mode == UpdateCheckMode.Automatic &&
-                string.Equals(UpdateService.NormalizeVersion(_settings.SkippedUpdateVersion),
-                    result.LatestVersion, StringComparison.OrdinalIgnoreCase))
-                return new UpdateCheckOutcome(UpdateCheckOutcomeKind.Suppressed, result);
-            if (!_presentedVersions.Add(result.LatestVersion))
-                return new UpdateCheckOutcome(UpdateCheckOutcomeKind.Suppressed, result);
+            lock (_gate)
+            {
+                if (string.Equals(UpdateService.NormalizeVersion(_settings.SkippedUpdateVersion),
+                        result.LatestVersion, StringComparison.OrdinalIgnoreCase))
+                    return new UpdateCheckOutcome(UpdateCheckOutcomeKind.Suppressed, result);
+                if (!_presentedVersions.Add(result.LatestVersion))
+                    return new UpdateCheckOutcome(UpdateCheckOutcomeKind.Suppressed, result);
+            }
         }
         return new UpdateCheckOutcome(UpdateCheckOutcomeKind.UpdateAvailable, result);
     }

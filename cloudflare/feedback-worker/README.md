@@ -10,7 +10,7 @@ Worker 不使用 R2、D1、KV 或 Cron 长期保存反馈。日志 ZIP 不写入
 
 ## GitHub 私有仓库和 Token
 
-1. 创建或确认私有仓库：`yundan125/CloudLight-Blizzard-Feedback`，并至少初始化一个默认分支（例如创建 README）。所有 Release、Asset 和 Issue 只创建在这个反馈仓库，不操作 CloudLight-Blizzard 主仓库的正式 Release。
+1. 创建或确认私有仓库：`Cloud-Light125/CloudLight-Blizzard-Feedback`，并至少初始化一个默认分支（例如创建 README）。所有 Release、Asset 和 Issue 只创建在这个反馈仓库，不操作 CloudLight-Blizzard 主仓库的正式 Release。
 2. 创建或更新 fine-grained PAT：
    - Repository access：`Only selected repositories` → `CloudLight-Blizzard-Feedback`
    - Repository permissions：`Issues: Read and write`
@@ -30,8 +30,8 @@ Worker 不使用 R2、D1、KV 或 Cron 长期保存反馈。日志 ZIP 不写入
 `wrangler.toml` 中以下值不是 Secret，可以直接保存：
 
 ```toml
-ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/yundan125/CloudLight-Blizzard/main/announcements.json"
-GITHUB_OWNER = "yundan125"
+ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/Cloud-Light125/CloudLight-Blizzard/main/announcements.json"
+GITHUB_OWNER = "Cloud-Light125"
 GITHUB_REPO = "CloudLight-Blizzard-Feedback"
 ```
 

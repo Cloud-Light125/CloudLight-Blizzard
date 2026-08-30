@@ -1,6 +1,7 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.RegionFilesPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
@@ -20,8 +21,8 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
-            <TextBlock Text="区服文件" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="使用本地备份快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。" Style="{StaticResource PageDescription}"/>
+            <ctrl:PageHeader Title="区服文件"
+                             Description="使用本地备份快速切换守望先锋国服和国际服，减少 Battle.net 重复下载。"/>
 
             <TextBlock Text="当前状态" Style="{StaticResource SectionTitle}" Margin="0,26,0,12"/>
             <Border Style="{StaticResource SurfaceCard}">
@@ -83,23 +84,6 @@
                     </WrapPanel>
                     <TextBlock Text="清除按钮只处理本次检查中明确标记的临时/额外文件候选；请先检查。任何切服、账号切换、验证或软件启动都不会自动删除文件。"
                                TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="12" LineHeight="18" Margin="0,8,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource SurfaceCard}" Margin="0,18,0,0"
-                    Visibility="{Binding ShowStep4Card, Converter={StaticResource BoolVisibility}}">
-                <StackPanel>
-                    <TextBlock Text="可选：进一步验证区服文件" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="当前智能差异备份已经可正常使用。你还可以在切换到另一地区后执行一次第四步验证，进一步确认稳定差异并排除少量动态文件。第四步不是准备完成的必需条件，失败也不会影响当前备份。"
-                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="20" Margin="0,8,0,4"/>
-                    <TextBlock Text="{Binding Step4RegionText, StringFormat=需要在当前文件为 {0} 时执行。}"
-                               Foreground="{DynamicResource Text.Muted}" Margin="0,4,0,12"/>
-                    <WrapPanel>
-                        <Button Content="执行第四步验证" IsEnabled="{Binding CanRunStep4}" Style="{StaticResource PrimaryButton}"
-                                Padding="16,0" Margin="0,0,8,0" Click="OnStep4"/>
-                        <Button Content="恢复第四步提醒" IsEnabled="{Binding Step4ReminderIgnored}"
-                                Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnRestoreStep4Reminder"/>
-                    </WrapPanel>
                 </StackPanel>
             </Border>
 
@@ -318,6 +302,23 @@
                         <Button Content="删除所有区服备份" IsEnabled="{Binding RegionGuide.CanClear}"
                                 Style="{StaticResource DangerButton}" HorizontalAlignment="Left" Padding="15,0" Click="OnClear"/>
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,18,0,0"
+                    Visibility="{Binding ShowStep4Card, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="可选：进一步验证区服文件" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="当前智能差异备份已经可正常使用。你还可以在切换到另一地区后执行一次第四步验证，进一步确认稳定差异并排除少量动态文件。第四步不是准备完成的必需条件，失败也不会影响当前备份。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" LineHeight="20" Margin="0,8,0,4"/>
+                    <TextBlock Text="{Binding Step4RegionText, StringFormat=需要在当前文件为 {0} 时执行。}"
+                               Foreground="{DynamicResource Text.Muted}" Margin="0,4,0,12"/>
+                    <WrapPanel>
+                        <Button Content="执行第四步验证" IsEnabled="{Binding CanRunStep4}" Style="{StaticResource PrimaryButton}"
+                                Padding="16,0" Margin="0,0,8,0" Click="OnStep4"/>
+                        <Button Content="恢复第四步提醒" IsEnabled="{Binding Step4ReminderIgnored}"
+                                Style="{StaticResource SecondaryButton}" Padding="16,0" Click="OnRestoreStep4Reminder"/>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
 

@@ -24,4 +24,4 @@
 - 三个冻结 Worker 统一打包 `_ssl`、OpenSSL 及实际运行依赖，并在完整构建和最终 publish 布局中执行隔离 SSL 自检。
 - 修复 Windows PowerShell 管道 UTF-8 BOM 导致冻结 Worker 无法解析首条 JSONL 命令的问题。
 
-**完整变更**：https://github.com/yundan125/CloudLight-Blizzard/compare/v2.0.5...v2.0.6
+**完整变更**：https://github.com/Cloud-Light125/CloudLight-Blizzard/compare/v2.0.5...v2.0.6

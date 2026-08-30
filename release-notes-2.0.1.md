@@ -21,4 +21,4 @@ CloudLight Blizzard 2.0.1 精简战绩功能，仅保留国际服官方生涯查
 
 - Windows x64 安装包 SHA-256：`9a1101382bdfae8a50b9fa37e04fb0c7f60a05bfc2f1487500e0f93ebf4933d1`
 
-**Full Changelog**: https://github.com/yundan125/CloudLight-Blizzard/compare/v2.0.0...v2.0.1
+**Full Changelog**: https://github.com/Cloud-Light125/CloudLight-Blizzard/compare/v2.0.0...v2.0.1

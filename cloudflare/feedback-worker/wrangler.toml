@@ -1,10 +1,10 @@
-name = "cloudlight-feedback"
+﻿name = "cloudlight-feedback"
 main = "src/index.ts"
 compatibility_date = "2026-08-23"
 
 [vars]
-ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/yundan125/CloudLight-Blizzard/main/announcements.json"
-GITHUB_OWNER = "yundan125"
+ANNOUNCEMENTS_URL = "https://raw.githubusercontent.com/Cloud-Light125/CloudLight-Blizzard/main/announcements.json"
+GITHUB_OWNER = "Cloud-Light125"
 GITHUB_REPO = "CloudLight-Blizzard-Feedback"
 
 [[ratelimits]]

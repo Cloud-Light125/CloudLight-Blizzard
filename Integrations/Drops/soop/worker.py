@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from Shared.protocol import WorkerBase, atomic_write_json, event, read_json, run_worker
+from Shared.protocol import (
+    TransientNetworkError,
+    WorkerBase,
+    atomic_write_json,
+    event,
+    read_json,
+    run_worker,
+)
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -175,6 +182,30 @@ class SoopWorker(WorkerBase):
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=timeout)
 
+    @staticmethod
+    def _is_transient_network_error(exc: BaseException) -> bool:
+        current: BaseException | None = exc
+        visited: set[int] = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            name = current.__class__.__name__.casefold()
+            message = str(current).casefold()
+            if (
+                "timeout" in name
+                or any(marker in name for marker in (
+                    "connectionerror", "clientconnection", "clientconnector", "gaierror"
+                ))
+                or any(marker in message for marker in (
+                    "connection refused", "connection reset", "connection aborted",
+                    "temporary failure", "temporarily unavailable", "getaddrinfo",
+                    "name or service not known", "proxy connection", "websocket",
+                    "cannot connect", "network is unreachable", "server disconnected",
+                ))
+            ):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
     def _state_callback(self, state: Any) -> None:
         with self._state_changed:
             self._states[state.uid] = state
@@ -328,7 +359,10 @@ class SoopWorker(WorkerBase):
             self._restart_manager()
 
     def refresh(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.load_state({})
+        state = self.load_state({})
+        state["refreshStatus"] = "success"
+        state["refreshCompleted"] = True
+        return state
 
     def login(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
@@ -446,6 +480,9 @@ class SoopWorker(WorkerBase):
     def start_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        retry_attempt = int(payload.get("retryAttempt", 0) or 0)
+        if retry_attempt > 0:
+            self.logger.debug("SOOP 正在进行第 %d 次网络恢复重试。", retry_attempt)
         cookies = self._core["auth"].load_cookies(uid)
         if not cookies:
             raise ValueError("未找到该账号的 Session")
@@ -453,8 +490,21 @@ class SoopWorker(WorkerBase):
             self._manager = self._core["multi"].MultiMinerManager(
                 on_state=self._state_callback, channel_config=self._channel_config(), app_config=self._app_config()
             )
-        self._submit(self._manager.start_account(cookies))
+        try:
+            self._submit(self._manager.start_account(cookies))
+        except Exception as exc:
+            if self._is_transient_network_error(exc):
+                if retry_attempt == 0:
+                    self.logger.warning("SOOP 网络连接异常，正在自动重试。")
+                else:
+                    self.logger.debug("SOOP 仍无法连接，后台会继续重试。")
+                raise TransientNetworkError(
+                    "network_unavailable", "SOOP 暂时无法连接网络。"
+                ) from exc
+            raise
         self.running = True
+        if retry_attempt > 0:
+            self.logger.info("SOOP 网络连接已恢复。")
         return {"userid": uid, "started": True}
 
     def stop_account(self, payload: dict[str, Any]) -> dict[str, Any]:

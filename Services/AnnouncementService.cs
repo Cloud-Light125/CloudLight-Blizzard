@@ -1,47 +1,77 @@
 using System.Reflection;
 using System.IO;
 using System.Net.Http;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
 
 namespace CloudLightBlizzard.Services;
 
-public sealed class AnnouncementService : IDisposable
+public sealed class AnnouncementService : IDisposable, INotifyPropertyChanged
 {
     private readonly AppSettings _settings;
     private readonly string _stateFile;
     private readonly string _appVersion;
     private readonly CloudHttpClientFactory _httpClients;
     private readonly bool _ownsHttpClients;
+    private readonly Func<CancellationToken, Task<AnnouncementDocument?>>? _downloadOverride;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly object _stateSync = new();
+    private readonly SynchronizationContext? _notificationContext;
     private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
     private AnnouncementLocalState _state;
 
     public AnnouncementService(AppSettings settings, string? stateFile = null, string? appVersion = null,
         CloudHttpClientFactory? httpClients = null)
+        : this(settings, stateFile, appVersion, httpClients, null)
+    {
+    }
+
+    internal AnnouncementService(AppSettings settings, string? stateFile, string? appVersion,
+        CloudHttpClientFactory? httpClients,
+        Func<CancellationToken, Task<AnnouncementDocument?>>? downloadOverride)
     {
         _settings = settings;
         _ownsHttpClients = httpClients is null;
         _httpClients = httpClients ?? new CloudHttpClientFactory(settings);
+        _downloadOverride = downloadOverride;
         _stateFile = stateFile ?? Path.Combine(AppPaths.Current.AnnouncementsDir, "state.json");
         _appVersion = appVersion ?? Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
         _state = LoadState();
+        _notificationContext = SynchronizationContext.Current;
     }
 
-    public IReadOnlyList<Announcement> CachedAnnouncements => Filter(_state.Cache);
-    public DateTimeOffset? LastSuccessfulCheck => _state.LastSuccessfulCheck;
+    public IReadOnlyList<Announcement> CachedAnnouncements
+    {
+        get { lock (_stateSync) return Filter(_state.Cache); }
+    }
+    public DateTimeOffset? LastSuccessfulCheck
+    {
+        get { lock (_stateSync) return _state.LastSuccessfulCheck; }
+    }
     public string? LastFailureMessage { get; private set; }
+    public bool HasUnreadAnnouncements => HasUnread(CachedAnnouncements);
+    public bool IsBadgeVisible => _settings.ShowAnnouncementBadge && HasUnreadAnnouncements;
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public async Task<IReadOnlyList<Announcement>> RefreshAsync(CancellationToken cancellationToken = default)
     {
+        if (!await _refreshGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            return CachedAnnouncements;
         try
         {
             var downloaded = await DownloadAsync(cancellationToken).ConfigureAwait(false);
             if (IsValid(downloaded))
             {
-                _state.Cache = downloaded;
-                _state.LastSuccessfulCheck = DateTimeOffset.Now;
-                SaveState();
+                lock (_stateSync)
+                {
+                    _state.Cache = downloaded;
+                    _state.LastSuccessfulCheck = DateTimeOffset.Now;
+                    SaveState();
+                }
                 LastFailureMessage = null;
+                NotifyAnnouncementStateChanged();
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -56,31 +86,78 @@ public sealed class AnnouncementService : IDisposable
         {
             LastFailureMessage = "公告服务暂时不可用。";
         }
-        return Filter(_state.Cache);
+        finally
+        {
+            _refreshGate.Release();
+        }
+        return CachedAnnouncements;
     }
 
-    public bool IsUnread(Announcement item) =>
-        !_state.ReadRevisions.TryGetValue(item.Id, out var revision) || revision < item.Revision;
+    public bool IsUnread(Announcement item)
+    {
+        lock (_stateSync)
+            return !_state.ReadRevisions.TryGetValue(item.Id, out var revision) || revision < item.Revision;
+    }
 
     public bool HasUnread(IEnumerable<Announcement> items) => items.Any(IsUnread);
 
     public void MarkRead(Announcement item)
     {
-        if (_state.ReadRevisions.TryGetValue(item.Id, out var revision) && revision >= item.Revision) return;
-        _state.ReadRevisions[item.Id] = item.Revision;
-        SaveState();
+        var changed = false;
+        lock (_stateSync)
+        {
+            if (_state.ReadRevisions.TryGetValue(item.Id, out var revision) && revision >= item.Revision) return;
+            _state.ReadRevisions[item.Id] = item.Revision;
+            SaveState();
+            changed = true;
+        }
+        if (changed) NotifyAnnouncementStateChanged();
     }
+
+    public void NotifyBadgeSettingChanged() => NotifyAnnouncementStateChanged();
+
+    private void NotifyAnnouncementStateChanged()
+    {
+        void Raise()
+        {
+            OnPropertyChanged(nameof(CachedAnnouncements));
+            OnPropertyChanged(nameof(HasUnreadAnnouncements));
+            OnPropertyChanged(nameof(IsBadgeVisible));
+        }
+
+        if (_notificationContext is not null && SynchronizationContext.Current != _notificationContext)
+            _notificationContext.Post(_ => Raise(), null);
+        else
+            Raise();
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private async Task<AnnouncementDocument?> DownloadAsync(CancellationToken cancellationToken)
     {
+        if (_downloadOverride is not null)
+            return await _downloadOverride(cancellationToken).ConfigureAwait(false);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        var endpoint = new Uri(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(_settings.CloudServiceBaseUrl)), "v1/announcements");
+        var endpoint = EndpointFor(_settings);
         using var response = await _httpClients.SendGetAsync(
             () => new HttpRequestMessage(HttpMethod.Get, endpoint), "announcement", timeout.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         return await JsonSerializer.DeserializeAsync<AnnouncementDocument>(stream, _json, timeout.Token).ConfigureAwait(false);
+    }
+
+    internal static Uri EndpointFor(AppSettings settings) =>
+        new(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(settings.CloudServiceBaseUrl)), "v1/announcements");
+
+    internal static async Task RunPeriodicRefreshAsync(Func<CancellationToken, Task> refresh,
+        TimeSpan interval, CancellationToken cancellationToken)
+    {
+        await refresh(cancellationToken).ConfigureAwait(false);
+        using var timer = new PeriodicTimer(interval);
+        while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+            await refresh(cancellationToken).ConfigureAwait(false);
     }
 
     private IReadOnlyList<Announcement> Filter(AnnouncementDocument? document)

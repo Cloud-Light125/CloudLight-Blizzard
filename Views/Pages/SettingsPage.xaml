@@ -1,14 +1,14 @@
-<UserControl x:Class="CloudLightBlizzard.Views.Pages.SettingsPage"
+﻿<UserControl x:Class="CloudLightBlizzard.Views.Pages.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
              xmlns:pages="clr-namespace:CloudLightBlizzard.Views.Pages"
              xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
              behaviors:NestedScrollBehavior.IsEnabled="True"
              Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,28">
-            <TextBlock Text="设置" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="调整应用行为、Battle.net 路径与本地数据。" Style="{StaticResource PageDescription}"/>
+            <ctrl:PageHeader Title="设置" Description="调整应用行为、Battle.net 路径与本地数据。"/>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
                 <StackPanel>
@@ -42,8 +42,24 @@
                     <CheckBox x:Name="FallbackDirectBox" Style="{StaticResource ThemeCheckBox}" Content="代理连接失败时允许直连"
                               Margin="0,12,0,0" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged"/>
                     <TextBlock x:Name="ProxyNoticeText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap"/>
-                    <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
-                            Padding="15,0" Margin="0,12,0,0" Click="OnSaveProxy"/>
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}"
+                                Padding="15,0" Click="OnSaveProxy"/>
+                        <Button x:Name="NetworkTestButton" Content="测试连接"
+                                Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0"
+                                Click="OnTestNetwork"/>
+                        <Button x:Name="CopyDiagnosticButton" Content="复制诊断结果" IsEnabled="False"
+                                Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0"
+                                Click="OnCopyDiagnostic"/>
+                    </WrapPanel>
+                    <Border x:Name="NetworkDiagnosticPanel" Background="{DynamicResource App.SurfaceAlt}"
+                            CornerRadius="8" Padding="12,10" Margin="0,12,0,0" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="网络诊断" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="NetworkDiagnosticText" TextWrapping="Wrap" LineHeight="20"
+                                       Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 
@@ -69,6 +85,22 @@
                                Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" />
                     <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left"
                             Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
+                    <StackPanel x:Name="UpdateAvailablePanel" Margin="0,15,0,0" Visibility="Collapsed">
+                        <TextBlock x:Name="UpdateAvailableText" FontWeight="SemiBold" />
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button x:Name="OpenUpdateLinkButton" Content="打开更新链接"
+                                    Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,10,0"
+                                    Click="OnOpenUpdateLink" />
+                            <Button x:Name="OnlineUpdateButton" Content="在线更新"
+                                    Style="{StaticResource PrimaryButton}" Padding="14,0"
+                                    Click="OnOnlineUpdate" />
+                        </StackPanel>
+                        <StackPanel x:Name="UpdateDownloadPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                            <ProgressBar x:Name="UpdateDownloadProgressBar" Height="8" Minimum="0" Maximum="100" />
+                            <TextBlock x:Name="UpdateDownloadText" Foreground="{DynamicResource Text.Muted}"
+                                       Margin="0,7,0,0" />
+                        </StackPanel>
+                    </StackPanel>
                     <StackPanel x:Name="SkippedUpdatePanel" Margin="0,15,0,0" Visibility="Collapsed">
                         <TextBlock Text="已忽略更新" FontWeight="SemiBold" />
                         <TextBlock x:Name="SkippedVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,9" />

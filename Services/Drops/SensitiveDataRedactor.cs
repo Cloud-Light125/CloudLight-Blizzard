@@ -4,7 +4,7 @@ namespace CloudLightBlizzard.Services.Drops;
 
 public static partial class SensitiveDataRedactor
 {
-    [GeneratedRegex("(?i)([\\\"']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|device[_ -]?code|client[_ -]?secret|proxy[_ -]?password|password|passwd|cookie|set-cookie)[\\\"']?\\s*[:=]\\s*[\\\"']?)([^\\\"'\\s,;}\\]]+)")]
+    [GeneratedRegex("(?i)([\\\"']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|device[_ -]?code|client[_ -]?secret|proxy[_ -]?password|password|passwd|token|cookie|set-cookie)[\\\"']?\\s*[:=]\\s*[\\\"']?)([^\\\"'\\s,;}\\]]+)")]
     private static partial Regex SecretPattern();
 
     [GeneratedRegex("(?i)(bearer\\s+)[A-Za-z0-9._~+\\-/=]+")]

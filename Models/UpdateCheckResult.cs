@@ -1,10 +1,21 @@
-namespace CloudLightBlizzard.Models;
+﻿namespace CloudLightBlizzard.Models;
 
 public enum UpdateCheckResultStatus
 {
     Success,
     NoRelease,
     Failed,
+}
+
+public enum UpdateFailureKind
+{
+    None,
+    NetworkUnavailable,
+    ProxyUnavailable,
+    Timeout,
+    Http5xx,
+    RateLimited,
+    InvalidResponse,
 }
 
 public sealed class UpdateCheckResult
@@ -18,5 +29,9 @@ public sealed class UpdateCheckResult
     public string ReleaseUrl { get; init; } = "";
     public DateTimeOffset? PublishedAt { get; init; }
     public string? InstallerDownloadUrl { get; init; }
+    public long InstallerSize { get; init; }
     public string? ErrorMessage { get; init; }
+    public UpdateFailureKind FailureKind { get; init; }
+    public DateTimeOffset? RetryAt { get; init; }
+    public string? TechnicalDetail { get; init; }
 }

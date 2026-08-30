@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -31,6 +31,12 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "update", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             if (string.Equals(test, "region-verified", StringComparison.OrdinalIgnoreCase))
             {
                 RunVerifiedDifferenceRegionTest(workspace, report).GetAwaiter().GetResult();
@@ -50,9 +56,16 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "drops-recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                RunDropsRecoveryStateTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
             RunTwitchConnectionStateTest(report);
+            RunDropsRecoveryStateTest(report);
             RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
@@ -207,7 +220,117 @@ public static class FeatureSelfTest
                 "Twitch clear-login resets checking state and enables login again");
             Assert(vm.CanClearTwitchLogin, "Twitch clear-login remains available after reset");
         }
+
+        var immediateRetryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromSeconds(5),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2),
+                   (_, _) =>
+                   {
+                       Interlocked.Increment(ref immediateRetryCalls);
+                       return Task.CompletedTask;
+                   }))
+        {
+            vm.BeginTwitchLogin();
+            vm.SetTwitchTemporaryNetworkFailure("connection timeout");
+            Assert(SpinWait.SpinUntil(() => vm.TwitchRetryNowVisibility == System.Windows.Visibility.Visible, 500),
+                "Twitch retry wait exposes one immediate-retry action");
+            vm.RefreshTemporalStatus(DateTimeOffset.Now);
+            Assert(vm.TwitchRetryStatusText.Contains("秒后自动重试", StringComparison.Ordinal),
+                "Twitch retry wait exposes a display-only countdown");
+            Assert(vm.RetryTwitchNow(), "Twitch immediate retry wakes the pending delay");
+            Assert(SpinWait.SpinUntil(() => immediateRetryCalls == 1, 500),
+                "Twitch immediate retry enters the existing retry flow once");
+            using var recoveredState = JsonDocument.Parse("""
+                {"running":true,"accounts":[{"userId":"test","loggedIn":true}],
+                 "authState":"logged_in","connectionState":"running","runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Twitch, recoveredState.RootElement);
+            Assert(SpinWait.SpinUntil(() => !vm.TwitchRetryLoopActive, 500),
+                "Twitch success cancels the retry flow and countdown");
+            Assert(vm.TwitchRetryLoopStarts == 1 && immediateRetryCalls == 1,
+                "Twitch immediate retry does not create a parallel reconnect loop");
+            Assert(vm.TwitchRetryStatusVisibility == System.Windows.Visibility.Collapsed,
+                "Twitch success hides the retry countdown");
+        }
         report.AppendLine("Twitch connection state: PASS");
+    }
+
+    private static void RunDropsRecoveryStateTest(StringBuilder report)
+    {
+        var host = new DropsHostService();
+        var retryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMinutes(1),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), null,
+                   TimeSpan.FromMilliseconds(20), (attempt, _) =>
+                   {
+                       Interlocked.Increment(ref retryCalls);
+                       return attempt < 3
+                           ? Task.FromException(new TimeoutException("simulated SOOP network timeout"))
+                           : Task.CompletedTask;
+                   }))
+        {
+            vm.SetSoopAutoStartEnabled(true);
+            vm.BeginSoopStart("account", automatic: true);
+            vm.SetSoopFailure("connection timeout");
+            vm.SetSoopFailure("same connection timeout");
+            Assert(SpinWait.SpinUntil(() => retryCalls >= 3 && !vm.SoopRetryLoopActive, 1000),
+                "SOOP retry continues after multiple network failures and recovers");
+            Assert(vm.SoopRetryLoopStarts == 1,
+                "SOOP retry supervisor remains single-instance");
+            Assert(vm.Soop.Status == "SOOP 网络连接已恢复",
+                "SOOP recovery restores running status and cancels retry");
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied,
+                "SOOP recovery completes the pending structured channel refresh");
+        }
+
+        using (var vm = new DropsViewModel(host))
+        {
+            using var withChannels = JsonDocument.Parse("""
+                {"running":true,"settings":{},"refreshStatus":"success","refreshCompleted":true,
+                 "accounts":[{"uid":"account","running":true,"channels":[{"id":"one"},{"id":"two"}]}],
+                 "tasks":[],"inventory":[],"currentProgress":[],"runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Soop, withChannels.RootElement);
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied && vm.SoopRefreshStatus.Contains("2 个频道"),
+                "SOOP structured refresh with channels completes quick-start step 3");
+
+            using var withoutChannels = JsonDocument.Parse("""
+                {"running":true,"settings":{},"refreshStatus":"success","refreshCompleted":true,
+                 "accounts":[{"uid":"account","running":true,"channels":[]}],
+                 "tasks":[],"inventory":[],"currentProgress":[],"runtime":{"available":true}}
+                """);
+            vm.ApplyState(DropsPlatform.Soop, withoutChannels.RootElement);
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied &&
+                   vm.SoopRefreshStatus.Contains("当前没有符合条件的频道"),
+                "SOOP successful empty refresh still completes quick-start step 3");
+        }
+
+        var immediateRetryCalls = 0;
+        using (var vm = new DropsViewModel(host, TimeSpan.FromMinutes(1),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), null,
+                   TimeSpan.FromSeconds(5), (_, _) =>
+                   {
+                       Interlocked.Increment(ref immediateRetryCalls);
+                       return Task.CompletedTask;
+                   }))
+        {
+            vm.SetSoopAutoStartEnabled(true);
+            vm.BeginSoopStart("account", automatic: true);
+            vm.SetSoopFailure("connection timeout");
+            Assert(SpinWait.SpinUntil(() => vm.SoopRetryNowVisibility == System.Windows.Visibility.Visible, 500),
+                "SOOP retry wait exposes one immediate-retry action");
+            vm.RefreshTemporalStatus(DateTimeOffset.Now);
+            Assert(vm.SoopRetryStatusText.Contains("秒后自动重试", StringComparison.Ordinal),
+                "SOOP retry wait exposes a display-only countdown");
+            Assert(vm.RetrySoopNow(), "SOOP immediate retry wakes the pending delay");
+            Assert(SpinWait.SpinUntil(() => immediateRetryCalls == 1 && !vm.SoopRetryLoopActive, 500),
+                "SOOP immediate retry recovers through the existing retry flow");
+            Assert(vm.SoopRetryLoopStarts == 1 && immediateRetryCalls == 1,
+                "SOOP immediate retry does not create a parallel reconnect loop");
+            Assert(vm.SoopRetryStatusVisibility == System.Windows.Visibility.Collapsed,
+                "SOOP success hides the retry countdown");
+        }
+        report.AppendLine("SOOP network recovery / quick-start refresh state: PASS");
     }
 
     private static async Task RunPlatformLogTailSessionTest(string workspace, StringBuilder report)
@@ -277,25 +400,27 @@ public static class FeatureSelfTest
         Assert(UpdateService.NormalizeVersion("v1.0.1-rc.1") is null, "prerelease tag is not a stable version");
 
         HttpRequestMessage? capturedRequest = null;
+        var updateCalls = 0;
         var releaseJson = """
             {
-              "tag_name": "v1.0.1",
+              "version": "1.0.1",
+              "tag": "v1.0.1",
               "name": "CloudLight Blizzard 1.0.1",
-              "body": "修复与改进",
-              "html_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v1.0.1",
-              "published_at": "2026-08-14T08:00:00Z",
-              "draft": false,
-              "prerelease": false,
+              "notes": "修复与改进",
+              "htmlUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v1.0.1",
+              "publishedAt": "2026-08-14T08:00:00Z",
               "assets": [
                 {
                   "name": "CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
-                  "browser_download_url": "https://github.com/yundan125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe"
+                  "downloadUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
+                  "size": 123456
                 }
               ]
             }
             """;
         using (var client = new HttpClient(new StubHttpHandler(request =>
                {
+                   updateCalls++;
                    capturedRequest = request;
                    return JsonResponse(releaseJson);
                })))
@@ -303,7 +428,7 @@ public static class FeatureSelfTest
         {
             var result = await service.CheckAsync();
             Assert(result.Status == UpdateCheckResultStatus.Success && result.HasUpdate &&
-                   result.LatestVersion == "1.0.1", "formal GitHub release is parsed and compared");
+                   result.LatestVersion == "1.0.1", "Worker latest release is parsed and compared");
             Assert(result.ReleaseUrl.EndsWith("/releases/tag/v1.0.1", StringComparison.Ordinal),
                 "release html_url is retained");
             Assert(result.ReleaseNotes == "修复与改进" && result.PublishedAt.HasValue,
@@ -311,22 +436,92 @@ public static class FeatureSelfTest
             Assert(result.InstallerDownloadUrl?.EndsWith("Setup.exe", StringComparison.Ordinal) == true,
                 "conventional installer asset is parsed without downloading");
             Assert(capturedRequest?.RequestUri?.AbsoluteUri == UpdateService.LatestReleaseApiUrl,
-                "only the fixed latest-release API is requested");
+                "only the fixed Worker update endpoint is requested");
             Assert(capturedRequest?.Headers.UserAgent.ToString().Contains("CloudLight-Blizzard", StringComparison.Ordinal) == true &&
-                   capturedRequest.Headers.Accept.Any(value => value.MediaType == "application/vnd.github+json"),
-                "GitHub request headers are present");
+                   capturedRequest.Headers.Accept.Any(value => value.MediaType == "application/json"),
+                "Worker request headers are present");
+            var cached = await service.CheckAsync();
+            Assert(cached.LatestVersion == "1.0.1" && updateCalls == 1,
+                "successful update result is reused without another HTTP request");
         }
 
-        var prereleaseJson = releaseJson.Replace("\"prerelease\": false", "\"prerelease\": true");
-        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(prereleaseJson))))
+        var invalidJson = releaseJson.Replace("\"version\": \"1.0.1\"", "\"version\": \"preview\"")
+            .Replace("\"tag\": \"v1.0.1\"", "\"tag\": \"preview\"");
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(invalidJson))))
         using (var service = new UpdateService(client, "1.0.0"))
-            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
-                "prerelease response is ignored");
-        var draftJson = releaseJson.Replace("\"draft\": false", "\"draft\": true");
-        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(draftJson))))
+            Assert((await service.CheckAsync()).FailureKind == UpdateFailureKind.InvalidResponse,
+                "invalid Worker response is classified");
+
+        var olderReleaseJson = releaseJson.Replace("1.0.1", "2.0.6", StringComparison.Ordinal);
+        using (var client = new HttpClient(new StubHttpHandler(_ => JsonResponse(olderReleaseJson))))
+        using (var service = new UpdateService(client, "2.0.7"))
+        {
+            var olderRemote = await service.CheckAsync();
+            Assert(olderRemote.Status == UpdateCheckResultStatus.Success && !olderRemote.HasUpdate &&
+                   olderRemote.LatestVersion == "2.0.6" && olderRemote.FailureKind == UpdateFailureKind.None,
+                "local 2.0.7 newer than remote 2.0.6 is a successful up-to-date result");
+        }
+
+        var installerBytes = new byte[32 * 1024];
+        installerBytes[0] = (byte)'M';
+        installerBytes[1] = (byte)'Z';
+        var routedUris = new List<Uri?>();
+        var downloadSettings = new AppSettings
+        {
+            EnableProxy = true,
+            ProxyUrl = "http://127.0.0.1:7897",
+            FallbackDirect = false,
+        };
+        using (var routed = new CloudHttpClientFactory(
+                   downloadSettings,
+                   Path.Combine(workspace, "update-download-network.log"),
+                   proxyUri =>
+                   {
+                       routedUris.Add(proxyUri);
+                       return new HttpClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+                       {
+                           Content = new ByteArrayContent(installerBytes),
+                       }));
+                   }))
+        {
+            var downloader = new UpdateDownloadService(routed);
+            UpdateDownloadProgress? lastProgress = null;
+            var progress = new InlineProgress<UpdateDownloadProgress>(value => lastProgress = value);
+            var downloadResult = new UpdateCheckResult
+            {
+                Status = UpdateCheckResultStatus.Success,
+                CurrentVersion = "2.0.7",
+                LatestVersion = "2.0.8",
+                HasUpdate = true,
+                ReleaseUrl = "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v2.0.8",
+                InstallerDownloadUrl =
+                    "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.8/CloudLight-Blizzard-2.0.8-win-x64-Setup.exe",
+                InstallerSize = installerBytes.Length,
+            };
+            var downloaded = await downloader.DownloadInstallerAsync(downloadResult, progress);
+            Assert(File.Exists(downloaded) && File.ReadAllBytes(downloaded).AsSpan().SequenceEqual(installerBytes),
+                "online update streams the installer to disk");
+            Assert(routedUris.Any(uri => uri is not null && uri.Host == "127.0.0.1" && uri.Port == 7897),
+                "online update uses the configured application proxy");
+            Assert(lastProgress?.Percentage == 100 && lastProgress.BytesReceived == installerBytes.Length,
+                "online update reports complete download progress");
+            Assert(!File.Exists(downloaded + ".partial"), "online update leaves no partial file after success");
+            File.Delete(downloaded);
+        }
+
+        using (var client = new HttpClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+               {
+                   Content = new StringContent("{\"success\":false,\"error\":\"rate_limited\",\"resetAt\":\"2026-08-24T18:00:00Z\"}"),
+                   Headers = { { "X-Update-Error", "rate_limited" } }
+               })))
         using (var service = new UpdateService(client, "1.0.0"))
-            Assert((await service.CheckAsync()).Status == UpdateCheckResultStatus.NoRelease,
-                "draft response is ignored");
+        {
+            var limited = await service.CheckAsync();
+            Assert(limited.FailureKind == UpdateFailureKind.RateLimited &&
+                   limited.ErrorMessage?.StartsWith("GitHub 更新服务请求过于频繁", StringComparison.Ordinal) == true &&
+                   !limited.ErrorMessage.Contains("Response status code", StringComparison.Ordinal),
+                "rate limit is classified and shown as a safe Chinese message");
+        }
 
         var updateLog = new UpdateLog(Path.Combine(workspace, "update-test.log"));
         var skippedSettings = new AppSettings { SkippedUpdateVersion = "1.0.1" };
@@ -380,7 +575,7 @@ public static class FeatureSelfTest
         await Task.WhenAll(automaticTask, manualTask);
         Assert(concurrentService.Calls == 1, "shared check does not send a duplicate HTTP request");
 
-        report.AppendLine("TEST 4 GitHub updates: PASS (semantic versions/stable release/assets/skip/manual/failure/delay/single-flight)");
+        report.AppendLine("TEST 4 Worker updates: PASS (semantic versions/release/assets/rate-limit/cache/skip/manual/failure/delay/single-flight)");
     }
 
     private static void RunRegionPreparationGuideTest(StringBuilder report)
@@ -1370,8 +1565,15 @@ public static class FeatureSelfTest
         CurrentVersion = "1.0.0",
         LatestVersion = latestVersion,
         HasUpdate = hasUpdate,
-        ReleaseUrl = $"https://github.com/yundan125/CloudLight-Blizzard/releases/tag/v{latestVersion}",
+        ReleaseUrl = $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v{latestVersion}",
     };
+
+    private sealed class InlineProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _report;
+        public InlineProgress(Action<T> report) => _report = report;
+        public void Report(T value) => _report(value);
+    }
 
     private sealed class StubHttpHandler : HttpMessageHandler
     {
