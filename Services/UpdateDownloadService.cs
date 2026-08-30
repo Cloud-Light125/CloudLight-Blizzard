@@ -5,7 +5,16 @@ using System.IO;
 
 namespace CloudLightBlizzard.Services;
 
-public sealed record UpdateDownloadProgress(long BytesReceived, long? TotalBytes)
+public enum UpdateDownloadPhase
+{
+    Downloading,
+    Verifying,
+}
+
+public sealed record UpdateDownloadProgress(
+    long BytesReceived,
+    long? TotalBytes,
+    UpdateDownloadPhase Phase = UpdateDownloadPhase.Downloading)
 {
     public int? Percentage => TotalBytes is > 0
         ? (int)Math.Clamp(BytesReceived * 100L / TotalBytes.Value, 0, 100)
@@ -39,56 +48,66 @@ public sealed class UpdateDownloadService
 
         TryDelete(partialPath);
 
+        var finalPathReplaced = false;
         try
         {
-            using var response = await _httpClients.SendGetAsync(
-                    () => CreateInstallerRequest(downloadUri),
-                    "update-download",
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException($"下载安装包失败：HTTP {(int)response.StatusCode}。", null, response.StatusCode);
-
-            var contentLength = response.Content.Headers.ContentLength;
-            var expectedLength = result.InstallerSize > 0
-                ? result.InstallerSize
-                : contentLength is > 0 ? contentLength.Value : 0;
-            long received = 0;
-            progress?.Report(new UpdateDownloadProgress(0, expectedLength > 0 ? expectedLength : null));
-
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (var output = new FileStream(
-                             partialPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                             BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            long received;
+            long expectedLength;
+            long? contentLength;
+            HttpResponseMessage response;
+            using (response = await _httpClients.SendGetAsync(
+                       () => CreateInstallerRequest(downloadUri),
+                       "update-download",
+                       cancellationToken)
+                   .ConfigureAwait(false))
             {
-                var buffer = new byte[BufferSize];
-                while (true)
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpRequestException($"下载安装包失败：HTTP {(int)response.StatusCode}。", null, response.StatusCode);
+
+                contentLength = response.Content.Headers.ContentLength;
+                expectedLength = result.InstallerSize > 0
+                    ? result.InstallerSize
+                    : contentLength is > 0 ? contentLength.Value : 0;
+                received = 0;
+                progress?.Report(new UpdateDownloadProgress(
+                    0, expectedLength > 0 ? expectedLength : null));
+
+                await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+                await using (var output = new FileStream(
+                                 partialPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                                 BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan))
                 {
-                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
-                        .ConfigureAwait(false);
-                    if (read == 0) break;
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                    received += read;
-                    progress?.Report(new UpdateDownloadProgress(
-                        received, expectedLength > 0 ? expectedLength : contentLength));
+                    var buffer = new byte[BufferSize];
+                    while (true)
+                    {
+                        var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (read == 0) break;
+                        await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                        received += read;
+                        progress?.Report(new UpdateDownloadProgress(
+                            received, expectedLength > 0 ? expectedLength : contentLength));
+                    }
+                    await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 }
-                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (expectedLength > 0 && received != expectedLength)
-                throw new InvalidDataException($"安装包大小校验失败：应为 {expectedLength} 字节，实际为 {received} 字节。");
-            if (!LooksLikeWindowsExecutable(partialPath))
-                throw new InvalidDataException("下载内容不是有效的 Windows 安装程序。");
-
-            File.Move(partialPath, finalPath, true);
+            // The response, input stream, and output stream are all closed before any installer validation
+            // or launch can happen.  The UI can therefore move from download to post-processing honestly.
+            cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new UpdateDownloadProgress(
-                received, expectedLength > 0 ? expectedLength : received));
+                received, expectedLength > 0 ? expectedLength : received, UpdateDownloadPhase.Verifying));
+
+            ValidateInstallerFile(partialPath, expectedLength);
+            File.Move(partialPath, finalPath, true);
+            finalPathReplaced = true;
+            ValidateInstallerFile(finalPath, expectedLength);
             return finalPath;
         }
         catch
         {
             TryDelete(partialPath);
+            if (finalPathReplaced) TryDelete(finalPath);
             throw;
         }
     }
@@ -128,10 +147,15 @@ public sealed class UpdateDownloadService
         return uri;
     }
 
-    private static bool LooksLikeWindowsExecutable(string path)
+    private static void ValidateInstallerFile(string path, long expectedLength)
     {
-        using var stream = File.OpenRead(path);
-        return stream.Length >= 2 && stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            BufferSize, FileOptions.SequentialScan);
+        if (expectedLength > 0 && stream.Length != expectedLength)
+            throw new InvalidDataException($"安装包大小校验失败：应为 {expectedLength} 字节，实际为 {stream.Length} 字节。");
+        if (stream.Length < 2 || stream.ReadByte() != 'M' || stream.ReadByte() != 'Z')
+            throw new InvalidDataException("下载内容不是有效的 Windows 安装程序。");
     }
 
     private static void TryDelete(string path)

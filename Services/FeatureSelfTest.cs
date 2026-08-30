@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
@@ -505,9 +506,55 @@ public static class FeatureSelfTest
                 "online update uses the configured application proxy");
             Assert(lastProgress?.Percentage == 100 && lastProgress.BytesReceived == installerBytes.Length,
                 "online update reports complete download progress");
+            Assert(lastProgress?.Phase == UpdateDownloadPhase.Verifying,
+                "online update reports verification after all download streams are closed");
             Assert(!File.Exists(downloaded + ".partial"), "online update leaves no partial file after success");
+
+            using (var exclusive = new FileStream(downloaded, FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert(exclusive.Length == installerBytes.Length,
+                    "installer file handles are released before launch");
+
+            var lifecycle = new List<string>();
+            var launchCoordinator = new UpdateInstallerLaunchCoordinator(
+                new DelegateInstallerLauncher(path =>
+                {
+                    Assert(File.Exists(path), "installer launch sees the finalized installer file");
+                    lifecycle.Add("Process.Start");
+                    return new Process();
+                }));
+            lifecycle.Add("download complete");
+            Assert(launchCoordinator.TryLaunchAndRequestShutdown(
+                    downloaded,
+                    () => lifecycle.Add("installer started"),
+                    () => lifecycle.Add("shutdown"),
+                    out _),
+                "successful installer launch requests shutdown");
+            Assert(lifecycle.SequenceEqual(new[]
+                    { "download complete", "Process.Start", "installer started", "shutdown" }),
+                "shutdown is requested only after Process.Start succeeds");
+
+            var launchCts = new CancellationTokenSource();
+            var launchToken = launchCts.Token;
+            var tokenUsableAtLaunch = false;
+            Assert(launchCoordinator.TryLaunchAndRequestShutdown(
+                    downloaded,
+                    () =>
+                    {
+                        _ = launchCts.Token;
+                        launchToken.ThrowIfCancellationRequested();
+                        tokenUsableAtLaunch = true;
+                    },
+                    () => { },
+                    out _),
+                "installer launch does not require a disposed update CTS");
+            Assert(tokenUsableAtLaunch, "update CTS remains usable through installer launch");
+            launchCts.Dispose();
             File.Delete(downloaded);
         }
+
+        await RunUpdateCancellationLifecycleTest(workspace);
+        RunInstallerLaunchFailureTest(workspace);
+        report.AppendLine("TEST 4A online update installer lifecycle: PASS (streams closed/verification/launch ordering/CTS cancellation/launch failure)");
 
         using (var client = new HttpClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                {
@@ -576,6 +623,74 @@ public static class FeatureSelfTest
         Assert(concurrentService.Calls == 1, "shared check does not send a duplicate HTTP request");
 
         report.AppendLine("TEST 4 Worker updates: PASS (semantic versions/release/assets/rate-limit/cache/skip/manual/failure/delay/single-flight)");
+    }
+
+    private static async Task RunUpdateCancellationLifecycleTest(string workspace)
+    {
+        const string latestVersion = "2.0.82";
+        var installerName = $"CloudLight-Blizzard-{latestVersion}-win-x64-Setup.exe";
+        var expectedInstaller = Path.Combine(
+            Path.GetTempPath(), "CloudLight Blizzard", "updates", latestVersion, installerName);
+        var expectedPartial = expectedInstaller + ".partial";
+        if (File.Exists(expectedInstaller)) File.Delete(expectedInstaller);
+        if (File.Exists(expectedPartial)) File.Delete(expectedPartial);
+
+        var handler = new BlockingUpdateHandler();
+        var settings = new AppSettings { EnableProxy = false };
+        using var clients = new CloudHttpClientFactory(
+            settings, Path.Combine(workspace, "update-cancellation.log"), _ => new HttpClient(handler));
+        var downloader = new UpdateDownloadService(clients);
+        var result = new UpdateCheckResult
+        {
+            Status = UpdateCheckResultStatus.Success,
+            CurrentVersion = "2.0.81",
+            LatestVersion = latestVersion,
+            HasUpdate = true,
+            InstallerDownloadUrl =
+                $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v{latestVersion}/{installerName}",
+        };
+        var cts = new CancellationTokenSource();
+        var token = cts.Token;
+        var disposedInFinally = false;
+        var operation = RunDownloadWithOwnedCancellationAsync();
+        await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        cts.Cancel();
+        await operation;
+
+        Assert(disposedInFinally, "cancelled update disposes CTS only after the async operation ends");
+        Assert(!File.Exists(expectedInstaller) && !File.Exists(expectedPartial),
+            "cancelled update removes incomplete installer files");
+
+        async Task RunDownloadWithOwnedCancellationAsync()
+        {
+            try
+            {
+                await downloader.DownloadInstallerAsync(result, cancellationToken: token);
+                throw new InvalidOperationException("cancelled update unexpectedly completed");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                disposedInFinally = true;
+                cts.Dispose();
+            }
+        }
+    }
+
+    private static void RunInstallerLaunchFailureTest(string workspace)
+    {
+        var installerPath = Path.Combine(workspace, "installer-launch-failure-test.exe");
+        File.WriteAllBytes(installerPath, new byte[] { (byte)'M', (byte)'Z' });
+        var shutdownRequested = false;
+        var coordinator = new UpdateInstallerLaunchCoordinator(
+            new DelegateInstallerLauncher(_ => throw new InvalidOperationException("simulated launcher failure")));
+        Assert(!coordinator.TryLaunchAndRequestShutdown(
+                installerPath, () => { }, () => shutdownRequested = true, out var error),
+            "installer launch failure is reported");
+        Assert(error.Contains("simulated launcher failure", StringComparison.Ordinal) && !shutdownRequested,
+            "installer launch failure never requests app shutdown");
     }
 
     private static void RunRegionPreparationGuideTest(StringBuilder report)
@@ -1573,6 +1688,25 @@ public static class FeatureSelfTest
         private readonly Action<T> _report;
         public InlineProgress(Action<T> report) => _report = report;
         public void Report(T value) => _report(value);
+    }
+
+    private sealed class DelegateInstallerLauncher(Func<string, Process?> start) : IInstallerLauncher
+    {
+        public Process? Start(string installerPath) => start(installerPath);
+    }
+
+    private sealed class BlockingUpdateHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource<bool> Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Started.TrySetResult(true);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new OperationCanceledException(cancellationToken);
+        }
     }
 
     private sealed class StubHttpHandler : HttpMessageHandler

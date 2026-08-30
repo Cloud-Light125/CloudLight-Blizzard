@@ -19,7 +19,23 @@ public partial class SettingsPage : UserControl
     private CancellationTokenSource? _networkDiagnosticCancellation;
     private UpdateCheckResult? _availableUpdate;
     private bool _isDownloadingUpdate;
-    public SettingsPage() => InitializeComponent();
+    private CancellationTokenSource? _updateCts;
+    private bool _isUpdateRunning;
+    private bool _installerStarted;
+
+    public SettingsPage()
+    {
+        InitializeComponent();
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e) => CancelUpdateDownload();
+
+    internal void CancelUpdateDownload()
+    {
+        if (_isUpdateRunning && !_installerStarted)
+            _updateCts?.Cancel();
+    }
     public void Initialize(MainViewModel vm)
     {
         _vm = vm; CloseToTrayBox.IsChecked = vm.Settings.CloseToTray; StartMinimizedBox.IsChecked = vm.Settings.StartMinimized;
@@ -127,7 +143,6 @@ public partial class SettingsPage : UserControl
     {
         if (_vm == null) return;
         _networkDiagnosticCancellation?.Cancel();
-        _networkDiagnosticCancellation?.Dispose();
         var cancellation = new CancellationTokenSource();
         _networkDiagnosticCancellation = cancellation;
         NetworkTestButton.IsEnabled = false;
@@ -228,10 +243,16 @@ public partial class SettingsPage : UserControl
             string.IsNullOrWhiteSpace(_availableUpdate.InstallerDownloadUrl))
             return;
 
+        var update = _availableUpdate;
+        var cts = new CancellationTokenSource();
+        _updateCts = cts;
+        var token = cts.Token;
+        _isUpdateRunning = true;
+        _installerStarted = false;
         _isDownloadingUpdate = true;
         UpdateDownloadPanel.Visibility = Visibility.Visible;
         UpdateDownloadProgressBar.Value = 0;
-        UpdateDownloadProgressBar.IsIndeterminate = _availableUpdate.InstallerSize <= 0;
+        UpdateDownloadProgressBar.IsIndeterminate = update.InstallerSize <= 0;
         UpdateDownloadText.Text = "正在下载安装包…";
         UpdateCheckingState();
 
@@ -239,24 +260,53 @@ public partial class SettingsPage : UserControl
         {
             var progress = new Progress<UpdateDownloadProgress>(RenderUpdateDownloadProgress);
             var path = await _vm.UpdateDownloader.DownloadInstallerAsync(
-                _availableUpdate, progress, CancellationToken.None);
-            if (Window.GetWindow(this) is MainWindow mainWindow)
-            {
-                if (mainWindow.InstallDownloadedUpdate(path)) return;
-            }
-            throw new InvalidOperationException("安装程序无法启动，请使用“打开更新链接”手动更新。");
+                update, progress, token);
+            token.ThrowIfCancellationRequested();
+            UpdateDownloadText.Text = "正在启动安装程序…";
+            _isUpdateRunning = false;
+            if (Window.GetWindow(this) is MainWindow mainWindow &&
+                mainWindow.InstallDownloadedUpdate(path, () =>
+                {
+                    _installerStarted = true;
+                    UpdateDownloadText.Text = "安装程序已启动，正在退出 CloudLight Blizzard…";
+                }))
+                return;
+
+            UpdateDownloadText.Text = "更新安装程序启动失败。";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            UpdateDownloadText.Text = "下载已取消。";
         }
         catch (Exception ex)
         {
-            UpdateDownloadText.Text = "在线更新下载失败。";
+            UpdateDownloadText.Text = "在线更新失败。";
             MessageBox.Show(ex.Message, "在线更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-            _isDownloadingUpdate = false;
-            UpdateCheckingState();
+        }
+        finally
+        {
+            _isUpdateRunning = false;
+            if (ReferenceEquals(_updateCts, cts))
+                _updateCts = null;
+            cts.Dispose();
+            if (!_installerStarted && !Dispatcher.HasShutdownStarted)
+            {
+                _isDownloadingUpdate = false;
+                UpdateCheckingState();
+            }
         }
     }
 
     private void RenderUpdateDownloadProgress(UpdateDownloadProgress value)
     {
+        if (value.Phase == UpdateDownloadPhase.Verifying)
+        {
+            UpdateDownloadProgressBar.IsIndeterminate = false;
+            UpdateDownloadProgressBar.Value = value.Percentage ?? 100;
+            UpdateDownloadText.Text = "正在校验安装包…";
+            return;
+        }
+
         if (value.Percentage is { } percentage)
         {
             UpdateDownloadProgressBar.IsIndeterminate = false;

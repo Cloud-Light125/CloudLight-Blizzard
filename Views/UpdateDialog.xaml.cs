@@ -17,8 +17,9 @@ public partial class UpdateDialog : Window
 {
     private readonly UpdateCheckResult _result;
     private readonly UpdateDownloadService _downloader;
-    private CancellationTokenSource? _downloadCancellation;
-    private bool _isDownloading;
+    private CancellationTokenSource? _updateCts;
+    private bool _isUpdateRunning;
+    private bool _installerStarted;
 
     public UpdateDialog(UpdateCheckResult result, UpdateDownloadService downloader)
     {
@@ -42,24 +43,31 @@ public partial class UpdateDialog : Window
     public bool SkipVersion => SkipVersionBox.IsChecked == true;
     public string? DownloadedInstallerPath { get; private set; }
 
+    internal void MarkInstallerStarted()
+    {
+        _installerStarted = true;
+        DownloadProgressText.Text = "安装程序已启动，正在退出 CloudLight Blizzard…";
+    }
+
     private void OnDrag(object sender, MouseButtonEventArgs e)
     {
-        if (e.ButtonState == MouseButtonState.Pressed && !_isDownloading) DragMove();
+        if (e.ButtonState == MouseButtonState.Pressed && !_isUpdateRunning) DragMove();
     }
 
     private void OnOpenRelease(object sender, RoutedEventArgs e)
     {
-        if (_isDownloading) return;
+        if (_isUpdateRunning) return;
         Action = UpdateDialogAction.OpenRelease;
         DialogResult = true;
     }
 
     private async void OnOnlineUpdate(object sender, RoutedEventArgs e)
     {
-        if (_isDownloading || string.IsNullOrWhiteSpace(_result.InstallerDownloadUrl)) return;
+        if (_isUpdateRunning || string.IsNullOrWhiteSpace(_result.InstallerDownloadUrl)) return;
 
-        _downloadCancellation?.Dispose();
-        _downloadCancellation = new CancellationTokenSource();
+        var cts = new CancellationTokenSource();
+        _updateCts = cts;
+        var token = cts.Token;
         SetDownloading(true);
         DownloadProgressPanel.Visibility = Visibility.Visible;
         DownloadProgressBar.IsIndeterminate = _result.InstallerSize <= 0;
@@ -70,12 +78,15 @@ public partial class UpdateDialog : Window
         {
             var progress = new Progress<UpdateDownloadProgress>(RenderDownloadProgress);
             var path = await _downloader.DownloadInstallerAsync(
-                _result, progress, _downloadCancellation.Token);
+                _result, progress, token);
+            token.ThrowIfCancellationRequested();
             DownloadedInstallerPath = path;
+            DownloadProgressText.Text = "正在启动安装程序…";
+            SetDownloading(false);
             Action = UpdateDialogAction.InstallDownloaded;
             DialogResult = true;
         }
-        catch (OperationCanceledException) when (_downloadCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             DownloadProgressText.Text = "下载已取消。";
             SetDownloading(false);
@@ -86,10 +97,24 @@ public partial class UpdateDialog : Window
             MessageBox.Show(ex.Message, "在线更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             SetDownloading(false);
         }
+        finally
+        {
+            if (ReferenceEquals(_updateCts, cts))
+                _updateCts = null;
+            cts.Dispose();
+        }
     }
 
     private void RenderDownloadProgress(UpdateDownloadProgress value)
     {
+        if (value.Phase == UpdateDownloadPhase.Verifying)
+        {
+            DownloadProgressBar.IsIndeterminate = false;
+            DownloadProgressBar.Value = value.Percentage ?? 100;
+            DownloadProgressText.Text = "正在校验安装包…";
+            return;
+        }
+
         if (value.Percentage is { } percentage)
         {
             DownloadProgressBar.IsIndeterminate = false;
@@ -110,7 +135,7 @@ public partial class UpdateDialog : Window
 
     private void SetDownloading(bool value)
     {
-        _isDownloading = value;
+        _isUpdateRunning = value;
         LaterButton.IsEnabled = !value;
         CloseButton.IsEnabled = !value;
         SkipVersionBox.IsEnabled = !value;
@@ -122,15 +147,16 @@ public partial class UpdateDialog : Window
 
     private void OnLater(object sender, RoutedEventArgs e)
     {
-        if (_isDownloading) return;
+        if (_isUpdateRunning) return;
         Action = UpdateDialogAction.Later;
         DialogResult = false;
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (_isDownloading)
+        if (_isUpdateRunning)
         {
+            _updateCts?.Cancel();
             e.Cancel = true;
             return;
         }
@@ -139,8 +165,8 @@ public partial class UpdateDialog : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        _downloadCancellation?.Cancel();
-        _downloadCancellation?.Dispose();
+        if (_isUpdateRunning && !_installerStarted)
+            _updateCts?.Cancel();
         base.OnClosed(e);
     }
 }

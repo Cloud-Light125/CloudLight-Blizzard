@@ -35,14 +35,20 @@ public partial class MainWindow : Window
     private bool _pagesReady;
     private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
+    private bool _updateCancellationDisposed;
+    private readonly UpdateInstallerLaunchCoordinator _installerLaunchCoordinator;
+    private bool _installerStarted;
     private readonly AnnouncementService _announcementService;
     private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
     private Task? _announcementRefreshTask;
     public AnnouncementService AnnouncementState => _announcementService;
 
-    public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null)
+    public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null,
+        IInstallerLauncher? installerLauncher = null)
     {
         _vm = new MainViewModel(logSession);
+        _installerLaunchCoordinator = new UpdateInstallerLaunchCoordinator(
+            installerLauncher ?? new ProcessInstallerLauncher());
         _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
         InitializeComponent();
         ThemeManager.Attach(this);
@@ -173,7 +179,7 @@ public partial class MainWindow : Window
                 OpenUpdateRelease(result.ReleaseUrl);
             else if (dialog.Action == UpdateDialogAction.InstallDownloaded &&
                      !string.IsNullOrWhiteSpace(dialog.DownloadedInstallerPath))
-                InstallDownloadedUpdate(dialog.DownloadedInstallerPath);
+                InstallDownloadedUpdate(dialog.DownloadedInstallerPath, dialog.MarkInstallerStarted);
             return;
         }
 
@@ -204,29 +210,34 @@ public partial class MainWindow : Window
         }
     }
 
-    internal bool InstallDownloadedUpdate(string installerPath)
+    internal bool InstallDownloadedUpdate(string installerPath, Action? installerStarted = null)
     {
-        if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
+        if (_installerStarted) return true;
+
+        var started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(
+            installerPath,
+            () =>
+            {
+                _installerStarted = true;
+                installerStarted?.Invoke();
+            },
+            () =>
+            {
+                var closeNeeded = !_isExiting && !_exitCleanupStarted;
+                _exitRequested = true;
+                BeginExit();
+                if (closeNeeded && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+                    Close();
+            },
+            out var error);
+        if (!started)
         {
-            MessageBox.Show("已下载的安装程序不存在，请重新下载。", "在线更新",
+            MessageBox.Show($"无法启动更新安装程序：{error}", "在线更新",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
 
-        try
-        {
-            Process.Start(new ProcessStartInfo { FileName = installerPath, UseShellExecute = true });
-            _exitRequested = true;
-            BeginExit();
-            Close();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"无法启动更新安装程序：{ex.Message}", "在线更新",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return false;
-        }
+        return true;
     }
 
     private void SelectSavedSection()
@@ -400,7 +411,9 @@ public partial class MainWindow : Window
     {
         _isExiting = true;
         _watchTimer.Stop();
-        _updateCancellation.Cancel();
+        _settingsPage.CancelUpdateDownload();
+        if (!_updateCancellationDisposed)
+            _updateCancellation.Cancel();
         DisposeTray();
         DisposeShowSignal();
     }
@@ -414,6 +427,7 @@ public partial class MainWindow : Window
         try { _announcementService.Dispose(); } catch { }
         try { _vm.CloudHttpClients.Dispose(); } catch { }
         _updateCancellation.Dispose();
+        _updateCancellationDisposed = true;
         if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }
         _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized; _vm.Settings.Save();
     }
