@@ -197,14 +197,20 @@ describe("GET /v1/update/latest", () => {
   it("returns only the latest release fields needed by the client", async () => {
     const cache = { put: vi.fn(async () => undefined), match: vi.fn(async () => undefined) };
     vi.stubGlobal("caches", { open: vi.fn(async () => cache) });
-    const github = vi.fn(async () => Response.json(latestRelease()));
+    const github = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-token");
+      return Response.json(latestRelease());
+    });
     vi.stubGlobal("fetch", github);
 
-    const response = await handleLatestUpdate();
+    const response = await handleLatestUpdate({ GITHUB_TOKEN: "test-token" });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
+      ok: true,
       version: "2.0.7",
+      latestVersion: "2.0.7",
       tag: "v2.0.7",
+      tagName: "v2.0.7",
       name: "CloudLight Blizzard 2.0.7",
       notes: "修复更新检查",
       publishedAt: "2026-08-24T08:00:00Z",

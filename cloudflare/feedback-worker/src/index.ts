@@ -68,7 +68,7 @@ export default {
     if (request.method === "GET" && path === "/v1/announcements")
       return handleAnnouncements(env);
     if (request.method === "GET" && path === "/v1/update/latest")
-      return handleLatestUpdate();
+      return handleLatestUpdate(env);
     if (request.method === "POST" && path === "/v1/feedback")
       return handleFeedback(request, env);
     return json({ error: "not_found" }, 404);
@@ -98,7 +98,7 @@ export async function handleAnnouncements(env: Env): Promise<Response> {
   }
 }
 
-export async function handleLatestUpdate(): Promise<Response> {
+export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">): Promise<Response> {
   const cache = await caches.open("cloudlight-update");
   const cacheKey = new Request(UPDATE_CACHE_KEY);
   const cached = await cache.match(cacheKey);
@@ -106,12 +106,15 @@ export async function handleLatestUpdate(): Promise<Response> {
 
   let upstream: Response;
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "CloudLight-Feedback-Worker/2.0",
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    };
+    const token = env?.GITHUB_TOKEN?.trim();
+    if (token) headers.Authorization = `Bearer ${token}`;
     upstream = await fetch(UPDATE_REPOSITORY_API, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "CloudLight-Feedback-Worker/2.0",
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      },
+      headers,
       signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
     });
   } catch (error) {
@@ -139,8 +142,11 @@ export async function handleLatestUpdate(): Promise<Response> {
   if (!isPublicRelease(release)) return updateError("invalid_response", 502);
 
   const payload = {
+    ok: true,
     version: release.tag_name.replace(/^v/i, ""),
+    latestVersion: release.tag_name.replace(/^v/i, ""),
     tag: release.tag_name,
+    tagName: release.tag_name,
     name: release.name ?? release.tag_name,
     notes: (release.body?.trim() ?? "").slice(0, 20_000),
     publishedAt: release.published_at ?? null,
