@@ -39,6 +39,8 @@ public sealed record NetworkDiagnosticReport(
         if (!result.Success && name == "更新服务" &&
             result.Message == "GitHub API 请求频率限制")
             return $"{name}：受限{elapsed}{route} · {result.Message}";
+        if (!result.Success && string.Equals(result.Message, "连接超时", StringComparison.Ordinal))
+            return $"{name}：直连超时{elapsed}{route}";
         return result.Success
             ? $"{name}：{(proxyLine ? "可用" : "正常")}{elapsed}{route}"
             : $"{name}：失败{elapsed}{route} · {result.Message}";

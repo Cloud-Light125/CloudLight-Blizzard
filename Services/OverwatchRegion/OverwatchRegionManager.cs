@@ -13,6 +13,7 @@ public sealed class OverwatchRegionManager
     private readonly int _quiescenceMilliseconds;
 
     public string BackupRoot => _store.Root;
+    internal OverwatchRegionBackupStore BackupStore => _store;
     public bool HasActiveGeneration => _store.LoadActive() is not null;
 
     public OverwatchRegionManager(string? storageRoot = null, Func<bool>? gameRunning = null,
@@ -195,6 +196,9 @@ public sealed class OverwatchRegionManager
             (!string.Equals(suppliedPlan.GenerationId, generation.GenerationId, StringComparison.OrdinalIgnoreCase) ||
              suppliedPlan.TargetRegion != target))
             throw new InvalidDataException("区服快照在预览后发生变化，请重新生成切换预览。");
+        if (suppliedPlan is not null)
+            await ValidateSuppliedPlanAsync(gameRoot, active, target, suppliedPlan, cancellationToken)
+                .ConfigureAwait(false);
         var compatibility = suppliedPlan is null
             ? await EvaluateCompatibilityAsync(gameRoot, generation, cancellationToken)
             : new CompatibilityResult(suppliedPlan.Compatibility, suppliedPlan.CompatibilityReason);
@@ -504,6 +508,7 @@ public sealed class OverwatchRegionManager
             EligibilityFileIssueCount = eligibility.FileIssueCount,
             RegionEvidence = detection.Evidence,
             ExactSnapshotMatch = detection.ExactSnapshotMatch,
+            BattleNetRunning = battleNetRunning,
             CurrentBattleNetState = running ? "守望先锋正在运行，无法切换"
                 : battleNetRunning ? "Battle.net 正在运行（执行前将优雅退出）"
                 : agentRunning ? "Agent 后台运行中（不会被终止）" : "Battle.net 未运行",
@@ -522,6 +527,104 @@ public sealed class OverwatchRegionManager
         }
         catch (Exception ex) { plan.Warnings.Add("无法读取游戏盘剩余空间：" + ex.Message); }
         return plan;
+    }
+
+    private async Task ValidateSuppliedPlanAsync(string gameRoot,
+        (ActiveGenerationPointer Pointer, OverwatchRegionGeneration Generation) active,
+        OverwatchRegion target, SwitchPlan plan, CancellationToken token)
+    {
+        if (_isGameRunning() || IsProcessRunning("Battle.net"))
+            throw new InvalidDataException("预览后检测到游戏或 Battle.net 仍在运行，请关闭后重新生成切换预览。");
+        if (!string.Equals(plan.GenerationId, active.Generation.GenerationId, StringComparison.OrdinalIgnoreCase) ||
+            plan.TargetRegion != target || plan.BackupMode != active.Generation.BackupMode ||
+            plan.SourceRegion != active.Pointer.LastSuccessfulRegion)
+            throw new InvalidDataException("预览所依据的快照身份已变化，请重新生成切换预览。");
+
+        var generation = active.Generation;
+        var compatibility = await EvaluateCompatibilityAsync(gameRoot, generation, token).ConfigureAwait(false);
+        if (compatibility.Status != plan.Compatibility)
+            throw new InvalidDataException("预览后游戏版本或公共文件基线已变化，请重新生成切换预览。");
+
+        var eligibility = await EvaluateSwitchEligibilityAsync(generation, compatibility, target,
+            hashBackups: true, token, progress: null).ConfigureAwait(false);
+        if (eligibility.Status != plan.Eligibility ||
+            eligibility.FileIssueCount != plan.EligibilityFileIssueCount)
+            throw new InvalidDataException("预览后快照可用性已变化，请重新验证快照并生成新的切换预览。");
+
+        var detection = DetectionResult.Unknown;
+        if (eligibility.Status == RegionSwitchEligibility.Normal)
+        {
+            try
+            {
+                detection = await DetectCurrentRegionAsync(gameRoot, active.Pointer, generation,
+                    compatibility, persistStrongCorrection: false, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (generation.BackupMode == RegionBackupMode.VerifiedDifference &&
+                                       IsPerFileException(ex))
+            {
+                detection = DetectionResult.Unknown;
+            }
+        }
+        if (detection.DetectedRegion != plan.CurrentRegion || detection.Evidence != plan.RegionEvidence ||
+            detection.ExactSnapshotMatch != plan.ExactSnapshotMatch)
+            throw new InvalidDataException("预览后当前区服文件状态已变化，请重新生成切换预览。");
+
+        var expectedSnapshotState = generation.State == RegionBackupState.Stale ? "已验证但可能过期" : "已准备";
+        if (!string.Equals(plan.SnapshotState, expectedSnapshotState, StringComparison.Ordinal))
+            throw new InvalidDataException("预览后快照状态已变化，请重新生成切换预览。");
+
+        Dictionary<string, SwitchPlanFile> planned;
+        try
+        {
+            planned = plan.Operations.ToDictionary(item => item.RelativePath,
+                StringComparer.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidDataException("预览计划包含重复文件记录，请重新生成切换预览。");
+        }
+        if (planned.Count != generation.Differences.Count)
+            throw new InvalidDataException("预览计划中的文件集合已变化，请重新生成切换预览。");
+
+        long estimated = 0;
+        foreach (var difference in generation.Differences)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!planned.TryGetValue(difference.RelativePath, out var operation) ||
+                !string.Equals(operation.RelativePath, difference.RelativePath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("预览计划中的文件集合已变化，请重新生成切换预览。");
+            var expected = target == OverwatchRegion.China ? difference.China : difference.International;
+            if (operation.DifferenceKind != difference.Kind || !EntriesEqual(operation.Expected, expected))
+                throw new InvalidDataException("预览计划中的目标备份身份已变化，请重新生成切换预览。");
+
+            var destination = OverwatchRegionBackupStore.SafeCombine(gameRoot, difference.RelativePath);
+            var destinationExists = File.Exists(destination);
+            if (destinationExists != operation.DestinationExists)
+                throw new InvalidDataException("预览后待处理文件的存在状态已变化，请重新生成切换预览。");
+
+            var currentOperation = SwitchPlanOperation.Keep;
+            if (difference.Kind != RegionDifferenceKind.Same)
+            {
+                if (expected is null)
+                    currentOperation = destinationExists ? SwitchPlanOperation.Delete : SwitchPlanOperation.Keep;
+                else
+                {
+                    var inspection = InspectFile(destination, expected, token);
+                    if (inspection.Status == FileInspectionStatus.Issue)
+                        throw new InvalidDataException("预览后无法安全读取待处理文件，请重新生成切换预览。");
+                    currentOperation = inspection.Status == FileInspectionStatus.Match
+                        ? SwitchPlanOperation.Keep : SwitchPlanOperation.Restore;
+                    if (currentOperation == SwitchPlanOperation.Restore) estimated += expected.Size;
+                }
+            }
+            if (currentOperation != operation.Operation)
+                throw new InvalidDataException("预览后文件内容已变化，请重新生成切换预览。");
+            if (operation.EstimatedBytes != (currentOperation == SwitchPlanOperation.Restore ? expected?.Size ?? 0 : 0))
+                throw new InvalidDataException("预览计划的磁盘空间估算已变化，请重新生成切换预览。");
+        }
+        if (plan.EstimatedBytes != estimated || plan.RequiredDiskSpace != estimated + 256L * 1024 * 1024)
+            throw new InvalidDataException("预览计划的磁盘空间估算已变化，请重新生成切换预览。");
     }
 
     public Task<RegionSwitchResult> ExecuteSwitchPlanAsync(string gameRoot, SwitchPlan plan,

@@ -21,6 +21,7 @@ public sealed class AnnouncementService : IDisposable, INotifyPropertyChanged
     private readonly SynchronizationContext? _notificationContext;
     private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
     private AnnouncementLocalState _state;
+    private DateTimeOffset? _lastCheckAt;
 
     public AnnouncementService(AppSettings settings, string? stateFile = null, string? appVersion = null,
         CloudHttpClientFactory? httpClients = null)
@@ -50,6 +51,10 @@ public sealed class AnnouncementService : IDisposable, INotifyPropertyChanged
     {
         get { lock (_stateSync) return _state.LastSuccessfulCheck; }
     }
+    public DateTimeOffset? LastCheckAt
+    {
+        get { lock (_stateSync) return _lastCheckAt; }
+    }
     public string? LastFailureMessage { get; private set; }
     public bool HasUnreadAnnouncements => HasUnread(CachedAnnouncements);
     public bool IsBadgeVisible => _settings.ShowAnnouncementBadge && HasUnreadAnnouncements;
@@ -61,6 +66,7 @@ public sealed class AnnouncementService : IDisposable, INotifyPropertyChanged
             return CachedAnnouncements;
         try
         {
+            lock (_stateSync) _lastCheckAt = DateTimeOffset.Now;
             var downloaded = await DownloadAsync(cancellationToken).ConfigureAwait(false);
             if (IsValid(downloaded))
             {

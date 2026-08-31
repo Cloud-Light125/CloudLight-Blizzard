@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.IO;
 using System.Text;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -25,8 +26,16 @@ public static class UiVisualTreeSelfTest
         var checks = new List<string>();
         MainWindow? window = null;
         SwitchPreviewWindow? preview = null;
+        TraceSource? bindingSource = null;
+        TraceListener? bindingListener = null;
+        SourceLevels? previousBindingLevel = null;
         try
         {
+            bindingSource = PresentationTraceSources.DataBindingSource;
+            previousBindingLevel = bindingSource.Switch.Level;
+            bindingListener = new BindingErrorTraceListener();
+            bindingSource.Switch.Level = SourceLevels.Error;
+            bindingSource.Listeners.Add(bindingListener);
             window = new MainWindow(startHidden: true);
             Application.Current.MainWindow = window;
             window.ApplyTemplate();
@@ -98,6 +107,8 @@ public static class UiVisualTreeSelfTest
             preview.UpdateLayout();
             Assert(FindNamed(preview, "StartButton") is Button, checks, "切换预览包含开始切换按钮");
             Assert(FindNamed(preview, "BlockerBox") is Border, checks, "切换预览包含安全阻断区域");
+            Assert(bindingListener is not BindingErrorTraceListener errors || !errors.HasErrors,
+                checks, "WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误");
 
             checks.Insert(0, "UI VisualTree selftest: " + (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
         }
@@ -107,6 +118,11 @@ public static class UiVisualTreeSelfTest
         }
         finally
         {
+            if (bindingSource is not null && bindingListener is not null)
+            {
+                try { bindingSource.Listeners.Remove(bindingListener); } catch { }
+                if (previousBindingLevel.HasValue) bindingSource.Switch.Level = previousBindingLevel.Value;
+            }
             try { preview?.Close(); } catch { }
             if (window is not null)
             {
@@ -163,5 +179,20 @@ public static class UiVisualTreeSelfTest
             if (found is not null) return found;
         }
         return null;
+    }
+
+    private sealed class BindingErrorTraceListener : TraceListener
+    {
+        public bool HasErrors { get; private set; }
+
+        public override void Write(string? message) => Capture(message);
+        public override void WriteLine(string? message) => Capture(message);
+
+        private void Capture(string? message)
+        {
+            if (!string.IsNullOrWhiteSpace(message) &&
+                message.Contains("System.Windows.Data Error", StringComparison.OrdinalIgnoreCase))
+                HasErrors = true;
+        }
     }
 }

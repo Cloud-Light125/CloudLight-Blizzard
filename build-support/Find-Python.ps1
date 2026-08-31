@@ -33,6 +33,11 @@ print(ssl.OPENSSL_VERSION)
         if ($LASTEXITCODE -ne 0) { return $null }
         $lines = @($runtimeText -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         if ($lines.Count -lt 3 -or $lines[2] -notmatch '^OpenSSL\s') { return $null }
+        try {
+            $pythonVersion = [version]$lines[1].Trim()
+            if ($pythonVersion.Major -ne 3 -or $pythonVersion.Minor -lt 10) { return $null }
+        }
+        catch { return $null }
 
         [pscustomobject]@{
             Path = (Resolve-Path -LiteralPath $Path).Path
@@ -168,8 +173,12 @@ function Find-CloudLightPython {
         -Path (Resolve-CloudLightCommandPath -Name 'python.exe') -Source 'PATH'
 
     $userPythonRoots = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
-        (Join-Path $env:USERPROFILE 'AppData\Local\Programs\Python')
+        if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+            Join-Path $env:LOCALAPPDATA 'Programs\Python'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+            Join-Path $env:USERPROFILE 'AppData\Local\Programs\Python'
+        }
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) }
     foreach ($root in $userPythonRoots) {
         foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |

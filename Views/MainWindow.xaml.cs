@@ -47,7 +47,8 @@ public partial class MainWindow : Window
     private bool _installerStarted;
     private readonly AnnouncementService _announcementService;
     private readonly INotificationService _notificationService;
-    private readonly HashSet<DropsPlatform> _dropsNotificationDegraded = [];
+    private readonly DropsNotificationGate _dropsNotificationGate;
+    private readonly object _dropsNotificationSync = new();
     private readonly HashSet<string> _dropsCompletionNotifications = [];
     private IReadOnlyList<Announcement> _announcements = Array.Empty<Announcement>();
     private Task? _announcementRefreshTask;
@@ -61,6 +62,7 @@ public partial class MainWindow : Window
             installerLauncher ?? new ProcessInstallerLauncher());
         _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
         _notificationService = new WindowsToastNotificationService(_vm.Settings);
+        _dropsNotificationGate = new DropsNotificationGate(Notify);
         InitializeComponent();
         ThemeManager.Attach(this);
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
@@ -75,7 +77,7 @@ public partial class MainWindow : Window
         Height = _vm.Settings.WindowHeight >= MinHeight ? _vm.Settings.WindowHeight : Height;
         if (_vm.Settings.WindowMaximized) WindowState = WindowState.Maximized;
 
-        _overviewPage.Initialize(_vm);
+        _overviewPage.Initialize(_vm, _announcementService);
         _accountsPage.Initialize(_vm);
         _regionPage.Initialize(_vm);
         _statsPage.Initialize(_vm);
@@ -281,7 +283,9 @@ public partial class MainWindow : Window
         if (TryGetCompletedDrop(message, out var dropId, out var dropName))
         {
             var completionKey = $"{message.Platform}:{dropId}";
-            if (_dropsCompletionNotifications.Add(completionKey))
+            var firstCompletion = false;
+            lock (_dropsNotificationSync) firstCompletion = _dropsCompletionNotifications.Add(completionKey);
+            if (firstCompletion)
             {
                 Notify(new NotificationRequest("Drops 完成",
                     string.IsNullOrWhiteSpace(dropName) ? $"{PlatformName(message.Platform)} 有一个掉宝已完成。" : $"{PlatformName(message.Platform)}：{dropName} 已完成。",
@@ -297,18 +301,18 @@ public partial class MainWindow : Window
             "runtime_recovered";
         if (failure)
         {
-            if (_dropsNotificationDegraded.Add(message.Platform))
-                Notify(new NotificationRequest($"{PlatformName(message.Platform)} 连接中断",
-                    "正在自动重试，恢复后会再次通知。", NotificationCategory.Drops, "drops"));
+            _dropsNotificationGate.ReportFailure(message.Platform,
+                $"{PlatformName(message.Platform)} 连接中断", "正在自动重试，恢复后会再次通知。");
         }
-        else if (recovery && _dropsNotificationDegraded.Remove(message.Platform))
+        else if (recovery)
         {
-            Notify(new NotificationRequest($"{PlatformName(message.Platform)} 已恢复连接",
-                "自动恢复流程已完成。", NotificationCategory.Drops, "drops"));
+            _dropsNotificationGate.ReportRecovery(message.Platform,
+                $"{PlatformName(message.Platform)} 已恢复连接", "自动恢复流程已完成。");
         }
     }
 
-    private void Notify(NotificationRequest request) => _notificationService.TryNotify(request);
+    private void Notify(NotificationRequest request) =>
+        NotificationSafety.TryNotifySafely(_notificationService, request);
 
     private static string PlatformName(DropsPlatform platform) => platform switch
     {
@@ -636,6 +640,7 @@ public partial class MainWindow : Window
         try { _announcementService.Dispose(); } catch { }
         _vm.RegionSwitchCompleted -= OnRegionSwitchCompleted;
         _vm.DropsHost.EventReceived -= OnDropsEventForNotification;
+        _dropsNotificationGate.Dispose();
         try { _notificationService.Dispose(); } catch { }
         try { _vm.CloudHttpClients.Dispose(); } catch { }
         _updateCancellation.Dispose();

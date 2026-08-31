@@ -258,6 +258,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public ObservableCollection<DropsRow> Channels { get; } = new();
     public ObservableCollection<DropsRow> History { get; } = new();
     public ObservableCollection<DropsRecoveryEvent> RecoveryEvents { get; } = new();
+    internal const int RecoveryEventLimit = 10;
+    private readonly object _recoveryEventsSync = new();
     public ObservableCollection<SoopProgressRow> SoopCurrentProgress { get; } = new();
     public ObservableCollection<string> TwitchAvailableGames { get; } = new();
     public ObservableCollection<string> TwitchPriorityChoices { get; } = new();
@@ -598,8 +600,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 platform.Name, platform.ConnectionState, platform.LastHeartbeatAt,
                 platform.LastProgressAt, platform.LastReconnectAt, platform.NextRetryAt,
                 platform.ConsecutiveFailures, platform.ReconnectCount, platform.WorkerHealth)).ToArray(),
-            RecentEvents = RecoveryEvents.ToArray(),
+            RecentEvents = SnapshotRecoveryEvents(),
         };
+    }
+
+    private IReadOnlyList<DropsRecoveryEvent> SnapshotRecoveryEvents()
+    {
+        lock (_recoveryEventsSync) return RecoveryEvents.ToArray();
     }
 
     private void RefreshRecoveryProjection(DropsPlatform platform, DateTimeOffset now)
@@ -683,11 +690,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void AddRecoveryEvent(DropsPlatform platform, string title, string detail,
         DropsConnectionState state)
     {
-        RecoveryEvents.Insert(0, new DropsRecoveryEvent(DateTimeOffset.Now, platform, title,
-            SensitiveDataRedactor.Redact(detail), state));
+        lock (_recoveryEventsSync)
+        {
+            RecoveryEvents.Insert(0, new DropsRecoveryEvent(DateTimeOffset.Now, platform, title,
+                SensitiveDataRedactor.Redact(detail), state));
+            while (RecoveryEvents.Count > RecoveryEventLimit) RecoveryEvents.RemoveAt(RecoveryEvents.Count - 1);
+        }
         DropsRecoveryLog.Write(platform, title, detail, state);
-        while (RecoveryEvents.Count > 10) RecoveryEvents.RemoveAt(RecoveryEvents.Count - 1);
     }
+
+    internal void AddRecoveryEventForSelfTest(DropsPlatform platform, string title, string detail,
+        DropsConnectionState state) => Dispatch(() => AddRecoveryEvent(platform, title, detail, state));
 
     private static string LastSuccessText(DateTimeOffset? timestamp, DateTimeOffset now)
     {
@@ -1060,21 +1073,30 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public async Task RestartWorkerAsync(DropsPlatform platform, CancellationToken token = default)
     {
         var vm = For(platform);
-        vm.ConnectionState = DropsConnectionState.Recovering;
-        vm.WorkerHealth = "重启中";
-        AddRecoveryEvent(platform, "重启 Drops Worker", "正在重启 CloudLight Blizzard 自己启动的后台服务。",
-            DropsConnectionState.Recovering);
+        Dispatch(() =>
+        {
+            vm.ConnectionState = DropsConnectionState.Recovering;
+            vm.WorkerHealth = "重启中";
+            AddRecoveryEvent(platform, "重启 Drops Worker", "正在重启 CloudLight Blizzard 自己启动的后台服务。",
+                DropsConnectionState.Recovering);
+        });
         try
         {
             await _host.RestartAsync(platform, token).ConfigureAwait(false);
-            TouchHeartbeat(platform);
-            AddRecoveryEvent(platform, "Worker 已恢复", "后台服务已重新建立连接。", DropsConnectionState.Connected);
+            Dispatch(() =>
+            {
+                TouchHeartbeat(platform);
+                AddRecoveryEvent(platform, "Worker 已恢复", "后台服务已重新建立连接。", DropsConnectionState.Connected);
+            });
         }
         catch (Exception ex)
         {
-            vm.ConnectionState = DropsConnectionState.Failed;
-            vm.WorkerHealth = "异常";
-            AddRecoveryEvent(platform, "Worker 重启失败", ex.Message, DropsConnectionState.Failed);
+            Dispatch(() =>
+            {
+                vm.ConnectionState = DropsConnectionState.Failed;
+                vm.WorkerHealth = "异常";
+                AddRecoveryEvent(platform, "Worker 重启失败", ex.Message, DropsConnectionState.Failed);
+            });
             throw;
         }
     }
@@ -2380,8 +2402,22 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var dispatcher = Application.Current?.Dispatcher;
         // Headless self-tests run before WPF starts its dispatcher loop, so
         // queuing here would leave recovery state unapplied.
-        if (dispatcher == null || App.IsHeadlessSelfTest || dispatcher.CheckAccess()) action();
-        else dispatcher.BeginInvoke(action);
+        if (dispatcher == null || App.IsHeadlessSelfTest)
+        {
+            action();
+            return;
+        }
+        try
+        {
+            if (dispatcher.CheckAccess()) action();
+            else if (!dispatcher.HasShutdownStarted && !dispatcher.HasShutdownFinished)
+                dispatcher.BeginInvoke(action);
+        }
+        catch (InvalidOperationException)
+        {
+            // App shutdown can race with a worker event. There is no UI state
+            // left to update, and this must not fault the worker task.
+        }
     }
 
     public void Dispose()

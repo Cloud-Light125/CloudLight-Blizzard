@@ -114,14 +114,52 @@ public sealed class UpdateDownloadService
 
         var metadata = LoadMetadata(metadataPath);
         var partialSize = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
-        if (!IsMetadataCompatible(metadata, latestVersion, downloadUri, result, partialSize))
+        if (partialSize == 0)
+        {
+            // Metadata without bytes cannot safely establish a resume identity.
+            // Start with a clean identity so an old release's validators are not
+            // accidentally sent with a future full request.
+            TryDelete(metadataPath);
+            metadata = null;
+        }
+        else if (!IsMetadataCompatible(metadata, latestVersion, downloadUri, result, partialSize))
         {
             TryDelete(partialPath);
             TryDelete(metadataPath);
             metadata = null;
             partialSize = 0;
         }
-        if (result.InstallerSize > 0 && partialSize > result.InstallerSize)
+
+        var metadataExpectedSize = metadata?.ExpectedSize > 0 ? metadata.ExpectedSize : result.InstallerSize;
+        if (partialSize > 0 && metadataExpectedSize > 0 && partialSize == metadataExpectedSize)
+        {
+            // A completed partial is still untrusted. Verify it before promoting
+            // it, otherwise a stale/corrupt file could bypass the download path.
+            try
+            {
+                await ValidateInstallerFileAsync(partialPath, metadataExpectedSize, result.InstallerDigest,
+                    cancellationToken).ConfigureAwait(false);
+                File.Move(partialPath, finalPath, true);
+                await ValidateInstallerFileAsync(finalPath, metadataExpectedSize, result.InstallerDigest,
+                    cancellationToken).ConfigureAwait(false);
+                TryDelete(metadataPath);
+                State = UpdaterState.ReadyToInstall;
+                return finalPath;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                TryDelete(partialPath);
+                TryDelete(finalPath);
+                TryDelete(metadataPath);
+                metadata = null;
+                partialSize = 0;
+            }
+        }
+        if (metadataExpectedSize > 0 && partialSize > metadataExpectedSize)
         {
             TryDelete(partialPath);
             TryDelete(metadataPath);
@@ -134,7 +172,7 @@ public sealed class UpdateDownloadService
         try
         {
             long received = partialSize;
-            long expectedLength = result.InstallerSize;
+            long expectedLength = metadata?.ExpectedSize > 0 ? metadata.ExpectedSize : result.InstallerSize;
             string? etag = metadata?.ETag;
             string? lastModified = metadata?.LastModified;
             var resumed = partialSize > 0;
@@ -261,9 +299,14 @@ public sealed class UpdateDownloadService
         if (resumed)
         {
             var contentRange = response.Content.Headers.ContentRange;
+            var expectedTotal = result.InstallerSize > 0 ? result.InstallerSize : metadata?.ExpectedSize ?? 0;
+            var remainingLength = contentRange?.From is long from && contentRange.To is long to
+                ? to - from + 1 : -1;
+            var responseLength = response.Content.Headers.ContentLength;
             if (response.StatusCode != HttpStatusCode.PartialContent || contentRange?.From != existingBytes ||
-                contentRange.To is null || contentRange.Length is null ||
-                result.InstallerSize > 0 && contentRange.Length != result.InstallerSize)
+                contentRange.To is null || contentRange.Length is null || remainingLength <= 0 ||
+                expectedTotal > 0 && (contentRange.Length != expectedTotal || contentRange.To != expectedTotal - 1) ||
+                responseLength is not null && responseLength != remainingLength)
             {
                 TryDelete(partialPath);
                 TryDelete(Path.Combine(Path.GetDirectoryName(partialPath)!, "update-download.json"));
@@ -276,8 +319,18 @@ public sealed class UpdateDownloadService
                 TryDelete(Path.Combine(Path.GetDirectoryName(partialPath)!, "update-download.json"));
                 return await DownloadAttemptAsync(uri, result, partialPath, null, 0, progress, token).ConfigureAwait(false);
             }
+            var actualLastModified = response.Content.Headers.LastModified?.ToString("R") ??
+                                     GetHeaderValue(response.Headers, "Last-Modified");
+            if (metadata?.LastModified is { Length: > 0 } expectedLastModified &&
+                !string.Equals(expectedLastModified, actualLastModified, StringComparison.OrdinalIgnoreCase))
+            {
+                TryDelete(partialPath);
+                TryDelete(Path.Combine(Path.GetDirectoryName(partialPath)!, "update-download.json"));
+                return await DownloadAttemptAsync(uri, result, partialPath, null, 0, progress, token).ConfigureAwait(false);
+            }
         }
         var expected = result.InstallerSize > 0 ? result.InstallerSize
+            : metadata?.ExpectedSize > 0 ? metadata.ExpectedSize
             : response.Content.Headers.ContentLength is > 0
                 ? existingBytes + response.Content.Headers.ContentLength.Value : 0;
         progress?.Report(new UpdateDownloadProgress(existingBytes, expected > 0 ? expected : null,

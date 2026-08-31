@@ -242,6 +242,7 @@ public sealed class SwitchPlan
     public int EligibilityFileIssueCount { get; init; }
     public RegionEvidenceResult RegionEvidence { get; init; }
     public bool ExactSnapshotMatch { get; init; }
+    public bool BattleNetRunning { get; init; }
     public string CurrentBattleNetState { get; init; } = "";
     public string SnapshotState { get; init; } = "";
     public long EstimatedBytes { get; set; }

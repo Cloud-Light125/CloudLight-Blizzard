@@ -48,6 +48,7 @@ public sealed class OverwatchRegionBackupStore
     public IReadOnlyList<string> EnumerateGenerationIds() =>
         Directory.Exists(GenerationsRoot)
             ? Directory.EnumerateDirectories(GenerationsRoot)
+                .Where(path => !IsReparsePoint(path))
                 .Select(Path.GetFileName)
                 .Where(id => !string.IsNullOrWhiteSpace(id) && IsSafeGenerationId(id!))
                 .Cast<string>().ToList()
@@ -58,6 +59,7 @@ public sealed class OverwatchRegionBackupStore
         if (!IsSafeGenerationId(id)) throw new InvalidDataException("区服快照标识无效。");
         var path = GenerationRoot(id);
         if (!Directory.Exists(path)) return false;
+        EnsureNoReparsePointsInTree(path);
         if (LoadGeneration(id) is null)
             throw new InvalidOperationException("指定目录不是 CloudLight Blizzard 管理的区服快照。");
         Directory.Delete(path, true);
@@ -236,12 +238,115 @@ public sealed class OverwatchRegionBackupStore
 
     public static string SafeCombine(string root, string relative)
     {
-        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var full = Path.GetFullPath(Path.Combine(fullRoot, relative.Replace('/', Path.DirectorySeparatorChar)
-            .TrimStart(Path.DirectorySeparatorChar)));
-        if (!full.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(relative))
+            throw new InvalidDataException("区服文件路径不能为空。");
+
+        // Do not repair an absolute or traversing value by trimming separators.
+        // A repaired path can turn attacker-controlled input into a different,
+        // apparently safe path and is especially dangerous before recursive delete.
+        var normalizedRelative = relative.Replace('/', Path.DirectorySeparatorChar)
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalizedRelative) || normalizedRelative.Contains(':', StringComparison.Ordinal) ||
+            normalizedRelative.StartsWith(Path.DirectorySeparatorChar) ||
+            normalizedRelative.Split(Path.DirectorySeparatorChar, StringSplitOptions.None)
+                .Any(IsUnsafePathSegment))
             throw new InvalidDataException("区服文件记录包含越界路径。");
+
+        var fullRoot = NormalizeRootPath(root);
+        var full = Path.GetFullPath(Path.Combine(fullRoot, normalizedRelative));
+        var rootWithSeparator = EnsureTrailingSeparator(fullRoot);
+        if (!string.Equals(full, fullRoot, StringComparison.OrdinalIgnoreCase) &&
+            !full.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("区服文件记录包含越界路径。");
+        EnsureNoReparsePointsAlongPath(fullRoot, full);
         return full;
+    }
+
+    /// <summary>Enumerates files without following symbolic links, junctions, or other reparse points.</summary>
+    public static IReadOnlyList<string> EnumerateFilesWithoutReparse(string root)
+    {
+        var result = new List<string>();
+        if (!Directory.Exists(root)) return result;
+        var pending = new Stack<DirectoryInfo>();
+        var rootInfo = new DirectoryInfo(Path.GetFullPath(root));
+        if (rootInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) return result;
+        pending.Push(rootInfo);
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var entry in directory.EnumerateFileSystemInfos("*", SearchOption.TopDirectoryOnly))
+            {
+                if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+                if (entry is DirectoryInfo child) pending.Push(child);
+                else if (entry is FileInfo file) result.Add(file.FullName);
+            }
+        }
+        return result;
+    }
+
+    private static bool IsUnsafePathSegment(string segment) =>
+        string.IsNullOrEmpty(segment) || segment is "." or ".." ||
+        segment.Length >= 2 && segment.All(character => character == '.');
+
+    private static bool IsReparsePoint(string path)
+    {
+        try { return File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint); }
+        catch { return true; }
+    }
+
+    private static void EnsureNoReparsePointsAlongPath(string root, string candidate)
+    {
+        var fullRoot = NormalizeRootPath(root);
+        var fullCandidate = Path.GetFullPath(candidate);
+        var rootWithSeparator = EnsureTrailingSeparator(fullRoot);
+        if (!string.Equals(fullCandidate, fullRoot, StringComparison.OrdinalIgnoreCase) &&
+            !fullCandidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("区服文件记录包含越界路径。");
+
+        var current = fullRoot;
+        if ((File.Exists(current) || Directory.Exists(current)) && IsReparsePoint(current))
+            throw new InvalidDataException("区服管理根目录不能是符号链接或 Junction。");
+        var relative = Path.GetRelativePath(fullRoot, fullCandidate);
+        if (relative == ".") return;
+        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        {
+            current = Path.Combine(current, segment);
+            if (!File.Exists(current) && !Directory.Exists(current)) break;
+            if (IsReparsePoint(current))
+                throw new InvalidDataException("区服文件路径经过符号链接或 Junction，已拒绝访问。");
+        }
+    }
+
+    private static string NormalizeRootPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var fileSystemRoot = Path.GetPathRoot(fullPath);
+        return !string.IsNullOrEmpty(fileSystemRoot) &&
+               string.Equals(fullPath, fileSystemRoot, StringComparison.OrdinalIgnoreCase)
+            ? fileSystemRoot
+            : fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static string EnsureTrailingSeparator(string path) =>
+        path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+            ? path : path + Path.DirectorySeparatorChar;
+
+    private static void EnsureNoReparsePointsInTree(string root)
+    {
+        if (IsReparsePoint(root))
+            throw new InvalidDataException("区服快照目录不能是符号链接或 Junction。");
+        var pending = new Stack<DirectoryInfo>();
+        pending.Push(new DirectoryInfo(root));
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var entry in directory.EnumerateFileSystemInfos("*", SearchOption.TopDirectoryOnly))
+            {
+                if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    throw new InvalidDataException("区服快照包含符号链接或 Junction，已拒绝删除。");
+                if (entry is DirectoryInfo child) pending.Push(child);
+            }
+        }
     }
 
     public static T? ReadJson<T>(string path)

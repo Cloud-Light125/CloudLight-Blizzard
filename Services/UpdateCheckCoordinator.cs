@@ -59,6 +59,14 @@ public sealed class UpdateCheckCoordinator
         get { lock (_gate) return _isChecking; }
     }
 
+    /// <summary>
+    /// Performs an update metadata request without changing coordinator state or
+    /// persisting LastUpdateCheckAt/LastUpdateFailure. Diagnostics uses this
+    /// path so observing update health remains read-only.
+    /// </summary>
+    public Task<UpdateCheckResult> CheckReadOnlyAsync(CancellationToken cancellationToken = default) =>
+        _service.CheckAsync(_settings.UpdateChannel, cancellationToken);
+
     public async Task<UpdateCheckOutcome> CheckAfterDelayAsync(
         TimeSpan delay, CancellationToken cancellationToken = default)
     {

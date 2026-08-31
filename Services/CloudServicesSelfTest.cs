@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services.Drops;
+using CloudLightBlizzard.Services.Diagnostics;
 
 namespace CloudLightBlizzard.Services;
 
@@ -24,6 +25,8 @@ public static class CloudServicesSelfTest
             using var update = new UpdateService(settings, clients);
             var updateResult = await update.CheckAsync();
             var diagnostics = await new NetworkDiagnosticService(settings, clients).RunAsync();
+            var reasons = new List<string>();
+            var severity = CloudServicesSeverity.ClassifyLiveResult(settings, diagnostics, updateResult, reasons);
             report.AppendLine($"Endpoint: {UpdateService.EndpointFor(settings)}");
             report.AppendLine($"ProxyEnabled: {settings.EnableProxy}");
             report.AppendLine($"UpdateStatus: {updateResult.Status}");
@@ -32,11 +35,12 @@ public static class CloudServicesSelfTest
             report.AppendLine($"HasUpdate: {updateResult.HasUpdate}");
             report.AppendLine($"FailureKind: {updateResult.FailureKind}");
             report.AppendLine(diagnostics.ToDisplayText());
-            if (updateResult.Status != UpdateCheckResultStatus.Success ||
-                updateResult.HasUpdate != UpdateService.IsNewerVersion(
-                    updateResult.CurrentVersion, updateResult.LatestVersion) || !diagnostics.Update.Success)
-                throw new InvalidOperationException("Live Worker update validation did not return the expected result.");
-            report.AppendLine("OVERALL: PASS");
+            report.AppendLine($"Severity: {severity.DisplayText()}");
+            if (reasons.Count > 0)
+                report.AppendLine("Reasons: " + string.Join("；", reasons.Select(DiagnosticSanitizer.Sanitize)));
+            if (severity == LiveSelfTestSeverity.Warning && !settings.EnableProxy)
+                report.AppendLine("建议：当前未启用 CloudLight Blizzard 代理。如果当前网络无法直连 GitHub/Twitch，可在“设置 → 网络代理”启用代理后重新测试。");
+            report.AppendLine($"OVERALL: {severity.DisplayText()}");
         }
         catch (Exception ex)
         {
@@ -318,8 +322,41 @@ public static class CloudServicesSelfTest
                    !copy.Contains("diagnostic-secret", StringComparison.Ordinal) &&
                    !copy.Contains("Alice", StringComparison.Ordinal) &&
                    !copy.Contains("user:password", StringComparison.Ordinal),
-                "copied diagnostics redact tokens, cookies, proxy credentials, and Windows user paths");
+                   "copied diagnostics redact tokens, cookies, proxy credentials, and Windows user paths");
         }
+        var directSettings = new AppSettings { EnableProxy = false };
+        var directTimeout = new CloudNetworkProbeResult(false, "Direct", 15_000, null,
+            CloudNetworkFailureKind.DirectConnectionFailed, "连接超时");
+        var directReport = new NetworkDiagnosticReport(DateTimeOffset.Now,
+            new CloudNetworkProbeResult(true, "Direct", 1, 204, null, "未启用"),
+            directTimeout, directTimeout,
+            new CloudNetworkProbeResult(true, "Direct", 1, 200, null, "正常"), directTimeout);
+        var directReasons = new List<string>();
+        Assert(CloudServicesSeverity.ClassifyNetwork(directSettings, directReport, directReasons) ==
+                   LiveSelfTestSeverity.Warning && directReasons.Count > 0 &&
+               CloudServicesSeverity.ClassifyLiveResult(directSettings, directReport, new UpdateCheckResult
+               {
+                   Status = UpdateCheckResultStatus.Failed,
+                   FailureKind = UpdateFailureKind.Timeout,
+                   ErrorMessage = "更新服务暂时不可用",
+               }) == LiveSelfTestSeverity.Warning &&
+               directReport.ToDisplayText().Contains("直连超时", StringComparison.Ordinal),
+            "disabled proxy plus direct timeout is WARNING and displayed as 直连超时");
+
+        var malformedReport = directReport with
+        {
+            Announcement = new CloudNetworkProbeResult(false, "Direct", 1, 200, null, "响应格式错误"),
+        };
+        Assert(CloudServicesSeverity.ClassifyNetwork(directSettings, malformedReport) == LiveSelfTestSeverity.Fail,
+            "malformed or otherwise unexpected network responses remain FAIL");
+        var enabledSettings = new AppSettings { EnableProxy = true, ProxyUrl = "http://127.0.0.1:7897" };
+        var proxyFailureReport = directReport with
+        {
+            Proxy = new CloudNetworkProbeResult(false, "Proxy", 1, null,
+                CloudNetworkFailureKind.ProxyConnectionFailed, "代理连接失败"),
+        };
+        Assert(CloudServicesSeverity.ClassifyNetwork(enabledSettings, proxyFailureReport) == LiveSelfTestSeverity.Fail,
+            "an enabled proxy implementation failure remains FAIL");
         report.AppendLine("TEST 3 network diagnostic routes/redacted copy: PASS");
     }
 

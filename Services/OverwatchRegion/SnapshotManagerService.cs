@@ -47,7 +47,10 @@ public sealed class SnapshotManagerService
     public SnapshotManagerService(OverwatchRegionManager manager)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
-        _store = new OverwatchRegionBackupStore(manager.BackupRoot);
+        // Reuse the manager's already-open store. Constructing another store here
+        // would rerun preparation recovery and create directories during a read-only
+        // diagnostics/list operation.
+        _store = manager.BackupStore;
         _verificationFile = Path.Combine(_store.Root, "snapshot-verification.json");
     }
 
@@ -63,8 +66,7 @@ public sealed class SnapshotManagerService
             var root = _store.GenerationRoot(id);
             var backupRoot = Path.Combine(root, "backups");
             var files = Directory.Exists(backupRoot)
-                ? Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories)
-                    .ToArray()
+                ? OverwatchRegionBackupStore.EnumerateFilesWithoutReparse(backupRoot)
                 : Array.Empty<string>();
             var expectedFiles = generation.Differences.Sum(item =>
                 (item.China is null ? 0 : 1) + (item.International is null ? 0 : 1));
@@ -81,7 +83,7 @@ public sealed class SnapshotManagerService
                 CreatedAtUtc = generation.CreatedAtUtc,
                 LastVerifiedAtUtc = verifiedAt,
                 LastUsedAtUtc = active ? pointer?.ActivatedAtUtc : (DateTime?)null,
-                FileCount = expectedFiles > 0 ? expectedFiles : files.Length,
+                FileCount = expectedFiles > 0 ? expectedFiles : files.Count,
                 TotalBytes = totalBytes,
                 State = displayState,
                 StateReason = state?.Reason ?? (displayState == SnapshotDisplayState.Unverified ? "尚未执行完整验证" : ""),

@@ -336,6 +336,16 @@ public static class FeatureSelfTest
             Assert(vm.SoopRetryStatusVisibility == System.Windows.Visibility.Collapsed,
                 "SOOP success hides the retry countdown");
         }
+        using (var vm = new DropsViewModel(host))
+        {
+            for (var i = 0; i < 100; i++)
+                vm.AddRecoveryEventForSelfTest(DropsPlatform.Twitch, "压力事件", $"event-{i}",
+                    DropsConnectionState.WaitingRetry);
+            Assert(vm.RecoveryEvents.Count == DropsViewModel.RecoveryEventLimit &&
+                   vm.RecoveryEvents[0].Detail == "event-99" &&
+                   vm.CreateDiagnosticSnapshot().RecentEvents.Count == DropsViewModel.RecoveryEventLimit,
+                "Drops recovery event history stays bounded at the configured limit under repeated events");
+        }
         report.AppendLine("SOOP network recovery / quick-start refresh state: PASS");
     }
 
@@ -564,6 +574,9 @@ public static class FeatureSelfTest
                     "installer file handles are released before launch");
 
             var lifecycle = new List<string>();
+            var launchCts = new CancellationTokenSource();
+            var launchToken = launchCts.Token;
+            var tokenUsableAtLaunch = false;
             var launchCoordinator = new UpdateInstallerLaunchCoordinator(
                 new DelegateInstallerLauncher(path =>
                 {
@@ -574,29 +587,29 @@ public static class FeatureSelfTest
             lifecycle.Add("download complete");
             Assert(launchCoordinator.TryLaunchAndRequestShutdown(
                     downloaded,
-                    () => lifecycle.Add("installer started"),
+                    () =>
+                    {
+                        launchToken.ThrowIfCancellationRequested();
+                        tokenUsableAtLaunch = true;
+                        lifecycle.Add("installer started");
+                    },
                     () => lifecycle.Add("shutdown"),
                     out _),
                 "successful installer launch requests shutdown");
             Assert(lifecycle.SequenceEqual(new[]
                     { "download complete", "Process.Start", "installer started", "shutdown" }),
                 "shutdown is requested only after Process.Start succeeds");
+            Assert(tokenUsableAtLaunch, "installer launch does not require a disposed update CTS");
 
-            var launchCts = new CancellationTokenSource();
-            var launchToken = launchCts.Token;
-            var tokenUsableAtLaunch = false;
-            Assert(launchCoordinator.TryLaunchAndRequestShutdown(
+            var duplicateCallbackCount = 0;
+            Assert(!launchCoordinator.TryLaunchAndRequestShutdown(
                     downloaded,
-                    () =>
-                    {
-                        _ = launchCts.Token;
-                        launchToken.ThrowIfCancellationRequested();
-                        tokenUsableAtLaunch = true;
-                    },
+                    () => duplicateCallbackCount++,
                     () => { },
-                    out _),
-                "installer launch does not require a disposed update CTS");
-            Assert(tokenUsableAtLaunch, "update CTS remains usable through installer launch");
+                    out var alreadyStartedError) &&
+                   alreadyStartedError.Contains("已经启动", StringComparison.Ordinal),
+                "installer launch coordinator rejects a duplicate launch request after the first start");
+            Assert(duplicateCallbackCount == 0, "duplicate installer launch does not invoke callbacks again");
             launchCts.Dispose();
             File.Delete(downloaded);
         }
@@ -1729,6 +1742,25 @@ public static class FeatureSelfTest
             expectedDescription: "updater restarts cleanly when the server ignores Range");
         await RunRangeResumeCase(workspace, bytes, "2.0.96", changeEtag: true, ignoreRange: false,
             expectedDescription: "updater restarts cleanly when the ETag changes");
+        await RunRangeResumeCase(workspace, bytes, "2.0.961", changeEtag: false, ignoreRange: false,
+            expectedDescription: "updater restarts cleanly when Last-Modified changes", changeLastModified: true);
+        await RunRangeResumeCase(workspace, bytes, "2.0.962", changeEtag: false, ignoreRange: false,
+            expectedDescription: "updater restarts cleanly after HTTP 416", responseMode: RangeResponseMode.NotSatisfiable);
+        await RunRangeResumeCase(workspace, bytes, "2.0.963", changeEtag: false, ignoreRange: false,
+            expectedDescription: "updater restarts after a wrong Content-Range start", responseMode: RangeResponseMode.WrongStart);
+        await RunRangeResumeCase(workspace, bytes, "2.0.964", changeEtag: false, ignoreRange: false,
+            expectedDescription: "updater restarts after a Content-Length mismatch", responseMode: RangeResponseMode.WrongLength);
+
+        await RunCompletedPartialCase(workspace, bytes);
+        await RunOversizedPartialCase(workspace, bytes);
+        await RunZeroPartialCase(workspace, bytes);
+
+        Assert(UpdateService.IsValidSha256Digest("sha256:" + new string('a', 64)) &&
+               UpdateService.IsValidSha256Digest("SHA256:" + new string('A', 64)) &&
+               !UpdateService.IsValidSha256Digest(null) &&
+               !UpdateService.IsValidSha256Digest("sha256:" + new string('g', 64)) &&
+               !UpdateService.IsValidSha256Digest("sha256:" + new string('a', 63)),
+            "updater accepts uppercase/lowercase valid SHA-256 and rejects missing, malformed, and wrong-length digests");
 
         var mismatchResult = CreateDownloadResult("2.0.97", bytes);
         var mismatchRoot = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.97");
@@ -1772,8 +1804,11 @@ public static class FeatureSelfTest
         report.AppendLine("TEST 11 updater resilience: PASS (retry/exhaustion/404/Range/ignored Range/ETag/metadata mismatch/digest)");
     }
 
+    private enum RangeResponseMode { Normal, NotSatisfiable, WrongStart, WrongLength }
+
     private static async Task RunRangeResumeCase(string workspace, byte[] bytes, string version,
-        bool changeEtag, bool ignoreRange, string expectedDescription)
+        bool changeEtag, bool ignoreRange, string expectedDescription,
+        bool changeLastModified = false, RangeResponseMode responseMode = RangeResponseMode.Normal)
     {
         var result = CreateDownloadResult(version, bytes);
         var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
@@ -1789,20 +1824,27 @@ public static class FeatureSelfTest
             Digest = result.InstallerDigest,
             DownloadedBytes = prefixLength,
             ETag = "\"old\"",
-            LastModified = "",
+            LastModified = "Mon, 01 Jan 2024 00:00:00 GMT",
         }));
         var handler = new ScriptedDownloadHandler((call, request) =>
         {
             if (call == 1 && !ignoreRange)
             {
+                if (responseMode == RangeResponseMode.NotSatisfiable)
+                    return new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
                 var etag = changeEtag ? "\"new\"" : "\"old\"";
+                var from = responseMode == RangeResponseMode.WrongStart ? prefixLength + 1 : prefixLength;
                 var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
                 {
                     Content = new ByteArrayContent(bytes[prefixLength..]),
                 };
-                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(prefixLength,
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from,
                     bytes.Length - 1, bytes.Length);
+                if (responseMode == RangeResponseMode.WrongLength)
+                    response.Content.Headers.ContentLength = bytes.Length - prefixLength - 1;
                 response.Headers.ETag = new EntityTagHeaderValue(etag);
+                response.Content.Headers.LastModified = DateTimeOffset.Parse(
+                    changeLastModified ? "Tue, 02 Jan 2024 00:00:00 GMT" : "Mon, 01 Jan 2024 00:00:00 GMT");
                 return response;
             }
             return FullDownloadResponse(bytes);
@@ -1811,11 +1853,89 @@ public static class FeatureSelfTest
         {
             var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(result);
             Assert(File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes), expectedDescription + " (content)");
-            var expectedCalls = !ignoreRange && !changeEtag ? 1 : 2;
+            var expectedCalls = !ignoreRange && !changeEtag && !changeLastModified &&
+                                responseMode == RangeResponseMode.Normal ? 1 : 2;
             Assert(handler.Calls == expectedCalls && handler.Ranges[0] == $"bytes={prefixLength}-" &&
                    (expectedCalls == 1 || handler.Ranges[1] is null), expectedDescription + " (request validation)");
             TryDeleteDirectory(Path.GetDirectoryName(path)!);
         }
+    }
+
+    private static async Task RunCompletedPartialCase(string workspace, byte[] bytes)
+    {
+        const string version = "2.0.965";
+        var result = CreateDownloadResult(version, bytes);
+        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        TryDeleteDirectory(root);
+        Directory.CreateDirectory(root);
+        var partial = Path.Combine(root, result.InstallerName! + ".partial");
+        File.WriteAllBytes(partial, bytes);
+        File.WriteAllText(Path.Combine(root, "update-download.json"), JsonSerializer.Serialize(new
+        {
+            Version = result.LatestVersion, DownloadUrl = result.InstallerDownloadUrl,
+            ExpectedSize = result.InstallerSize, Digest = result.InstallerDigest,
+            DownloadedBytes = bytes.Length, ETag = "\"old\"", LastModified = "",
+        }));
+        var handler = new ScriptedDownloadHandler((_, _) =>
+            throw new InvalidOperationException("a complete partial must not issue a Range request"));
+        using var clients = CreateDownloadClients(workspace, handler);
+        var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(result);
+        Assert(handler.Calls == 0 && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes),
+            "updater verifies and promotes a partial whose size already equals the expected size");
+        TryDeleteDirectory(root);
+    }
+
+    private static async Task RunOversizedPartialCase(string workspace, byte[] bytes)
+    {
+        const string version = "2.0.966";
+        var result = CreateDownloadResult(version, bytes);
+        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        TryDeleteDirectory(root);
+        Directory.CreateDirectory(root);
+        File.WriteAllBytes(Path.Combine(root, result.InstallerName! + ".partial"), bytes.Concat(new byte[3]).ToArray());
+        File.WriteAllText(Path.Combine(root, "update-download.json"), JsonSerializer.Serialize(new
+        {
+            Version = result.LatestVersion, DownloadUrl = result.InstallerDownloadUrl,
+            ExpectedSize = result.InstallerSize, Digest = result.InstallerDigest,
+            DownloadedBytes = bytes.Length + 3, ETag = "\"old\"", LastModified = "",
+        }));
+        var handler = new ScriptedDownloadHandler((_, request) =>
+        {
+            if (request.Headers.Range is not null) throw new InvalidOperationException("oversized partial must restart without Range");
+            return FullDownloadResponse(bytes);
+        });
+        using var clients = CreateDownloadClients(workspace, handler);
+        var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(result);
+        Assert(handler.Calls == 1 && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes),
+            "updater discards a partial larger than the expected size before downloading");
+        TryDeleteDirectory(root);
+    }
+
+    private static async Task RunZeroPartialCase(string workspace, byte[] bytes)
+    {
+        const string version = "2.0.967";
+        var result = CreateDownloadResult(version, bytes);
+        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        TryDeleteDirectory(root);
+        Directory.CreateDirectory(root);
+        File.WriteAllBytes(Path.Combine(root, result.InstallerName! + ".partial"), Array.Empty<byte>());
+        File.WriteAllText(Path.Combine(root, "update-download.json"), JsonSerializer.Serialize(new
+        {
+            Version = "2.0.966", DownloadUrl = "https://old.example.invalid/installer.exe",
+            ExpectedSize = bytes.Length, Digest = "sha256:" + new string('0', 64),
+            DownloadedBytes = 0, ETag = "\"old\"", LastModified = "",
+        }));
+        var handler = new ScriptedDownloadHandler((_, request) =>
+        {
+            if (request.Headers.Range is not null)
+                throw new InvalidOperationException("zero-byte partial must restart without Range");
+            return FullDownloadResponse(bytes);
+        });
+        using var clients = CreateDownloadClients(workspace, handler);
+        var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(result);
+        Assert(handler.Calls == 1 && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes),
+            "updater discards zero-byte partial metadata and starts a clean full download");
+        TryDeleteDirectory(root);
     }
 
     private static async Task RunSnapshotAndSwitchPlanTests(string workspace, StringBuilder report)
@@ -1852,6 +1972,7 @@ public static class FeatureSelfTest
         plan.Blockers.Add("测试：磁盘空间不足");
         Assert(!plan.CanExecute, "switch preview blocks insufficient disk space instead of offering continue");
         plan.Blockers.RemoveAt(plan.Blockers.Count - 1);
+        plan.RequiredDiskSpace = plan.EstimatedBytes + 256L * 1024 * 1024;
 
         var snapshots = new SnapshotManagerService(manager);
         var listed = snapshots.List();
@@ -1877,10 +1998,64 @@ public static class FeatureSelfTest
         catch (InvalidDataException) { unsafeDeleteBlocked = true; }
         Assert(unsafeDeleteBlocked, "path traversal snapshot deletion is blocked");
 
+        foreach (var unsafePath in new[] { "....\\file", @"C:\\outside", @"\\server\\share", "..\\outside" })
+        {
+            var rejected = false;
+            try { _ = OverwatchRegionBackupStore.SafeCombine(game, unsafePath); }
+            catch (InvalidDataException) { rejected = true; }
+            Assert(rejected, $"unsafe managed path is rejected: {unsafePath}");
+        }
+        var driveRoot = Path.GetPathRoot(Path.GetFullPath(game))!;
+        var rootCandidate = OverwatchRegionBackupStore.SafeCombine(driveRoot, "CloudLight-Blizzard-root-test.txt");
+        Assert(string.Equals(rootCandidate, Path.Combine(driveRoot, "CloudLight-Blizzard-root-test.txt"),
+                   StringComparison.OrdinalIgnoreCase),
+            "managed path normalization preserves a filesystem root drive");
+
+        var outsideRoot = Path.Combine(workspace, "snapshot-junction-target");
+        var outsideSentinel = Path.Combine(outsideRoot, "sentinel.txt");
+        Directory.CreateDirectory(outsideRoot);
+        File.WriteAllText(outsideSentinel, "must survive");
+        var linkRoot = Path.Combine(storeRoot, "generations", "forged-junction");
+        var junctionTested = false;
+        try
+        {
+            Directory.CreateSymbolicLink(linkRoot, outsideRoot);
+            junctionTested = true;
+            var linkDeleteBlocked = false;
+            try { snapshots.Delete("forged-junction"); }
+            catch (InvalidDataException) { linkDeleteBlocked = true; }
+            Assert(linkDeleteBlocked && File.Exists(outsideSentinel) && File.ReadAllText(outsideSentinel) == "must survive",
+                "snapshot deletion rejects a reparse-point generation and preserves its outside target");
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (PlatformNotSupportedException) { }
+        catch (IOException) { }
+        Assert(!junctionTested || !listed.Any(item => item.GenerationId == "forged-junction"),
+            "snapshot list never treats a reparse-point directory as a managed generation");
+
+        var malformedRoot = Path.Combine(storeRoot, "generations", "forged-pair");
+        Directory.CreateDirectory(malformedRoot);
+        File.WriteAllText(Path.Combine(malformedRoot, "pair.json"), "{\"SchemaVersion\":999}");
+        var malformedDeleteBlocked = false;
+        try { snapshots.Delete("forged-pair"); }
+        catch (InvalidOperationException) { malformedDeleteBlocked = true; }
+        Assert(malformedDeleteBlocked && Directory.Exists(malformedRoot),
+            "malformed or forged pair.json cannot authorize snapshot deletion");
+
         var emptyManager = new OverwatchRegionManager(Path.Combine(workspace, "empty-productization-store"), () => false, 0);
         var invalidPlan = await emptyManager.CreateSwitchPlanAsync(game, GameRegion.International);
         Assert(!invalidPlan.CanExecute && invalidPlan.Blockers.Count > 0,
             "switch preview blocks when no valid snapshot exists");
+
+        var pointerBeforeStalePlan = File.ReadAllText(Path.Combine(storeRoot, "active-generation.json"));
+        File.WriteAllText(Path.Combine(game, "region.dat"), "STALE");
+        var stalePlanBlocked = false;
+        try { await manager.ExecuteSwitchPlanAsync(game, plan); }
+        catch (InvalidDataException) { stalePlanBlocked = true; }
+        Assert(stalePlanBlocked && File.ReadAllText(Path.Combine(storeRoot, "active-generation.json")) == pointerBeforeStalePlan &&
+               File.ReadAllText(Path.Combine(game, "region.dat")) == "STALE",
+            "stale switch plan is revalidated and stops before changing files or active generation");
+        File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
 
         var executed = await manager.ExecuteSwitchPlanAsync(game, plan);
         Assert(executed.Outcome == RegionSwitchOutcome.Success && File.ReadAllText(Path.Combine(game, "region.dat")) == "CN",
@@ -1890,6 +2065,12 @@ public static class FeatureSelfTest
 
     private static async Task RunDiagnosticsAndNotificationTests(string workspace, StringBuilder report)
     {
+        const string secretDetails = "Authorization: Bearer abcdef\n" +
+            "ProxyUrl=http://user:password@127.0.0.1:7897\n" +
+            "token=abcdef\naccess_token=abcdef\nrefresh_token=abcdef\n" +
+            "cookie=session-cookie-value\nset-cookie=session-set-cookie-value\n" +
+            "GITHUB_TOKEN=abcdef\nCLOUDFLARE_API_TOKEN=abcdef\n" +
+            "password=abcdef\npasswd=abcdef\nsecret=abcdef";
         var reportModel = new DiagnosticRunReport
         {
             AppVersion = "2.0.10",
@@ -1898,7 +2079,7 @@ public static class FeatureSelfTest
             Checks = [
                 new DiagnosticCheck { Id = "healthy", Category = "测试", Name = "正常", Status = DiagnosticSeverity.Healthy, Summary = "正常" },
                 new DiagnosticCheck { Id = "warning", Category = "测试", Name = "警告", Status = DiagnosticSeverity.Warning, Summary = "警告" },
-                new DiagnosticCheck { Id = "error", Category = "测试", Name = "错误", Status = DiagnosticSeverity.Error, Summary = "错误" },
+                new DiagnosticCheck { Id = "error", Category = "测试", Name = "错误", Status = DiagnosticSeverity.Error, Summary = "错误", Details = secretDetails },
             ],
         };
         Assert(reportModel.HealthyCount == 1 && reportModel.WarningCount == 1 && reportModel.ErrorCount == 1 &&
@@ -1914,7 +2095,25 @@ public static class FeatureSelfTest
         string? zip = null;
         try
         {
+            main.Settings.EnableProxy = true;
+            main.Settings.ProxyUrl = "http://user:password@127.0.0.1:7897";
             var diagnostic = new DiagnosticService(main);
+            var readOnlySettings = new AppSettings
+            {
+                LastUpdateCheckAt = DateTimeOffset.UtcNow.AddHours(-2),
+                LastUpdateFailure = "previous failure",
+                UpdateChannel = UpdateChannel.Stable,
+            };
+            var readOnlyAt = readOnlySettings.LastUpdateCheckAt;
+            var readOnlyFailure = readOnlySettings.LastUpdateFailure;
+            var readOnlyCoordinator = new UpdateCheckCoordinator(
+                new StubUpdateService(UpdateResult("2.0.10", hasUpdate: false)), readOnlySettings);
+            var readOnlyResult = await readOnlyCoordinator.CheckReadOnlyAsync();
+            Assert(readOnlyResult.Status == UpdateCheckResultStatus.Success &&
+                   readOnlyCoordinator.LastResult is null && readOnlyCoordinator.LastCheckAt is null &&
+                   readOnlySettings.LastUpdateCheckAt == readOnlyAt &&
+                   readOnlySettings.LastUpdateFailure == readOnlyFailure,
+                "diagnostic-style update metadata probing is read-only and does not update persisted check state");
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
             var cancelledReport = await diagnostic.RunAsync(cancelled.Token);
@@ -1923,7 +2122,7 @@ public static class FeatureSelfTest
             Directory.CreateDirectory(AppPaths.Current.LogsDir);
             secretLog = Path.Combine(AppPaths.Current.LogsDir, $"diagnostic-selftest-{Guid.NewGuid():N}.log");
             await File.WriteAllTextAsync(secretLog,
-                "GITHUB_TOKEN=diagnostic-secret\nAuthorization: Bearer diagnostic-bearer\n");
+                secretDetails + "\nGITHUB_TOKEN=diagnostic-secret\nAuthorization: Bearer diagnostic-bearer\n");
             zip = await diagnostic.ExportBundleAsync(reportModel);
             using var archive = ZipFile.OpenRead(zip);
             var names = archive.Entries.Select(entry => entry.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1931,14 +2130,38 @@ public static class FeatureSelfTest
                    names.Contains("environment.txt") && names.Contains("snapshot-summary.json") &&
                    names.Contains("update-summary.json") && names.Contains("drops-summary.json"),
                 "diagnostics export contains the required summary files");
-            var contents = string.Join("\n", archive.Entries.Where(entry => entry.Length < 2_000_000).Select(entry =>
+            var requiredEntries = new[] { "diagnostics.json", "diagnostics.txt", "environment.txt" };
+            foreach (var required in requiredEntries)
+            {
+                var entry = archive.GetEntry(required);
+                Assert(entry is not null, $"diagnostics ZIP includes {required}");
+                using var reader = new StreamReader(entry!.Open());
+                var text = reader.ReadToEnd();
+                Assert(!text.Contains("abcdef", StringComparison.Ordinal) &&
+                       !text.Contains("user:password", StringComparison.Ordinal) &&
+                       !text.Contains("session-cookie-value", StringComparison.Ordinal) &&
+                       !text.Contains("session-set-cookie-value", StringComparison.Ordinal),
+                    $"{required} redacts all injected secret values");
+            }
+            foreach (var entry in archive.Entries.Where(item => item.FullName.StartsWith("logs/", StringComparison.OrdinalIgnoreCase)))
             {
                 using var reader = new StreamReader(entry.Open());
-                return reader.ReadToEnd();
-            }));
-            Assert(!contents.Contains("diagnostic-secret", StringComparison.Ordinal) &&
-                   !contents.Contains("diagnostic-bearer", StringComparison.Ordinal),
-                "diagnostics ZIP does not contain injected token or bearer secret");
+                var text = reader.ReadToEnd();
+                Assert(!text.Contains("abcdef", StringComparison.Ordinal) &&
+                       !text.Contains("diagnostic-secret", StringComparison.Ordinal) &&
+                       !text.Contains("diagnostic-bearer", StringComparison.Ordinal) &&
+                       !text.Contains("user:password", StringComparison.Ordinal),
+                    "diagnostic log entries redact injected secret values");
+            }
+            Assert(DiagnosticService.TryNormalizeZipEntryName("logs\\app.log", out var normalized) &&
+                   normalized == "logs/app.log" &&
+                   !DiagnosticService.TryNormalizeZipEntryName("....\\file", out _) &&
+                   !DiagnosticService.TryNormalizeZipEntryName(@"C:\\Users\\someone\\log.txt", out _) &&
+                   !DiagnosticService.TryNormalizeZipEntryName(@"\\server\\share\\log.txt", out _) &&
+                   !DiagnosticService.TryNormalizeZipEntryName("../file", out _),
+                "diagnostic ZIP entry names normalize safely and reject traversal/absolute paths");
+            Assert(!File.Exists(Path.Combine(AppPaths.Current.Root, ".diagnostic-write-test")),
+                "diagnostics never leaves a write-probe file behind");
         }
         finally
         {
@@ -1954,7 +2177,40 @@ public static class FeatureSelfTest
                ((RecordingNotificationService)notification).Requests.Single().Action == "updates",
             "notification abstraction records actions without sending a real Toast in tests");
         notification.Dispose();
-        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/notification abstraction)");
+        using (var toast = new WindowsToastNotificationService(new AppSettings
+                   { EnableWindowsNotifications = false }))
+        {
+            toast.Initialize();
+            toast.Initialize();
+            Assert(!toast.TryNotify(new NotificationRequest("禁用通知", "不会显示",
+                       NotificationCategory.Drops)),
+                "Toast initialization is idempotent and disabled notifications never enter the OS channel");
+        }
+        var notificationRequests = new List<NotificationRequest>();
+        using (var gate = new DropsNotificationGate(notificationRequests.Add, TimeSpan.FromMilliseconds(10)))
+        {
+            for (var i = 0; i < 30; i++)
+                gate.ReportFailure(DropsPlatform.Twitch, "Twitch 连接中断", "正在自动重试。");
+            gate.ReportRecovery(DropsPlatform.Twitch, "Twitch 已恢复连接", "自动恢复流程已完成。");
+            await gate.FlushForSelfTestAsync();
+            Assert(notificationRequests.Count == 2 &&
+                   notificationRequests.Count(item => item.Message.Contains("自动重试", StringComparison.Ordinal)) == 1 &&
+                   notificationRequests.Count(item => item.Message.Contains("恢复", StringComparison.Ordinal)) == 1,
+                "Drops toast gate collapses repeated failures and emits one debounced recovery notification");
+        }
+        using (var gate = new DropsNotificationGate(_ => throw new InvalidOperationException("toast unavailable"),
+                   TimeSpan.FromMilliseconds(1)))
+        {
+            gate.ReportFailure(DropsPlatform.Soop, "SOOP 连接中断", "正在自动重试。");
+            gate.ReportRecovery(DropsPlatform.Soop, "SOOP 已恢复连接", "自动恢复流程已完成。");
+            await gate.FlushForSelfTestAsync();
+            Assert(true, "Toast notification exceptions are swallowed outside business flow");
+        }
+        Assert(OverviewViewModel.FormatStatus("正常", DateTimeOffset.Now.AddHours(-1), DateTimeOffset.Now)
+                   .Contains("状态可能已过期", StringComparison.Ordinal) &&
+               OverviewViewModel.FormatStatus("正常", null) == "未检查",
+            "Overview labels unknown and stale state instead of presenting it as current");
+        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/overview freshness)");
     }
 
     private static void WriteRuntimeFiles(string gameRoot)

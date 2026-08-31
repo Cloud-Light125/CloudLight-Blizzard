@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CloudLightBlizzard.Services;
 
 namespace CloudLightBlizzard.Services.Diagnostics;
 
@@ -61,7 +62,19 @@ public sealed class DiagnosticRunReport
     [JsonIgnore]
     public int ErrorCount => Checks.Count(item => item.Status == DiagnosticSeverity.Error);
     [JsonIgnore]
-    public string OverallText => ErrorCount > 0 ? "需要处理错误" : WarningCount > 0 ? "需要注意" : "一切正常";
+    public DiagnosticSeverity OverallSeverity => ErrorCount > 0 ? DiagnosticSeverity.Error
+        : WarningCount > 0 ? DiagnosticSeverity.Warning
+        : HealthyCount > 0 ? DiagnosticSeverity.Healthy : DiagnosticSeverity.Info;
+    [JsonIgnore]
+    public LiveSelfTestSeverity LiveSeverity => OverallSeverity.FromDiagnostic();
+    [JsonIgnore]
+    public string OverallText => OverallSeverity switch
+    {
+        DiagnosticSeverity.Error => "需要处理错误",
+        DiagnosticSeverity.Warning => "需要注意",
+        DiagnosticSeverity.Healthy => "一切正常",
+        _ => "尚未完成检查",
+    };
 
     public string ToDisplayText()
     {

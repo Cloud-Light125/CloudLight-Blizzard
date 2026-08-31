@@ -204,6 +204,7 @@ public sealed class MainViewModel : ObservableObject
     public bool OverwatchPathValid => _regionPageStatus.GamePathValid;
     public string RegionBackupRoot => _regionManager.BackupRoot;
     public RegionSnapshotStatus RegionStatusSnapshot => _regionPageStatus;
+    public DateTimeOffset? RegionStatusLastCheckedAt => _regionStatusLastCheckedAt;
     internal OverwatchRegionManager RegionManager => _regionManager;
     public bool IsVerifiedDifferenceMode => _settings.RegionBackupMode == RegionBackupMode.VerifiedDifference;
     public bool IsFullSnapshotMode => _settings.RegionBackupMode == RegionBackupMode.FullSnapshot;
@@ -265,6 +266,7 @@ public sealed class MainViewModel : ObservableObject
     private RegionBackupState _homeRegionState;
     private CurrentGameRegion _homeCurrentRegion;
     private RegionSnapshotStatus _regionPageStatus = new();
+    private DateTimeOffset? _regionStatusLastCheckedAt;
     private RegionPreparationGuide _regionGuide = new();
     public RegionPreparationGuide RegionGuide { get => _regionGuide; private set => Set(ref _regionGuide, value); }
     private RegionOperationPhase _regionOperationPhase;
@@ -1115,6 +1117,7 @@ public sealed class MainViewModel : ObservableObject
         {
             var status = await GetRegionStatusAsync(verifyFiles);
             _regionPageStatus = status;
+            _regionStatusLastCheckedAt = DateTimeOffset.Now;
             UpdateRegionGuide();
             _homeRegionState = status.State;
             _homeCurrentRegion = status.CurrentRegion;
@@ -1236,6 +1239,8 @@ public sealed class MainViewModel : ObservableObject
             if (OverwatchRegionManager.IsGameRunning())
                 throw new InvalidOperationException("守望先锋正在运行，请先退出游戏后再切换区服文件。");
             restartClient = await Task.Run(() => _controller.IsClientRunning());
+            if (plan is not null && restartClient != plan.BattleNetRunning)
+                throw new InvalidDataException("预览后 Battle.net 状态已变化，请重新生成切换预览。");
             if (restartClient)
             {
                 StatusText = "正在正常关闭 Battle.net…";
@@ -1585,6 +1590,7 @@ public sealed class MainViewModel : ObservableObject
             StatusText = "正在检查区服备份…";
             var status = await GetRegionStatusAsync(verifyFiles: true, verifyBackupHashes: true);
             _regionPageStatus = status;
+            _regionStatusLastCheckedAt = DateTimeOffset.Now;
             _regionOperationNotice = status.BackupFileIssueCount > 0
                 ? $"检测到 {status.BackupFileIssueCount:N0} 个备份文件缺失、损坏或无法读取。" +
                   "切换时将逐文件跳过，其他完整文件仍可继续使用。"

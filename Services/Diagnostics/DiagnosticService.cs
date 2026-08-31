@@ -134,7 +134,7 @@ public sealed class DiagnosticService
             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.OSArchitecture}",
             $"Runtime={RuntimeInformation.FrameworkDescription}; Process={Environment.Is64BitProcess switch { true => "x64", false => "x86" }}; 启动时间={Process.GetCurrentProcess().StartTime:yyyy-MM-dd HH:mm:ss}"))),
         Define("app.paths", "应用", "程序、配置与日志路径", _ => Task.FromResult(CheckPaths())),
-        Define("app.config", "应用", "配置文件可读写", _ => Task.FromResult(CheckConfig())),
+        Define("app.config", "应用", "配置文件可读取", _ => Task.FromResult(CheckConfig())),
         Define("disk.install", "磁盘", "安装盘剩余空间", _ => Task.FromResult(CheckDrive("disk.install", "安装盘", AppContext.BaseDirectory))),
         Define("disk.game", "磁盘", "游戏盘剩余空间", _ => Task.FromResult(CheckDrive("disk.game", "游戏盘", _vm.Settings.OverwatchGamePath))),
         Define("disk.snapshot", "磁盘", "快照盘剩余空间", _ => Task.FromResult(CheckDrive("disk.snapshot", "快照盘", _vm.RegionBackupRoot))),
@@ -176,21 +176,13 @@ public sealed class DiagnosticService
             }
         }
         catch { readable = false; }
-        var writable = false;
-        try
-        {
-            Directory.CreateDirectory(AppPaths.Current.Root);
-            var probe = Path.Combine(AppPaths.Current.Root, ".diagnostic-write-test");
-            File.WriteAllText(probe, "ok");
-            File.Delete(probe);
-            writable = true;
-        }
-        catch { }
-        var severity = !exists && writable ? DiagnosticSeverity.Warning
-            : readable && writable ? DiagnosticSeverity.Healthy : DiagnosticSeverity.Error;
-        return NewCheck("app.config", "应用", "配置文件可读写", severity,
-            !exists ? "配置文件尚未生成，将使用默认设置" : readable && writable ? "配置可读写" : "配置文件不可正常读写",
-            $"存在={(exists ? "是" : "否")}; 读取={(readable ? "正常" : "失败")}; 写入={(writable ? "正常" : "失败")}; 文件={DiagnosticSanitizer.SanitizePath(configPath)}");
+        var severity = !exists ? DiagnosticSeverity.Warning
+            : readable ? DiagnosticSeverity.Healthy : DiagnosticSeverity.Error;
+        return NewCheck("app.config", "应用", "配置文件可读取", severity,
+            !exists ? "配置文件尚未生成，将使用默认设置" : readable ? "配置文件可读取" : "配置文件读取失败",
+            $"存在={(exists ? "是" : "否")}; 读取={(readable ? "正常" : "失败")}; " +
+            "本项仅执行只读检查，不创建、修改或删除探测文件；" +
+            $"文件={DiagnosticSanitizer.SanitizePath(configPath)}");
     }
 
     private static DiagnosticCheck CheckDrive(string id, string name, string? path)
@@ -213,13 +205,12 @@ public sealed class DiagnosticService
     {
         try
         {
-            Directory.CreateDirectory(path);
-            var probe = Path.Combine(path, $"cloudlight-diagnostic-{Guid.NewGuid():N}.tmp");
-            File.WriteAllText(probe, "ok");
-            File.Delete(probe);
-            return NewCheck(id, "磁盘", name, DiagnosticSeverity.Healthy, "可写", DiagnosticSanitizer.SanitizePath(path));
+            var exists = Directory.Exists(path);
+            return NewCheck(id, "磁盘", name, exists ? DiagnosticSeverity.Info : DiagnosticSeverity.Warning,
+                exists ? "目录存在（未执行写入探测）" : "目录不存在（只读诊断未创建）",
+                "诊断保持只读，不创建临时目录或文件；路径=" + DiagnosticSanitizer.SanitizePath(path));
         }
-        catch (Exception ex) { return NewCheck(id, "磁盘", name, DiagnosticSeverity.Error, "不可写", ex.Message); }
+        catch (Exception ex) { return NewCheck(id, "磁盘", name, DiagnosticSeverity.Error, "无法读取目录状态", ex.Message); }
     }
 
     private DiagnosticCheck CheckBattleNetProcesses()
@@ -278,7 +269,8 @@ public sealed class DiagnosticService
     {
         try
         {
-            var region = await _vm.GetRegionStatusAsync(verifyFiles: false).ConfigureAwait(false);
+            var region = await _vm.GetRegionStatusAsync(verifyFiles: false,
+                persistStateChanges: false).ConfigureAwait(false);
             var severity = region.CurrentRegion == CurrentGameRegion.Unknown ? DiagnosticSeverity.Warning : DiagnosticSeverity.Healthy;
             return NewCheck("battlenet.region", "Battle.net", "当前可识别区服状态", severity,
                 $"{MainViewModel.RegionDisplayName(region.CurrentRegion)} · Battle.net {(_vm.BattleNetPathValid ? "可用" : "路径未识别")}",
@@ -354,10 +346,16 @@ public sealed class DiagnosticService
     private async Task<DiagnosticCheck> CheckNetworkAsync(CancellationToken token)
     {
         var report = await new NetworkDiagnosticService(_vm.Settings, _vm.CloudHttpClients).RunAsync(token).ConfigureAwait(false);
-        var probes = new[] { report.Proxy, report.Announcement, report.Update, report.Soop, report.Twitch }
-            .Where(item => item is not null).Cast<CloudNetworkProbeResult>().ToArray();
-        var failures = probes.Count(item => !item.Success);
-        var severity = failures == 0 ? DiagnosticSeverity.Healthy : failures >= 2 ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning;
+        var reasons = new List<string>();
+        var liveSeverity = CloudServicesSeverity.ClassifyNetwork(_vm.Settings, report, reasons);
+        var severity = liveSeverity switch
+        {
+            LiveSelfTestSeverity.Fail => DiagnosticSeverity.Error,
+            LiveSelfTestSeverity.Warning => DiagnosticSeverity.Warning,
+            _ => DiagnosticSeverity.Healthy,
+        };
+        var failures = new[] { report.Proxy, report.Announcement, report.Update, report.Soop, report.Twitch }
+            .Count(item => item is not null && !item.Success);
         return NewCheck("network.services", "网络", "代理、公告与更新网络", severity,
             failures == 0 ? "代理、公告、更新服务正常" : $"{failures} 项网络检查异常",
             string.Join("; ", new[]
@@ -367,16 +365,16 @@ public sealed class DiagnosticService
                 $"更新={report.Update.Message} / {report.Update.Route}",
                 $"SOOP={(report.Soop?.Message ?? "未执行")} / {report.Soop?.Route ?? "n/a"}",
                 $"Twitch={(report.Twitch?.Message ?? "未执行")} / {report.Twitch?.Route ?? "n/a"}",
-            }.Select(DiagnosticSanitizer.Sanitize)));
+            }.Concat(reasons.Count == 0 ? Array.Empty<string>() : new[] { "建议=" + string.Join("；", reasons) })
+             .Select(DiagnosticSanitizer.Sanitize)));
     }
 
     private async Task<DiagnosticCheck> CheckUpdateMetadataAsync(CancellationToken token)
     {
-        var outcome = await _vm.UpdateChecks.CheckAsync(UpdateCheckMode.Manual, token).ConfigureAwait(false);
-        var result = outcome.Result;
-        if (outcome.Kind == UpdateCheckOutcomeKind.Failed || result?.Status == UpdateCheckResultStatus.Failed)
+        var result = await _vm.UpdateChecks.CheckReadOnlyAsync(token).ConfigureAwait(false);
+        if (result.Status == UpdateCheckResultStatus.Failed)
             return NewCheck("update.metadata", "更新", "更新元数据与安装包", DiagnosticSeverity.Error, "更新接口失败", result?.ErrorMessage ?? "未知错误");
-        if (outcome.Kind == UpdateCheckOutcomeKind.NoRelease)
+        if (result.Status == UpdateCheckResultStatus.NoRelease)
             return NewCheck("update.metadata", "更新", "更新元数据与安装包", DiagnosticSeverity.Warning, "没有可用 Release", "更新接口未返回正式版本。");
         var installer = !string.IsNullOrWhiteSpace(result?.InstallerDownloadUrl);
         var digest = UpdateService.IsValidSha256Digest(result?.InstallerDigest);
@@ -465,9 +463,8 @@ public sealed class DiagnosticService
 
     private async Task AddRecentLogsAsync(ZipArchive archive, CancellationToken token)
     {
-        var files = new List<FileInfo>();
-        if (Directory.Exists(AppPaths.Current.LogsDir))
-            files.AddRange(new DirectoryInfo(AppPaths.Current.LogsDir).EnumerateFiles("*", SearchOption.AllDirectories));
+        var files = OverwatchRegionBackupStore.EnumerateFilesWithoutReparse(AppPaths.Current.LogsDir)
+            .Select(path => new FileInfo(path)).ToList();
         var cutoff = DateTime.Now - LogAge;
         long budget = MaxLogBytes;
         foreach (var file in files.Where(item => item.LastWriteTime >= cutoff)
@@ -475,7 +472,12 @@ public sealed class DiagnosticService
         {
             token.ThrowIfCancellationRequested();
             if (budget <= 0) break;
-            var entryName = "logs/" + DiagnosticSanitizer.SanitizePath(Path.GetRelativePath(AppPaths.Current.LogsDir, file.FullName)).Replace('\\', '/');
+            if (!TryNormalizeZipEntryName(Path.GetRelativePath(AppPaths.Current.LogsDir, file.FullName), out var relativeName))
+            {
+                WriteLog($"export-log-skipped-unsafe-path file={file.Name}");
+                continue;
+            }
+            var entryName = "logs/" + relativeName;
             var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
             await using var output = entry.Open();
             await using var input = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
@@ -495,6 +497,20 @@ public sealed class DiagnosticService
             await writer.FlushAsync(token).ConfigureAwait(false);
             budget -= written;
         }
+    }
+
+    internal static bool TryNormalizeZipEntryName(string? value, out string normalized)
+    {
+        normalized = "";
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var candidate = value.Replace('\\', '/');
+        if (candidate.StartsWith('/') || candidate.Contains(':', StringComparison.Ordinal)) return false;
+        var segments = candidate.Split('/', StringSplitOptions.None);
+        if (segments.Any(segment => string.IsNullOrEmpty(segment) || segment is "." or ".." ||
+                                    segment.Length >= 2 && segment.All(character => character == '.')))
+            return false;
+        normalized = string.Join('/', segments);
+        return normalized.Length > 0;
     }
 
     private static async Task WriteEntryAsync(ZipArchive archive, string name, string value, CancellationToken token)

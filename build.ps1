@@ -5,6 +5,11 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+$buildOriginalPath = $env:PATH
+$buildOriginalCondaPrefix = $env:CONDA_PREFIX
+$buildOriginalPythonHome = $env:PYTHONHOME
+$buildOriginalPythonPath = $env:PYTHONPATH
+$buildOriginalPythonUtf8 = $env:PYTHONUTF8
 Push-Location $root
 try {
     $pythonFinder = Join-Path $root 'build-support\Find-Python.ps1'
@@ -13,18 +18,24 @@ try {
     }
     . $pythonFinder
     $pythonInfo = Find-CloudLightPython -ExplicitPath $Python
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        throw '.NET SDK 不可用。请安装 .NET 8 SDK，并在新的 PowerShell 窗口中确认 dotnet --version。'
+    }
     $dotnetVersion = (& dotnet --version 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($dotnetVersion)) {
         throw '.NET SDK 不可用。请安装 .NET 8 SDK，并在新的 PowerShell 窗口中确认 dotnet --version。'
     }
+    $dotnetParsedVersion = $null
+    try { $dotnetParsedVersion = [version]$dotnetVersion } catch { }
+    if ($null -eq $dotnetParsedVersion -or $dotnetParsedVersion.Major -ne 8) {
+        throw ".NET SDK 版本不受支持：$dotnetVersion。请安装 .NET 8 SDK。"
+    }
     $isccCandidates = [System.Collections.Generic.List[string]]::new()
     $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($isccCommand -and $isccCommand.Source) { $isccCandidates.Add($isccCommand.Source) }
-    foreach ($candidate in @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
-    )) {
+    $innoRoots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    foreach ($candidate in $innoRoots | ForEach-Object { Join-Path $_ 'Inno Setup 6\ISCC.exe' }) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and
             -not $isccCandidates.Contains($candidate)) { $isccCandidates.Add($candidate) }
     }
@@ -104,6 +115,20 @@ try {
     Write-Host "Setup size: $([math]::Round($setup.Length / 1MB, 2)) MB"
     Write-Host 'BUILD: PASS' -ForegroundColor Green
 }
+catch {
+    $buildFailure = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { '未知构建错误。' }
+    Write-Host "BUILD: FAIL - $buildFailure" -ForegroundColor Red
+    exit 1
+}
 finally {
+    $env:PATH = $buildOriginalPath
+    if ($null -eq $buildOriginalCondaPrefix) { Remove-Item Env:CONDA_PREFIX -ErrorAction SilentlyContinue }
+    else { $env:CONDA_PREFIX = $buildOriginalCondaPrefix }
+    if ($null -eq $buildOriginalPythonHome) { Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue }
+    else { $env:PYTHONHOME = $buildOriginalPythonHome }
+    if ($null -eq $buildOriginalPythonPath) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
+    else { $env:PYTHONPATH = $buildOriginalPythonPath }
+    if ($null -eq $buildOriginalPythonUtf8) { Remove-Item Env:PYTHONUTF8 -ErrorAction SilentlyContinue }
+    else { $env:PYTHONUTF8 = $buildOriginalPythonUtf8 }
     Pop-Location
 }

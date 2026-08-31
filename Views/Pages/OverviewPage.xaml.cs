@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using CloudLightBlizzard.Services;
 using CloudLightBlizzard.ViewModels;
 
 namespace CloudLightBlizzard.Views.Pages;
@@ -9,10 +10,10 @@ public partial class OverviewPage : UserControl
     private MainViewModel? _main;
     private OverviewViewModel? _vm;
     public OverviewPage() => InitializeComponent();
-    public void Initialize(MainViewModel main)
+    public void Initialize(MainViewModel main, AnnouncementService? announcements = null)
     {
         _main = main;
-        _vm = new OverviewViewModel(main);
+        _vm = new OverviewViewModel(main, announcements);
         DataContext = _vm;
     }
     public Task RefreshAsync() => _vm?.RefreshAsync() ?? Task.CompletedTask;

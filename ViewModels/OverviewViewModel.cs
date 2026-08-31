@@ -1,4 +1,5 @@
 using System.Windows;
+using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services;
 using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.OverwatchRegion;
@@ -7,7 +8,9 @@ namespace CloudLightBlizzard.ViewModels;
 
 public sealed class OverviewViewModel : ObservableObject
 {
+    private static readonly TimeSpan StatusTtl = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _main;
+    private readonly AnnouncementService? _announcements;
     private string _overallText = "正在读取状态…";
     private string _overallDetail = "";
     private string _regionText = "无法确认";
@@ -25,7 +28,11 @@ public sealed class OverviewViewModel : ObservableObject
     private string _snapshotTimeText = "";
     private string _activityText = "暂无最近活动";
 
-    public OverviewViewModel(MainViewModel main) => _main = main;
+    public OverviewViewModel(MainViewModel main, AnnouncementService? announcements = null)
+    {
+        _main = main;
+        _announcements = announcements;
+    }
     public string OverallText { get => _overallText; private set => Set(ref _overallText, value); }
     public string OverallDetail { get => _overallDetail; private set => Set(ref _overallDetail, value); }
     public string RegionText { get => _regionText; private set => Set(ref _regionText, value); }
@@ -43,24 +50,24 @@ public sealed class OverviewViewModel : ObservableObject
     public string SnapshotTimeText { get => _snapshotTimeText; private set => Set(ref _snapshotTimeText, value); }
     public string ActivityText { get => _activityText; private set => Set(ref _activityText, value); }
 
-    public async Task RefreshAsync()
+    public Task RefreshAsync()
     {
-        try { await _main.RefreshHomeRegionAsync(false); } catch { }
         var status = _main.RegionStatusSnapshot;
-        RegionText = MainViewModel.RegionDisplayName(status.CurrentRegion);
+        RegionText = FormatStatus(MainViewModel.RegionDisplayName(status.CurrentRegion),
+            _main.RegionStatusLastCheckedAt);
         BattleNetText = _main.BattleNetPathValid ? "可启动" : "路径未识别";
         RegionActionText = status.CurrentRegion == CurrentGameRegion.China ? "切换到国际服" : "打开区服切换";
 
         var drops = _main.GetDropsDiagnosticSnapshot();
-        SoopText = drops.SoopStatus;
-        TwitchText = drops.TwitchStatus;
+        SoopText = FormatDropsStatus(drops.SoopStatus, drops.Platforms, "SOOP");
+        TwitchText = FormatDropsStatus(drops.TwitchStatus, drops.Platforms, "Twitch");
         DropsProgressText = drops.RecentNetworkError == "无" ? "当前进度：由 Drops 页面显示" : $"最近网络事件：{drops.RecentNetworkError}";
 
         ProxyText = _main.Settings.EnableProxy ? "已启用" : "直连";
-        AnnouncementText = "点击诊断检查";
-        NetworkUpdateText = "点击诊断检查";
+        AnnouncementText = FormatAnnouncementStatus();
+        NetworkUpdateText = FormatUpdateStatus();
         CurrentVersionText = _main.UpdateChecks.CurrentVersion;
-        LatestVersionText = _main.UpdateChecks.LastResult?.LatestVersion ?? "尚未检查";
+        LatestVersionText = FormatLatestVersion();
         SnapshotText = status.State switch
         {
             RegionBackupState.Ready => status.BackupMode == RegionBackupMode.VerifiedDifference ? "VerifiedDifference：正常" : "FullSnapshot：正常",
@@ -73,8 +80,67 @@ public sealed class OverviewViewModel : ObservableObject
             : "前往区服切换准备文件";
         ActivityText = _main.StatusText is { Length: > 0 } ? _main.StatusText : "暂无最近活动";
         var attention = status.CurrentRegion is CurrentGameRegion.Mixed or CurrentGameRegion.Unknown ||
-                        status.State is RegionBackupState.Error or RegionBackupState.Empty;
+                        status.State is RegionBackupState.Error or RegionBackupState.Empty ||
+                        IsStale(_main.RegionStatusLastCheckedAt) ||
+                        IsUnknownOrStale(_announcements?.LastCheckAt) ||
+                        IsUnknownOrStale(_main.UpdateChecks.LastCheckAt ?? _main.Settings.LastUpdateCheckAt);
         OverallText = attention ? "需要注意" : "一切正常";
-        OverallDetail = attention ? "区服或快照仍需要进一步检查。" : "核心区服文件状态可用，详细网络与 Drops 状态可在诊断中心查看。";
+        OverallDetail = attention ? "部分状态尚未检查或可能已过期，请按需打开诊断中心复核。" :
+            "核心区服文件状态可用，网络与 Drops 状态显示最近一次检查时间。";
+        return Task.CompletedTask;
     }
+
+    private string FormatAnnouncementStatus()
+    {
+        var checkedAt = _announcements?.LastCheckAt;
+        if (checkedAt is null) return "未检查";
+        var state = string.IsNullOrWhiteSpace(_announcements?.LastFailureMessage) ? "正常" :
+            $"检查失败 · {_announcements.LastFailureMessage}";
+        return FormatStatus(state, checkedAt);
+    }
+
+    private string FormatUpdateStatus()
+    {
+        var checkedAt = _main.UpdateChecks.LastCheckAt ?? _main.Settings.LastUpdateCheckAt;
+        if (checkedAt is null) return "未检查";
+        var result = _main.UpdateChecks.LastResult;
+        var state = result?.Status == UpdateCheckResultStatus.Failed
+            ? $"检查失败 · {result.ErrorMessage ?? "更新服务暂时不可用"}"
+            : result is null ? "未载入结果" : "正常";
+        return FormatStatus(state, checkedAt);
+    }
+
+    private string FormatLatestVersion()
+    {
+        var checkedAt = _main.UpdateChecks.LastCheckAt ?? _main.Settings.LastUpdateCheckAt;
+        var result = _main.UpdateChecks.LastResult;
+        if (checkedAt is null || result is null) return "未检查";
+        var state = result.Status == UpdateCheckResultStatus.Success
+            ? result.HasUpdate ? $"有新版本 {result.LatestVersion}" : result.LatestVersion
+            : $"检查失败 · {result.ErrorMessage ?? "更新服务暂时不可用"}";
+        return FormatStatus(state, checkedAt);
+    }
+
+    private static string FormatDropsStatus(string status,
+        IReadOnlyList<DropsPlatformRecoveryDiagnostic> platforms, string platform)
+    {
+        var checkedAt = platforms.FirstOrDefault(item =>
+            string.Equals(item.Platform, platform, StringComparison.OrdinalIgnoreCase))?.LastHeartbeatAt;
+        return checkedAt is null ? "未检查" : FormatStatus(status, checkedAt);
+    }
+
+    internal static string FormatStatus(string status, DateTimeOffset? checkedAt,
+        DateTimeOffset? now = null)
+    {
+        if (checkedAt is null) return "未检查";
+        var stale = IsStale(checkedAt, now);
+        var text = $"{status} · {checkedAt.Value.ToLocalTime():HH:mm} 检查";
+        return stale ? text + " · 状态可能已过期" : text;
+    }
+
+    private static bool IsUnknownOrStale(DateTimeOffset? checkedAt) =>
+        checkedAt is null || IsStale(checkedAt);
+
+    private static bool IsStale(DateTimeOffset? checkedAt, DateTimeOffset? now = null) =>
+        checkedAt is null || (now ?? DateTimeOffset.Now) - checkedAt.Value > StatusTtl;
 }
