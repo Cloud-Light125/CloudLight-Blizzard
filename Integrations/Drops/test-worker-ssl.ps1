@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Root,
     [string]$TestRoot,
@@ -7,6 +7,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+function Get-CloudLightJsonProperty {
+    param(
+        [AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
 $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if ([string]::IsNullOrWhiteSpace($TestRoot)) {
@@ -52,17 +64,25 @@ try {
             throw "Packaged $platform Worker SSL self-test failed to start (exit $LASTEXITCODE)."
         }
         $response = $output | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } |
-            Where-Object { $_.id -eq "ssl-selftest" } | Select-Object -Last 1
-        if (-not $response.ok -or -not $response.result.contextCreated -or
-            -not $response.result.available -or -not $response.result.frozen) {
+            Where-Object { $_ -and $_.PSObject.Properties['id'] -and $_.id -eq "ssl-selftest" } |
+            Select-Object -Last 1
+        $responseResult = Get-CloudLightJsonProperty -Object $response -Name 'result'
+        $responseOk = [bool](Get-CloudLightJsonProperty -Object $response -Name 'ok')
+        $contextCreated = [bool](Get-CloudLightJsonProperty -Object $responseResult -Name 'contextCreated')
+        $available = [bool](Get-CloudLightJsonProperty -Object $responseResult -Name 'available')
+        $frozen = [bool](Get-CloudLightJsonProperty -Object $responseResult -Name 'frozen')
+        if (-not $responseOk -or -not $contextCreated -or
+            -not $available -or -not $frozen) {
             $diagnostic = ($output | ForEach-Object { [string]$_ }) -join " | "
             throw "Packaged $platform Worker cannot import ssl/_ssl and create a default SSL context. Output: $diagnostic"
         }
-        $sslModule = [string]$response.result.sslModule
+        $sslModule = [string](Get-CloudLightJsonProperty -Object $responseResult -Name 'sslModule')
         if ($sslModule -match '(?i)(miniconda|anaconda|\.worker-build-venv|\\code\\CloudLight Blizzard)') {
             throw "Packaged $platform Worker borrowed _ssl from the developer environment: $sslModule"
         }
-        Write-Host "Packaged $platform SSL self-test: PASS (Python $($response.result.python); $($response.result.openssl); frozen=$($response.result.frozen))" -ForegroundColor Green
+        $python = [string](Get-CloudLightJsonProperty -Object $responseResult -Name 'python')
+        $openssl = [string](Get-CloudLightJsonProperty -Object $responseResult -Name 'openssl')
+        Write-Host "Packaged $platform SSL self-test: PASS (Python $python; $openssl; frozen=$frozen)" -ForegroundColor Green
         Write-Host "  _ssl module: $sslModule"
     }
 }
