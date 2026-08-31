@@ -70,11 +70,16 @@
 
                 <CheckBox x:Name="SkipVersionBox" Content="不再提示此版本"
                           Style="{StaticResource ThemeCheckBox}" Margin="0,18,0,0" />
+                <TextBlock x:Name="InstallerValidationText" Foreground="{DynamicResource Status.Warning}"
+                           TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed" />
             </StackPanel>
 
             <Grid Grid.Row="2" Margin="22,20,22,22">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="CancelDownloadButton" Content="取消" Visibility="Collapsed"
+                                Style="{StaticResource SecondaryButton}" Height="36" Padding="18,0"
+                                Margin="0,0,10,0" Click="OnCancelDownload" />
                         <Button x:Name="LaterButton" Content="稍后提醒" Style="{StaticResource SecondaryButton}"
                                 Height="36" Padding="18,0" Margin="0,0,10,0" Click="OnLater" />
                         <Button x:Name="OpenReleaseButton" Content="打开更新链接" Style="{StaticResource SecondaryButton}"

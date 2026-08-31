@@ -74,19 +74,54 @@
                 </StackPanel>
             </Border>
 
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Text="Windows 通知" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="使用 Windows 10 / 11 系统通知提示重要状态变化；连续重试不会逐条打扰。"
+                               Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,7,0,12" />
+                    <CheckBox x:Name="EnableWindowsNotificationsBox" Style="{StaticResource ThemeCheckBox}"
+                              Content="启用 Windows 通知" Checked="OnNotificationSettingChanged"
+                              Unchecked="OnNotificationSettingChanged" Margin="0,0,0,10" />
+                    <WrapPanel>
+                        <CheckBox x:Name="NotifyRegionSwitchBox" Style="{StaticResource ThemeCheckBox}"
+                                  Content="区服切换" Checked="OnNotificationSettingChanged"
+                                  Unchecked="OnNotificationSettingChanged" Margin="0,0,18,0" />
+                        <CheckBox x:Name="NotifyDropsBox" Style="{StaticResource ThemeCheckBox}"
+                                  Content="Drops" Checked="OnNotificationSettingChanged"
+                                  Unchecked="OnNotificationSettingChanged" Margin="0,0,18,0" />
+                        <CheckBox x:Name="NotifyUpdatesBox" Style="{StaticResource ThemeCheckBox}"
+                                  Content="软件更新" Checked="OnNotificationSettingChanged"
+                                  Unchecked="OnNotificationSettingChanged" Margin="0,0,18,0" />
+                        <CheckBox x:Name="NotifyAnnouncementsBox" Style="{StaticResource ThemeCheckBox}"
+                                  Content="公告" Checked="OnNotificationSettingChanged"
+                                  Unchecked="OnNotificationSettingChanged" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
             <pages:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0"/>
 
-            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
+            <Border x:Name="UpdateSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="软件更新" Style="{StaticResource SectionTitle}" />
                     <TextBlock Text="当前版本" FontWeight="SemiBold" Margin="0,14,0,0" />
                     <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
                     <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。"
                                Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock Text="更新通道" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <ComboBox x:Name="UpdateChannelPicker" Width="140" Style="{StaticResource ThemeComboBox}"
+                                  SelectionChanged="OnUpdateChannelChanged">
+                            <ComboBoxItem Content="稳定版" Tag="Stable" />
+                            <ComboBoxItem Content="测试版" Tag="Beta" />
+                        </ComboBox>
+                    </StackPanel>
                     <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left"
                             Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
                     <StackPanel x:Name="UpdateAvailablePanel" Margin="0,15,0,0" Visibility="Collapsed">
                         <TextBlock x:Name="UpdateAvailableText" FontWeight="SemiBold" />
+                        <TextBlock x:Name="InstallerValidationText" Foreground="{DynamicResource Status.Warning}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed" />
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                             <Button x:Name="OpenUpdateLinkButton" Content="打开更新链接"
                                     Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,10,0"
@@ -107,6 +142,10 @@
                         <Button Content="恢复此版本提示" HorizontalAlignment="Left"
                                 Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRestoreSkippedUpdate" />
                     </StackPanel>
+                    <TextBlock x:Name="UpdateHistoryText" Foreground="{DynamicResource Text.Muted}"
+                               TextWrapping="Wrap" Margin="0,15,0,0" />
+                    <TextBlock x:Name="UpdateFailureText" Foreground="{DynamicResource Status.Warning}"
+                               TextWrapping="Wrap" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
 

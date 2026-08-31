@@ -44,6 +44,7 @@ public partial class SettingsPage : UserControl
         ProxyUrlBox.Text = vm.Settings.ProxyUrl;
         FallbackDirectBox.IsChecked = vm.Settings.FallbackDirect;
         AnnouncementBadgeBox.IsChecked = vm.Settings.ShowAnnouncementBadge;
+        InitializeNotificationSettings(vm);
         FeedbackPanel.Initialize(vm.Settings, vm.FeedbackService);
         ProxyNoticeText.Text = "公告、反馈和更新会在下一次请求时读取当前代理；Chrome / Brave 正在观看时需重新启动观看窗口后生效。";
         DataPathText.Text = AppPaths.Current.Root;
@@ -63,11 +64,43 @@ public partial class SettingsPage : UserControl
     {
         if (_vm == null) return;
         CurrentVersionText.Text = _vm.UpdateChecks.CurrentVersion;
-        var skipped = UpdateService.NormalizeVersion(_vm.Settings.SkippedUpdateVersion);
+        SelectTag(UpdateChannelPicker, _vm.Settings.UpdateChannel.ToString());
+        var skipped = UpdateService.NormalizeReleaseVersion(_vm.Settings.SkippedUpdateVersion);
         SkippedUpdatePanel.Visibility = string.IsNullOrWhiteSpace(skipped)
             ? Visibility.Collapsed : Visibility.Visible;
         SkippedVersionText.Text = skipped ?? "";
+        var lastCheck = _vm.Settings.LastUpdateCheckAt is { } check
+            ? check.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "暂无";
+        var lastUpdate = _vm.Settings.LastSuccessfulUpdateAt is { } updated &&
+                         !string.IsNullOrWhiteSpace(_vm.Settings.LastSuccessfulUpdateFrom) &&
+                         !string.IsNullOrWhiteSpace(_vm.Settings.LastSuccessfulUpdateTo)
+            ? $"最近一次更新：{_vm.Settings.LastSuccessfulUpdateFrom} → {_vm.Settings.LastSuccessfulUpdateTo} · 成功 · {updated.ToLocalTime():yyyy-MM-dd HH:mm}"
+            : "最近一次更新：暂无更新记录";
+        UpdateHistoryText.Text = $"{lastUpdate}\n最近一次检查：{lastCheck}";
+        UpdateFailureText.Text = string.IsNullOrWhiteSpace(_vm.Settings.LastUpdateFailure)
+            ? "" : $"最近一次失败：{_vm.Settings.LastUpdateFailure}";
         UpdateCheckingState();
+    }
+
+    internal void InitializeNotificationSettings(MainViewModel vm)
+    {
+        _vm = vm;
+        _loading = true;
+        EnableWindowsNotificationsBox.IsChecked = vm.Settings.EnableWindowsNotifications;
+        NotifyRegionSwitchBox.IsChecked = vm.Settings.NotifyRegionSwitch;
+        NotifyDropsBox.IsChecked = vm.Settings.NotifyDrops;
+        NotifyUpdatesBox.IsChecked = vm.Settings.NotifyUpdates;
+        NotifyAnnouncementsBox.IsChecked = vm.Settings.NotifyAnnouncements;
+        _loading = false;
+    }
+
+    internal void FocusUpdateSection()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            UpdateSettingsCard.BringIntoView();
+            CheckUpdateButton.Focus();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
     public void FocusProxySection()
     {
@@ -93,6 +126,25 @@ public partial class SettingsPage : UserControl
         _vm.Settings.ShowAnnouncementBadge = AnnouncementBadgeBox.IsChecked == true;
         _vm.Settings.Save();
         AnnouncementBadgeSettingChanged?.Invoke(this, EventArgs.Empty);
+    }
+    private void OnNotificationSettingChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _vm == null) return;
+        _vm.Settings.EnableWindowsNotifications = EnableWindowsNotificationsBox.IsChecked == true;
+        _vm.Settings.NotifyRegionSwitch = NotifyRegionSwitchBox.IsChecked == true;
+        _vm.Settings.NotifyDrops = NotifyDropsBox.IsChecked == true;
+        _vm.Settings.NotifyUpdates = NotifyUpdatesBox.IsChecked == true;
+        _vm.Settings.NotifyAnnouncements = NotifyAnnouncementsBox.IsChecked == true;
+        _vm.Settings.Save();
+    }
+
+    private void OnUpdateChannelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || _vm == null || UpdateChannelPicker.SelectedItem is not ComboBoxItem item) return;
+        if (!Enum.TryParse<UpdateChannel>(item.Tag?.ToString(), out var channel)) return;
+        _vm.Settings.UpdateChannel = channel;
+        _vm.Settings.Save();
+        RefreshUpdateInfo();
     }
     private void OnThemeChanged(object sender, RoutedEventArgs e) { if (_loading || _vm == null) return; _vm.Settings.DarkMode = DarkModeBox.IsChecked == true; _vm.Settings.Save(); ThemeManager.Apply(_vm.Settings.DarkMode); }
     private void Save()
@@ -207,7 +259,11 @@ public partial class SettingsPage : UserControl
                 UpdateAvailableText.Text = $"发现新版本 {result.LatestVersion}";
                 UpdateDownloadPanel.Visibility = Visibility.Collapsed;
                 OpenUpdateLinkButton.IsEnabled = !string.IsNullOrWhiteSpace(result.ReleaseUrl);
-                OnlineUpdateButton.IsEnabled = !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl);
+                var canDownload = CanDownloadInstaller(result);
+                OnlineUpdateButton.IsEnabled = canDownload;
+                InstallerValidationText.Visibility = !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) && !canDownload
+                    ? Visibility.Visible : Visibility.Collapsed;
+                InstallerValidationText.Text = "在线安装已禁用：更新服务未提供有效 SHA-256 摘要，请打开 Release 页面手动核对。";
             }
             else
             {
@@ -240,7 +296,7 @@ public partial class SettingsPage : UserControl
     private async void OnOnlineUpdate(object sender, RoutedEventArgs e)
     {
         if (_vm == null || _availableUpdate is null || _isDownloadingUpdate ||
-            string.IsNullOrWhiteSpace(_availableUpdate.InstallerDownloadUrl))
+            !CanDownloadInstaller(_availableUpdate))
             return;
 
         var update = _availableUpdate;
@@ -270,7 +326,10 @@ public partial class SettingsPage : UserControl
                     _installerStarted = true;
                     UpdateDownloadText.Text = "安装程序已启动，正在退出 CloudLight Blizzard…";
                 }))
+            {
+                _vm.RecordSuccessfulUpdate(update);
                 return;
+            }
 
             UpdateDownloadText.Text = "更新安装程序启动失败。";
         }
@@ -299,6 +358,13 @@ public partial class SettingsPage : UserControl
 
     private void RenderUpdateDownloadProgress(UpdateDownloadProgress value)
     {
+        if (value.Phase == UpdateDownloadPhase.WaitingRetry)
+        {
+            UpdateDownloadProgressBar.IsIndeterminate = true;
+            var delay = value.RetryDelay is { } retry ? $"{Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds))} 秒后" : "稍后";
+            UpdateDownloadText.Text = $"下载中断，{delay}重试（{value.RetryAttempt}/{value.MaxRetries}）";
+            return;
+        }
         if (value.Phase == UpdateDownloadPhase.Verifying)
         {
             UpdateDownloadProgressBar.IsIndeterminate = false;
@@ -330,6 +396,7 @@ public partial class SettingsPage : UserControl
         _availableUpdate = null;
         UpdateAvailablePanel.Visibility = Visibility.Collapsed;
         UpdateDownloadPanel.Visibility = Visibility.Collapsed;
+        InstallerValidationText.Visibility = Visibility.Collapsed;
     }
 
     private void OnRestoreSkippedUpdate(object sender, RoutedEventArgs e)
@@ -354,8 +421,20 @@ public partial class SettingsPage : UserControl
             OpenUpdateLinkButton.IsEnabled = !_isDownloadingUpdate &&
                 !string.IsNullOrWhiteSpace(_availableUpdate.ReleaseUrl);
             OnlineUpdateButton.IsEnabled = !_isDownloadingUpdate &&
-                !string.IsNullOrWhiteSpace(_availableUpdate.InstallerDownloadUrl);
+                CanDownloadInstaller(_availableUpdate);
             OnlineUpdateButton.Content = _isDownloadingUpdate ? "正在下载…" : "在线更新";
         }
     }
+
+    private static void SelectTag(ComboBox box, string tag)
+    {
+        if (box.Items.Count == 0) return;
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+            ?? box.Items[0];
+    }
+
+    private static bool CanDownloadInstaller(UpdateCheckResult result) =>
+        !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) &&
+        UpdateService.IsValidSha256Digest(result.InstallerDigest);
 }

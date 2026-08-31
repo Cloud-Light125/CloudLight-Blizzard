@@ -190,6 +190,7 @@ describe("GET /v1/update/latest", () => {
         name: "CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
         size: 123456,
         browser_download_url: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.7/CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
+        digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
       }],
     };
   }
@@ -219,6 +220,46 @@ describe("GET /v1/update/latest", () => {
         name: "CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
         downloadUrl: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.7/CloudLight-Blizzard-2.0.7-win-x64-Setup.exe",
         size: 123456,
+        digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      }],
+    });
+    expect(github).toHaveBeenCalledOnce();
+    expect(cache.put).toHaveBeenCalledOnce();
+  });
+
+  it("selects a prerelease for beta and returns a strict asset digest", async () => {
+    const betaRelease = {
+      ...latestRelease(),
+      tag_name: "v2.0.8-beta.1",
+      name: "CloudLight Blizzard 2.0.8 Beta 1",
+      prerelease: true,
+      html_url: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v2.0.8-beta.1",
+      assets: [{
+        id: 101,
+        name: "CloudLight-Blizzard-2.0.8-beta.1-win-x64-Setup.exe",
+        size: 234567,
+        browser_download_url: "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.8-beta.1/CloudLight-Blizzard-2.0.8-beta.1-win-x64-Setup.exe",
+        digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      }],
+    };
+    const cache = { put: vi.fn(async () => undefined), match: vi.fn(async () => undefined) };
+    vi.stubGlobal("caches", { open: vi.fn(async () => cache) });
+    const github = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-token");
+      expect(String(input)).toBe("https://api.github.com/repos/Cloud-Light125/CloudLight-Blizzard/releases?per_page=20");
+      return Response.json([latestRelease(), betaRelease]);
+    });
+    vi.stubGlobal("fetch", github);
+
+    const response = await handleLatestUpdate({ GITHUB_TOKEN: "test-token" }, "beta");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      version: "2.0.8-beta.1",
+      tag: "v2.0.8-beta.1",
+      assets: [{
+        name: "CloudLight-Blizzard-2.0.8-beta.1-win-x64-Setup.exe",
+        size: 234567,
+        digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
       }],
     });
     expect(github).toHaveBeenCalledOnce();

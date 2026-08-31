@@ -14,6 +14,8 @@ public interface IUpdateService
 {
     string CurrentVersion { get; }
     Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default);
+    Task<UpdateCheckResult> CheckAsync(UpdateChannel channel, CancellationToken cancellationToken = default) =>
+        CheckAsync(cancellationToken);
 }
 
 public sealed class UpdateService : IUpdateService, IDisposable
@@ -35,6 +37,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
     private Task<UpdateCheckResult>? _activeRequest;
     private UpdateCheckResult? _cachedResult;
     private DateTimeOffset _cachedAt;
+    private UpdateChannel? _cachedChannel;
 
     public UpdateService(HttpClient httpClient, Assembly? versionAssembly = null)
     {
@@ -62,30 +65,37 @@ public sealed class UpdateService : IUpdateService, IDisposable
 
     public string CurrentVersion { get; }
 
-    public Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
+    public Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default) =>
+        CheckAsync(UpdateChannel.Stable, cancellationToken);
+
+    public Task<UpdateCheckResult> CheckAsync(UpdateChannel channel,
+        CancellationToken cancellationToken = default)
     {
         lock (_cacheGate)
         {
             if (_activeRequest is { IsCompleted: false }) return _activeRequest;
             var age = DateTimeOffset.UtcNow - _cachedAt;
             if (_cachedResult is not null &&
+                _cachedChannel == channel &&
                 (_cachedResult.Status == UpdateCheckResultStatus.Success
                     ? age < SuccessCacheDuration : age < MinimumRequestInterval))
                 return Task.FromResult(_cachedResult);
-            _activeRequest = RunAndCacheAsync(cancellationToken);
+            _activeRequest = RunAndCacheAsync(channel, cancellationToken);
             return _activeRequest;
         }
     }
 
-    private async Task<UpdateCheckResult> RunAndCacheAsync(CancellationToken cancellationToken)
+    private async Task<UpdateCheckResult> RunAndCacheAsync(UpdateChannel channel,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var result = await CheckCoreAsync(cancellationToken).ConfigureAwait(false);
+            var result = await CheckCoreAsync(channel, cancellationToken).ConfigureAwait(false);
             lock (_cacheGate)
             {
                 _cachedResult = result;
                 _cachedAt = DateTimeOffset.UtcNow;
+                _cachedChannel = channel;
             }
             return result;
         }
@@ -95,7 +105,8 @@ public sealed class UpdateService : IUpdateService, IDisposable
         }
     }
 
-    private async Task<UpdateCheckResult> CheckCoreAsync(CancellationToken cancellationToken)
+    private async Task<UpdateCheckResult> CheckCoreAsync(UpdateChannel channel,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -103,19 +114,19 @@ public sealed class UpdateService : IUpdateService, IDisposable
             if (_cloudHttpClients is not null)
             {
                 response = await _cloudHttpClients.SendGetAsync(
-                        () => CreateLatestReleaseRequest(_endpoint), "update", cancellationToken)
+                        () => CreateLatestReleaseRequest(_endpoint, channel), "update", cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                using var request = CreateLatestReleaseRequest();
+                using var request = CreateLatestReleaseRequest(_endpoint, channel);
                 response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
                     cancellationToken).ConfigureAwait(false);
             }
             using (response)
             {
             if (!response.IsSuccessStatusCode)
-                return await FailedResponseAsync(response, cancellationToken).ConfigureAwait(false);
+                return await FailedResponseAsync(response, channel, cancellationToken).ConfigureAwait(false);
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             WorkerRelease? release;
@@ -127,19 +138,33 @@ public sealed class UpdateService : IUpdateService, IDisposable
             catch (JsonException ex)
             {
                 return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效数据，请稍后再试。",
-                    $"Invalid JSON: {ex.Message}");
+                    $"Invalid JSON: {ex.Message}", channel: channel);
             }
-            if (release is null || !TryParseStableVersion(release.Version ?? release.Tag,
-                    out var latest, out var latestText))
+            if (release is null)
                 return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效数据，请稍后再试。",
-                    "Missing or invalid stable version");
+                    "Missing or invalid stable version", channel: channel);
+
+            if (channel == UpdateChannel.Stable &&
+                (release.Prerelease || IsPrereleaseIdentifier(release.Tag ?? release.Version)))
+                 return Failed(UpdateFailureKind.InvalidResponse, "正式更新通道返回了测试版本，请稍后再试。",
+                     "Stable channel received a prerelease release", channel: channel);
+
+            if (!TryParseVersion(release.Version ?? release.Tag, out var latest, out var latestText))
+                return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效数据，请稍后再试。",
+                    "Missing or invalid version", channel: channel);
 
             if (!TryParseStableVersion(CurrentVersion, out var current, out _))
                 throw new InvalidOperationException("无法读取当前程序集版本。");
 
             var installerName = $"CloudLight-Blizzard-{latestText}-win-x64-Setup.exe";
             var installerAsset = release.Assets?
-                .FirstOrDefault(asset => string.Equals(asset.Name, installerName, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(asset => string.Equals(asset.Name, installerName, StringComparison.OrdinalIgnoreCase))
+                ?? (channel == UpdateChannel.Beta
+                    ? release.Assets?.FirstOrDefault(asset =>
+                        asset.Name is not null &&
+                        asset.Name.StartsWith($"CloudLight-Blizzard-{latestText}", StringComparison.OrdinalIgnoreCase) &&
+                        asset.Name.EndsWith("-win-x64-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                    : null);
             var installerUrl = installerAsset?.DownloadUrl;
 
             return new UpdateCheckResult
@@ -151,10 +176,15 @@ public sealed class UpdateService : IUpdateService, IDisposable
                 ReleaseName = string.IsNullOrWhiteSpace(release.Name) ? $"CloudLight Blizzard {latestText}" : release.Name,
                 ReleaseNotes = release.Notes?.Trim() ?? "",
                 ReleaseUrl = ValidateRepositoryUrl(release.HtmlUrl, "/releases/tag/"),
+                Tag = release.Tag ?? "",
                 PublishedAt = release.PublishedAt,
                 InstallerDownloadUrl = ValidateRepositoryUrl(installerUrl, "/releases/download/") is { Length: > 0 } url
                     ? url : null,
+                InstallerName = installerAsset?.Name,
                 InstallerSize = installerAsset is { Size: > 0 } ? installerAsset.Size : 0,
+                InstallerDigest = IsValidSha256Digest(installerAsset?.Digest) ? installerAsset!.Digest : null,
+                HttpStatusCode = (int)response.StatusCode,
+                Channel = channel,
             };
             }
         }
@@ -164,19 +194,21 @@ public sealed class UpdateService : IUpdateService, IDisposable
         }
         catch (OperationCanceledException)
         {
-            return Failed(UpdateFailureKind.Timeout, "检查更新超时，请稍后再试。", "Update request timed out");
+            return Failed(UpdateFailureKind.Timeout, "检查更新超时，请稍后再试。", "Update request timed out",
+                channel: channel);
         }
         catch (CloudNetworkException ex)
         {
             var kind = ex.Kind is CloudNetworkFailureKind.InvalidProxy or
                 CloudNetworkFailureKind.ProxyConnectionFailed or CloudNetworkFailureKind.ProxyAndDirectConnectionFailed
                 ? UpdateFailureKind.ProxyUnavailable : UpdateFailureKind.NetworkUnavailable;
-            return Failed(kind, CloudHttpClientFactory.UserMessage(ex.Kind, "update"), ex.Kind.ToString());
+            return Failed(kind, CloudHttpClientFactory.UserMessage(ex.Kind, "update"), ex.Kind.ToString(),
+                channel: channel);
         }
         catch (Exception ex)
         {
             return Failed(UpdateFailureKind.NetworkUnavailable, "暂时无法连接更新服务器。",
-                $"{ex.GetType().Name}: {ex.Message}");
+                $"{ex.GetType().Name}: {ex.Message}", channel: channel);
         }
     }
 
@@ -191,30 +223,43 @@ public sealed class UpdateService : IUpdateService, IDisposable
     public static string? NormalizeVersion(string? value) =>
         TryParseStableVersion(value, out _, out var normalized) ? normalized : null;
 
+    public static string? NormalizeReleaseVersion(string? value) =>
+        TryParseVersion(value, out _, out var normalized) ? normalized : null;
+
+    public static bool IsValidSha256Digest(string? digest) =>
+        !string.IsNullOrWhiteSpace(digest) &&
+        digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) &&
+        digest.Length == "sha256:".Length + 64 &&
+        digest["sha256:".Length..].All(Uri.IsHexDigit);
+
     public void Dispose()
     {
         // Injected/shared clients are owned by their caller or CloudHttpClientFactory.
     }
 
-    private UpdateCheckResult NoRelease() => new()
+    private UpdateCheckResult NoRelease(UpdateChannel channel = UpdateChannel.Stable) => new()
     {
         Status = UpdateCheckResultStatus.NoRelease,
         CurrentVersion = CurrentVersion,
+        Channel = channel,
     };
 
     private UpdateCheckResult Failed(UpdateFailureKind kind, string message, string technicalDetail,
-        DateTimeOffset? retryAt = null) => new()
+        DateTimeOffset? retryAt = null, int? statusCode = null,
+        UpdateChannel channel = UpdateChannel.Stable) => new()
     {
         Status = UpdateCheckResultStatus.Failed,
         CurrentVersion = CurrentVersion,
         ErrorMessage = message,
         FailureKind = kind,
         RetryAt = retryAt,
+        HttpStatusCode = statusCode,
+        Channel = channel,
         TechnicalDetail = technicalDetail,
     };
 
     private async Task<UpdateCheckResult> FailedResponseAsync(HttpResponseMessage response,
-        CancellationToken cancellationToken)
+        UpdateChannel channel, CancellationToken cancellationToken)
     {
         string body;
         try
@@ -244,11 +289,14 @@ public sealed class UpdateService : IUpdateService, IDisposable
             var message = "GitHub 更新服务请求过于频繁，暂时无法检查更新，请稍后再试。";
             if (resetAt is { } retry && retry > DateTimeOffset.UtcNow)
                 message += $" 预计可在 {retry.ToLocalTime():HH:mm} 后再次检查。";
-            return Failed(UpdateFailureKind.RateLimited, message, technical, resetAt);
+            return Failed(UpdateFailureKind.RateLimited, message, technical, resetAt,
+                (int)response.StatusCode, channel);
         }
         if ((int)response.StatusCode >= 500)
-            return Failed(UpdateFailureKind.Http5xx, "更新服务暂时不可用，请稍后再试。", technical);
-        return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效响应，请稍后再试。", technical);
+            return Failed(UpdateFailureKind.Http5xx, "更新服务暂时不可用，请稍后再试。",
+                technical, statusCode: (int)response.StatusCode, channel: channel);
+        return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效响应，请稍后再试。",
+            technical, statusCode: (int)response.StatusCode, channel: channel);
     }
 
     private static string? Header(HttpResponseMessage response, string name) =>
@@ -264,11 +312,16 @@ public sealed class UpdateService : IUpdateService, IDisposable
     internal static Uri EndpointFor(AppSettings settings) =>
         new(new Uri(CloudServiceConfiguration.NormalizeBaseUrl(settings.CloudServiceBaseUrl)), "v1/update/latest");
 
-    internal HttpRequestMessage CreateLatestReleaseRequest() => CreateLatestReleaseRequest(_endpoint);
+    internal HttpRequestMessage CreateLatestReleaseRequest() =>
+        CreateLatestReleaseRequest(_endpoint, UpdateChannel.Stable);
 
-    internal static HttpRequestMessage CreateLatestReleaseRequest(Uri? endpoint = null)
+    internal static HttpRequestMessage CreateLatestReleaseRequest(Uri? endpoint = null,
+        UpdateChannel channel = UpdateChannel.Stable)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, endpoint ?? new Uri(LatestReleaseApiUrl));
+        var target = endpoint ?? new Uri(LatestReleaseApiUrl);
+        if (channel == UpdateChannel.Beta && string.IsNullOrEmpty(target.Query))
+            target = new UriBuilder(target) { Query = "channel=beta" }.Uri;
+        var request = new HttpRequestMessage(HttpMethod.Get, target);
         request.Headers.UserAgent.ParseAdd("CloudLight-Blizzard");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
@@ -311,11 +364,36 @@ public sealed class UpdateService : IUpdateService, IDisposable
         return true;
     }
 
+    private static bool TryParseVersion(string? value, out Version version, out string normalized)
+    {
+        version = new Version(0, 0, 0, 0);
+        normalized = "";
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var raw = value.Trim();
+        if (raw.StartsWith('v') || raw.StartsWith('V')) raw = raw[1..];
+        var metadataIndex = raw.IndexOf('+');
+        if (metadataIndex >= 0) raw = raw[..metadataIndex];
+        var dash = raw.IndexOf('-');
+        if (dash < 0) return TryParseStableVersion(raw, out version, out normalized);
+        var core = raw[..dash];
+        var prerelease = raw[(dash + 1)..];
+        if (string.IsNullOrWhiteSpace(prerelease) ||
+            prerelease.Any(character => !(char.IsLetterOrDigit(character) || character is '.' or '-')) ||
+            !TryParseStableVersion(core, out version, out var stableNormalized))
+            return false;
+        normalized = $"{stableNormalized}-{prerelease}";
+        return true;
+    }
+
+    private static bool IsPrereleaseIdentifier(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value!.Trim().Contains('-', StringComparison.Ordinal);
+
     private static string ValidateRepositoryUrl(string? value, string releasePath)
     {
         if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri) ||
             !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(uri.UserInfo))
             return "";
         var expectedPrefix = $"/{GitHubOwner}/{GitHubRepository}{releasePath}";
         return uri.AbsolutePath.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase)
@@ -330,6 +408,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
         [JsonPropertyName("notes")] public string? Notes { get; init; }
         [JsonPropertyName("htmlUrl")] public string? HtmlUrl { get; init; }
         [JsonPropertyName("publishedAt")] public DateTimeOffset? PublishedAt { get; init; }
+        [JsonPropertyName("prerelease")] public bool Prerelease { get; init; }
         [JsonPropertyName("assets")] public List<WorkerAsset>? Assets { get; init; }
     }
 
@@ -338,6 +417,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
         [JsonPropertyName("name")] public string? Name { get; init; }
         [JsonPropertyName("downloadUrl")] public string? DownloadUrl { get; init; }
         [JsonPropertyName("size")] public long Size { get; init; }
+        [JsonPropertyName("digest")] public string? Digest { get; init; }
     }
 
     private sealed class WorkerError

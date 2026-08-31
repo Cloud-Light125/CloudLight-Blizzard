@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.Services;
 
@@ -22,6 +23,7 @@ public sealed class UpdateLog
             Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
             var record = new
             {
+                module = "[updater]",
                 timestamp = DateTimeOffset.Now,
                 @event = eventName,
                 mode = mode.ToString(),
@@ -29,7 +31,7 @@ public sealed class UpdateLog
                 latest = latestVersion,
                 skipped = skippedVersion,
                 hasUpdate,
-                detail,
+                detail = SensitiveDataRedactor.Redact(detail),
             };
             lock (_gate)
                 File.AppendAllText(_file, JsonSerializer.Serialize(record) + Environment.NewLine);

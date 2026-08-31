@@ -34,7 +34,19 @@ public sealed class AppSettings
     public bool Step4ReminderIgnored { get; set; }
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }
-    public string LastMainSection { get; set; } = "accounts";
+    public DateTimeOffset? RemindAfter { get; set; }
+    public UpdateChannel UpdateChannel { get; set; } = UpdateChannel.Stable;
+    public DateTimeOffset? LastUpdateCheckAt { get; set; }
+    public string? LastUpdateFailure { get; set; }
+    public string? LastSuccessfulUpdateFrom { get; set; }
+    public string? LastSuccessfulUpdateTo { get; set; }
+    public DateTimeOffset? LastSuccessfulUpdateAt { get; set; }
+    public bool EnableWindowsNotifications { get; set; } = true;
+    public bool NotifyRegionSwitch { get; set; } = true;
+    public bool NotifyDrops { get; set; } = true;
+    public bool NotifyUpdates { get; set; } = true;
+    public bool NotifyAnnouncements { get; set; } = true;
+    public string LastMainSection { get; set; } = "overview";
     public Dictionary<string, AccountPreference> AccountPreferences { get; set; } = new();
 
     public static string FilePath

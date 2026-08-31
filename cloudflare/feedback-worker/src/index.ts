@@ -24,6 +24,7 @@ interface GitHubAsset {
   name: string;
   size: number;
   browser_download_url: string;
+  digest?: string | null;
 }
 
 interface GitHubIssue {
@@ -60,6 +61,7 @@ const ANNOUNCEMENT_CACHE_KEY = "https://cloudlight.internal-cache/v1/announcemen
 const UPDATE_CACHE_KEY = "https://cloudlight.internal-cache/v1/update/latest";
 const UPDATE_CACHE_TTL_SECONDS = 15 * 60;
 const UPDATE_REPOSITORY_API = "https://api.github.com/repos/Cloud-Light125/CloudLight-Blizzard/releases/latest";
+const UPDATE_RELEASES_API = "https://api.github.com/repos/Cloud-Light125/CloudLight-Blizzard/releases?per_page=20";
 const GITHUB_API_VERSION = "2026-03-10";
 
 export default {
@@ -67,8 +69,11 @@ export default {
     const path = new URL(request.url).pathname;
     if (request.method === "GET" && path === "/v1/announcements")
       return handleAnnouncements(env);
-    if (request.method === "GET" && path === "/v1/update/latest")
-      return handleLatestUpdate(env);
+    if (request.method === "GET" && path === "/v1/update/latest") {
+      const channel = new URL(request.url).searchParams.get("channel")?.toLowerCase() === "beta"
+        ? "beta" : "stable";
+      return handleLatestUpdate(env, channel);
+    }
     if (request.method === "POST" && path === "/v1/feedback")
       return handleFeedback(request, env);
     return json({ error: "not_found" }, 404);
@@ -98,9 +103,10 @@ export async function handleAnnouncements(env: Env): Promise<Response> {
   }
 }
 
-export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">): Promise<Response> {
+export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">,
+  channel: "stable" | "beta" = "stable"): Promise<Response> {
   const cache = await caches.open("cloudlight-update");
-  const cacheKey = new Request(UPDATE_CACHE_KEY);
+  const cacheKey = new Request(`${UPDATE_CACHE_KEY}?channel=${channel}`);
   const cached = await cache.match(cacheKey);
   if (cached) return new Response(cached.body, cached);
 
@@ -113,7 +119,7 @@ export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">): Promi
     };
     const token = env?.GITHUB_TOKEN?.trim();
     if (token) headers.Authorization = `Bearer ${token}`;
-    upstream = await fetch(UPDATE_REPOSITORY_API, {
+    upstream = await fetch(channel === "beta" ? UPDATE_RELEASES_API : UPDATE_REPOSITORY_API, {
       headers,
       signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
     });
@@ -137,14 +143,24 @@ export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">): Promi
   }
 
   let release: GitHubRelease;
-  try { release = await upstream.json<GitHubRelease>(); }
+  try {
+    const body = await upstream.json<GitHubRelease | GitHubRelease[]>();
+    if (Array.isArray(body)) {
+      release = body.find(item => item.draft !== true && item.prerelease === true) ??
+        body.find(item => item.draft !== true)!;
+    } else {
+      release = body;
+    }
+  }
   catch { return updateError("invalid_response", 502); }
-  if (!isPublicRelease(release)) return updateError("invalid_response", 502);
+  if (!release || !isPublicRelease(release, channel)) return updateError("invalid_response", 502);
+
+  const releaseVersion = release.tag_name.replace(/^v/i, "");
 
   const payload = {
     ok: true,
-    version: release.tag_name.replace(/^v/i, ""),
-    latestVersion: release.tag_name.replace(/^v/i, ""),
+    version: releaseVersion,
+    latestVersion: releaseVersion,
     tag: release.tag_name,
     tagName: release.tag_name,
     name: release.name ?? release.tag_name,
@@ -152,11 +168,12 @@ export async function handleLatestUpdate(env?: Pick<Env, "GITHUB_TOKEN">): Promi
     publishedAt: release.published_at ?? null,
     htmlUrl: release.html_url,
     assets: (release.assets ?? [])
-      .filter(asset => asset.name === `CloudLight-Blizzard-${release.tag_name.replace(/^v/i, "")}-win-x64-Setup.exe`)
+      .filter(asset => asset.name === `CloudLight-Blizzard-${releaseVersion}-win-x64-Setup.exe`)
       .map(asset => ({
-      name: asset.name,
-      downloadUrl: asset.browser_download_url,
-      size: asset.size,
+        name: asset.name,
+        downloadUrl: asset.browser_download_url,
+        size: asset.size,
+        digest: isValidSha256Digest(asset.digest) ? asset.digest : null,
       })),
   };
   const response = Response.json(payload, {
@@ -463,17 +480,24 @@ async function isZip(file: File): Promise<boolean> {
      (signature[2] === 0x07 && signature[3] === 0x08));
 }
 
-function isPublicRelease(value: unknown): value is GitHubRelease {
+function isPublicRelease(value: unknown, channel: "stable" | "beta" = "stable"): value is GitHubRelease {
   if (!value || typeof value !== "object") return false;
   const release = value as Partial<GitHubRelease>;
-  return typeof release.tag_name === "string" && /^v?\d+\.\d+(?:\.\d+){0,2}$/.test(release.tag_name) &&
+  const tag = release.tag_name ?? "";
+  const prereleaseTag = /-/.test(tag);
+  return typeof release.tag_name === "string" && /^v?\d+\.\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/.test(tag) &&
     typeof release.html_url === "string" &&
     release.html_url.startsWith("https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/") &&
-    release.draft !== true && release.prerelease !== true && Array.isArray(release.assets) &&
+    release.draft !== true && (channel === "beta" || (release.prerelease !== true && !prereleaseTag)) &&
+    Array.isArray(release.assets) &&
     release.assets.every(asset => typeof asset.name === "string" && typeof asset.size === "number" &&
       typeof asset.browser_download_url === "string" &&
       asset.browser_download_url.startsWith(
         "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/"));
+}
+
+function isValidSha256Digest(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/i.test(value.trim());
 }
 
 async function githubMessage(response: Response): Promise<string> {

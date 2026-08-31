@@ -36,7 +36,13 @@ public partial class UpdateDialog : Window
             ? Visibility.Collapsed : Visibility.Visible;
         ReleaseNotesText.Text = result.ReleaseNotes;
         OpenReleaseButton.IsEnabled = !string.IsNullOrWhiteSpace(result.ReleaseUrl);
-        OnlineUpdateButton.IsEnabled = !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl);
+        var canOnlineUpdate = CanDownloadInstaller(result);
+        OnlineUpdateButton.IsEnabled = canOnlineUpdate;
+        if (!string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) && !canOnlineUpdate)
+        {
+            InstallerValidationText.Text = "在线安装已禁用：更新服务未提供有效 SHA-256 摘要，请打开 Release 页面手动核对。";
+            InstallerValidationText.Visibility = Visibility.Visible;
+        }
     }
 
     public UpdateDialogAction Action { get; private set; } = UpdateDialogAction.Later;
@@ -63,7 +69,7 @@ public partial class UpdateDialog : Window
 
     private async void OnOnlineUpdate(object sender, RoutedEventArgs e)
     {
-        if (_isUpdateRunning || string.IsNullOrWhiteSpace(_result.InstallerDownloadUrl)) return;
+        if (_isUpdateRunning || !CanDownloadInstaller(_result)) return;
 
         var cts = new CancellationTokenSource();
         _updateCts = cts;
@@ -107,6 +113,13 @@ public partial class UpdateDialog : Window
 
     private void RenderDownloadProgress(UpdateDownloadProgress value)
     {
+        if (value.Phase == UpdateDownloadPhase.WaitingRetry)
+        {
+            DownloadProgressBar.IsIndeterminate = true;
+            var delay = value.RetryDelay is { } retry ? $"{Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds))} 秒后" : "稍后";
+            DownloadProgressText.Text = $"下载中断，{delay}重试（{value.RetryAttempt}/{value.MaxRetries}）";
+            return;
+        }
         if (value.Phase == UpdateDownloadPhase.Verifying)
         {
             DownloadProgressBar.IsIndeterminate = false;
@@ -140,9 +153,19 @@ public partial class UpdateDialog : Window
         CloseButton.IsEnabled = !value;
         SkipVersionBox.IsEnabled = !value;
         OpenReleaseButton.IsEnabled = !value && !string.IsNullOrWhiteSpace(_result.ReleaseUrl);
-        OnlineUpdateButton.IsEnabled = !value && !string.IsNullOrWhiteSpace(_result.InstallerDownloadUrl);
+        OnlineUpdateButton.IsEnabled = !value && CanDownloadInstaller(_result);
+        CancelDownloadButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+        CancelDownloadButton.IsEnabled = value;
         if (value) OnlineUpdateButton.Content = "正在下载…";
         else OnlineUpdateButton.Content = "在线更新";
+    }
+
+    private void OnCancelDownload(object sender, RoutedEventArgs e)
+    {
+        if (!_isUpdateRunning) return;
+        DownloadProgressText.Text = "正在取消下载，已保留可安全续传的断点…";
+        CancelDownloadButton.IsEnabled = false;
+        _updateCts?.Cancel();
     }
 
     private void OnLater(object sender, RoutedEventArgs e)
@@ -169,4 +192,8 @@ public partial class UpdateDialog : Window
             _updateCts?.Cancel();
         base.OnClosed(e);
     }
+
+    private static bool CanDownloadInstaller(UpdateCheckResult result) =>
+        !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) &&
+        UpdateService.IsValidSha256Digest(result.InstallerDigest);
 }
