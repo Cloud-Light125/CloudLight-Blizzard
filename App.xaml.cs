@@ -42,6 +42,15 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length >= 2 && e.Args[0] == "--ui-selftest")
+        {
+            IsHeadlessSelfTest = true;
+            base.OnStartup(e);
+            var exitCode = UiVisualTreeSelfTest.Run(e.Args[1]);
+            Shutdown(exitCode);
+            return;
+        }
+
         // 无界面自检:读一遍账号库并把结果写到 selftest.txt,然后退出。用于验证数据层 / 排错。
         if (e.Args.Contains("--selftest"))
         {

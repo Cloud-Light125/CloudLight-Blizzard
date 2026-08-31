@@ -165,6 +165,74 @@ public sealed class DropsPlatformViewModel : ObservableObject
     public Visibility StartVisibility => Running ? Visibility.Collapsed : Visibility.Visible;
     public Visibility StopVisibility => Running ? Visibility.Visible : Visibility.Collapsed;
 
+    private DropsConnectionState _connectionState = DropsConnectionState.Disconnected;
+    public DropsConnectionState ConnectionState
+    {
+        get => _connectionState;
+        internal set
+        {
+            if (_connectionState == value) return;
+            Set(ref _connectionState, value);
+            Raise(nameof(ConnectionStateText));
+            Raise(nameof(RecoveryStageText));
+        }
+    }
+    public string ConnectionStateText => ConnectionState switch
+    {
+        DropsConnectionState.Connected => "已连接",
+        DropsConnectionState.Connecting => "连接中",
+        DropsConnectionState.Degraded => "连接质量下降",
+        DropsConnectionState.WaitingRetry => "等待重试",
+        DropsConnectionState.Recovering => "恢复中",
+        DropsConnectionState.Failed => "失败",
+        DropsConnectionState.Stopped => "已停止",
+        _ => "未连接",
+    };
+    public string RecoveryStageText => ConnectionState switch
+    {
+        DropsConnectionState.Connecting => "正在建立连接",
+        DropsConnectionState.Connected => "连接正常 · 自动恢复已完成",
+        DropsConnectionState.Degraded => "连接质量下降 · 后台仍在监控",
+        DropsConnectionState.WaitingRetry => NextRetryText == "—" ? "正在等待下次重试" : $"正在等待重试 · {NextRetryText}",
+        DropsConnectionState.Recovering => "正在重新连接并验证登录状态",
+        DropsConnectionState.Failed => "恢复流程失败 · 可以立即重试",
+        DropsConnectionState.Stopped => "Worker 已停止",
+        _ => "尚未建立连接",
+    };
+
+    private DateTimeOffset? _lastHeartbeatAt;
+    public DateTimeOffset? LastHeartbeatAt { get => _lastHeartbeatAt; internal set => Set(ref _lastHeartbeatAt, value); }
+    private string _lastHeartbeatText = "—";
+    public string LastHeartbeatText { get => _lastHeartbeatText; internal set => Set(ref _lastHeartbeatText, value); }
+    private DateTimeOffset? _lastProgressAt;
+    public DateTimeOffset? LastProgressAt { get => _lastProgressAt; internal set => Set(ref _lastProgressAt, value); }
+    private string _lastProgressText = "—";
+    public string LastProgressText { get => _lastProgressText; internal set => Set(ref _lastProgressText, value); }
+    private DateTimeOffset? _lastReconnectAt;
+    public DateTimeOffset? LastReconnectAt { get => _lastReconnectAt; internal set => Set(ref _lastReconnectAt, value); }
+    private string _lastReconnectText = "—";
+    public string LastReconnectText { get => _lastReconnectText; internal set => Set(ref _lastReconnectText, value); }
+    private DateTimeOffset? _nextRetryAt;
+    public DateTimeOffset? NextRetryAt { get => _nextRetryAt; internal set => Set(ref _nextRetryAt, value); }
+    private string _nextRetryText = "—";
+    public string NextRetryText
+    {
+        get => _nextRetryText;
+        internal set
+        {
+            Set(ref _nextRetryText, value);
+            Raise(nameof(RecoveryStageText));
+        }
+    }
+    private int _consecutiveFailures;
+    public int ConsecutiveFailures { get => _consecutiveFailures; internal set => Set(ref _consecutiveFailures, Math.Max(0, value)); }
+    private int _reconnectCount;
+    public int ReconnectCount { get => _reconnectCount; internal set => Set(ref _reconnectCount, Math.Max(0, value)); }
+    private WorkerLifecycle _workerLifecycle = WorkerLifecycle.Stopped;
+    public WorkerLifecycle WorkerLifecycle { get => _workerLifecycle; internal set => Set(ref _workerLifecycle, value); }
+    private string _workerHealth = "未运行";
+    public string WorkerHealth { get => _workerHealth; internal set => Set(ref _workerHealth, value); }
+
     public DropsPlatformViewModel(DropsPlatform platform, string name) { Platform = platform; Name = name; }
 }
 
@@ -189,6 +257,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public ObservableCollection<DropsRow> Inventory { get; } = new();
     public ObservableCollection<DropsRow> Channels { get; } = new();
     public ObservableCollection<DropsRow> History { get; } = new();
+    public ObservableCollection<DropsRecoveryEvent> RecoveryEvents { get; } = new();
     public ObservableCollection<SoopProgressRow> SoopCurrentProgress { get; } = new();
     public ObservableCollection<string> TwitchAvailableGames { get; } = new();
     public ObservableCollection<string> TwitchPriorityChoices { get; } = new();
@@ -484,6 +553,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         SoopLastSuccessText = _lastSoopSuccessfulAt.HasValue ? LastSuccessText(_lastSoopSuccessfulAt, now) : "";
         TwitchLastSuccessText = _lastTwitchConnectedAt.HasValue ? LastSuccessText(_lastTwitchConnectedAt, now) : "";
         YouTubeLastSuccessText = _lastYouTubeSuccessfulAt.HasValue ? LastSuccessText(_lastYouTubeSuccessfulAt, now) : "";
+        RefreshRecoveryProjection(DropsPlatform.Soop, now);
+        RefreshRecoveryProjection(DropsPlatform.YouTube, now);
+        RefreshRecoveryProjection(DropsPlatform.Twitch, now);
     }
 
     public bool RetrySoopNow()
@@ -520,7 +592,101 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             LastSuccessText(_lastSoopSuccessfulAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
             LastSuccessText(_lastTwitchConnectedAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
             LastSuccessText(_lastYouTubeSuccessfulAt, now).Replace("最后成功：", "", StringComparison.Ordinal),
-            recentError);
+            recentError)
+        {
+            Platforms = Platforms.Select(platform => new DropsPlatformRecoveryDiagnostic(
+                platform.Name, platform.ConnectionState, platform.LastHeartbeatAt,
+                platform.LastProgressAt, platform.LastReconnectAt, platform.NextRetryAt,
+                platform.ConsecutiveFailures, platform.ReconnectCount, platform.WorkerHealth)).ToArray(),
+            RecentEvents = RecoveryEvents.ToArray(),
+        };
+    }
+
+    private void RefreshRecoveryProjection(DropsPlatform platform, DateTimeOffset now)
+    {
+        var vm = For(platform);
+        var state = platform switch
+        {
+            DropsPlatform.Soop when _soopNextRetryAt.HasValue => DropsConnectionState.WaitingRetry,
+            DropsPlatform.Soop when vm.WorkerLifecycle == WorkerLifecycle.Crashed => DropsConnectionState.Failed,
+            DropsPlatform.Soop when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
+            DropsPlatform.Soop when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
+            DropsPlatform.Soop when _soopRetryBlocked => DropsConnectionState.Failed,
+            DropsPlatform.Soop when vm.Running => DropsConnectionState.Connected,
+            DropsPlatform.Soop when _soopConnectionIntent => DropsConnectionState.Recovering,
+            DropsPlatform.Twitch when _twitchNextRetryAt.HasValue => DropsConnectionState.WaitingRetry,
+            DropsPlatform.Twitch when _twitchConnectionStage is TwitchConnectionStage.AuthenticationExpired or
+                TwitchConnectionStage.NetworkFailed or TwitchConnectionStage.ProxyUnavailable or
+                TwitchConnectionStage.SslCertificateError or TwitchConnectionStage.SslRuntimeError or
+                TwitchConnectionStage.WorkerError => DropsConnectionState.Failed,
+            DropsPlatform.Twitch when _twitchConnectionStage == TwitchConnectionStage.RetryWaiting => DropsConnectionState.WaitingRetry,
+            DropsPlatform.Twitch when _twitchConnectionStage == TwitchConnectionStage.Reconnecting => DropsConnectionState.Recovering,
+            DropsPlatform.Twitch when _twitchConnectionStage == TwitchConnectionStage.Slow => DropsConnectionState.Degraded,
+            DropsPlatform.Twitch when _twitchConnectionStage is TwitchConnectionStage.WorkerStarting or
+                TwitchConnectionStage.Connecting or TwitchConnectionStage.CheckingSession or
+                TwitchConnectionStage.RestoringSession or TwitchConnectionStage.RequestingAuthorization or
+                TwitchConnectionStage.LoadingCampaigns or TwitchConnectionStage.LoadingChannels or
+                TwitchConnectionStage.ConnectingRealtime => DropsConnectionState.Connecting,
+            DropsPlatform.Twitch when _twitchConnectionStage == TwitchConnectionStage.Stopped => DropsConnectionState.Stopped,
+            DropsPlatform.Twitch when _twitchConnectionStage is TwitchConnectionStage.Connected or
+                TwitchConnectionStage.Running or TwitchConnectionStage.LoginSucceeded => DropsConnectionState.Connected,
+            DropsPlatform.Twitch when _twitchConnectionIntent => DropsConnectionState.Connecting,
+            DropsPlatform.YouTube when vm.Running => DropsConnectionState.Connected,
+            DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Crashed => DropsConnectionState.Failed,
+            DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
+            DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
+            DropsPlatform.YouTube => DropsConnectionState.Disconnected,
+            _ => DropsConnectionState.Disconnected,
+        };
+        var previous = vm.ConnectionState;
+        vm.ConnectionState = state;
+        vm.NextRetryAt = platform == DropsPlatform.Soop ? _soopNextRetryAt :
+            platform == DropsPlatform.Twitch ? _twitchNextRetryAt : null;
+        vm.NextRetryText = vm.NextRetryAt is { } retry
+            ? $"{Math.Max(0, (int)Math.Ceiling((retry - now).TotalSeconds))} 秒后重试"
+            : "—";
+        vm.LastHeartbeatText = RelativeTime(vm.LastHeartbeatAt, now);
+        vm.LastProgressText = RelativeTime(vm.LastProgressAt, now);
+        vm.LastReconnectText = RelativeTime(vm.LastReconnectAt, now);
+        if (previous != state && (state is DropsConnectionState.Connected or DropsConnectionState.Failed or
+            DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering))
+            AddRecoveryEvent(platform, StateEventTitle(state), vm.Summary, state);
+    }
+
+    private static string StateEventTitle(DropsConnectionState state) => state switch
+    {
+        DropsConnectionState.Connected => "连接恢复",
+        DropsConnectionState.WaitingRetry => "等待重试",
+        DropsConnectionState.Recovering => "正在恢复连接",
+        DropsConnectionState.Failed => "连接失败",
+        _ => "状态变化",
+    };
+
+    private static string RelativeTime(DateTimeOffset? timestamp, DateTimeOffset now)
+    {
+        if (timestamp is null) return "—";
+        var seconds = Math.Max(0, (now - timestamp.Value).TotalSeconds);
+        return seconds < 10 ? "刚刚" : seconds < 60 ? $"{Math.Max(1, (int)seconds)} 秒前" :
+            seconds < 3600 ? $"{Math.Max(1, (int)(seconds / 60))} 分钟前" :
+            timestamp.Value.ToLocalTime().ToString("MM-dd HH:mm");
+    }
+
+    private void TouchHeartbeat(DropsPlatform platform, bool progress = false)
+    {
+        var now = DateTimeOffset.Now;
+        var vm = For(platform);
+        vm.LastHeartbeatAt = now;
+        if (progress) vm.LastProgressAt = now;
+        RefreshRecoveryProjection(platform, now);
+    }
+
+    private void AddRecoveryEvent(DropsPlatform platform, string title, string detail,
+        DropsConnectionState state)
+    {
+        RecoveryEvents.Insert(0, new DropsRecoveryEvent(DateTimeOffset.Now, platform, title,
+            SensitiveDataRedactor.Redact(detail), state));
+        DropsRecoveryLog.Write(platform, title, detail, state);
+        while (RecoveryEvents.Count > 10) RecoveryEvents.RemoveAt(RecoveryEvents.Count - 1);
     }
 
     private static string LastSuccessText(DateTimeOffset? timestamp, DateTimeOffset now)
@@ -618,6 +784,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 break;
             default:
                 _soopRetryBlocked = false;
+                Soop.ConsecutiveFailures++;
                 _soopRefreshPending |= refreshPending;
                 RecordRecentNetworkError(FriendlySoopFailure(kind, message));
                 Soop.Running = false;
@@ -834,6 +1001,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _soopRetryBlocked = false;
         _soopRefreshPending = false;
         Soop.Running = true;
+        Soop.ConsecutiveFailures = 0;
+        if (hadRetries)
+        {
+            Soop.LastReconnectAt = DateTimeOffset.Now;
+            Soop.ReconnectCount++;
+        }
         CompleteSoopRefresh();
         Soop.Status = "SOOP 网络连接已恢复";
         Soop.Summary = "账号和掉宝频道已重新加载";
@@ -884,6 +1057,27 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public Task<JsonElement> StartAsync(DropsPlatform platform) => _host.StartAsync(platform);
     public Task<JsonElement> StopAsync(DropsPlatform platform) => _host.StopAsync(platform);
+    public async Task RestartWorkerAsync(DropsPlatform platform, CancellationToken token = default)
+    {
+        var vm = For(platform);
+        vm.ConnectionState = DropsConnectionState.Recovering;
+        vm.WorkerHealth = "重启中";
+        AddRecoveryEvent(platform, "重启 Drops Worker", "正在重启 CloudLight Blizzard 自己启动的后台服务。",
+            DropsConnectionState.Recovering);
+        try
+        {
+            await _host.RestartAsync(platform, token).ConfigureAwait(false);
+            TouchHeartbeat(platform);
+            AddRecoveryEvent(platform, "Worker 已恢复", "后台服务已重新建立连接。", DropsConnectionState.Connected);
+        }
+        catch (Exception ex)
+        {
+            vm.ConnectionState = DropsConnectionState.Failed;
+            vm.WorkerHealth = "异常";
+            AddRecoveryEvent(platform, "Worker 重启失败", ex.Message, DropsConnectionState.Failed);
+            throw;
+        }
+    }
     public Task<JsonElement> ClearTwitchAuthenticationAsync(CancellationToken token = default) =>
         _host.ClearTwitchAuthenticationAsync(token);
 
@@ -1068,6 +1262,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchLastFailureKind = kind;
         _twitchLastError = message;
         _twitchRetryBlocked = !retryable;
+        Twitch.ConsecutiveFailures++;
         if (retryable) RecordRecentNetworkError(message);
         Raise(nameof(TwitchLastConnectionFailureKind));
         Raise(nameof(TwitchLastError));
@@ -1223,9 +1418,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void SetTwitchStage(TwitchConnectionStage stage, string status, string summary,
         bool monitor = false)
     {
-        _twitchStageMonitorCts?.Cancel();
-        _twitchStageMonitorCts?.Dispose();
+        var previousState = Twitch.ConnectionState;
+        var previousMonitor = _twitchStageMonitorCts;
         _twitchStageMonitorCts = null;
+        previousMonitor?.Cancel();
         _twitchConnectionStage = stage;
         _twitchStageStartedAt = DateTimeOffset.Now;
         var revision = ++_twitchStageRevision;
@@ -1247,6 +1443,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             _lastTwitchConnectedAt = DateTimeOffset.Now;
             RefreshTemporalStatus(DateTimeOffset.Now);
             ClearTwitchFailure();
+            Twitch.ConsecutiveFailures = 0;
+            if (previousState is DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering)
+            {
+                Twitch.LastReconnectAt = DateTimeOffset.Now;
+                Twitch.ReconnectCount++;
+            }
             Raise(nameof(LastTwitchConnectedAt));
             CancelTwitchRetry();
             if (wasRetrying)
@@ -1266,13 +1468,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
         if (monitor && CanRetryTwitchConnection())
         {
-            _twitchStageMonitorCts = new CancellationTokenSource();
-            _ = MonitorTwitchStageAsync(revision, _twitchStageMonitorCts.Token);
+            var monitorSource = new CancellationTokenSource();
+            _twitchStageMonitorCts = monitorSource;
+            _ = MonitorTwitchStageAsync(revision, monitorSource);
         }
+        RefreshRecoveryProjection(DropsPlatform.Twitch, DateTimeOffset.Now);
     }
 
-    private async Task MonitorTwitchStageAsync(long revision, CancellationToken token)
+    private async Task MonitorTwitchStageAsync(long revision, CancellationTokenSource owner)
     {
+        var token = owner.Token;
         try
         {
             await Task.Delay(_twitchSlowThreshold, token).ConfigureAwait(false);
@@ -1303,6 +1508,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             });
         }
         catch (OperationCanceledException) { }
+        finally
+        {
+            if (ReferenceEquals(_twitchStageMonitorCts, owner)) _twitchStageMonitorCts = null;
+            owner.Dispose();
+        }
     }
 
     private bool CanRetryTwitchConnection()
@@ -1446,9 +1656,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void CancelTwitchRetry()
     {
-        _twitchStageMonitorCts?.Cancel();
-        _twitchStageMonitorCts?.Dispose();
+        var monitor = _twitchStageMonitorCts;
         _twitchStageMonitorCts = null;
+        monitor?.Cancel();
         lock (_twitchRetrySync) _twitchRetryCts?.Cancel();
         Dispatch(() => SetTwitchRetryDeadline(null));
     }
@@ -1985,6 +2195,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void OnSnapshotChanged(object? sender, WorkerSnapshot snapshot) => Dispatch(() =>
     {
         var vm = For(snapshot.Platform);
+        var previousState = vm.ConnectionState;
+        vm.WorkerLifecycle = snapshot.Lifecycle;
+        vm.WorkerHealth = snapshot.Lifecycle switch
+        {
+            WorkerLifecycle.Running => "正常",
+            WorkerLifecycle.Starting => "启动中",
+            WorkerLifecycle.Stopping => "停止中",
+            WorkerLifecycle.Crashed => "异常",
+            _ => "未运行",
+        };
+        TouchHeartbeat(snapshot.Platform);
         if (snapshot.Lifecycle == WorkerLifecycle.Crashed)
         {
             vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "Twitch 连接中断" : "运行异常";
@@ -2000,10 +2221,23 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 !_twitchUserStopped && !_twitchUserLoggedOut && _twitchConnectionIntent)
                 ScheduleTwitchRetry(showWaiting: true);
         }
+        RefreshRecoveryProjection(snapshot.Platform, DateTimeOffset.Now);
+        if (previousState is DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering &&
+            vm.ConnectionState == DropsConnectionState.Connected)
+        {
+            vm.LastReconnectAt = DateTimeOffset.Now;
+            vm.ReconnectCount++;
+        }
     });
 
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
+        var progressEvent = message.Name is "progress" or "watch_time" or "account_status" or
+            "current_channel" or "reward" or "games";
+        TouchHeartbeat(message.Platform, progressEvent);
+        if (message.Name is "connection_recovered" or "reconnected" or "recovery_succeeded")
+            AddRecoveryEvent(message.Platform, "连接恢复", Text(message.Payload, "message", "连接已恢复"),
+                DropsConnectionState.Connected);
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
         {
             AddSoopProgressRows(message.Payload, replaceAccount: true);
@@ -2123,6 +2357,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             YouTube.Status = "正在观看";
             YouTube.Summary = $"{_youtubeCurrentLabel} · 已观看 {FormatSeconds(Number(message.Payload, "seconds"))}";
         }
+        RefreshRecoveryProjection(message.Platform, DateTimeOffset.Now);
     });
 
     private DropsPlatformViewModel For(DropsPlatform platform) => platform switch

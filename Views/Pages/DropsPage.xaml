@@ -18,6 +18,17 @@
             <Setter Property="Margin" Value="0,6,0,0"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
+        <Style x:Key="RecoveryStateText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource Text.Muted}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="Connected"><Setter Property="Foreground" Value="{DynamicResource Status.Success}"/></DataTrigger>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="Connecting"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="Recovering"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="Degraded"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="WaitingRetry"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                <DataTrigger Binding="{Binding ConnectionState}" Value="Failed"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="HintTextBox" TargetType="TextBox" BasedOn="{StaticResource InputBox}">
             <Setter Property="Padding" Value="9,0"/>
             <Setter Property="Template">
@@ -148,7 +159,7 @@
                     <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
                 </Border>
                 <StackPanel Grid.Column="3" VerticalAlignment="Center">
-                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}" Height="5"
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Height="5"
                                  Background="{DynamicResource App.SurfaceElevated}"
                                  Foreground="{DynamicResource Accent.Primary}"/>
                     <TextBlock Text="{Binding Detail}" ToolTip="{Binding Detail}"
@@ -235,12 +246,12 @@
                     </Border>
                 </Grid>
                 <TextBlock Grid.Row="1" Margin="0,5,0,0" TextTrimming="CharacterEllipsis">
-                    <Run Text="当前奖励："/><Run Text="{Binding Reward}"/>
+                    <Run Text="当前奖励："/><Run Text="{Binding Reward, Mode=OneWay}"/>
                 </TextBlock>
                 <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextTrimming="CharacterEllipsis">
-                    <Run Text="账号："/><Run Text="{Binding Account}"/><Run Text="　直播间："/><Run Text="{Binding Channel}"/>
+                    <Run Text="账号："/><Run Text="{Binding Account, Mode=OneWay}"/><Run Text="　直播间："/><Run Text="{Binding Channel, Mode=OneWay}"/>
                 </TextBlock>
-                <ProgressBar Grid.Row="3" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                <ProgressBar Grid.Row="3" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
                              Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0"/>
             </Grid>
         </DataTemplate>
@@ -314,6 +325,91 @@
                     </StackPanel>
                 </Border>
             </UniformGrid>
+
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock Text="自愈状态" Style="{StaticResource SectionTitle}" />
+                        <TextBlock DockPanel.Dock="Right" Text="自动重试不会终止现有恢复流程"
+                                   Foreground="{DynamicResource Text.Muted}" FontSize="11"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Platforms}" Margin="0,10,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                                        Padding="12,10" Margin="0,0,8,0">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ConnectionStateText}"
+                                                       Style="{StaticResource RecoveryStateText}" />
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding RecoveryStageText}" Foreground="{DynamicResource Text.Secondary}"
+                                                   Margin="0,5,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding WorkerHealth, StringFormat=Worker：{0}}"
+                                                   Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0" />
+                                        <TextBlock Text="{Binding LastHeartbeatText, StringFormat=最近心跳：{0}}"
+                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,0,0" />
+                                        <TextBlock Text="{Binding LastProgressText, StringFormat=最近进度：{0}}"
+                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
+                                        <TextBlock Text="{Binding LastReconnectText, StringFormat=最近重连：{0}}"
+                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
+                                        <TextBlock Text="{Binding ConsecutiveFailures, StringFormat=连续失败：{0}}"
+                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
+                                        <TextBlock Text="{Binding ReconnectCount, StringFormat=自动重连：{0} 次}"
+                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
+                                        <TextBlock Text="{Binding NextRetryText, StringFormat=下次重试：{0}}"
+                                                   Foreground="{DynamicResource Status.Warning}" FontSize="11" Margin="0,3,0,0" />
+                                        <Button Content="重启 Worker" Tag="{Binding Platform}"
+                                                Style="{StaticResource SecondaryButton}" Padding="10,0"
+                                                HorizontalAlignment="Left" Margin="0,8,0,0"
+                                                Click="OnRestartWorker" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <DockPanel Margin="0,12,0,0">
+                        <TextBlock Text="最近事件" Style="{StaticResource SectionTitle}" />
+                        <TextBlock DockPanel.Dock="Right" Text="最多保留 10 条"
+                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" />
+                    </DockPanel>
+                    <ListBox ItemsSource="{Binding RecoveryEvents}" MaxHeight="150" Margin="0,8,0,0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="62" /><ColumnDefinition Width="74" />
+                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource Text.Muted}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding PlatformText}" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Accent.Primary}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Detail}" Foreground="{DynamicResource Text.Secondary}"
+                                               Margin="10,0,0,0" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="暂无恢复事件。网络中断、重试与恢复过程会显示在这里。"
+                               Foreground="{DynamicResource Text.Muted}" Margin="4,8,0,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RecoveryEvents.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
 
             <StackPanel Orientation="Horizontal" Margin="0,20,0,12">
                 <RadioButton x:Name="SoopTab" Content="SOOP" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged"/>

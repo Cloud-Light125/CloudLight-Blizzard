@@ -44,6 +44,29 @@ public sealed class OverwatchRegionBackupStore
         Path.Combine(GenerationRoot(id), region == OverwatchRegion.China
             ? "china-reference-manifest.json" : "international-reference-manifest.json");
     public string GenerationFile(string id) => Path.Combine(GenerationRoot(id), "pair.json");
+
+    public IReadOnlyList<string> EnumerateGenerationIds() =>
+        Directory.Exists(GenerationsRoot)
+            ? Directory.EnumerateDirectories(GenerationsRoot)
+                .Select(Path.GetFileName)
+                .Where(id => !string.IsNullOrWhiteSpace(id) && IsSafeGenerationId(id!))
+                .Cast<string>().ToList()
+            : Array.Empty<string>();
+
+    public bool DeleteGeneration(string id)
+    {
+        if (!IsSafeGenerationId(id)) throw new InvalidDataException("区服快照标识无效。");
+        var path = GenerationRoot(id);
+        if (!Directory.Exists(path)) return false;
+        if (LoadGeneration(id) is null)
+            throw new InvalidOperationException("指定目录不是 CloudLight Blizzard 管理的区服快照。");
+        Directory.Delete(path, true);
+        return true;
+    }
+
+    public static bool IsSafeGenerationId(string? id) =>
+        !string.IsNullOrWhiteSpace(id) && id.Length <= 80 &&
+        id.All(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_');
     public string BackupRoot(string id, OverwatchRegion region) => Path.Combine(GenerationRoot(id), "backups",
         region == OverwatchRegion.China ? "china" : "international");
     public string BackupFile(string id, OverwatchRegion region, string relative) =>

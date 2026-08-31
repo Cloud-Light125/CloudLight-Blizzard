@@ -47,16 +47,16 @@
                         <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0"
                                     Visibility="{Binding HasRank, Converter={StaticResource BoolToVis}}">
-                                <TextBlock FontSize="11.5"><Run Text="段位 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding RankText}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/></TextBlock>
+                                <TextBlock FontSize="11.5"><Run Text="段位 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding RankText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.AccentSoft}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0">
-                                <TextBlock FontSize="11.5"><Run Text="胜率 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding WinRateText}" FontWeight="Bold" Foreground="{DynamicResource Stats.Accent}"/></TextBlock>
+                                <TextBlock FontSize="11.5"><Run Text="胜率 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding WinRateText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Accent}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0">
-                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding MatchsText}"/></TextBlock>
+                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding MatchsText, Mode=OneWay}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3">
-                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding HoursText}"/></TextBlock>
+                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding HoursText, Mode=OneWay}"/></TextBlock>
                             </Border>
                         </StackPanel>
                     </StackPanel>

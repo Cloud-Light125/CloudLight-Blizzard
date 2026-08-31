@@ -203,8 +203,8 @@
                                         Visibility="{Binding RegionGuide.ShowPreparationWarning, Converter={StaticResource BoolVisibility}}"/>
                         <TextBlock Text="{Binding RegionGuide.ProgressText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <ProgressBar Style="{StaticResource ThemeProgressBar}" Height="9" Minimum="0"
-                                     Maximum="{Binding RegionGuide.ProgressTotal}" Value="{Binding RegionGuide.ProgressCurrent}"
-                                     IsIndeterminate="{Binding RegionGuide.ProgressIndeterminate}"/>
+                                     Maximum="{Binding RegionGuide.ProgressTotal, Mode=OneWay}" Value="{Binding RegionGuide.ProgressCurrent, Mode=OneWay}"
+                                     IsIndeterminate="{Binding RegionGuide.ProgressIndeterminate, Mode=OneWay}"/>
                         <Button Content="取消" IsEnabled="{Binding RegionGuide.CanCancel}"
                                 Visibility="{Binding RegionGuide.CanCancel, Converter={StaticResource BoolVisibility}}"
                                 Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="15,0" Margin="0,13,0,0" Click="OnCancel"/>

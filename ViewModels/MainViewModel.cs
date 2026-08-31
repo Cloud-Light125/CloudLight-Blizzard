@@ -145,6 +145,7 @@ public sealed class MainViewModel : ObservableObject
     public DropsHostService DropsHost { get; } = new();
     public PlatformLogSession DropsLogSession { get; }
     private Func<DropsRuntimeDiagnosticSnapshot>? _dropsDiagnosticSnapshotProvider;
+    public event Action<bool, OverwatchRegion, string>? RegionSwitchCompleted;
 
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
@@ -199,11 +200,29 @@ public sealed class MainViewModel : ObservableObject
     public string AppVersion => "v" + UpdateChecks.CurrentVersion;
     public AppSettings Settings => _settings;
     public bool BattleNetPathValid => !string.IsNullOrWhiteSpace(_paths.ClientExe) && File.Exists(_paths.ClientExe);
+    public BattleNetPaths BattleNetDataPaths => _paths;
     public bool OverwatchPathValid => _regionPageStatus.GamePathValid;
     public string RegionBackupRoot => _regionManager.BackupRoot;
+    public RegionSnapshotStatus RegionStatusSnapshot => _regionPageStatus;
+    internal OverwatchRegionManager RegionManager => _regionManager;
     public bool IsVerifiedDifferenceMode => _settings.RegionBackupMode == RegionBackupMode.VerifiedDifference;
     public bool IsFullSnapshotMode => _settings.RegionBackupMode == RegionBackupMode.FullSnapshot;
     public bool HasPendingRegionPreparation => _regionPageStatus.State == RegionBackupState.Preparing;
+
+    public static string RegionDisplayName(CurrentGameRegion? region) => region switch
+    {
+        CurrentGameRegion.China => "国服",
+        CurrentGameRegion.International => "国际服",
+        CurrentGameRegion.Mixed => "混合/未完成",
+        _ => "无法确认",
+    };
+
+    public static string RegionDisplayName(OverwatchRegion? region) => region switch
+    {
+        OverwatchRegion.China => "国服",
+        OverwatchRegion.International => "国际服",
+        _ => "无法确认",
+    };
 
     internal void SetDropsDiagnosticSnapshotProvider(Func<DropsRuntimeDiagnosticSnapshot>? provider) =>
         _dropsDiagnosticSnapshotProvider = provider;
@@ -211,6 +230,17 @@ public sealed class MainViewModel : ObservableObject
     public DropsRuntimeDiagnosticSnapshot GetDropsDiagnosticSnapshot() =>
         _dropsDiagnosticSnapshotProvider?.Invoke() ?? new DropsRuntimeDiagnosticSnapshot(
             "未初始化", "未初始化", "未初始化", "无", "无", "无", "无");
+
+    internal void RecordSuccessfulUpdate(UpdateCheckResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        _settings.LastSuccessfulUpdateFrom = result.CurrentVersion;
+        _settings.LastSuccessfulUpdateTo = result.LatestVersion;
+        _settings.LastSuccessfulUpdateAt = DateTimeOffset.Now;
+        _settings.LastUpdateFailure = null;
+        _settings.Save();
+        UpdateDownloader.MarkCompleted();
+    }
 
     private string _gameRegionTitle = "当前文件：尚未识别";
     public string GameRegionTitle { get => _gameRegionTitle; set => Set(ref _gameRegionTitle, value); }
@@ -241,9 +271,16 @@ public sealed class MainViewModel : ObservableObject
     private RegionProgress? _regionOperationProgress;
     private OverwatchRegion? _regionOperationSource;
     private CancellationTokenSource? _regionOperationCancellation;
+    private CancellationTokenSource? _switchPlanCancellation;
     private bool _regionRestartRequested;
     private string _regionOperationNotice = "";
     private string _regionOperationError = "";
+    private SwitchPlan? _pendingSwitchPlan;
+    public SwitchPlan? PendingSwitchPlan
+    {
+        get => _pendingSwitchPlan;
+        private set => Set(ref _pendingSwitchPlan, value);
+    }
     public bool IsRegionOperationBusy => _regionOperationPhase != RegionOperationPhase.None;
     private RegionFileCheckResult? _regionFileCheck;
     public RegionFileCheckResult? RegionFileCheck
@@ -1057,14 +1094,14 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public async Task<RegionSnapshotStatus> GetRegionStatusAsync(bool verifyFiles = false,
-        bool verifyBackupHashes = false)
+        bool verifyBackupHashes = false, bool persistStateChanges = true)
     {
         await _regionStatusGate.WaitAsync();
         try
         {
             return await Task.Run(() => _regionManager.GetStatusAsync(
                 _settings.OverwatchGamePath, verifyFiles: verifyFiles,
-                verifyBackupHashes: verifyBackupHashes));
+                verifyBackupHashes: verifyBackupHashes, persistStateChanges: persistStateChanges));
         }
         finally
         {
@@ -1139,11 +1176,54 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public async Task SwitchGameRegionOnlyAsync(OverwatchRegion target)
+    public async Task<SwitchPlan?> CreateRegionSwitchPlanAsync(OverwatchRegion target)
     {
-        if (Busy || IsRegionOperationBusy ||
-            (target == OverwatchRegion.China && !RegionGuide.CanSwitchChina) ||
-            (target == OverwatchRegion.International && !RegionGuide.CanSwitchInternational)) return;
+        if (Busy || IsRegionOperationBusy || _switchPlanCancellation is not null || !RegionGuide.CanRestore &&
+            (target == OverwatchRegion.China ? !RegionGuide.CanSwitchChina : !RegionGuide.CanSwitchInternational))
+            return null;
+        var cts = new CancellationTokenSource();
+        _switchPlanCancellation = cts;
+        try
+        {
+            StatusText = $"正在生成{RegionName(target)}切换预览…";
+            var plan = await Task.Run(() => _regionManager.CreateSwitchPlanAsync(
+                _settings.OverwatchGamePath!, target, cts.Token), cts.Token);
+            PendingSwitchPlan = plan;
+            StatusText = plan.CanExecute ? $"已生成{RegionName(target)}切换预览。" : "切换预览发现安全阻断条件。";
+            return plan;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            StatusText = "切换预览已取消。";
+            return null;
+        }
+        catch (Exception ex)
+        {
+            StatusText = "无法生成切换预览，请检查区服快照和游戏目录。";
+            _regionOperationError = ex.Message;
+            return null;
+        }
+        finally
+        {
+            if (ReferenceEquals(_switchPlanCancellation, cts)) _switchPlanCancellation = null;
+            cts.Dispose();
+        }
+    }
+
+    public void CancelSwitchPlan() => _switchPlanCancellation?.Cancel();
+
+    public async Task SwitchGameRegionOnlyAsync(OverwatchRegion target, SwitchPlan? suppliedPlan = null)
+    {
+        if (Busy || IsRegionOperationBusy || _switchPlanCancellation is not null ||
+            (suppliedPlan is null && !RegionGuide.CanRestore &&
+             ((target == OverwatchRegion.China && !RegionGuide.CanSwitchChina) ||
+              (target == OverwatchRegion.International && !RegionGuide.CanSwitchInternational)))) return;
+        var plan = suppliedPlan ?? (PendingSwitchPlan?.TargetRegion == target ? PendingSwitchPlan : null);
+        if (plan is not null && !plan.CanExecute)
+        {
+            StatusText = "切换已被安全检查阻止：" + string.Join("；", plan.Blockers);
+            return;
+        }
         var runStep4 = PromptForStep4(target);
         _regionOperationNotice = "";
         _regionOperationError = "";
@@ -1166,7 +1246,9 @@ public sealed class MainViewModel : ObservableObject
             }
             StatusText = "正在切换区服文件…";
             var progress = new Progress<RegionProgress>(UpdateRegionProgress);
-            var result = await _regionManager.NormalizeToRegionAsync(_settings.OverwatchGamePath!, target, progress);
+            var result = plan is null
+                ? await _regionManager.NormalizeToRegionAsync(_settings.OverwatchGamePath!, target, progress)
+                : await _regionManager.ExecuteSwitchPlanAsync(_settings.OverwatchGamePath!, plan, progress);
             if (result.Outcome == RegionSwitchOutcome.Failed)
                 throw new InvalidDataException($"未能处理任何区服差异文件；{result.FailedCount:N0} 个文件存在异常。" +
                                                FormatRegionFileIssues(result.Issues));
@@ -1180,6 +1262,7 @@ public sealed class MainViewModel : ObservableObject
             StatusText = result.Outcome == RegionSwitchOutcome.PartialSuccess
                 ? $"区服文件已部分切换到{RegionName(target)}；{result.FailedCount:N0} 个异常文件已跳过。"
                 : $"守望先锋区服文件已切换到{RegionName(target)}。";
+            RegionSwitchCompleted?.Invoke(true, target, StatusText);
             if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
                 MessageBox.Show($"{result.FailedCount:N0} 个文件存在异常，已自动跳过。\n其他区服差异文件已继续处理。" +
                                 FormatRegionFileIssues(result.Issues), "区服文件部分完成",
@@ -1205,10 +1288,12 @@ public sealed class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusText = "切换区服文件失败：" + ex.Message;
+            RegionSwitchCompleted?.Invoke(false, target, ex.Message);
             MessageBox.Show(ex.Message, "无法切换区服文件", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
+            if (ReferenceEquals(PendingSwitchPlan, plan)) PendingSwitchPlan = null;
             Busy = false;
             SetRegionOperation(RegionOperationPhase.None);
             await RefreshHomeRegionAsync();

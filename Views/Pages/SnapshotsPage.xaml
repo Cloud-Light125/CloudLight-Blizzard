@@ -1,0 +1,89 @@
+<UserControl x:Class="CloudLightBlizzard.Views.Pages.SnapshotsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
+             xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors"
+             behaviors:NestedScrollBehavior.IsEnabled="True"
+             Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
+        <DataTemplate x:Key="SnapshotTemplate">
+            <Border Style="{StaticResource SurfaceCard}" Padding="16" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <DockPanel>
+                            <TextBlock Text="{Binding ModeText}" Style="{StaticResource SectionTitle}"/>
+                            <Border DockPanel.Dock="Right" Style="{StaticResource Badge}" Margin="12,0,0,0">
+                                <TextBlock Text="{Binding StateText}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsVerifying}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Normal"><Setter Property="Foreground" Value="{DynamicResource Status.Success}"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Unverified"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Expired"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Corrupt"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Missing"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Border>
+                        </DockPanel>
+                        <TextBlock Text="{Binding StateReason}" Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <UniformGrid Columns="3" Margin="0,15,0,0">
+                            <StackPanel><TextBlock Text="来源 → 目标" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock><Run Text="{Binding SourceText, Mode=OneWay}"/><Run Text=" → "/><Run Text="{Binding TargetText, Mode=OneWay}"/></TextBlock></StackPanel>
+                            <StackPanel><TextBlock Text="创建时间" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding CreatedText}"/></StackPanel>
+                            <StackPanel><TextBlock Text="最后验证" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding VerifiedText}"/></StackPanel>
+                        </UniformGrid>
+                        <UniformGrid Columns="3" Margin="0,10,0,0">
+                            <StackPanel><TextBlock Text="文件数量" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding FileCountText}"/></StackPanel>
+                            <StackPanel><TextBlock Text="总大小" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding SizeText}"/></StackPanel>
+                            <StackPanel><TextBlock Text="最后使用" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding UsedText}"/></StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
+                        <Button Content="验证" Tag="verify" Style="{StaticResource SecondaryButton}" Padding="15,0" Click="OnSnapshotAction"/>
+                        <Button Content="查看详情" Tag="details" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,8,0,0" Click="OnSnapshotAction"/>
+                        <Button Content="重新生成" Tag="regenerate" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,8,0,0" Click="OnSnapshotAction"/>
+                        <Button Content="打开目录" Tag="open" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,8,0,0" Click="OnSnapshotAction"/>
+                        <Button Content="删除" Tag="delete" Style="{StaticResource DangerButton}" Padding="15,0" Margin="0,8,0,0" Click="OnSnapshotAction"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28,24,22,30">
+            <ctrl:PageHeader Title="区服快照" Description="查看、验证和管理 VerifiedDifference 与 FullSnapshot；所有操作直接复用现有区服服务。">
+                <ctrl:PageHeader.HeaderActions><Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/></ctrl:PageHeader.HeaderActions>
+            </ctrl:PageHeader>
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,18,0,0" Padding="16,13">
+                <StackPanel>
+                    <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    <ProgressBar Height="7" Margin="0,12,0,0" Minimum="0" Maximum="{Binding ProgressMaximum, Mode=OneWay}" Value="{Binding ProgressValue, Mode=OneWay}" Visibility="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolVisibility}}"/>
+                    <Button Content="取消验证" Style="{StaticResource SecondaryButton}" Padding="13,0" HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Click="OnCancel"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,12,0,0" Padding="16" Visibility="{Binding HasDetails, Converter={StaticResource BoolVisibility}}">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock Text="快照详情" Style="{StaticResource SectionTitle}" />
+                        <Button Content="关闭" Style="{StaticResource SecondaryButton}" Padding="12,0" DockPanel.Dock="Right" Click="OnCloseDetails" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding DetailsText}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                </StackPanel>
+            </Border>
+            <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource SnapshotTemplate}" Margin="0,18,0,0">
+                <ItemsControl.Style><Style TargetType="ItemsControl"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding Items.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></ItemsControl.Style>
+            </ItemsControl>
+            <Border Padding="16" Margin="0,18,0,0">
+                <Border.Style><Style TargetType="Border" BasedOn="{StaticResource SurfaceCard}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Items.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                <StackPanel><TextBlock Text="尚未生成区服快照" FontWeight="SemiBold"/><TextBlock Text="先打开“区服切换”，选择 VerifiedDifference 或 FullSnapshot，完成当前区服与另一区服文件准备。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,6,0,0"/><Button Content="前往区服切换" Style="{StaticResource PrimaryButton}" Padding="14,0" HorizontalAlignment="Left" Margin="0,12,0,0" Click="OnOpenRegion"/></StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

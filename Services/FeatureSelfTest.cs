@@ -1,12 +1,16 @@
 ﻿using System.IO;
 using System.Net;
+using System.IO.Compression;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services.Drops;
+using CloudLightBlizzard.Services.Diagnostics;
+using CloudLightBlizzard.Services.Notifications;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.ViewModels;
 using GameRegion = CloudLightBlizzard.Services.OverwatchRegion.OverwatchRegion;
@@ -76,6 +80,7 @@ public static class FeatureSelfTest
             RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
             RunAccountPreferenceTest(workspace, report);
             RunAppPathsMigrationTest(workspace, report);
+            RunProductizationTests(workspace, report).GetAwaiter().GetResult();
             report.AppendLine("OVERALL: PASS");
         }
         catch (Exception ex)
@@ -399,6 +404,8 @@ public static class FeatureSelfTest
         Assert(!UpdateService.IsNewerVersion("1.0.0", "v1.0.0"), "1.0.0 == v1.0.0");
         Assert(UpdateService.NormalizeVersion("v1.0.1") == "1.0.1", "leading v is normalized");
         Assert(UpdateService.NormalizeVersion("v1.0.1-rc.1") is null, "prerelease tag is not a stable version");
+        Assert(UpdateService.NormalizeReleaseVersion("v1.0.1-rc.1") == "1.0.1-rc.1",
+            "beta release version keeps its prerelease identifier");
 
         HttpRequestMessage? capturedRequest = null;
         var updateCalls = 0;
@@ -410,11 +417,12 @@ public static class FeatureSelfTest
               "notes": "修复与改进",
               "htmlUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v1.0.1",
               "publishedAt": "2026-08-14T08:00:00Z",
-              "assets": [
+                  "assets": [
                 {
                   "name": "CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
                   "downloadUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v1.0.1/CloudLight-Blizzard-1.0.1-win-x64-Setup.exe",
-                  "size": 123456
+                  "size": 123456,
+                  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
                 }
               ]
             }
@@ -436,6 +444,8 @@ public static class FeatureSelfTest
                 "release notes and publish time are retained");
             Assert(result.InstallerDownloadUrl?.EndsWith("Setup.exe", StringComparison.Ordinal) == true,
                 "conventional installer asset is parsed without downloading");
+            Assert(UpdateService.IsValidSha256Digest(result.InstallerDigest),
+                "Worker installer digest is parsed in strict sha256 format");
             Assert(capturedRequest?.RequestUri?.AbsoluteUri == UpdateService.LatestReleaseApiUrl,
                 "only the fixed Worker update endpoint is requested");
             Assert(capturedRequest?.Headers.UserAgent.ToString().Contains("CloudLight-Blizzard", StringComparison.Ordinal) == true &&
@@ -444,6 +454,41 @@ public static class FeatureSelfTest
             var cached = await service.CheckAsync();
             Assert(cached.LatestVersion == "1.0.1" && updateCalls == 1,
                 "successful update result is reused without another HTTP request");
+        }
+
+        HttpRequestMessage? betaRequest = null;
+        var betaJson = """
+            {
+              "version": "1.0.2-beta.1",
+              "tag": "v1.0.2-beta.1",
+              "name": "CloudLight Blizzard 1.0.2 Beta 1",
+              "prerelease": true,
+              "htmlUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v1.0.2-beta.1",
+              "assets": [
+                {
+                  "name": "CloudLight-Blizzard-1.0.2-beta.1-win-x64-Setup.exe",
+                  "downloadUrl": "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v1.0.2-beta.1/CloudLight-Blizzard-1.0.2-beta.1-win-x64-Setup.exe",
+                  "size": 456,
+                  "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                }
+              ]
+            }
+            """;
+        using (var client = new HttpClient(new StubHttpHandler(request =>
+               {
+                   betaRequest = request;
+                   return JsonResponse(betaJson);
+               })))
+        using (var service = new UpdateService(client, "1.0.0"))
+        {
+            var beta = await service.CheckAsync(UpdateChannel.Beta);
+            Assert(beta.Status == UpdateCheckResultStatus.Success && beta.HasUpdate &&
+                   beta.LatestVersion == "1.0.2-beta.1" &&
+                   beta.InstallerName == "CloudLight-Blizzard-1.0.2-beta.1-win-x64-Setup.exe" &&
+                   UpdateService.IsValidSha256Digest(beta.InstallerDigest),
+                "beta channel accepts prerelease releases and selects the matching installer");
+            Assert(betaRequest?.RequestUri?.Query == "?channel=beta",
+                "beta update checks pass channel=beta to the Worker");
         }
 
         var invalidJson = releaseJson.Replace("\"version\": \"1.0.1\"", "\"version\": \"preview\"")
@@ -466,6 +511,7 @@ public static class FeatureSelfTest
         var installerBytes = new byte[32 * 1024];
         installerBytes[0] = (byte)'M';
         installerBytes[1] = (byte)'Z';
+        var installerDigest = "sha256:" + Convert.ToHexString(SHA256.HashData(installerBytes));
         var routedUris = new List<Uri?>();
         var downloadSettings = new AppSettings
         {
@@ -495,9 +541,12 @@ public static class FeatureSelfTest
                 LatestVersion = "2.0.8",
                 HasUpdate = true,
                 ReleaseUrl = "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v2.0.8",
-                InstallerDownloadUrl =
+                 InstallerDownloadUrl =
                     "https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v2.0.8/CloudLight-Blizzard-2.0.8-win-x64-Setup.exe",
-                InstallerSize = installerBytes.Length,
+                 InstallerSize = installerBytes.Length,
+                 InstallerDigest = installerDigest,
+                 InstallerName = "CloudLight-Blizzard-2.0.8-win-x64-Setup.exe",
+                 Tag = "v2.0.8",
             };
             var downloaded = await downloader.DownloadInstallerAsync(downloadResult, progress);
             Assert(File.Exists(downloaded) && File.ReadAllBytes(downloaded).AsSpan().SequenceEqual(installerBytes),
@@ -648,6 +697,10 @@ public static class FeatureSelfTest
             HasUpdate = true,
             InstallerDownloadUrl =
                 $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v{latestVersion}/{installerName}",
+            InstallerSize = 2,
+            InstallerDigest = "sha256:" + Convert.ToHexString(SHA256.HashData(new byte[] { (byte)'M', (byte)'Z' })),
+            InstallerName = installerName,
+            Tag = $"v{latestVersion}",
         };
         var cts = new CancellationTokenSource();
         var token = cts.Token;
@@ -659,7 +712,10 @@ public static class FeatureSelfTest
 
         Assert(disposedInFinally, "cancelled update disposes CTS only after the async operation ends");
         Assert(!File.Exists(expectedInstaller) && !File.Exists(expectedPartial),
-            "cancelled update removes incomplete installer files");
+            "cancelled update never exposes an incomplete installer as final output");
+        Assert(File.Exists(Path.Combine(Path.GetDirectoryName(expectedPartial)!, "update-download.json")),
+            "cancelled update keeps resume metadata");
+        TryDeleteDirectory(Path.GetDirectoryName(expectedPartial)!);
 
         async Task RunDownloadWithOwnedCancellationAsync()
         {
@@ -1605,6 +1661,302 @@ public static class FeatureSelfTest
         report.AppendLine("TEST 10 app paths migration: PASS (settings/accounts/logs/default move/custom preserved)");
     }
 
+    private static async Task RunProductizationTests(string workspace, StringBuilder report)
+    {
+        await RunUpdaterResilienceTests(workspace, report);
+        await RunSnapshotAndSwitchPlanTests(workspace, report);
+        await RunDiagnosticsAndNotificationTests(workspace, report);
+    }
+
+    private static async Task RunUpdaterResilienceTests(string workspace, StringBuilder report)
+    {
+        var bytes = new byte[4096];
+        bytes[0] = (byte)'M';
+        bytes[1] = (byte)'Z';
+        for (var i = 2; i < bytes.Length; i++) bytes[i] = (byte)(i % 251);
+
+        var retryHandler = new ScriptedDownloadHandler((call, _) => call < 3
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : FullDownloadResponse(bytes));
+        var retryStates = new List<UpdaterState>();
+        var retryResult = CreateDownloadResult("2.0.91", bytes);
+        using (var clients = CreateDownloadClients(workspace, retryHandler))
+        {
+            var downloader = new UpdateDownloadService(clients, [
+                TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)]);
+            downloader.StateChanged += retryStates.Add;
+            var path = await downloader.DownloadInstallerAsync(retryResult);
+            Assert(File.Exists(path) && retryHandler.Calls == 3 && retryStates.Contains(UpdaterState.WaitingRetry),
+                "updater retries temporary HTTP 503 failures and exposes WaitingRetry");
+            Assert(downloader.State == UpdaterState.ReadyToInstall, "updater reaches ReadyToInstall after digest verification");
+            TryDeleteDirectory(Path.GetDirectoryName(path)!);
+        }
+
+        var exhaustedHandler = new ScriptedDownloadHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.BadGateway));
+        var exhaustedResult = CreateDownloadResult("2.0.92", bytes);
+        using (var clients = CreateDownloadClients(workspace, exhaustedHandler))
+        {
+            var downloader = new UpdateDownloadService(clients, [
+                TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)]);
+            try
+            {
+                await downloader.DownloadInstallerAsync(exhaustedResult);
+                throw new InvalidOperationException("retry exhaustion unexpectedly succeeded");
+            }
+            catch (HttpRequestException) { }
+            Assert(exhaustedHandler.Calls == 4 && downloader.State == UpdaterState.Failed,
+                "updater stops after three retries and reports Failed");
+            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.92"));
+        }
+
+        var notFoundHandler = new ScriptedDownloadHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.NotFound));
+        var notFoundResult = CreateDownloadResult("2.0.93", bytes);
+        using (var clients = CreateDownloadClients(workspace, notFoundHandler))
+        {
+            var downloader = new UpdateDownloadService(clients, [
+                TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)]);
+            try { await downloader.DownloadInstallerAsync(notFoundResult); throw new InvalidOperationException("404 unexpectedly succeeded"); }
+            catch (HttpRequestException) { }
+            Assert(notFoundHandler.Calls == 1, "updater does not retry a permanent 404");
+            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.93"));
+        }
+
+        await RunRangeResumeCase(workspace, bytes, "2.0.94", changeEtag: false, ignoreRange: false,
+            expectedDescription: "updater resumes a matching partial file with Content-Range and ETag");
+        await RunRangeResumeCase(workspace, bytes, "2.0.95", changeEtag: false, ignoreRange: true,
+            expectedDescription: "updater restarts cleanly when the server ignores Range");
+        await RunRangeResumeCase(workspace, bytes, "2.0.96", changeEtag: true, ignoreRange: false,
+            expectedDescription: "updater restarts cleanly when the ETag changes");
+
+        var mismatchResult = CreateDownloadResult("2.0.97", bytes);
+        var mismatchRoot = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.97");
+        TryDeleteDirectory(mismatchRoot);
+        Directory.CreateDirectory(mismatchRoot);
+        var mismatchPartial = Path.Combine(mismatchRoot, mismatchResult.InstallerName! + ".partial");
+        File.WriteAllBytes(mismatchPartial, bytes[..100]);
+        File.WriteAllText(Path.Combine(mismatchRoot, "update-download.json"), JsonSerializer.Serialize(new
+        {
+            Version = mismatchResult.LatestVersion,
+            DownloadUrl = mismatchResult.InstallerDownloadUrl,
+            ExpectedSize = mismatchResult.InstallerSize,
+            Digest = mismatchResult.InstallerDigest,
+            DownloadedBytes = 99,
+            ETag = "\"old\"",
+        }));
+        var mismatchHandler = new ScriptedDownloadHandler((_, _) => FullDownloadResponse(bytes));
+        using (var clients = CreateDownloadClients(workspace, mismatchHandler))
+        {
+            var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(mismatchResult);
+            Assert(mismatchHandler.Ranges.Single() is null && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes),
+                "updater discards partial metadata mismatches instead of appending another asset");
+            TryDeleteDirectory(Path.GetDirectoryName(path)!);
+        }
+
+        var badDigestResult = CreateDownloadResult("2.0.98", bytes, "sha256:" + new string('1', 64));
+        var badDigestHandler = new ScriptedDownloadHandler((_, _) => FullDownloadResponse(bytes));
+        using (var clients = CreateDownloadClients(workspace, badDigestHandler))
+        {
+            var downloader = new UpdateDownloadService(clients);
+            try
+            {
+                await downloader.DownloadInstallerAsync(badDigestResult);
+                throw new InvalidOperationException("digest mismatch unexpectedly succeeded");
+            }
+            catch (InvalidDataException) { }
+            Assert(downloader.State == UpdaterState.Failed, "updater rejects a SHA-256 mismatch");
+            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.98"));
+        }
+
+        report.AppendLine("TEST 11 updater resilience: PASS (retry/exhaustion/404/Range/ignored Range/ETag/metadata mismatch/digest)");
+    }
+
+    private static async Task RunRangeResumeCase(string workspace, byte[] bytes, string version,
+        bool changeEtag, bool ignoreRange, string expectedDescription)
+    {
+        var result = CreateDownloadResult(version, bytes);
+        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        TryDeleteDirectory(root);
+        Directory.CreateDirectory(root);
+        var prefixLength = 700;
+        File.WriteAllBytes(Path.Combine(root, result.InstallerName! + ".partial"), bytes[..prefixLength]);
+        File.WriteAllText(Path.Combine(root, "update-download.json"), JsonSerializer.Serialize(new
+        {
+            Version = result.LatestVersion,
+            DownloadUrl = result.InstallerDownloadUrl,
+            ExpectedSize = result.InstallerSize,
+            Digest = result.InstallerDigest,
+            DownloadedBytes = prefixLength,
+            ETag = "\"old\"",
+            LastModified = "",
+        }));
+        var handler = new ScriptedDownloadHandler((call, request) =>
+        {
+            if (call == 1 && !ignoreRange)
+            {
+                var etag = changeEtag ? "\"new\"" : "\"old\"";
+                var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+                {
+                    Content = new ByteArrayContent(bytes[prefixLength..]),
+                };
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(prefixLength,
+                    bytes.Length - 1, bytes.Length);
+                response.Headers.ETag = new EntityTagHeaderValue(etag);
+                return response;
+            }
+            return FullDownloadResponse(bytes);
+        });
+        using (var clients = CreateDownloadClients(workspace, handler))
+        {
+            var path = await new UpdateDownloadService(clients).DownloadInstallerAsync(result);
+            Assert(File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes), expectedDescription + " (content)");
+            var expectedCalls = !ignoreRange && !changeEtag ? 1 : 2;
+            Assert(handler.Calls == expectedCalls && handler.Ranges[0] == $"bytes={prefixLength}-" &&
+                   (expectedCalls == 1 || handler.Ranges[1] is null), expectedDescription + " (request validation)");
+            TryDeleteDirectory(Path.GetDirectoryName(path)!);
+        }
+    }
+
+    private static async Task RunSnapshotAndSwitchPlanTests(string workspace, StringBuilder report)
+    {
+        var game = Path.Combine(workspace, "productization-plan-game");
+        var storeRoot = Path.Combine(workspace, "productization-plan-store");
+        Directory.CreateDirectory(game);
+        File.WriteAllText(Path.Combine(game, "Overwatch.exe"), "stable executable");
+        File.WriteAllText(Path.Combine(game, "region.dat"), "CN");
+        File.WriteAllText(Path.Combine(game, ".build.info"), "build-1");
+        var manager = new OverwatchRegionManager(storeRoot, () => false, 0);
+        Assert(await manager.StartPreparationAsync(game, GameRegion.China) == RegionBackupState.Preparing,
+            "productization fixture starts source capture");
+        File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
+        File.WriteAllText(Path.Combine(game, ".build.info"), "build-2");
+        Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
+            "productization fixture completes a two-region snapshot");
+
+        var status = await manager.GetStatusAsync(game, verifyFiles: false);
+        Assert(status.ActiveGenerationId is { Length: > 0 }, "snapshot fixture has an active generation");
+        var generationId = status.ActiveGenerationId!;
+        var pointerBefore = File.ReadAllText(Path.Combine(storeRoot, "active-generation.json"));
+        var gameBefore = Directory.EnumerateFiles(game, "*", SearchOption.AllDirectories).ToDictionary(
+            path => Path.GetRelativePath(game, path), File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
+        var plan = await manager.CreateSwitchPlanAsync(game, GameRegion.China);
+        Assert(plan.CanExecute && plan.FilesToRestore.Any(item => item.RelativePath == "region.dat"),
+            "switch preview contains the same restore operation the executor will use");
+        Assert(File.ReadAllText(Path.Combine(storeRoot, "active-generation.json")) == pointerBefore &&
+               Directory.EnumerateFiles(game, "*", SearchOption.AllDirectories).ToDictionary(
+                   path => Path.GetRelativePath(game, path), File.ReadAllBytes, StringComparer.OrdinalIgnoreCase)
+                   .All(pair => gameBefore.TryGetValue(pair.Key, out var before) && before.AsSpan().SequenceEqual(pair.Value)),
+            "switch preview is read-only and leaves game files and active pointer unchanged");
+        plan.RequiredDiskSpace = long.MaxValue;
+        plan.Blockers.Add("测试：磁盘空间不足");
+        Assert(!plan.CanExecute, "switch preview blocks insufficient disk space instead of offering continue");
+        plan.Blockers.RemoveAt(plan.Blockers.Count - 1);
+
+        var snapshots = new SnapshotManagerService(manager);
+        var listed = snapshots.List();
+        Assert(listed.Count == 1 && listed[0].GenerationId == generationId && listed[0].FileCount > 0,
+            "snapshot manager lists managed generation metadata and file count");
+        var verified = await snapshots.VerifyAsync(game, generationId);
+        Assert(verified.State == SnapshotDisplayState.Normal && verified.DamagedCount == 0,
+            "snapshot manager verifies the active generation through the existing validator");
+        var chinaBackup = new OverwatchRegionBackupStore(storeRoot).BackupFile(generationId, GameRegion.China, "region.dat");
+        var originalChina = File.ReadAllBytes(chinaBackup);
+        File.WriteAllBytes(chinaBackup, originalChina.Select(value => (byte)(value ^ 0x1)).ToArray());
+        var corrupt = await snapshots.VerifyAsync(game, generationId);
+        var corruptStatus = await manager.GetStatusAsync(game, verifyFiles: true, verifyBackupHashes: true);
+        Assert(corrupt.State == SnapshotDisplayState.Corrupt && corrupt.DamagedCount > 0,
+            $"snapshot verification exposes a corrupted backup (state={corrupt.State}, damaged={corrupt.DamagedCount}, missing={corrupt.MissingCount}, summary={corrupt.Summary}, eligibility={corruptStatus.SwitchEligibility}, issues={corruptStatus.BackupFileIssueCount})");
+        File.WriteAllBytes(chinaBackup, originalChina);
+        var activeDeleteBlocked = false;
+        try { snapshots.Delete(generationId); }
+        catch (InvalidOperationException) { activeDeleteBlocked = true; }
+        Assert(activeDeleteBlocked, "active snapshot deletion is blocked");
+        var unsafeDeleteBlocked = false;
+        try { snapshots.Delete("../outside"); }
+        catch (InvalidDataException) { unsafeDeleteBlocked = true; }
+        Assert(unsafeDeleteBlocked, "path traversal snapshot deletion is blocked");
+
+        var emptyManager = new OverwatchRegionManager(Path.Combine(workspace, "empty-productization-store"), () => false, 0);
+        var invalidPlan = await emptyManager.CreateSwitchPlanAsync(game, GameRegion.International);
+        Assert(!invalidPlan.CanExecute && invalidPlan.Blockers.Count > 0,
+            "switch preview blocks when no valid snapshot exists");
+
+        var executed = await manager.ExecuteSwitchPlanAsync(game, plan);
+        Assert(executed.Outcome == RegionSwitchOutcome.Success && File.ReadAllText(Path.Combine(game, "region.dat")) == "CN",
+            "executor applies the exact preview plan after confirmation");
+        report.AppendLine("TEST 12 snapshots and switch preview: PASS (list/verify/corrupt/delete safety/read-only preview/shared plan/disk and invalid snapshot blockers)");
+    }
+
+    private static async Task RunDiagnosticsAndNotificationTests(string workspace, StringBuilder report)
+    {
+        var reportModel = new DiagnosticRunReport
+        {
+            AppVersion = "2.0.10",
+            StartedAt = DateTimeOffset.Now.AddSeconds(-1),
+            CompletedAt = DateTimeOffset.Now,
+            Checks = [
+                new DiagnosticCheck { Id = "healthy", Category = "测试", Name = "正常", Status = DiagnosticSeverity.Healthy, Summary = "正常" },
+                new DiagnosticCheck { Id = "warning", Category = "测试", Name = "警告", Status = DiagnosticSeverity.Warning, Summary = "警告" },
+                new DiagnosticCheck { Id = "error", Category = "测试", Name = "错误", Status = DiagnosticSeverity.Error, Summary = "错误" },
+            ],
+        };
+        Assert(reportModel.HealthyCount == 1 && reportModel.WarningCount == 1 && reportModel.ErrorCount == 1 &&
+               reportModel.OverallText == "需要处理错误", "diagnostics model exposes Healthy/Warning/Error summaries");
+        var unsafeText = DiagnosticSanitizer.Sanitize(
+            "ProxyUrl=http://user:password@127.0.0.1:7897; GITHUB_TOKEN=diagnostic-secret; Authorization: Bearer diagnostic-bearer");
+        Assert(!unsafeText.Contains("diagnostic-secret", StringComparison.Ordinal) &&
+               !unsafeText.Contains("diagnostic-bearer", StringComparison.Ordinal) &&
+               unsafeText.Contains("***:***", StringComparison.Ordinal), "diagnostic sanitizer removes credentials and bearer tokens");
+
+        var main = new MainViewModel();
+        string? secretLog = null;
+        string? zip = null;
+        try
+        {
+            var diagnostic = new DiagnosticService(main);
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
+            var cancelledReport = await diagnostic.RunAsync(cancelled.Token);
+            Assert(cancelledReport.Cancelled, "diagnostics returns a partial cancelled report without throwing");
+
+            Directory.CreateDirectory(AppPaths.Current.LogsDir);
+            secretLog = Path.Combine(AppPaths.Current.LogsDir, $"diagnostic-selftest-{Guid.NewGuid():N}.log");
+            await File.WriteAllTextAsync(secretLog,
+                "GITHUB_TOKEN=diagnostic-secret\nAuthorization: Bearer diagnostic-bearer\n");
+            zip = await diagnostic.ExportBundleAsync(reportModel);
+            using var archive = ZipFile.OpenRead(zip);
+            var names = archive.Entries.Select(entry => entry.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Assert(names.Contains("diagnostics.json") && names.Contains("diagnostics.txt") &&
+                   names.Contains("environment.txt") && names.Contains("snapshot-summary.json") &&
+                   names.Contains("update-summary.json") && names.Contains("drops-summary.json"),
+                "diagnostics export contains the required summary files");
+            var contents = string.Join("\n", archive.Entries.Where(entry => entry.Length < 2_000_000).Select(entry =>
+            {
+                using var reader = new StreamReader(entry.Open());
+                return reader.ReadToEnd();
+            }));
+            Assert(!contents.Contains("diagnostic-secret", StringComparison.Ordinal) &&
+                   !contents.Contains("diagnostic-bearer", StringComparison.Ordinal),
+                "diagnostics ZIP does not contain injected token or bearer secret");
+        }
+        finally
+        {
+            if (secretLog is not null) TryDeleteFile(secretLog);
+            if (zip is not null) TryDeleteFile(zip);
+            main.CloudHttpClients.Dispose();
+        }
+
+        INotificationService notification = new RecordingNotificationService();
+        notification.Initialize();
+        Assert(notification.TryNotify(new NotificationRequest("测试通知", "不会真正发送 Toast",
+                   NotificationCategory.Updates, "updates")) &&
+               ((RecordingNotificationService)notification).Requests.Single().Action == "updates",
+            "notification abstraction records actions without sending a real Toast in tests");
+        notification.Dispose();
+        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/notification abstraction)");
+    }
+
     private static void WriteRuntimeFiles(string gameRoot)
     {
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -1683,6 +2035,45 @@ public static class FeatureSelfTest
         ReleaseUrl = $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v{latestVersion}",
     };
 
+    private static UpdateCheckResult CreateDownloadResult(string version, byte[] bytes, string? digest = null)
+    {
+        var installerName = $"CloudLight-Blizzard-{version}-win-x64-Setup.exe";
+        return new UpdateCheckResult
+        {
+            Status = UpdateCheckResultStatus.Success,
+            CurrentVersion = "2.0.10",
+            LatestVersion = version,
+            HasUpdate = true,
+            Tag = $"v{version}",
+            ReleaseUrl = $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/v{version}",
+            InstallerDownloadUrl =
+                $"https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/v{version}/{installerName}",
+            InstallerName = installerName,
+            InstallerSize = bytes.Length,
+            InstallerDigest = digest ?? "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)),
+        };
+    }
+
+    private static CloudHttpClientFactory CreateDownloadClients(string workspace, HttpMessageHandler handler) =>
+        new(new AppSettings { EnableProxy = false },
+            Path.Combine(workspace, $"update-resilience-{Guid.NewGuid():N}.log"),
+            _ => new HttpClient(handler));
+
+    private static HttpResponseMessage FullDownloadResponse(byte[] bytes) => new(HttpStatusCode.OK)
+    {
+        Content = new ByteArrayContent(bytes),
+    };
+
+    private static void TryDeleteFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, true); } catch { }
+    }
+
     private sealed class InlineProgress<T> : IProgress<T>
     {
         private readonly Action<T> _report;
@@ -1715,6 +2106,22 @@ public static class FeatureSelfTest
         public StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> response) => _response = response;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(_response(request));
+    }
+
+    private sealed class ScriptedDownloadHandler : HttpMessageHandler
+    {
+        private readonly Func<int, HttpRequestMessage, HttpResponseMessage> _response;
+        public ScriptedDownloadHandler(Func<int, HttpRequestMessage, HttpResponseMessage> response) => _response = response;
+        public int Calls { get; private set; }
+        public List<string?> Ranges { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Ranges.Add(request.Headers.Range?.ToString());
+            var call = ++Calls;
+            return Task.FromResult(_response(call, request));
+        }
     }
 
     private sealed class ThrowingHttpHandler : HttpMessageHandler

@@ -854,6 +854,20 @@ public partial class DropsPage : UserControl
 
     private void OnTwitchRetryNow(object sender, RoutedEventArgs e) => _vm?.RetryTwitchNow();
 
+    private async void OnRestartWorker(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || sender is not Button { Tag: DropsPlatform platform }) return;
+        try
+        {
+            await _vm.RestartWorkerAsync(platform);
+            await LoadPlatformAsync(platform);
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex, $"重启 {PlatformName(platform)} Worker 失败");
+        }
+    }
+
     private async void OnTwitchReload(object sender, RoutedEventArgs e)
         => await RefreshTwitchAsync();
 

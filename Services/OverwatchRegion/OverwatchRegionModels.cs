@@ -196,6 +196,14 @@ public sealed class ActiveGenerationPointer
 }
 
 public sealed record RegionProgress(string Message, int Current = 0, int Total = 0, long BytesCurrent = 0, long BytesTotal = 0);
+public sealed record RegionGenerationVerificationResult(
+    bool Available,
+    int CheckedFileCount,
+    int TotalFileCount,
+    int DamagedCount,
+    int MissingCount,
+    string Summary,
+    IReadOnlyList<RegionFileIssue> Issues);
 public sealed record RegionSwitchResult(
     int Restored,
     int Deleted,
@@ -207,6 +215,71 @@ public sealed record RegionSwitchResult(
     RegionSwitchOutcome Outcome = RegionSwitchOutcome.Success,
     int FailedCount = 0,
     IReadOnlyList<RegionFileIssue>? Issues = null);
+
+public enum SwitchPlanOperation { Restore, Delete, Keep }
+
+public sealed class SwitchPlanFile
+{
+    public string RelativePath { get; init; } = "";
+    public SwitchPlanOperation Operation { get; init; }
+    public RegionDifferenceKind DifferenceKind { get; init; }
+    public RegionFileEntry? Expected { get; init; }
+    public bool DestinationExists { get; init; }
+    public long EstimatedBytes { get; init; }
+}
+
+public sealed class SwitchPlan
+{
+    public string GenerationId { get; init; } = "";
+    public OverwatchRegion? SourceRegion { get; init; }
+    public OverwatchRegion TargetRegion { get; init; }
+    public CurrentGameRegion CurrentRegion { get; init; }
+    public RegionBackupMode BackupMode { get; init; }
+    public GenerationCompatibility Compatibility { get; init; }
+    public string CompatibilityReason { get; init; } = "";
+    public RegionSwitchEligibility Eligibility { get; init; }
+    public string EligibilityReason { get; init; } = "";
+    public int EligibilityFileIssueCount { get; init; }
+    public RegionEvidenceResult RegionEvidence { get; init; }
+    public bool ExactSnapshotMatch { get; init; }
+    public string CurrentBattleNetState { get; init; } = "";
+    public string SnapshotState { get; init; } = "";
+    public long EstimatedBytes { get; set; }
+    public long RequiredDiskSpace { get; set; }
+    public List<SwitchPlanFile> Operations { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+    public List<string> Blockers { get; set; } = new();
+
+    [JsonIgnore]
+    public IReadOnlyList<SwitchPlanFile> FilesToRestore => Operations.Where(item => item.Operation == SwitchPlanOperation.Restore).ToList();
+    [JsonIgnore]
+    public IReadOnlyList<SwitchPlanFile> FilesToCopy => FilesToRestore.Where(item => !item.DestinationExists).ToList();
+    [JsonIgnore]
+    public IReadOnlyList<SwitchPlanFile> FilesToOverwrite => FilesToRestore.Where(item => item.DestinationExists).ToList();
+    [JsonIgnore]
+    public IReadOnlyList<SwitchPlanFile> FilesToDelete => Operations.Where(item => item.Operation == SwitchPlanOperation.Delete).ToList();
+    [JsonIgnore]
+    public IReadOnlyList<SwitchPlanFile> FilesToKeep => Operations.Where(item => item.Operation == SwitchPlanOperation.Keep).ToList();
+    [JsonIgnore]
+    public int RestoreCount => FilesToRestore.Count;
+    [JsonIgnore]
+    public int CopyCount => FilesToCopy.Count;
+    [JsonIgnore]
+    public int OverwriteCount => FilesToOverwrite.Count;
+    [JsonIgnore]
+    public int DeleteCount => FilesToDelete.Count;
+    [JsonIgnore]
+    public int KeepCount => FilesToKeep.Count;
+    [JsonIgnore]
+    public string EstimatedBytesText => FormatBytes(EstimatedBytes);
+    [JsonIgnore]
+    public string RequiredDiskSpaceText => FormatBytes(RequiredDiskSpace);
+    [JsonIgnore]
+    public bool CanExecute => Blockers.Count == 0;
+
+    private static string FormatBytes(long bytes) => bytes < 1024L * 1024 * 1024
+        ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{bytes / 1024d / 1024d / 1024d:0.0} GB";
+}
 
 public sealed class RegionSnapshotStatus
 {

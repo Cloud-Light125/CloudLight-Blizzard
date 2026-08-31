@@ -109,6 +109,40 @@ public sealed class DropsHostService : IAsyncDisposable
     public Task<JsonElement> StopAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
         RequestAsync(platform, "stop", cancellationToken: cancellationToken);
 
+    /// <summary>
+    /// 只重启本服务实际创建并持有的 worker。不会按进程名查杀用户启动的 Python 进程。
+    /// </summary>
+    public async Task RestartAsync(DropsPlatform platform, CancellationToken cancellationToken = default)
+    {
+        WorkerConnection? worker;
+        lock (_sync) _workers.TryGetValue(platform, out worker);
+        if (worker is not null)
+        {
+            worker.Lifecycle = WorkerLifecycle.Stopping;
+            try
+            {
+                using var graceful = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                graceful.CancelAfter(TimeSpan.FromSeconds(8));
+                await RequestAsync(platform, "shutdown", cancellationToken: graceful.Token).ConfigureAwait(false);
+            }
+            catch { }
+            worker.BusinessRunning = false;
+            TryTerminate(worker);
+            try { await worker.Process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+            catch { }
+            lock (_sync)
+            {
+                if (_workers.TryGetValue(platform, out var current) && ReferenceEquals(current, worker))
+                {
+                    _workers.Remove(platform);
+                    _retiredWorkers.Add(worker);
+                }
+            }
+        }
+
+        await EnsureConnectedAsync(platform, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<JsonElement> ClearTwitchAuthenticationAsync(CancellationToken cancellationToken = default)
     {
         WorkerConnection? worker;

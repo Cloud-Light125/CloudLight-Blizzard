@@ -16,13 +16,19 @@
                     <TextBlock Text="Blizzard" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/>
                     <TextBlock Text="战网与守望先锋工具" FontSize="10.5" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0"/>
                 </StackPanel>
-                <StackPanel Grid.Row="1">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <RadioButton x:Name="OverviewNav" GroupName="MainNavigation" Content="概览" Tag="overview" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="AccountsNav" GroupName="MainNavigation" Content="账号" Tag="accounts" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
-                    <RadioButton x:Name="RegionNav" GroupName="MainNavigation" Content="区服文件" Tag="region" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="RegionNav" GroupName="MainNavigation" Content="区服切换" Tag="region" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="StatsNav" GroupName="MainNavigation" Content="战绩" Tag="stats" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="DropsNav" GroupName="MainNavigation" Content="掉宝" Tag="drops" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="SnapshotsNav" GroupName="MainNavigation" Content="区服快照" Tag="snapshots" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="DiagnosticsNav" GroupName="MainNavigation" Content="诊断中心" Tag="diagnostics" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                     <RadioButton x:Name="SettingsNav" GroupName="MainNavigation" Content="设置" Tag="settings" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
+                    <RadioButton x:Name="AboutNav" GroupName="MainNavigation" Content="关于" Tag="about" Style="{StaticResource NavigationButton}" Checked="OnNavigate"/>
                 </StackPanel>
+                </ScrollViewer>
                 <StackPanel Grid.Row="2" Margin="24,0,18,22">
                     <TextBlock Text="{Binding AppVersion}" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
                     <TextBlock Text="CloudLight Blizzard" Foreground="{DynamicResource Text.Muted}" FontSize="10" Margin="0,3,0,0"/>

@@ -25,13 +25,23 @@ public partial class RegionFilesPage : UserControl
     private async void OnSwitchChina(object sender, RoutedEventArgs e)
     {
         if (_vm?.RegionGuide.CanSwitchChina == true || _vm?.RegionGuide.CanRestore == true)
-            await _vm.SwitchGameRegionOnlyAsync(OverwatchRegion.China);
+            await PreviewAndSwitchAsync(OverwatchRegion.China);
     }
 
     private async void OnSwitchInternational(object sender, RoutedEventArgs e)
     {
         if (_vm?.RegionGuide.CanSwitchInternational == true || _vm?.RegionGuide.CanRestore == true)
-            await _vm.SwitchGameRegionOnlyAsync(OverwatchRegion.International);
+            await PreviewAndSwitchAsync(OverwatchRegion.International);
+    }
+
+    private async Task PreviewAndSwitchAsync(OverwatchRegion target)
+    {
+        if (_vm is null) return;
+        var plan = await _vm.CreateRegionSwitchPlanAsync(target);
+        if (plan is null) return;
+        var preview = new SwitchPreviewWindow(plan) { Owner = Window.GetWindow(this) };
+        if (preview.ShowDialog() == true)
+            await _vm.SwitchGameRegionOnlyAsync(target, plan);
     }
 
     private void OnChooseGame(object sender, RoutedEventArgs e) => _vm?.SetOverwatchGamePath();

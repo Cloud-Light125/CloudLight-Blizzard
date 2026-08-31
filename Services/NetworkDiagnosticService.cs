@@ -10,18 +10,24 @@ public sealed record NetworkDiagnosticReport(
     DateTimeOffset CompletedAt,
     CloudNetworkProbeResult Proxy,
     CloudNetworkProbeResult Announcement,
-    CloudNetworkProbeResult Update)
+    CloudNetworkProbeResult Update,
+    CloudNetworkProbeResult? Soop = null,
+    CloudNetworkProbeResult? Twitch = null)
 {
     public string ToDisplayText() => string.Join(Environment.NewLine,
         Format("代理", Proxy, proxyLine: true),
         Format("公告服务", Announcement),
-        Format("更新服务", Update));
+        Format("更新服务", Update),
+        Soop is null ? "SOOP：未执行" : Format("SOOP", Soop),
+        Twitch is null ? "Twitch：未执行" : Format("Twitch", Twitch));
 
     public IEnumerable<string> ToCopyLines()
     {
         yield return CopyLine("代理检测", Proxy);
         yield return CopyLine("公告服务", Announcement);
         yield return CopyLine("更新服务", Update);
+        if (Soop is not null) yield return CopyLine("SOOP", Soop);
+        if (Twitch is not null) yield return CopyLine("Twitch", Twitch);
     }
 
     private static string Format(string name, CloudNetworkProbeResult result, bool proxyLine = false)
@@ -90,9 +96,20 @@ public sealed class NetworkDiagnosticService
             token => _httpClients.ProbeGetAsync(() => UpdateService.CreateLatestReleaseRequest(updateEndpoint),
                 "diagnostic-update", status => IsSuccess(status) || status == HttpStatusCode.NotFound, token),
             DefaultRoute(), cancellationToken);
-        await Task.WhenAll(announcementTask, updateTask).ConfigureAwait(false);
+        var soopTask = ProbeWithTimeoutAsync(
+            token => _httpClients.ProbeGetAsync(
+                () => new HttpRequestMessage(HttpMethod.Get, "https://www.sooplive.com/"),
+                "diagnostic-soop", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
+            DefaultRoute(), cancellationToken);
+        var twitchTask = ProbeWithTimeoutAsync(
+            token => _httpClients.ProbeGetAsync(
+                () => new HttpRequestMessage(HttpMethod.Get, "https://www.twitch.tv/"),
+                "diagnostic-twitch", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
+            DefaultRoute(), cancellationToken);
+        await Task.WhenAll(announcementTask, updateTask, soopTask, twitchTask).ConfigureAwait(false);
         return new NetworkDiagnosticReport(DateTimeOffset.Now, proxy,
-            await announcementTask.ConfigureAwait(false), await updateTask.ConfigureAwait(false));
+            await announcementTask.ConfigureAwait(false), await updateTask.ConfigureAwait(false),
+            await soopTask.ConfigureAwait(false), await twitchTask.ConfigureAwait(false));
     }
 
     public string BuildCopyText(RuntimeDiagnosticContext context, NetworkDiagnosticReport? report)
