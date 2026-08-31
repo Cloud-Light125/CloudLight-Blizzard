@@ -404,6 +404,22 @@ public sealed class OverwatchRegionManager
         var battleNetRunning = IsProcessRunning("Battle.net");
         var agentRunning = IsProcessRunning("Agent");
         var detection = DetectionResult.Unknown;
+        if (battleNetRunning && !running && eligibility.Status == RegionSwitchEligibility.Normal)
+        {
+            try
+            {
+                // A preview must remain read-only, but it can still observe the existing
+                // directory stamp. Refuse to present a runnable plan while Battle.net is
+                // actively changing game files.
+                await _scanner.WaitForQuiescenceAsync(gameRoot, cancellationToken: cancellationToken,
+                    observationMilliseconds: _quiescenceMilliseconds).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (IOException ex)
+            {
+                blockers.Add("Battle.net 仍在写入或整理游戏文件，已阻止切换预览：" + ex.Message);
+            }
+        }
         if (eligibility.Status == RegionSwitchEligibility.Normal && !running)
         {
             try

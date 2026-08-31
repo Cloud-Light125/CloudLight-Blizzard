@@ -290,11 +290,16 @@ public sealed class DiagnosticService
     private DiagnosticCheck CheckRegionState()
     {
         var status = _vm.RegionStatusSnapshot;
+        var recentSwitches = ReadRecentRegionSwitchEvents();
         var severity = status.State == RegionBackupState.Error || status.CurrentRegion == CurrentGameRegion.Mixed
             ? DiagnosticSeverity.Error : status.CurrentRegion == CurrentGameRegion.Unknown ? DiagnosticSeverity.Warning : DiagnosticSeverity.Healthy;
+        if (recentSwitches.FailureIsLatest && severity == DiagnosticSeverity.Healthy)
+            severity = DiagnosticSeverity.Warning;
         return NewCheck("region.state", "区服", "当前区服与切换状态", severity,
             $"当前 {MainViewModel.RegionDisplayName(status.CurrentRegion)} · {status.State}",
-            $"最近成功区服={MainViewModel.RegionDisplayName(status.LastSuccessfulRegion)}; 未完成操作={_vm.IsRegionOperationBusy}");
+            $"最近成功区服={MainViewModel.RegionDisplayName(status.LastSuccessfulRegion)}; " +
+            $"最近成功切换={recentSwitches.Success ?? "无记录"}; 最近失败切换={recentSwitches.Failure ?? "无记录"}; " +
+            $"失败是否晚于成功={recentSwitches.FailureIsLatest}; 未完成操作={_vm.IsRegionOperationBusy}");
     }
 
     private DiagnosticCheck CheckPendingRegionOperation() => NewCheck("region.pending", "区服", "未完成操作",
@@ -305,15 +310,30 @@ public sealed class DiagnosticService
     private DiagnosticCheck CheckSnapshotState()
     {
         var status = _vm.RegionStatusSnapshot;
-        var hasVerified = status.BackupMode == RegionBackupMode.VerifiedDifference &&
-                          status.State is (RegionBackupState.Ready or RegionBackupState.Stale);
-        var hasFull = status.BackupMode == RegionBackupMode.FullSnapshot &&
-                      status.State is (RegionBackupState.Ready or RegionBackupState.Stale);
-        var severity = status.State == RegionBackupState.Error ? DiagnosticSeverity.Error
-            : status.State == RegionBackupState.Empty ? DiagnosticSeverity.Warning : DiagnosticSeverity.Healthy;
+        IReadOnlyList<SnapshotDescriptor> snapshots;
+        try { snapshots = new SnapshotManagerService(_vm.RegionManager).List(); }
+        catch (Exception ex)
+        {
+            return NewCheck("snapshot.verified", "快照", "VerifiedDifference / FullSnapshot",
+                DiagnosticSeverity.Warning, "无法读取快照目录", ex.Message);
+        }
+        var hasVerified = snapshots.Any(item => item.Mode == RegionBackupMode.VerifiedDifference);
+        var hasFull = snapshots.Any(item => item.Mode == RegionBackupMode.FullSnapshot);
+        var damaged = snapshots.Count(item => item.State is SnapshotDisplayState.Corrupt or SnapshotDisplayState.Missing);
+        var latestCreated = snapshots.OrderByDescending(item => item.CreatedAtUtc).FirstOrDefault();
+        var latestVerified = snapshots.Where(item => item.LastVerifiedAtUtc.HasValue)
+            .OrderByDescending(item => item.LastVerifiedAtUtc).FirstOrDefault();
+        var severity = status.State == RegionBackupState.Error || damaged > 0 ? DiagnosticSeverity.Error
+            : status.State is RegionBackupState.Empty or RegionBackupState.Legacy || snapshots.Count == 0
+                ? DiagnosticSeverity.Warning
+                : status.State == RegionBackupState.Stale || snapshots.Any(item => item.State is SnapshotDisplayState.Unverified or SnapshotDisplayState.Expired)
+                    ? DiagnosticSeverity.Warning : DiagnosticSeverity.Healthy;
         return NewCheck("snapshot.verified", "快照", "VerifiedDifference / FullSnapshot", severity,
-            status.State == RegionBackupState.Empty ? "尚未生成快照" : $"{status.BackupMode} · {status.DifferenceCount:N0} 个差异文件",
-            $"VerifiedDifference={(hasVerified ? "存在" : "未启用/不可用")}; FullSnapshot={(hasFull ? "存在" : "未启用/不可用")}; 文件数={status.DifferenceCount:N0}; 大小={UpdateDownloadService.FormatBytes(status.BackupBytes)}");
+            snapshots.Count == 0 ? "尚未生成快照" : $"已发现 {snapshots.Count:N0} 个快照 · 当前 {status.BackupMode}",
+            $"VerifiedDifference={(hasVerified ? "存在" : "未发现")}; FullSnapshot={(hasFull ? "存在" : "未发现")}; " +
+            $"文件数={status.DifferenceCount:N0}; 大小={UpdateDownloadService.FormatBytes(status.BackupBytes)}; " +
+            $"最新创建={FormatDiagnosticTime(latestCreated?.CreatedAtUtc)}; 最新验证={FormatDiagnosticTime(latestVerified?.LastVerifiedAtUtc)}; " +
+            $"损坏/缺失快照={damaged:N0}");
     }
 
     private async Task<DiagnosticCheck> CheckSnapshotIntegrityAsync(CancellationToken token)
@@ -404,7 +424,25 @@ public sealed class DiagnosticService
         $"FallbackDirect: {_vm.Settings.FallbackDirect}",
     }));
 
-    private string BuildSnapshotSummary() => DiagnosticSanitizer.Sanitize(JsonSerializer.Serialize(_vm.RegionStatusSnapshot, DiagnosticJson.Options));
+    private string BuildSnapshotSummary()
+    {
+        try
+        {
+            return DiagnosticSanitizer.Sanitize(JsonSerializer.Serialize(new
+            {
+                current = _vm.RegionStatusSnapshot,
+                snapshots = new SnapshotManagerService(_vm.RegionManager).List(),
+            }, DiagnosticJson.Options));
+        }
+        catch (Exception ex)
+        {
+            return DiagnosticSanitizer.Sanitize(JsonSerializer.Serialize(new
+            {
+                current = _vm.RegionStatusSnapshot,
+                snapshotReadError = ex.Message,
+            }, DiagnosticJson.Options));
+        }
+    }
 
     private string BuildUpdateSummary()
     {
@@ -471,6 +509,46 @@ public sealed class DiagnosticService
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
+
+    private static string FormatDiagnosticTime(DateTime? value) =>
+        value is { } date ? date.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "无记录";
+
+    private static (string? Success, string? Failure, bool FailureIsLatest) ReadRecentRegionSwitchEvents()
+    {
+        try
+        {
+            var path = Path.Combine(AppPaths.Current.LogsDir, "region-switch.log");
+            if (!File.Exists(path)) return (null, null, false);
+            string? success = null;
+            string? failure = null;
+            var successOrder = -1;
+            var failureOrder = -1;
+            var order = 0;
+            foreach (var line in File.ReadLines(path).TakeLast(300))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Contains("NormalizeCompleted", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("NormalizeAlreadyTarget", StringComparison.OrdinalIgnoreCase))
+                {
+                    success = ShortenDiagnosticLine(trimmed);
+                    successOrder = order;
+                }
+                else if (trimmed.Contains("NormalizeFailed", StringComparison.OrdinalIgnoreCase) ||
+                         trimmed.Contains("NormalizeAllFilesFailed", StringComparison.OrdinalIgnoreCase) ||
+                         trimmed.Contains("NormalizePartialCompleted", StringComparison.OrdinalIgnoreCase))
+                {
+                    failure = ShortenDiagnosticLine(trimmed);
+                    failureOrder = order;
+                }
+                order++;
+            }
+            return (success, failure, failureOrder > successOrder);
+        }
+        catch { return (null, null, false); }
+    }
+
+    private static string ShortenDiagnosticLine(string value) =>
+        value.Length <= 400 ? value : value[..400] + "…";
 
     private static void WriteLog(string message)
     {
