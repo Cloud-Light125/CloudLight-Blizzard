@@ -74,6 +74,9 @@ public sealed class DropsHostService : IAsyncDisposable
             "auto_start" when platform == DropsPlatform.Twitch => 270,
             "auto_start" when platform == DropsPlatform.Soop => 120,
             "claim_reward" when platform == DropsPlatform.Soop => 90,
+            "refresh" when platform == DropsPlatform.Bilibili => 120,
+            "discover" or "claim_reward" when platform == DropsPlatform.Bilibili => 120,
+            "start" when platform == DropsPlatform.Bilibili => 90,
             "stop" or "shutdown" => 40,
             _ => 30,
         }));
@@ -116,7 +119,7 @@ public sealed class DropsHostService : IAsyncDisposable
     {
         WorkerConnection? worker;
         lock (_sync) _workers.TryGetValue(platform, out worker);
-        if (worker is not null)
+        if (worker is not null && !worker.Process.HasExited)
         {
             worker.Lifecycle = WorkerLifecycle.Stopping;
             try
@@ -130,6 +133,9 @@ public sealed class DropsHostService : IAsyncDisposable
             TryTerminate(worker);
             try { await worker.Process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
             catch { }
+        }
+        if (worker is not null)
+        {
             lock (_sync)
             {
                 if (_workers.TryGetValue(platform, out var current) && ReferenceEquals(current, worker))
@@ -210,6 +216,11 @@ public sealed class DropsHostService : IAsyncDisposable
         {
             if (_workers.TryGetValue(platform, out var connected) && !connected.Process.HasExited)
                 return connected;
+            if (_workers.TryGetValue(platform, out var exited))
+            {
+                _workers.Remove(platform);
+                _retiredWorkers.Add(exited);
+            }
         }
 
         var startInfo = BuildStartInfo(platform);
@@ -273,10 +284,11 @@ public sealed class DropsHostService : IAsyncDisposable
         {
             DropsPlatform.Soop => paths.SoopDropsDir,
             DropsPlatform.YouTube => paths.YouTubeDropsDir,
+            DropsPlatform.Bilibili => paths.BilibiliDropsDir,
             _ => paths.TwitchDropsDir,
         };
         var logFile = Path.Combine(paths.LogsDir, $"drops-{platformName}.log");
-        return new ProcessStartInfo
+        var startInfo = new ProcessStartInfo
         {
             FileName = executable,
             Arguments = $"{scriptArguments}--data-dir {Quote(dataDirectory)} --log-file {Quote(logFile)}",
@@ -291,6 +303,18 @@ public sealed class DropsHostService : IAsyncDisposable
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,
         };
+        if (platform == DropsPlatform.Bilibili)
+        {
+            // The Bilibili provider is a hard direct-connect exception.  Do
+            // not inherit proxy variables from the WPF process even when the
+            // global proxy is enabled for the other providers.
+            foreach (var variable in new[]
+                     { "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy" })
+                startInfo.Environment.Remove(variable);
+            startInfo.Environment["NO_PROXY"] = "*";
+            startInfo.Environment["no_proxy"] = "*";
+        }
+        return startInfo;
     }
 
     private static string? FindDevelopmentWorker(string start, string platformName)
@@ -349,6 +373,7 @@ public sealed class DropsHostService : IAsyncDisposable
                         {
                             DropsPlatform.Twitch => "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
                             DropsPlatform.YouTube => "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。",
+                            DropsPlatform.Bilibili => "Python SSL 组件无法加载，无法直连哔哩哔哩。请重新安装 CloudLight Blizzard。",
                             _ => "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。",
                         };
                         EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "runtime_error",

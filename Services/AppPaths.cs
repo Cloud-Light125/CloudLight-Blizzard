@@ -17,6 +17,7 @@ public sealed class AppPaths
     public string SoopDropsDir => Path.Combine(DropsDir, "soop");
     public string YouTubeDropsDir => Path.Combine(DropsDir, "youtube");
     public string TwitchDropsDir => Path.Combine(DropsDir, "twitch");
+    public string BilibiliDropsDir => Path.Combine(DropsDir, "bilibili");
     public string OverwatchCacheDir => Path.Combine(Root, "overwatch", "cache");
     public string DefaultRegionStorageDir => Path.Combine(Root, "region-switch");
     public string LegacyRoot { get; }
@@ -42,6 +43,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(SoopDropsDir);
         Directory.CreateDirectory(YouTubeDropsDir);
         Directory.CreateDirectory(TwitchDropsDir);
+        Directory.CreateDirectory(BilibiliDropsDir);
         Directory.CreateDirectory(OverwatchCacheDir);
     }
 

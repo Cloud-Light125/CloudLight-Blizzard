@@ -292,6 +292,17 @@ public partial class MainWindow : Window
                     NotificationCategory.Drops, "drops", $"drop-completed:{completionKey}"));
             }
         }
+        if (message.Platform == DropsPlatform.Bilibili && message.Name is ("status" or "session"))
+        {
+            var state = Text(message.Payload, "connectionState");
+            if (state is "Degraded" or "WaitingRetry" or "Failed")
+                _dropsNotificationGate.ReportFailure(message.Platform,
+                    $"{PlatformName(message.Platform)} 连接质量下降", "部分 Session 正在自动恢复。");
+            else if (state == "Connected")
+                _dropsNotificationGate.ReportRecovery(message.Platform,
+                    $"{PlatformName(message.Platform)} 已恢复连接", "自动恢复流程已完成。");
+            return;
+        }
         if (message.Name is not ("connection_status" or "runtime_error" or "runtime_recovered")) return;
         var phase = message.Name == "connection_status"
             ? Text(message.Payload, "phase") : message.Name;
@@ -318,6 +329,7 @@ public partial class MainWindow : Window
     {
         DropsPlatform.Soop => "SOOP",
         DropsPlatform.YouTube => "YouTube",
+        DropsPlatform.Bilibili => "哔哩哔哩",
         _ => "Twitch",
     };
 
@@ -338,8 +350,11 @@ public partial class MainWindow : Window
 
         if (message.Name is "drop" or "reward")
         {
-            dropId = Text(payload, "id", Text(payload, "dropId"));
+            dropId = Text(payload, "id", Text(payload, "dropId", Text(payload, "taskId")));
             dropName = Text(payload, "name", Text(payload, "reward"));
+            if (message.Platform == DropsPlatform.Bilibili &&
+                payload.TryGetProperty("success", out var success) && success.ValueKind == System.Text.Json.JsonValueKind.True)
+                return !string.IsNullOrWhiteSpace(dropId);
             var completed = payload.TryGetProperty("completed", out var completedValue) &&
                             completedValue.ValueKind == System.Text.Json.JsonValueKind.True;
             var status = Text(payload, "status");
@@ -350,6 +365,20 @@ public partial class MainWindow : Window
                             Number(payload, "requiredMinutes") > 0;
             }
             return completed && !string.IsNullOrWhiteSpace(dropId);
+        }
+
+        if (message.Platform == DropsPlatform.Bilibili && message.Name is ("task" or "progress") &&
+            payload.TryGetProperty("tasks", out var tasks) && tasks.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var item in tasks.EnumerateArray())
+            {
+                if (item.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                    !item.TryGetProperty("completed", out var completed) || completed.ValueKind != System.Text.Json.JsonValueKind.True)
+                    continue;
+                dropId = Text(item, "id");
+                dropName = Text(item, "name");
+                if (!string.IsNullOrWhiteSpace(dropId)) return true;
+            }
         }
 
         if (message.Name == "account_status" && payload.TryGetProperty("currentProgress", out var progress) &&

@@ -12,14 +12,16 @@ public sealed record NetworkDiagnosticReport(
     CloudNetworkProbeResult Announcement,
     CloudNetworkProbeResult Update,
     CloudNetworkProbeResult? Soop = null,
-    CloudNetworkProbeResult? Twitch = null)
+    CloudNetworkProbeResult? Twitch = null,
+    CloudNetworkProbeResult? Bilibili = null)
 {
     public string ToDisplayText() => string.Join(Environment.NewLine,
         Format("代理", Proxy, proxyLine: true),
         Format("公告服务", Announcement),
         Format("更新服务", Update),
         Soop is null ? "SOOP：未执行" : Format("SOOP", Soop),
-        Twitch is null ? "Twitch：未执行" : Format("Twitch", Twitch));
+        Twitch is null ? "Twitch：未执行" : Format("Twitch", Twitch),
+        Bilibili is null ? "哔哩哔哩：未执行" : Format("哔哩哔哩", Bilibili));
 
     public IEnumerable<string> ToCopyLines()
     {
@@ -28,6 +30,7 @@ public sealed record NetworkDiagnosticReport(
         yield return CopyLine("更新服务", Update);
         if (Soop is not null) yield return CopyLine("SOOP", Soop);
         if (Twitch is not null) yield return CopyLine("Twitch", Twitch);
+        if (Bilibili is not null) yield return CopyLine("哔哩哔哩（固定直连）", Bilibili);
     }
 
     private static string Format(string name, CloudNetworkProbeResult result, bool proxyLine = false)
@@ -74,11 +77,14 @@ public sealed class NetworkDiagnosticService
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
     private readonly AppSettings _settings;
     private readonly CloudHttpClientFactory _httpClients;
+    private readonly Func<HttpClient> _directClientFactory;
 
-    public NetworkDiagnosticService(AppSettings settings, CloudHttpClientFactory httpClients)
+    public NetworkDiagnosticService(AppSettings settings, CloudHttpClientFactory httpClients,
+        Func<HttpClient>? directClientFactory = null)
     {
         _settings = settings;
         _httpClients = httpClients;
+        _directClientFactory = directClientFactory ?? CreateDirectClient;
     }
 
     public async Task<NetworkDiagnosticReport> RunAsync(CancellationToken cancellationToken = default)
@@ -108,10 +114,13 @@ public sealed class NetworkDiagnosticService
                 () => new HttpRequestMessage(HttpMethod.Get, "https://www.twitch.tv/"),
                 "diagnostic-twitch", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
             DefaultRoute(), cancellationToken);
-        await Task.WhenAll(announcementTask, updateTask, soopTask, twitchTask).ConfigureAwait(false);
+        var bilibiliTask = ProbeWithTimeoutAsync(
+            ProbeBilibiliDirectAsync, "Direct", cancellationToken);
+        await Task.WhenAll(announcementTask, updateTask, soopTask, twitchTask, bilibiliTask).ConfigureAwait(false);
         return new NetworkDiagnosticReport(DateTimeOffset.Now, proxy,
             await announcementTask.ConfigureAwait(false), await updateTask.ConfigureAwait(false),
-            await soopTask.ConfigureAwait(false), await twitchTask.ConfigureAwait(false));
+            await soopTask.ConfigureAwait(false), await twitchTask.ConfigureAwait(false),
+            await bilibiliTask.ConfigureAwait(false));
     }
 
     public string BuildCopyText(RuntimeDiagnosticContext context, NetworkDiagnosticReport? report)
@@ -143,6 +152,9 @@ public sealed class NetworkDiagnosticService
             $"Twitch 最后成功：{context.Drops.TwitchLastSuccess}",
             $"YouTube：{context.Drops.YouTubeStatus}",
             $"YouTube 最后成功：{context.Drops.YouTubeLastSuccess}",
+            $"哔哩哔哩：{context.Drops.BilibiliStatus}",
+            $"哔哩哔哩最后成功：{context.Drops.BilibiliLastSuccess}",
+            "哔哩哔哩网络模式：DIRECT（Worker 清理代理环境变量，HTTP 客户端 trust_env=false）",
         ]);
         if (!string.IsNullOrWhiteSpace(context.Drops.RecentNetworkError))
             lines.Add($"最近网络错误：{context.Drops.RecentNetworkError}");
@@ -159,6 +171,43 @@ public sealed class NetworkDiagnosticService
 
     private string DefaultRoute() => _settings.EnableProxy ? "Proxy" : "Direct";
     private static bool IsSuccess(HttpStatusCode status) => (int)status is >= 200 and < 300;
+
+    private async Task<CloudNetworkProbeResult> ProbeBilibiliDirectAsync(CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var client = _directClientFactory();
+            using var response = await client.GetAsync("https://live.bilibili.com/",
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var status = response.StatusCode;
+            var success = (int)status is >= 200 and < 400;
+            return new CloudNetworkProbeResult(success, "Direct", stopwatch.ElapsedMilliseconds,
+                (int)status, null, success ? "正常" : $"HTTP {(int)status}");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
+                null, CloudNetworkFailureKind.DirectConnectionFailed, "连接超时");
+        }
+        catch (HttpRequestException)
+        {
+            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
+                null, CloudNetworkFailureKind.DirectConnectionFailed, "直连失败");
+        }
+        catch
+        {
+            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
+                null, CloudNetworkFailureKind.DirectConnectionFailed, "诊断请求失败");
+        }
+    }
+
+    private static HttpClient CreateDirectClient() => new(new HttpClientHandler
+    {
+        UseProxy = false,
+        Proxy = null,
+        AllowAutoRedirect = true,
+    }) { Timeout = ProbeTimeout };
 
     private static async Task<CloudNetworkProbeResult> ProbeWithTimeoutAsync(
         Func<CancellationToken, Task<CloudNetworkProbeResult>> probe, string route,

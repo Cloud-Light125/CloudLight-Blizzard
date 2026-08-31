@@ -49,6 +49,16 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <Content Include="Integrations\Drops\bilibili\LICENSE">
+      <Link>THIRD_PARTY_LICENSES\BiliBiliDropsMiner-MIT.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Integrations\Drops\bilibili\licenses\**\*">
+      <Link>THIRD_PARTY_LICENSES\Bilibili\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="artifacts\drops\**\*" Condition="Exists('artifacts\drops')">
       <Link>_internal\drops\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

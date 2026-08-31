@@ -1,8 +1,8 @@
 ﻿param(
     [string]$Python = "",
     [string]$SoopCorePath = "",
-    [ValidateSet("youtube", "soop", "twitch")]
-    [string[]]$Platforms = @("youtube", "twitch", "soop")
+    [ValidateSet("youtube", "soop", "twitch", "bilibili")]
+    [string[]]$Platforms = @("youtube", "twitch", "soop", "bilibili")
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +63,10 @@ if ($LASTEXITCODE -ne 0) { throw '安装 YouTube Worker 依赖失败。' }
 if ($LASTEXITCODE -ne 0) { throw '安装 SOOP Worker 依赖失败。' }
 & $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "twitch\requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw '安装 Twitch Worker 依赖失败。' }
+if ($Platforms -contains "bilibili") {
+    & $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "bilibili\requirements.txt")
+    if ($LASTEXITCODE -ne 0) { throw '安装 Bilibili Worker 依赖失败。' }
+}
 
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 
@@ -147,6 +151,26 @@ if (Test-Path -LiteralPath (Join-Path $SoopCorePath "__init__.py")) {
 }
 if ($Platforms -contains "soop") {
     Build-Worker -Platform "soop" -ExtraArgs ($soopArgs + $tlsRuntimeArgs)
+}
+
+if ($Platforms -contains "bilibili") {
+    $bilibiliVendor = Join-Path $dropsRoot "bilibili\vendor"
+    $bilibiliArgs = @(
+        "--paths", $bilibiliVendor,
+        "--collect-submodules", "bilibili_drops_miner",
+        "--hidden-import", "httpx",
+        "--hidden-import", "httpcore",
+        "--hidden-import", "h11",
+        "--hidden-import", "anyio",
+        "--hidden-import", "qrcode",
+        "--hidden-import", "PIL"
+    ) + $tlsRuntimeArgs
+    Build-Worker -Platform "bilibili" -ExtraArgs $bilibiliArgs
+    Copy-Item -LiteralPath (Join-Path $dropsRoot "bilibili\LICENSE") -Destination (Join-Path $artifacts "bilibili\BiliBiliDropsMiner-MIT.txt") -Force
+
+    Write-Host "Bilibili Worker Python contract tests" -ForegroundColor Cyan
+    & $buildPython -m unittest discover -s (Join-Path $dropsRoot "bilibili\tests") -p "test*.py" -v
+    if ($LASTEXITCODE -ne 0) { throw "Bilibili Worker Python contract tests failed." }
 }
 
 foreach ($platform in $Platforms) {

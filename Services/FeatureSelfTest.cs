@@ -2069,6 +2069,10 @@ public static class FeatureSelfTest
             "ProxyUrl=http://user:password@127.0.0.1:7897\n" +
             "token=abcdef\naccess_token=abcdef\nrefresh_token=abcdef\n" +
             "cookie=session-cookie-value\nset-cookie=session-set-cookie-value\n" +
+            "SESSDATA=fake-sessdata\nbili_jct=fake-bili-csrf\n" +
+            "DedeUserID=42\nDedeUserID__ckMd5=fake-ckmd5\nbuvid3=fake-buvid3\n" +
+            "buvid4=fake-buvid4\nb_nut=fake-bnut\nsid=fake-sid\n" +
+            "LIVE_BUVID=fake-live-buvid\ncsrf=fake-csrf\ncsrf_token=fake-csrf-token\n" +
             "GITHUB_TOKEN=abcdef\nCLOUDFLARE_API_TOKEN=abcdef\n" +
             "password=abcdef\npasswd=abcdef\nsecret=abcdef";
         var reportModel = new DiagnosticRunReport
@@ -2085,10 +2089,46 @@ public static class FeatureSelfTest
         Assert(reportModel.HealthyCount == 1 && reportModel.WarningCount == 1 && reportModel.ErrorCount == 1 &&
                reportModel.OverallText == "需要处理错误", "diagnostics model exposes Healthy/Warning/Error summaries");
         var unsafeText = DiagnosticSanitizer.Sanitize(
-            "ProxyUrl=http://user:password@127.0.0.1:7897; GITHUB_TOKEN=diagnostic-secret; Authorization: Bearer diagnostic-bearer");
+            "ProxyUrl=http://user:password@127.0.0.1:7897; GITHUB_TOKEN=diagnostic-secret; " +
+            "Authorization: Bearer diagnostic-bearer; SESSDATA=fake-sessdata; " +
+            "bili_jct=fake-bili-csrf; DedeUserID__ckMd5=fake-ckmd5; csrf_token=fake-csrf-token");
         Assert(!unsafeText.Contains("diagnostic-secret", StringComparison.Ordinal) &&
                !unsafeText.Contains("diagnostic-bearer", StringComparison.Ordinal) &&
+               !unsafeText.Contains("fake-sessdata", StringComparison.Ordinal) &&
+               !unsafeText.Contains("fake-bili-csrf", StringComparison.Ordinal) &&
+               !unsafeText.Contains("fake-ckmd5", StringComparison.Ordinal) &&
+               !unsafeText.Contains("fake-csrf-token", StringComparison.Ordinal) &&
                unsafeText.Contains("***:***", StringComparison.Ordinal), "diagnostic sanitizer removes credentials and bearer tokens");
+
+        if (OperatingSystem.IsWindows())
+        {
+            const string bilibiliCredential = "SESSDATA=fake-sessdata; bili_jct=fake-bili-csrf; DedeUserID=42";
+            var encrypted = DpapiCredentialStore.Protect(bilibiliCredential);
+            Assert(!encrypted.Contains(bilibiliCredential, StringComparison.Ordinal) &&
+                   DpapiCredentialStore.Unprotect(encrypted) == bilibiliCredential,
+                "Bilibili credentials round-trip through Windows CurrentUser DPAPI without plaintext blob");
+        }
+
+        var dropsHost = new DropsHostService();
+        using (var dropsVm = new DropsViewModel(dropsHost, TimeSpan.FromSeconds(1),
+                   TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), null))
+        {
+            using var bilibiliState = JsonDocument.Parse("""
+                {"platform":"bilibili","networkMode":"DIRECT","account":{"loggedIn":true,"uid":42,"userName":"Cloudlight"},
+                 "rooms":[{"id":101,"name":"OWCS","enabled":true,"liveStatus":1}],
+                 "settings":{"watchMode":"multi","sessionsPerRoom":80,"reconnectEnabled":true},
+                 "tasks":[{"id":"task-a","name":"观看 300 分钟","current":204,"limit":300,"percent":68,"status":"进行中"},
+                           {"id":"task-b","name":"观看 120 分钟","current":120,"limit":120,"percent":100,"completed":true,"claimable":true,"status":"可领取"}],
+                 "sessions":{"configuredSessions":80,"activeSessions":76,"connectingSessions":2,"retryingSessions":2,"failedSessions":0,"sessions":[]}}
+                """);
+            dropsVm.ApplyState(DropsPlatform.Bilibili, bilibiliState.RootElement);
+            Assert(dropsVm.Platforms.Count == 4 && dropsVm.Platforms.Any(item => item.Platform == DropsPlatform.Bilibili) &&
+                   dropsVm.BilibiliDetails.LoggedIn && dropsVm.BilibiliDetails.Tasks.Count == 2 &&
+                   dropsVm.BilibiliDetails.ConfiguredSessions == 80 && dropsVm.BilibiliDetails.ActiveSessions == 76 &&
+                   dropsVm.BilibiliDetails.DirectNetworkText.StartsWith("DIRECT", StringComparison.Ordinal),
+                "Bilibili is projected through the shared four-platform Drops state and JSONL fields");
+        }
+        dropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
         var main = new MainViewModel();
         string? secretLog = null;
@@ -2140,7 +2180,11 @@ public static class FeatureSelfTest
                 Assert(!text.Contains("abcdef", StringComparison.Ordinal) &&
                        !text.Contains("user:password", StringComparison.Ordinal) &&
                        !text.Contains("session-cookie-value", StringComparison.Ordinal) &&
-                       !text.Contains("session-set-cookie-value", StringComparison.Ordinal),
+                       !text.Contains("session-set-cookie-value", StringComparison.Ordinal) &&
+                       !text.Contains("fake-sessdata", StringComparison.Ordinal) &&
+                       !text.Contains("fake-bili-csrf", StringComparison.Ordinal) &&
+                       !text.Contains("fake-ckmd5", StringComparison.Ordinal) &&
+                       !text.Contains("fake-csrf-token", StringComparison.Ordinal),
                     $"{required} redacts all injected secret values");
             }
             foreach (var entry in archive.Entries.Where(item => item.FullName.StartsWith("logs/", StringComparison.OrdinalIgnoreCase)))
@@ -2150,7 +2194,11 @@ public static class FeatureSelfTest
                 Assert(!text.Contains("abcdef", StringComparison.Ordinal) &&
                        !text.Contains("diagnostic-secret", StringComparison.Ordinal) &&
                        !text.Contains("diagnostic-bearer", StringComparison.Ordinal) &&
-                       !text.Contains("user:password", StringComparison.Ordinal),
+                       !text.Contains("user:password", StringComparison.Ordinal) &&
+                       !text.Contains("fake-sessdata", StringComparison.Ordinal) &&
+                       !text.Contains("fake-bili-csrf", StringComparison.Ordinal) &&
+                       !text.Contains("fake-ckmd5", StringComparison.Ordinal) &&
+                       !text.Contains("fake-csrf-token", StringComparison.Ordinal),
                     "diagnostic log entries redact injected secret values");
             }
             Assert(DiagnosticService.TryNormalizeZipEntryName("logs\\app.log", out var normalized) &&

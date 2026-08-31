@@ -273,7 +273,7 @@ public static class CloudServicesSelfTest
         using (var clients = new CloudHttpClientFactory(proxySettings,
                    Path.Combine(workspace, "diagnostic-proxy.log"), _ => SuccessClient()))
         {
-            var result = await new NetworkDiagnosticService(proxySettings, clients).RunAsync();
+            var result = await new NetworkDiagnosticService(proxySettings, clients, SuccessClient).RunAsync();
             Assert(result.Proxy.Success && result.Proxy.Route == "Proxy",
                 "network diagnostic checks the configured proxy itself");
             Assert(result.Announcement.Success && result.Announcement.Route == "Proxy" &&
@@ -294,7 +294,7 @@ public static class CloudServicesSelfTest
         using (var clients = new CloudHttpClientFactory(proxySettings,
                    Path.Combine(workspace, "diagnostic-rate-limit.log"), _ => RateLimitedClient()))
         {
-            var result = await new NetworkDiagnosticService(proxySettings, clients).RunAsync();
+            var result = await new NetworkDiagnosticService(proxySettings, clients, RateLimitedClient).RunAsync();
             Assert(!result.Update.Success && result.Update.Message == "GitHub API 请求频率限制" &&
                    result.ToDisplayText().Contains("更新服务：受限", StringComparison.Ordinal),
                 "network diagnostic classifies the Worker GitHub rate limit");
@@ -305,7 +305,7 @@ public static class CloudServicesSelfTest
                        ? SuccessClient()
                        : new HttpClient(new ThrowingHandler())))
         {
-            var service = new NetworkDiagnosticService(proxySettings, clients);
+            var service = new NetworkDiagnosticService(proxySettings, clients, SuccessClient);
             var result = await service.RunAsync();
             Assert(!result.Proxy.Success && result.Announcement.Success &&
                    result.Announcement.Route == "DirectFallback" && result.Update.Route == "DirectFallback",

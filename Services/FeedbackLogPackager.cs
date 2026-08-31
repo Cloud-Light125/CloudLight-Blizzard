@@ -17,7 +17,7 @@ public sealed class FeedbackLogPackager
     {
         "app.log", "cloudlight-blizzard.log", "account-switch.log", "update.log", "region-switch.log",
         "region-diff-diagnostic.txt", "crash.log", "exception.log", "drops-soop.log", "drops-youtube.log",
-        "drops-twitch.log",
+        "drops-twitch.log", "drops-bilibili.log",
     };
 
     private readonly string _logsDirectory;

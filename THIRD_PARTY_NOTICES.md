@@ -30,6 +30,21 @@ Attribution records provenance only; it does not grant or imply redistribution r
 
 The CloudLight Blizzard Worker is a new GUI-independent implementation of the documented behavior and public YouTube/Chromium interfaces. It does not copy or redistribute the upstream PySide6 code and does not claim the unlicensed upstream source as GPLv3 code. This work was performed after a compatibility audit and is therefore described as an independent reimplementation, not as a formally separated clean-room process.
 
+## BiliBiliDropsMiner
+
+- Source: <https://github.com/mi0e/BiliBiliDropsMiner>
+- Integrated upstream commit: `a0d8bd51728aabaef66c651613324adba15d9ce8`
+- License: MIT License
+- Copyright: (c) 2026 mi0e
+
+CloudLight Blizzard vendors the non-GUI core under `Integrations/Drops/bilibili/vendor/` and keeps the upstream MIT notice at `Integrations/Drops/bilibili/LICENSE`. The integrated Worker uses the upstream HTTP client, QR login parsing, WBI signing, static live-room task discovery, official task/progress and reward APIs, and x25Kn watch-time session implementation. The upstream PySide6 GUI, Selenium/browser sniffing path, and optional Apprise dependency are not included in the product runtime.
+
+The Bilibili Worker runtime dependencies are `httpx` (BSD-3-Clause), `qrcode` (BSD), `Pillow` (HPND), and their installed transitive dependencies `httpcore` (BSD-3-Clause), `h11` (MIT), `anyio` (MIT), `idna` (BSD-3-Clause), `certifi` (MPL-2.0), and Windows-only `colorama` (BSD-3-Clause). Each dependency remains subject to its own license; the build output must retain the corresponding package notices where required.
+
+The exact runtime package license texts used by the current Worker build are
+kept under `Integrations/Drops/bilibili/licenses/` and are published under
+`THIRD_PARTY_LICENSES/Bilibili/` alongside the upstream notice.
+
 ## Python runtime components
 
 - aiohttp

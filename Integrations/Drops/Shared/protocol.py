@@ -23,10 +23,10 @@ REQUIRED_COMMANDS = {
 _WRITE_LOCK = threading.Lock()
 _OUTPUT_CLOSED = False
 _SECRET = re.compile(
-    r'''(?i)(["']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|password|passwd|cookie|set-cookie)["']?\s*[:=]\s*["']?)([^"'\s,;}\]]+)'''
+    r'''(?i)(["']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|password|passwd|cookie|set-cookie|SESSDATA|bili_jct|DedeUserID(?:__ckMd5)?|buvid3|buvid4|b_nut|sid|LIVE_BUVID|csrf(?:_token)?)["']?\s*[:=]\s*["']?)([^"'\s,;}\]]+)'''
 )
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+")
-_SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth)=)[^&#\s]+")
+_SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\s]+")
 _URL_CREDENTIALS = re.compile(r"(?i)(https?://)[^/\s:@]+:[^@/\s]+@")
 
 

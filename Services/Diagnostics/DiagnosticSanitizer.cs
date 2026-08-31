@@ -14,13 +14,13 @@ public static partial class DiagnosticSanitizer
     [GeneratedRegex("(?i)(https?://)<redacted>@")]
     private static partial Regex RedactedUrlCredentials();
 
-    [GeneratedRegex("(?i)(authorization|proxy[-_ ]?password|github[-_ ]?token|cloudflare[-_ ]?token|bearer|cookie|secret|oauth[-_ ]?token|access[-_ ]?token|refresh[-_ ]?token|device[-_ ]?code|password|passwd|token)(\\s*[:=]\\s*)[^\\r\\n,;}]{1,}")]
+    [GeneratedRegex("(?i)(authorization|proxy[-_ ]?password|github[-_ ]?token|cloudflare[-_ ]?token|bearer|cookie|secret|oauth[-_ ]?token|access[-_ ]?token|refresh[-_ ]?token|device[-_ ]?code|password|passwd|token|SESSDATA|bili_jct|DedeUserID(?:__ckMd5)?|buvid3|buvid4|b_nut|sid|LIVE_BUVID|csrf(?:_token)?)(\\s*[:=]\\s*)[^\\r\\n,;}]{1,}")]
     private static partial Regex KeyValueSecret();
 
     [GeneratedRegex("(?i)\\bBearer\\s+[A-Za-z0-9._~+\\-/=]+")]
     private static partial Regex BearerToken();
 
-    [GeneratedRegex("(?i)([?&](?:access_token|refresh_token|oauth_token|device_code|code|token|auth|ticket|session)=)[^&#\\s]+")]
+    [GeneratedRegex("(?i)([?&](?:access_token|refresh_token|oauth_token|device_code|code|token|auth|ticket|session|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\\s]+")]
     private static partial Regex SecretQuery();
 
     public static string Sanitize(string? value)

@@ -23,6 +23,11 @@ public sealed class DropsDataImporter
                 new("settings.json"), new("cookies.jar", true), new("cache"),
                 new("log.txt"), new("logs")
             ],
+            [DropsPlatform.Bilibili] =
+            [
+                new("state.json"), new("credential.dpapi", true),
+                new("notifier.dpapi", true), new("logs")
+            ],
         };
 
     public IReadOnlyList<string> Detect(DropsPlatform platform, string sourceDirectory)

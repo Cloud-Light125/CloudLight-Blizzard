@@ -251,6 +251,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public DropsPlatformViewModel Soop { get; } = new(DropsPlatform.Soop, "SOOP");
     public DropsPlatformViewModel YouTube { get; } = new(DropsPlatform.YouTube, "YouTube");
     public DropsPlatformViewModel Twitch { get; } = new(DropsPlatform.Twitch, "Twitch");
+    public DropsPlatformViewModel Bilibili { get; } = new(DropsPlatform.Bilibili, "哔哩哔哩");
+    public BilibiliDropsViewModel BilibiliDetails { get; }
     public IReadOnlyList<DropsPlatformViewModel> Platforms { get; }
     public ObservableCollection<DropsRow> Accounts { get; } = new();
     public ObservableCollection<DropsRow> Tasks { get; } = new();
@@ -298,6 +300,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public DateTimeOffset? LastTwitchConnectedAt => _lastTwitchConnectedAt;
     private DateTimeOffset? _lastSoopSuccessfulAt;
     private DateTimeOffset? _lastYouTubeSuccessfulAt;
+    private DateTimeOffset? _lastBilibiliSuccessfulAt;
     private string _soopLastSuccessText = "";
     public string SoopLastSuccessText { get => _soopLastSuccessText; private set { Set(ref _soopLastSuccessText, value); Raise(nameof(SoopLastSuccessVisibility)); } }
     public Visibility SoopLastSuccessVisibility => string.IsNullOrWhiteSpace(SoopLastSuccessText) ? Visibility.Collapsed : Visibility.Visible;
@@ -409,6 +412,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private string _youtubeCurrentLabel = "YouTube";
     private string _recentNetworkError = "";
     private DateTimeOffset? _recentNetworkErrorAt;
+    private readonly TimeSpan _bilibiliRecoveryDelay = TimeSpan.FromSeconds(60);
+    private readonly object _bilibiliRecoverySync = new();
+    private CancellationTokenSource? _bilibiliRecoveryCts;
+    private Task? _bilibiliRecoveryTask;
+    private bool _bilibiliRecoveryIntent;
+    private bool _bilibiliUserStopped;
+    private bool _bilibiliApplicationStopping;
+    private int _bilibiliRecoveryAttempt;
 
     public DropsQuickStartGuide SoopQuickStart { get; } = new(
         new("①", "添加 SOOP 账号", "首次使用请先添加 SOOP 账号。账号信息仅保存在本机。", "soop_add_account"),
@@ -517,7 +528,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _twitchRetryOverride = twitchRetryOverride;
         _soopRetryDelay = soopRetryDelay;
         _soopRetryOverride = soopRetryOverride;
-        Platforms = [Soop, YouTube, Twitch];
+        BilibiliDetails = new BilibiliDropsViewModel(Bilibili);
+        Platforms = [Soop, YouTube, Twitch, Bilibili];
         Twitch.Status = "Twitch 尚未连接";
         Twitch.Summary = "尚未登录 Twitch";
         _host.SnapshotChanged += OnSnapshotChanged;
@@ -555,6 +567,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         SoopLastSuccessText = _lastSoopSuccessfulAt.HasValue ? LastSuccessText(_lastSoopSuccessfulAt, now) : "";
         TwitchLastSuccessText = _lastTwitchConnectedAt.HasValue ? LastSuccessText(_lastTwitchConnectedAt, now) : "";
         YouTubeLastSuccessText = _lastYouTubeSuccessfulAt.HasValue ? LastSuccessText(_lastYouTubeSuccessfulAt, now) : "";
+        RefreshRecoveryProjection(DropsPlatform.Bilibili, now);
         RefreshRecoveryProjection(DropsPlatform.Soop, now);
         RefreshRecoveryProjection(DropsPlatform.YouTube, now);
         RefreshRecoveryProjection(DropsPlatform.Twitch, now);
@@ -601,6 +614,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 platform.LastProgressAt, platform.LastReconnectAt, platform.NextRetryAt,
                 platform.ConsecutiveFailures, platform.ReconnectCount, platform.WorkerHealth)).ToArray(),
             RecentEvents = SnapshotRecoveryEvents(),
+            BilibiliStatus = Bilibili.Status,
+            BilibiliLastSuccess = LastSuccessText(_lastBilibiliSuccessfulAt, now)
+                .Replace("最后成功：", "", StringComparison.Ordinal),
         };
     }
 
@@ -643,6 +659,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
             DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
             DropsPlatform.YouTube => DropsConnectionState.Disconnected,
+            DropsPlatform.Bilibili when vm.ConnectionState == DropsConnectionState.Stopped => DropsConnectionState.Stopped,
+            DropsPlatform.Bilibili when vm.ConnectionState is DropsConnectionState.Degraded or
+                DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering or DropsConnectionState.Failed => vm.ConnectionState,
+            DropsPlatform.Bilibili when vm.WorkerLifecycle == WorkerLifecycle.Crashed => DropsConnectionState.Failed,
+            DropsPlatform.Bilibili when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
+            DropsPlatform.Bilibili when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
+            DropsPlatform.Bilibili when vm.Running => DropsConnectionState.Connected,
+            DropsPlatform.Bilibili => DropsConnectionState.Disconnected,
             _ => DropsConnectionState.Disconnected,
         };
         var previous = vm.ConnectionState;
@@ -728,6 +752,118 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             _soopRefreshPending = false;
             CancelSoopRetry();
         }
+    }
+
+    public void BeginBilibiliStart(bool automatic)
+    {
+        _bilibiliUserStopped = false;
+        _bilibiliRecoveryIntent = true;
+        _bilibiliRecoveryAttempt = 0;
+        Bilibili.ConnectionState = DropsConnectionState.Connecting;
+        Bilibili.Status = automatic ? "正在恢复哔哩哔哩…" : "正在启动哔哩哔哩…";
+        Bilibili.Summary = "正在验证账号并建立观看 Session";
+        CancelBilibiliRecovery();
+    }
+
+    public void StopBilibiliByUser()
+    {
+        _bilibiliUserStopped = true;
+        _bilibiliRecoveryIntent = false;
+        CancelBilibiliRecovery();
+        Bilibili.Running = false;
+        Bilibili.ConnectionState = DropsConnectionState.Stopped;
+        Bilibili.Status = "已停止";
+        Bilibili.Summary = "哔哩哔哩 Drops 已停止，登录凭据和配置已保留";
+    }
+
+    private bool HasBilibiliRecoveryIntent() =>
+        _bilibiliRecoveryIntent && !_bilibiliUserStopped && !_bilibiliApplicationStopping;
+
+    private void ScheduleBilibiliRecovery()
+    {
+        if (!HasBilibiliRecoveryIntent()) return;
+        lock (_bilibiliRecoverySync)
+        {
+            if (_bilibiliRecoveryTask is { IsCompleted: false } &&
+                _bilibiliRecoveryCts is { IsCancellationRequested: false }) return;
+            _bilibiliRecoveryCts = new CancellationTokenSource();
+            _bilibiliRecoveryTask = RunBilibiliRecoveryAsync(_bilibiliRecoveryCts);
+        }
+    }
+
+    private async Task RunBilibiliRecoveryAsync(CancellationTokenSource owner)
+    {
+        var token = owner.Token;
+        try
+        {
+            while (HasBilibiliRecoveryIntent())
+            {
+                Dispatch(() =>
+                {
+                    Bilibili.ConnectionState = DropsConnectionState.WaitingRetry;
+                    Bilibili.Status = "哔哩哔哩 Worker 连接中断";
+                    Bilibili.Summary = "Worker 将在 60 秒后自动恢复，已保留房间、任务和 Session 设置";
+                });
+                await Task.Delay(_bilibiliRecoveryDelay, token).ConfigureAwait(false);
+                if (!HasBilibiliRecoveryIntent()) break;
+                Dispatch(() =>
+                {
+                    Bilibili.ConnectionState = DropsConnectionState.Recovering;
+                    Bilibili.Status = "正在恢复哔哩哔哩 Worker…";
+                    Bilibili.Summary = "正在重新建立 Worker 并恢复 Drops";
+                });
+                try
+                {
+                    var attempt = Interlocked.Increment(ref _bilibiliRecoveryAttempt);
+                    await _host.RestartAsync(DropsPlatform.Bilibili, token).ConfigureAwait(false);
+                    var state = await _host.RequestAsync(DropsPlatform.Bilibili, "start",
+                        new { automatic = true, retryAttempt = attempt }, token).ConfigureAwait(false);
+                    Dispatch(() =>
+                    {
+                        ApplyState(DropsPlatform.Bilibili, state);
+                        Bilibili.ConnectionState = DropsConnectionState.Connected;
+                        Bilibili.Status = "哔哩哔哩已恢复";
+                        Bilibili.Summary = "Worker、直播间和观看 Session 已恢复";
+                        Bilibili.LastReconnectAt = DateTimeOffset.Now;
+                        Bilibili.ReconnectCount++;
+                        _bilibiliRecoveryIntent = true;
+                        AddRecoveryEvent(DropsPlatform.Bilibili, "Worker 已恢复",
+                            "哔哩哔哩 Worker 已重新启动，Drops 配置已恢复。", DropsConnectionState.Connected);
+                    });
+                    break;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    Dispatch(() =>
+                    {
+                        Bilibili.ConsecutiveFailures++;
+                        Bilibili.ConnectionState = DropsConnectionState.WaitingRetry;
+                        Bilibili.Status = "哔哩哔哩恢复失败";
+                        Bilibili.Summary = "已降低重试频率，后台会继续等待恢复";
+                        RecordRecentNetworkError(SensitiveDataRedactor.Redact(ex.Message));
+                    });
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            lock (_bilibiliRecoverySync)
+            {
+                if (ReferenceEquals(_bilibiliRecoveryCts, owner))
+                {
+                    _bilibiliRecoveryCts = null;
+                    _bilibiliRecoveryTask = null;
+                }
+            }
+            owner.Dispose();
+        }
+    }
+
+    private void CancelBilibiliRecovery()
+    {
+        lock (_bilibiliRecoverySync) _bilibiliRecoveryCts?.Cancel();
     }
 
     public void BeginSoopStart(string uid, bool automatic)
@@ -1420,7 +1556,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         vm.Status = "后台组件异常";
         vm.Summary = platform == DropsPlatform.YouTube
             ? "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。"
-            : "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。";
+            : platform == DropsPlatform.Bilibili
+                ? "Python SSL 组件无法加载，无法直连哔哩哔哩。请重新安装 CloudLight Blizzard。"
+                : "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。";
     }
 
     private void SetTwitchAuthState(string state, bool clearAuthorization = true)
@@ -1725,6 +1863,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             case DropsPlatform.Soop: ApplySoop(state, vm); break;
             case DropsPlatform.YouTube: ApplyYouTube(state, vm); break;
             case DropsPlatform.Twitch: ApplyTwitch(state, vm); break;
+            case DropsPlatform.Bilibili: BilibiliDetails.ApplyState(state); break;
         }
         if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
             !Bool(runtime, "available", true))
@@ -2230,11 +2369,20 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         TouchHeartbeat(snapshot.Platform);
         if (snapshot.Lifecycle == WorkerLifecycle.Crashed)
         {
-            vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "Twitch 连接中断" : "运行异常";
+            vm.Status = snapshot.Platform == DropsPlatform.Twitch ? "Twitch 连接中断" :
+                snapshot.Platform == DropsPlatform.Bilibili ? "哔哩哔哩 Worker 连接中断" : "运行异常";
             vm.Running = false;
             if (snapshot.Platform == DropsPlatform.Twitch &&
                 _twitchLastFailureKind != TwitchConnectionFailureKind.SslRuntime)
                 SetTwitchTemporaryNetworkFailure("Twitch 后台服务意外退出。");
+            if (snapshot.Platform == DropsPlatform.Bilibili && HasBilibiliRecoveryIntent())
+            {
+                vm.ConnectionState = DropsConnectionState.WaitingRetry;
+                vm.Summary = "Worker 异常退出，后台将自动恢复并重新验证账号";
+                AddRecoveryEvent(DropsPlatform.Bilibili, "Worker 异常退出",
+                    snapshot.LastError ?? "后台服务意外退出，正在等待恢复。", DropsConnectionState.WaitingRetry);
+                ScheduleBilibiliRecovery();
+            }
         }
         else if (snapshot.Lifecycle == WorkerLifecycle.Stopped)
         {
@@ -2281,6 +2429,32 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             if (message.Payload.TryGetProperty("summary", out var summary) && !string.IsNullOrWhiteSpace(summary.GetString()))
                 vm.Summary = summary.GetString()!;
             if (message.Payload.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
+            if (message.Platform == DropsPlatform.Bilibili &&
+                message.Payload.TryGetProperty("connectionState", out var connectionState))
+                vm.ConnectionState = ParseConnectionState(connectionState.GetString());
+        }
+        if (message.Platform == DropsPlatform.Bilibili)
+        {
+            BilibiliDetails.HandleEvent(message.Name, message.Payload);
+            if (message.Name is "status" or "session")
+            {
+                var bilibili = Bilibili;
+                if (message.Payload.TryGetProperty("status", out var bilibiliStatus))
+                    bilibili.Status = bilibiliStatus.GetString() ?? bilibili.Status;
+                if (message.Payload.TryGetProperty("summary", out var bilibiliSummary) &&
+                    !string.IsNullOrWhiteSpace(bilibiliSummary.GetString()))
+                    bilibili.Summary = bilibiliSummary.GetString()!;
+                if (message.Payload.TryGetProperty("running", out var bilibiliRunning) &&
+                    bilibiliRunning.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    bilibili.Running = bilibiliRunning.GetBoolean();
+                if (message.Payload.TryGetProperty("connectionState", out var bilibiliConnection))
+                    bilibili.ConnectionState = ParseConnectionState(bilibiliConnection.GetString());
+            }
+            if (message.Name is "progress" or "task" or "reward")
+            {
+                _lastBilibiliSuccessfulAt = DateTimeOffset.Now;
+                RefreshTemporalStatus(DateTimeOffset.Now);
+            }
         }
         if (message.Platform == DropsPlatform.Twitch && message.Name == "status" &&
             message.Payload.TryGetProperty("running", out var twitchRunning))
@@ -2384,7 +2558,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private DropsPlatformViewModel For(DropsPlatform platform) => platform switch
     {
-        DropsPlatform.Soop => Soop, DropsPlatform.YouTube => YouTube, _ => Twitch,
+        DropsPlatform.Soop => Soop, DropsPlatform.YouTube => YouTube, DropsPlatform.Bilibili => Bilibili, _ => Twitch,
+    };
+
+    private static DropsConnectionState ParseConnectionState(string? value) => value switch
+    {
+        "Connected" => DropsConnectionState.Connected,
+        "Connecting" => DropsConnectionState.Connecting,
+        "Degraded" => DropsConnectionState.Degraded,
+        "WaitingRetry" => DropsConnectionState.WaitingRetry,
+        "Recovering" => DropsConnectionState.Recovering,
+        "Failed" => DropsConnectionState.Failed,
+        "Stopped" => DropsConnectionState.Stopped,
+        _ => DropsConnectionState.Disconnected,
     };
 
     private static string Text(JsonElement owner, string name, string fallback = "")
@@ -2422,6 +2608,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _bilibiliApplicationStopping = true;
+        _bilibiliRecoveryIntent = false;
+        CancelBilibiliRecovery();
         _soopApplicationStopping = true;
         _soopConnectionIntent = false;
         CancelSoopRetry();

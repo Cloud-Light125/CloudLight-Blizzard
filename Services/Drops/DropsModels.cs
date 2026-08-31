@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace CloudLightBlizzard.Services.Drops;
 
-public enum DropsPlatform { Soop, YouTube, Twitch }
+public enum DropsPlatform { Soop, YouTube, Twitch, Bilibili }
 
 public enum WorkerLifecycle { Stopped, Starting, Running, Stopping, Crashed }
 
@@ -29,6 +29,8 @@ public sealed record DropsRuntimeDiagnosticSnapshot(
     string YouTubeLastSuccess,
     string RecentNetworkError)
 {
+    public string BilibiliStatus { get; init; } = "未运行";
+    public string BilibiliLastSuccess { get; init; } = "无";
     public IReadOnlyList<DropsPlatformRecoveryDiagnostic> Platforms { get; init; } = Array.Empty<DropsPlatformRecoveryDiagnostic>();
     public IReadOnlyList<DropsRecoveryEvent> RecentEvents { get; init; } = Array.Empty<DropsRecoveryEvent>();
 }
@@ -62,6 +64,7 @@ public sealed record DropsRecoveryEvent(DateTimeOffset Timestamp, DropsPlatform 
     {
         DropsPlatform.Soop => "SOOP",
         DropsPlatform.YouTube => "YouTube",
+        DropsPlatform.Bilibili => "哔哩哔哩",
         _ => "Twitch",
     };
     public string TimeText => Timestamp.ToLocalTime().ToString("HH:mm:ss");

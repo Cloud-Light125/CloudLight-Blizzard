@@ -23,6 +23,21 @@ public sealed class AppSettings
     public string CloudServiceBaseUrl { get; set; } = CloudServiceConfiguration.DefaultBaseUrl;
     public bool AutoStartSoop { get; set; }
     public bool AutoStartTwitch { get; set; }
+    public bool BilibiliEnabled { get; set; }
+    public bool AutoStartBilibili { get; set; }
+    public bool AutoResumeBilibiliDrops { get; set; }
+    public string BilibiliUserName { get; set; } = "";
+    public long BilibiliUid { get; set; }
+    /// <summary>CurrentUser DPAPI blob; this is never a plaintext Cookie.</summary>
+    public string BilibiliCredentialBlob { get; set; } = "";
+    public List<long> BilibiliRoomIds { get; set; } = new();
+    public List<string> BilibiliTaskIds { get; set; } = new();
+    public string BilibiliWatchMode { get; set; } = "standard";
+    public int BilibiliSessionsPerRoom { get; set; } = 1;
+    public int BilibiliReconnectDelaySeconds { get; set; } = 8;
+    public int BilibiliTaskIntervalSeconds { get; set; } = 30;
+    public bool BilibiliAutoClaim { get; set; }
+    public bool BilibiliTaskNotifications { get; set; } = true;
     public double WindowWidth { get; set; }
     public double WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }

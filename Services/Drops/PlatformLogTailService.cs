@@ -36,7 +36,7 @@ public sealed class PlatformLogSession
     internal string LogsDirectory => Path.GetDirectoryName(_files[DropsPlatform.Soop].FilePath)!;
 }
 
-/// <summary>Incrementally tails the three independent drops logs with a watcher plus timer fallback.</summary>
+/// <summary>Incrementally tails the independent per-platform Drops logs with a watcher plus timer fallback.</summary>
 public sealed class PlatformLogTailService : IAsyncDisposable
 {
     private sealed class TailState

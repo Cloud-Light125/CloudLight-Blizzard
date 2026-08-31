@@ -2,8 +2,8 @@
     [Parameter(Mandatory = $true)]
     [string]$Root,
     [string]$TestRoot,
-    [ValidateSet("youtube", "soop", "twitch")]
-    [string[]]$Platforms = @("youtube", "twitch", "soop")
+    [ValidateSet("youtube", "soop", "twitch", "bilibili")]
+    [string[]]$Platforms = @("youtube", "twitch", "soop", "bilibili")
 )
 
 $ErrorActionPreference = "Stop"

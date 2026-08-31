@@ -11,5 +11,13 @@
             <TextBlock Text="国服 / 国际服切换、Drops、公告与在线更新工具。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,14,0,0"/>
             <TextBlock Text="本版本保持 2.0.10。" Foreground="{DynamicResource Text.Muted}" Margin="0,10,0,0"/>
         </StackPanel></Border>
+        <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
+            <TextBlock Text="开源组件 / Third-party licenses" Style="{StaticResource SectionTitle}"/>
+            <TextBlock Text="BiliBiliDropsMiner" FontWeight="SemiBold" Margin="0,12,0,0"/>
+            <TextBlock Text="Source: https://github.com/mi0e/BiliBiliDropsMiner" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            <TextBlock Text="License: MIT · Integrated upstream commit: a0d8bd51728aabaef66c651613324adba15d9ce8" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            <Button Content="打开上游项目" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnOpenBilibiliSource"/>
+            <TextBlock Text="完整第三方声明与许可证随安装包提供于 THIRD_PARTY_NOTICES.md / THIRD_PARTY_LICENSES。" Style="{StaticResource FieldHint}"/>
+        </StackPanel></Border>
     </StackPanel></ScrollViewer>
 </UserControl>

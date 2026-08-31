@@ -41,6 +41,7 @@ public static class CloudServicesSeverity
         AddProbe(report.Update, "更新服务");
         if (report.Soop is not null) AddProbe(report.Soop, "SOOP");
         if (report.Twitch is not null) AddProbe(report.Twitch, "Twitch");
+        if (report.Bilibili is not null) AddProbe(report.Bilibili, "哔哩哔哩");
         return severity;
 
         void AddProbe(CloudNetworkProbeResult probe, string name, bool isProxyProbe = false)
