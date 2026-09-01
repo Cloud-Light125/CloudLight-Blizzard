@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.Diagnostics;
@@ -2127,6 +2128,40 @@ public static class FeatureSelfTest
                    dropsVm.BilibiliDetails.ConfiguredSessions == 80 && dropsVm.BilibiliDetails.ActiveSessions == 76 &&
                    dropsVm.BilibiliDetails.DirectNetworkText.StartsWith("DIRECT", StringComparison.Ordinal),
                 "Bilibili is projected through the shared four-platform Drops state and JSONL fields");
+            var bilibili = dropsVm.BilibiliDetails;
+            Assert(bilibili.ScanQrLoginCommand is not null && bilibili.CancelQrCommand is not null &&
+                   bilibili.LogoutCommand is not null && bilibili.DiscoverCommand is not null &&
+                   bilibili.AddRoomCommand is not null && bilibili.RemoveRoomCommand is not null &&
+                   bilibili.StartCommand is not null && bilibili.StopCommand is not null &&
+                   bilibili.RefreshCommand is not null && bilibili.ClaimRewardCommand is not null,
+                "Bilibili page operations are exposed as VM commands");
+            Assert(bilibili.Rooms.Count == 1 && bilibili.Tasks.Count == 2 && bilibili.Sessions is not null &&
+                   bilibili.ConfiguredSessions == 80 && bilibili.ActiveSessions == 76 &&
+                   bilibili.ConnectingSessions == 2 && bilibili.RetryingSessions == 2 &&
+                   bilibili.FailedSessions == 0 && bilibili.NetworkMode == "DIRECT" &&
+                   bilibili.AutoTaskProgress,
+                "Bilibili rooms, official tasks and session aggregate properties are bindable");
+            dropsVm.SelectPlatform(DropsPlatform.Bilibili);
+            Assert(dropsVm.SelectedPlatform == DropsPlatform.Bilibili &&
+                   dropsVm.BilibiliPanelVisibility == Visibility.Visible &&
+                   dropsVm.SoopPanelVisibility == Visibility.Collapsed &&
+                   dropsVm.TwitchPanelVisibility == Visibility.Collapsed,
+                "Bilibili platform selection drives the bound content visibility");
+            var changedProperties = new HashSet<string>(StringComparer.Ordinal);
+            bilibili.PropertyChanged += (_, args) =>
+            {
+                if (!string.IsNullOrWhiteSpace(args.PropertyName)) changedProperties.Add(args.PropertyName);
+            };
+            bilibili.SessionsPerRoomText = "8";
+            using var waitingQr = JsonDocument.Parse("{\"state\":\"waiting_scan\",\"message\":\"等待扫码\"}");
+            bilibili.HandleEvent("qr_login", waitingQr.RootElement);
+            var qrVisibleWhileWaiting = bilibili.QrAreaVisibility == Visibility.Visible;
+            using var successQr = JsonDocument.Parse("{\"state\":\"success\",\"message\":\"登录成功\"}");
+            bilibili.HandleEvent("qr_login", successQr.RootElement);
+            Assert(qrVisibleWhileWaiting && changedProperties.Contains(nameof(BilibiliDropsViewModel.SessionsPerRoom)) &&
+                   bilibili.SessionsPerRoom == 8 && bilibili.QrState == "success" &&
+                   bilibili.QrAreaVisibility == Visibility.Collapsed,
+                "Bilibili VM raises PropertyChanged for settings and closes the QR area after success");
         }
         dropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
 

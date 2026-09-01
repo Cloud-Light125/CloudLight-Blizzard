@@ -6,9 +6,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.Views;
 using CloudLightBlizzard.Views.Pages;
+using CloudLightBlizzard.ViewModels;
 using RegionKind = CloudLightBlizzard.Services.OverwatchRegion.OverwatchRegion;
 using CurrentRegionKind = CloudLightBlizzard.Services.OverwatchRegion.CurrentGameRegion;
 
@@ -91,6 +93,46 @@ public static class UiVisualTreeSelfTest
                 page?.Arrange(new Rect(0, 0, 1400, 900));
                 Assert(page is not null && ContainsVisual(page, value => value is ScrollViewer), checks,
                     $"{item.Name} 页面包含可滚动视觉树");
+            }
+
+            var dropsPage = typeof(MainWindow).GetField("_dropsPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as DropsPage;
+            var dropsVm = dropsPage?.DataContext as DropsViewModel;
+            var bilibiliDetails = dropsVm?.BilibiliDetails;
+            Assert(dropsPage is not null && dropsVm is not null && bilibiliDetails is not null,
+                checks, "Drops 页面实例化了共享 DropsViewModel 与 BilibiliDropsViewModel");
+            if (dropsPage is not null && dropsVm is not null && bilibiliDetails is not null)
+            {
+                dropsVm.SelectPlatform(DropsPlatform.Bilibili);
+                dropsPage.ApplyTemplate();
+                dropsPage.Measure(new Size(1400, 900));
+                dropsPage.Arrange(new Rect(0, 0, 1400, 900));
+                dropsPage.UpdateLayout();
+                var bilibiliPanel = FindNamed(dropsPage, "BilibiliPanel");
+                Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible && bilibiliPanel.ActualHeight > 0,
+                    checks, "切换到哔哩哔哩后实际 Bilibili 内容面板可见且有布局高度");
+                Assert(FindNamed(dropsPage, "BilibiliAccountCard") is Border &&
+                       FindNamed(dropsPage, "BilibiliQrCard") is Border,
+                    checks, "Bilibili 账号卡片和二维码区域存在于实际内容树");
+                Assert(FindNamed(dropsPage, "BilibiliQrLoginButton") is Button &&
+                       FindNamed(dropsPage, "BilibiliQrCancelButton") is Button &&
+                       FindNamed(dropsPage, "BilibiliStartButton") is Button &&
+                       FindNamed(dropsPage, "BilibiliStopButton") is Button &&
+                       FindNamed(dropsPage, "BilibiliRefreshButton") is Button &&
+                       FindNamed(dropsPage, "BilibiliDiscoverButton") is Button,
+                    checks, "Bilibili 账号、扫码、开始停止、刷新和活动发现控件存在");
+                Assert(FindNamed(dropsPage, "BilibiliRoomList") is ListBox &&
+                       FindNamed(dropsPage, "BilibiliTaskList") is ListBox &&
+                       FindNamed(dropsPage, "BilibiliSessionList") is ListBox &&
+                       FindNamed(dropsPage, "BilibiliAutoTaskProgress") is CheckBox &&
+                       bilibiliDetails.ScanQrLoginCommand is not null &&
+                       bilibiliDetails.StartCommand is not null &&
+                       bilibiliDetails.AddRoomCommand is not null &&
+                       bilibiliDetails.ClaimRewardCommand is not null,
+                    checks, "Bilibili 房间、官方任务、Session 列表和关键 VM Command 可绑定");
+                var twitchSettings = FindNamed(dropsPage, "TwitchSettingsCard");
+                Assert(twitchSettings is Border && twitchSettings.Visibility == Visibility.Collapsed,
+                    checks, "哔哩哔哩选中时不会显示 Twitch 通用活动和设置卡片");
             }
 
             var plan = new SwitchPlan

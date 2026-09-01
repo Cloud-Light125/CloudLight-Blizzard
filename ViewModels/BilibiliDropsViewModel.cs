@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Input;
 using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.ViewModels;
@@ -26,6 +28,7 @@ public sealed class BilibiliActivityViewModel
     public string Name { get; init; } = "";
     public string TaskText { get; init; } = "";
     public string Status { get; init; } = "";
+    public string RoomText => RoomId > 0 ? $"Room ID {RoomId}" : "直播间未知";
     public string SourceText => "当前直播间自动发现";
 }
 
@@ -78,17 +81,111 @@ public sealed class BilibiliSessionViewModel
     public long RoomId { get; init; }
     public int SessionNo { get; init; }
     public string State { get; init; } = "";
+    public string StateText => State switch
+    {
+        "active" or "running" => "活动",
+        "connecting" => "连接中",
+        "retrying" => "等待重连",
+        "failed" => "失败",
+        "stopped" => "已停止",
+        _ => string.IsNullOrWhiteSpace(State) ? "未知" : State,
+    };
     public string Detail { get; init; } = "";
     public int Failures { get; init; }
     public int ReconnectCount { get; init; }
+}
+
+internal sealed record BilibiliCommandHandlers(
+    Func<Task> ScanQrLogin,
+    Func<Task> CancelQr,
+    Func<Task> ReacquireQr,
+    Func<Task> ManualCookie,
+    Func<Task> Logout,
+    Func<Task> Discover,
+    Func<Task> Refresh,
+    Func<Task> AddRoom,
+    Func<object?, Task> RemoveRoom,
+    Func<object?, Task> SetRoomEnabled,
+    Func<Task> Start,
+    Func<Task> Stop,
+    Func<Task> SaveSettings,
+    Func<Task> ClearNotifier,
+    Func<Task> RefreshSessions,
+    Func<object?, Task> ClaimReward);
+
+internal sealed class BilibiliAsyncCommand : ICommand
+{
+    private readonly Func<object?, bool> _canExecute;
+    private Func<object?, Task>? _execute;
+    private int _isExecuting;
+
+    public BilibiliAsyncCommand(Func<object?, bool>? canExecute = null) =>
+        _canExecute = canExecute ?? (_ => true);
+
+    public event EventHandler? CanExecuteChanged;
+    public event EventHandler<Exception>? Failed;
+
+    public bool CanExecute(object? parameter) =>
+        _execute is not null && Volatile.Read(ref _isExecuting) == 0 && _canExecute(parameter);
+
+    public void Execute(object? parameter)
+    {
+        if (!CanExecute(parameter)) return;
+        _ = ExecuteCoreAsync(parameter);
+    }
+
+    public void SetHandler(Func<object?, Task> handler)
+    {
+        _execute = handler;
+        RaiseCanExecuteChanged();
+    }
+
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+
+    private async Task ExecuteCoreAsync(object? parameter)
+    {
+        if (Interlocked.Exchange(ref _isExecuting, 1) != 0) return;
+        RaiseCanExecuteChanged();
+        try
+        {
+            if (_execute is not null) await _execute(parameter);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Failed?.Invoke(this, ex); }
+        finally
+        {
+            Volatile.Write(ref _isExecuting, 0);
+            RaiseCanExecuteChanged();
+        }
+    }
 }
 
 /// <summary>Structured Bilibili-specific state projected from the Worker events.</summary>
 public sealed class BilibiliDropsViewModel : ObservableObject
 {
     private readonly DropsPlatformViewModel _platform;
+    private readonly List<BilibiliAsyncCommand> _commands = [];
 
-    public BilibiliDropsViewModel(DropsPlatformViewModel platform) => _platform = platform;
+    public BilibiliDropsViewModel(DropsPlatformViewModel platform)
+    {
+        _platform = platform;
+        ScanQrLoginCommand = NewCommand();
+        CancelQrCommand = NewCommand();
+        ReacquireQrCommand = NewCommand();
+        ManualCookieCommand = NewCommand();
+        LogoutCommand = NewCommand();
+        DiscoverCommand = NewCommand();
+        RefreshCommand = NewCommand();
+        AddRoomCommand = NewCommand();
+        RemoveRoomCommand = NewCommand(parameter => parameter is BilibiliRoomViewModel);
+        SetRoomEnabledCommand = NewCommand(parameter => parameter is BilibiliRoomViewModel);
+        StartCommand = NewCommand();
+        StopCommand = NewCommand();
+        SaveSettingsCommand = NewCommand();
+        ClearNotifierCommand = NewCommand();
+        RefreshSessionsCommand = NewCommand();
+        ClaimRewardCommand = NewCommand(parameter => parameter is BilibiliTaskViewModel task && task.CanClaim);
+    }
 
     public DropsPlatformViewModel Platform => _platform;
     public ObservableCollection<BilibiliRoomViewModel> Rooms { get; } = new();
@@ -97,44 +194,209 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public ObservableCollection<BilibiliRewardViewModel> Rewards { get; } = new();
     public ObservableCollection<BilibiliSessionViewModel> Sessions { get; } = new();
 
+    public ICommand ScanQrLoginCommand { get; }
+    public ICommand CancelQrCommand { get; }
+    public ICommand ReacquireQrCommand { get; }
+    public ICommand ManualCookieCommand { get; }
+    public ICommand LogoutCommand { get; }
+    public ICommand DiscoverCommand { get; }
+    public ICommand RefreshCommand { get; }
+    public ICommand AddRoomCommand { get; }
+    public ICommand RemoveRoomCommand { get; }
+    public ICommand SetRoomEnabledCommand { get; }
+    public ICommand StartCommand { get; }
+    public ICommand StopCommand { get; }
+    public ICommand SaveSettingsCommand { get; }
+    public ICommand ClearNotifierCommand { get; }
+    public ICommand RefreshSessionsCommand { get; }
+    public ICommand ClaimRewardCommand { get; }
+
+    private BilibiliAsyncCommand NewCommand(Func<object?, bool>? canExecute = null)
+    {
+        var command = new BilibiliAsyncCommand(canExecute);
+        _commands.Add(command);
+        return command;
+    }
+
+    internal void ConfigureCommands(BilibiliCommandHandlers handlers)
+    {
+        ((BilibiliAsyncCommand)ScanQrLoginCommand).SetHandler(_ => handlers.ScanQrLogin());
+        ((BilibiliAsyncCommand)CancelQrCommand).SetHandler(_ => handlers.CancelQr());
+        ((BilibiliAsyncCommand)ReacquireQrCommand).SetHandler(_ => handlers.ReacquireQr());
+        ((BilibiliAsyncCommand)ManualCookieCommand).SetHandler(_ => handlers.ManualCookie());
+        ((BilibiliAsyncCommand)LogoutCommand).SetHandler(_ => handlers.Logout());
+        ((BilibiliAsyncCommand)DiscoverCommand).SetHandler(_ => handlers.Discover());
+        ((BilibiliAsyncCommand)RefreshCommand).SetHandler(_ => handlers.Refresh());
+        ((BilibiliAsyncCommand)AddRoomCommand).SetHandler(_ => handlers.AddRoom());
+        ((BilibiliAsyncCommand)RemoveRoomCommand).SetHandler(handlers.RemoveRoom);
+        ((BilibiliAsyncCommand)SetRoomEnabledCommand).SetHandler(handlers.SetRoomEnabled);
+        ((BilibiliAsyncCommand)StartCommand).SetHandler(_ => handlers.Start());
+        ((BilibiliAsyncCommand)StopCommand).SetHandler(_ => handlers.Stop());
+        ((BilibiliAsyncCommand)SaveSettingsCommand).SetHandler(_ => handlers.SaveSettings());
+        ((BilibiliAsyncCommand)ClearNotifierCommand).SetHandler(_ => handlers.ClearNotifier());
+        ((BilibiliAsyncCommand)RefreshSessionsCommand).SetHandler(_ => handlers.RefreshSessions());
+        ((BilibiliAsyncCommand)ClaimRewardCommand).SetHandler(handlers.ClaimReward);
+    }
+
+    internal event EventHandler<Exception>? CommandFailed
+    {
+        add
+        {
+            foreach (var command in _commands) command.Failed += value;
+        }
+        remove
+        {
+            foreach (var command in _commands) command.Failed -= value;
+        }
+    }
+
     private bool _loggedIn;
-    public bool LoggedIn { get => _loggedIn; private set { Set(ref _loggedIn, value); Raise(nameof(AccountStatus)); Raise(nameof(LoginVisibility)); Raise(nameof(LogoutVisibility)); } }
+    public bool LoggedIn
+    {
+        get => _loggedIn;
+        private set
+        {
+            Set(ref _loggedIn, value);
+            Raise(nameof(AccountStatus));
+            Raise(nameof(LoginStateText));
+            Raise(nameof(LoginVisibility));
+            Raise(nameof(LogoutVisibility));
+            RaiseCommandsCanExecuteChanged();
+        }
+    }
     private string _userName = "";
-    public string UserName { get => _userName; private set => Set(ref _userName, value); }
+    public string UserName
+    {
+        get => _userName;
+        private set { Set(ref _userName, value); Raise(nameof(AccountStatus)); }
+    }
     private long _uid;
-    public long Uid { get => _uid; private set => Set(ref _uid, value); }
+    public long Uid
+    {
+        get => _uid;
+        private set { Set(ref _uid, value); Raise(nameof(AccountStatus)); }
+    }
     public string AccountStatus => LoggedIn
         ? $"{UserName} · UID {Uid} · 已登录"
-        : "尚未登录 Bilibili";
+        : "尚未登录";
+    public string LoginStateText => LoggedIn ? "● 已登录" : "尚未登录";
     public Visibility LoginVisibility => LoggedIn ? Visibility.Collapsed : Visibility.Visible;
     public Visibility LogoutVisibility => LoggedIn ? Visibility.Visible : Visibility.Collapsed;
 
     private string _qrState = "idle";
-    public string QrState { get => _qrState; private set { Set(ref _qrState, value); Raise(nameof(QrStateText)); Raise(nameof(QrVisibility)); } }
+    public string QrState
+    {
+        get => _qrState;
+        private set
+        {
+            Set(ref _qrState, value);
+            Raise(nameof(QrStateText));
+            Raise(nameof(QrVisibility));
+            Raise(nameof(QrAreaVisibility));
+            Raise(nameof(QrRetryVisibility));
+            Raise(nameof(QrCancelVisibility));
+            RaiseCommandsCanExecuteChanged();
+        }
+    }
     private string _qrMessage = "点击扫码登录后，二维码只会在本机生成。";
     public string QrStateText { get => _qrMessage; private set => Set(ref _qrMessage, value); }
     private string _qrImagePath = "";
-    public string QrImagePath { get => _qrImagePath; private set { Set(ref _qrImagePath, value); Raise(nameof(QrImageVisibility)); } }
-    public Visibility QrVisibility => QrState is "waiting_scan" or "scanned_pending" ? Visibility.Visible : Visibility.Collapsed;
+    public string QrImagePath
+    {
+        get => _qrImagePath;
+        private set
+        {
+            Set(ref _qrImagePath, value);
+            Raise(nameof(QrImageVisibility));
+            Raise(nameof(QrAreaVisibility));
+        }
+    }
+    public Visibility QrVisibility => QrCancelVisibility;
+    public Visibility QrCancelVisibility => QrState is "waiting_scan" or "scanned_pending"
+        ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility QrAreaVisibility => QrState is "waiting_scan" or "scanned_pending" or "expired" or "failed"
+        ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility QrRetryVisibility => QrState is "expired" or "failed"
+        ? Visibility.Visible : Visibility.Collapsed;
     public Visibility QrImageVisibility => File.Exists(QrImagePath) ? Visibility.Visible : Visibility.Collapsed;
 
     private string _watchMode = "standard";
-    public string WatchMode { get => _watchMode; set { Set(ref _watchMode, value); Raise(nameof(ModeText)); } }
+    public string WatchMode
+    {
+        get => _watchMode;
+        set
+        {
+            var normalized = value == "multi" ? "multi" : "standard";
+            Set(ref _watchMode, normalized);
+            Raise(nameof(ModeText));
+            if (normalized == "standard") SessionsPerRoom = 1;
+        }
+    }
     public string ModeText => WatchMode == "multi" ? "多线程加速模式" : "标准模式";
     private int _sessionsPerRoom = 1;
-    public int SessionsPerRoom { get => _sessionsPerRoom; set { Set(ref _sessionsPerRoom, value); Raise(nameof(SessionEstimateText)); } }
+    public int SessionsPerRoom
+    {
+        get => _sessionsPerRoom;
+        set
+        {
+            var normalized = Math.Clamp(value, 1, 128);
+            if (_sessionsPerRoom != normalized)
+            {
+                _sessionsPerRoom = normalized;
+                Raise(nameof(SessionsPerRoom));
+            }
+            var text = normalized.ToString();
+            if (_sessionsPerRoomText != text)
+            {
+                _sessionsPerRoomText = text;
+                Raise(nameof(SessionsPerRoomText));
+            }
+            Raise(nameof(SessionEstimateText));
+        }
+    }
+    private string _sessionsPerRoomText = "1";
+    public string SessionsPerRoomText
+    {
+        get => _sessionsPerRoomText;
+        set
+        {
+            if (_sessionsPerRoomText != value)
+            {
+                _sessionsPerRoomText = value;
+                Raise(nameof(SessionsPerRoomText));
+            }
+            if (int.TryParse(value, out var sessions))
+                SessionsPerRoom = sessions;
+            Raise(nameof(SessionEstimateText));
+        }
+    }
     public string SessionEstimateText => $"启用房间 {Rooms.Count(room => room.Enabled)} × 每房间 {SessionsPerRoom} = 预计 {Rooms.Count(room => room.Enabled) * Math.Max(1, SessionsPerRoom)} 个 Session";
     private int _configuredSessions;
     public int ConfiguredSessions { get => _configuredSessions; private set { Set(ref _configuredSessions, value); Raise(nameof(SessionSummary)); } }
     private int _activeSessions;
     public int ActiveSessions { get => _activeSessions; private set { Set(ref _activeSessions, value); Raise(nameof(SessionSummary)); } }
     private int _connectingSessions;
-    public int ConnectingSessions { get => _connectingSessions; private set => Set(ref _connectingSessions, value); }
+    public int ConnectingSessions { get => _connectingSessions; private set { Set(ref _connectingSessions, value); Raise(nameof(SessionSummary)); } }
     private int _retryingSessions;
-    public int RetryingSessions { get => _retryingSessions; private set => Set(ref _retryingSessions, value); }
+    public int RetryingSessions { get => _retryingSessions; private set { Set(ref _retryingSessions, value); Raise(nameof(SessionSummary)); } }
     private int _failedSessions;
-    public int FailedSessions { get => _failedSessions; private set => Set(ref _failedSessions, value); }
+    public int FailedSessions { get => _failedSessions; private set { Set(ref _failedSessions, value); Raise(nameof(SessionSummary)); } }
     public string SessionSummary => $"{ActiveSessions} / {ConfiguredSessions} 活动 · {ConnectingSessions} 连接中 · {RetryingSessions} 等待重连 · {FailedSessions} 失败";
+
+    private bool _enabled;
+    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+    private string _roomReference = "";
+    public string RoomReference { get => _roomReference; set => Set(ref _roomReference, value); }
+    private string _roomName = "";
+    public string RoomName { get => _roomName; set => Set(ref _roomName, value); }
+    private string _taskIdsText = "";
+    public string TaskIdsText { get => _taskIdsText; set => Set(ref _taskIdsText, value); }
+    private string _reconnectDelayText = "8";
+    public string ReconnectDelayText { get => _reconnectDelayText; set => Set(ref _reconnectDelayText, value); }
+    private string _taskIntervalText = "30";
+    public string TaskIntervalText { get => _taskIntervalText; set => Set(ref _taskIntervalText, value); }
+    public int ReconnectDelay => int.TryParse(ReconnectDelayText, out var value) ? value : 0;
+    public int TaskInterval => int.TryParse(TaskIntervalText, out var value) ? value : 0;
 
     private string _lastProgressAt = "";
     public string LastProgressAt { get => _lastProgressAt; private set => Set(ref _lastProgressAt, value); }
@@ -142,8 +404,12 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public string LastApiSuccessAt { get => _lastApiSuccessAt; private set => Set(ref _lastApiSuccessAt, value); }
     private string _directNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
     public string DirectNetworkText { get => _directNetworkText; private set => Set(ref _directNetworkText, value); }
+    private string _networkMode = "DIRECT";
+    public string NetworkMode { get => _networkMode; private set => Set(ref _networkMode, value); }
     private bool _autoClaim;
     public bool AutoClaim { get => _autoClaim; set => Set(ref _autoClaim, value); }
+    private bool _autoTaskProgress = true;
+    public bool AutoTaskProgress { get => _autoTaskProgress; set => Set(ref _autoTaskProgress, value); }
     private bool _taskNotifications = true;
     public bool TaskNotifications { get => _taskNotifications; set => Set(ref _taskNotifications, value); }
     private bool _autoDiscover = true;
@@ -170,8 +436,13 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         if (state.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
             ApplySettings(settings);
         if (state.TryGetProperty("sessions", out var sessions)) ApplySessions(sessions);
+        TaskIdsText = state.TryGetProperty("taskIds", out var taskIds) && taskIds.ValueKind == JsonValueKind.Array
+            ? string.Join(", ", taskIds.EnumerateArray().Select(item => item.ToString()))
+            : TaskIdsText;
         LastProgressAt = Text(state, "lastProgressAt");
         LastApiSuccessAt = Text(state, "lastApiSuccessAt");
+        Enabled = Bool(state, "settings", "enabled", Enabled);
+        NetworkMode = "DIRECT";
         DirectNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
         Raise(nameof(SessionEstimateText));
     }
@@ -188,7 +459,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
                 if (payload.TryGetProperty("imagePath", out _)) QrImagePath = Text(payload, "imagePath");
                 if (QrState is "success" or "cancelled" or "expired")
                 {
-                    if (QrState != "success") QrImagePath = "";
+                    QrImagePath = "";
                     Raise(nameof(QrVisibility));
                 }
                 if (payload.TryGetProperty("account", out var qrAccount)) ApplyAccount(qrAccount);
@@ -207,6 +478,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             case "session": ApplySessions(payload); break;
             case "status":
                 if (payload.TryGetProperty("sessions", out var statusSessions)) ApplySessions(statusSessions);
+                NetworkMode = "DIRECT";
                 DirectNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
                 break;
         }
@@ -224,13 +496,24 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     private void ApplyRooms(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.Array) return;
+        foreach (var room in Rooms) room.PropertyChanged -= OnRoomPropertyChanged;
         Rooms.Clear();
         foreach (var item in value.EnumerateArray())
-            Rooms.Add(new BilibiliRoomViewModel
+        {
+            var room = new BilibiliRoomViewModel
             {
                 Id = Long(item, "id"), Name = Text(item, "name", "直播间"), Url = Text(item, "url"),
                 Enabled = Bool(item, "enabled", true), Status = RoomStatus(Text(item, "liveStatus")),
-            });
+            };
+            room.PropertyChanged += OnRoomPropertyChanged;
+            Rooms.Add(room);
+        }
+        Raise(nameof(SessionEstimateText));
+    }
+
+    private void OnRoomPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BilibiliRoomViewModel.Enabled)) Raise(nameof(SessionEstimateText));
     }
 
     private void ApplyActivities(JsonElement value)
@@ -280,8 +563,13 @@ public sealed class BilibiliDropsViewModel : ObservableObject
 
     private void ApplySettings(JsonElement settings)
     {
+        Enabled = Bool(settings, "enabled", Enabled);
         WatchMode = Text(settings, "watchMode", WatchMode);
         SessionsPerRoom = Math.Max(1, Int(settings, "sessionsPerRoom", SessionsPerRoom));
+        if (WatchMode == "standard") SessionsPerRoom = 1;
+        ReconnectDelayText = Int(settings, "reconnectDelay", ReconnectDelay).ToString();
+        TaskIntervalText = Int(settings, "taskInterval", TaskInterval).ToString();
+        AutoTaskProgress = Bool(settings, "autoTaskProgress", AutoTaskProgress);
         AutoClaim = Bool(settings, "autoClaim", AutoClaim);
         TaskNotifications = Bool(settings, "taskNotifications", TaskNotifications);
         AutoDiscover = Bool(settings, "autoDiscover", AutoDiscover);
@@ -289,6 +577,8 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         AutoRestore = Bool(settings, "autoRestore", AutoRestore);
         AutoResume = Bool(settings, "autoResumeDrops", AutoResume);
         NotifierConfigured = Bool(settings, "notifyUrlsConfigured", NotifierConfigured);
+        if (settings.TryGetProperty("taskIds", out var taskIds) && taskIds.ValueKind == JsonValueKind.Array)
+            TaskIdsText = string.Join(", ", taskIds.EnumerateArray().Select(item => item.ToString()));
     }
 
     private void ApplySessions(JsonElement value)
@@ -315,6 +605,18 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         }
     }
 
+    internal void SetQrError(string message)
+    {
+        QrImagePath = "";
+        QrState = "failed";
+        QrStateText = string.IsNullOrWhiteSpace(message) ? "登录失败" : message;
+    }
+
+    private void RaiseCommandsCanExecuteChanged()
+    {
+        foreach (var command in _commands) command.RaiseCanExecuteChanged();
+    }
+
     private static BilibiliRewardViewModel ToReward(JsonElement item) => new()
     {
         TaskId = Text(item, "taskId"), TaskName = Text(item, "taskName", "任务"), Reward = Text(item, "reward"),
@@ -327,6 +629,12 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             ? value.ToString() : fallback;
     private static bool Bool(JsonElement owner, string name, bool fallback = false) =>
         owner.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : fallback;
+    private static bool Bool(JsonElement owner, string parent, string name, bool fallback)
+    {
+        return owner.TryGetProperty(parent, out var nested) && nested.ValueKind == JsonValueKind.Object
+            ? Bool(nested, name, fallback)
+            : fallback;
+    }
     private static int Int(JsonElement owner, string name, int fallback = 0) =>
         owner.TryGetProperty(name, out var value) && value.TryGetInt32(out var result) ? result : fallback;
     private static long Long(JsonElement owner, string name) =>

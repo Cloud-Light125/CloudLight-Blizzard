@@ -1,4 +1,5 @@
 <UserControl x:Class="CloudLightBlizzard.Views.Pages.DropsPage"
+             x:Name="DropsRoot"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls"
@@ -277,7 +278,9 @@
                         </StackPanel>
                         <Button Grid.Column="1" Content="{Binding ClaimButtonText}" Visibility="{Binding ClaimVisibility}"
                                 IsEnabled="{Binding CanClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0"
-                                Margin="12,0,0,0" Click="OnClaimBilibiliReward"/>
+                                Margin="12,0,0,0"
+                                Command="{Binding DataContext.BilibiliDetails.ClaimRewardCommand, ElementName=DropsRoot}"
+                                CommandParameter="{Binding}"/>
                     </Grid>
                 </Grid>
             </Border>
@@ -285,22 +288,25 @@
         <DataTemplate x:Key="BilibiliRoomRowTemplate">
             <Grid Margin="4,6">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Tag="{Binding}" Style="{StaticResource ThemeCheckBox}" VerticalAlignment="Center"
-                          Click="OnBilibiliRoomEnabledChanged"/>
+                <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Style="{StaticResource ThemeCheckBox}" VerticalAlignment="Center"
+                          Command="{Binding DataContext.BilibiliDetails.SetRoomEnabledCommand, ElementName=DropsRoot}"
+                          CommandParameter="{Binding}"/>
                 <StackPanel Grid.Column="1" Margin="10,0,8,0">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                     <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,3,0,0">
                         <Run Text="Room ID："/><Run Text="{Binding RoomIdText}"/><Run Text=" · "/><Run Text="{Binding Status}"/><Run Text=" · "/><Run Text="{Binding SessionText}"/>
                     </TextBlock>
                 </StackPanel>
-                <Button Grid.Column="2" Content="删除" Tag="{Binding}" Style="{StaticResource DangerButton}" Height="28" Padding="10,0" Click="OnBilibiliRemoveRoom"/>
+                <Button Grid.Column="2" Content="删除" Style="{StaticResource DangerButton}" Height="28" Padding="10,0"
+                        Command="{Binding DataContext.BilibiliDetails.RemoveRoomCommand, ElementName=DropsRoot}"
+                        CommandParameter="{Binding}"/>
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="BilibiliSessionRowTemplate">
             <Grid Margin="4,5">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}"/>
-                <TextBlock Grid.Column="1" Text="{Binding State}" Foreground="{DynamicResource Accent.Primary}" Margin="12,0"/>
+                <TextBlock Grid.Column="1" Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" Margin="12,0"/>
                 <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}"/>
             </Grid>
         </DataTemplate>
@@ -474,7 +480,7 @@
                 <RadioButton x:Name="BilibiliTab" Content="哔哩哔哩" Tag="Bilibili" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged"/>
             </StackPanel>
 
-            <StackPanel x:Name="SoopPanel" Visibility="Collapsed">
+            <StackPanel x:Name="SoopPanel" Visibility="{Binding SoopPanelVisibility}">
                 <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <DockPanel>
@@ -606,7 +612,7 @@
                 </Border>
             </StackPanel>
 
-            <StackPanel x:Name="YouTubePanel" Visibility="Collapsed">
+            <StackPanel x:Name="YouTubePanel" Visibility="{Binding YouTubePanelVisibility}">
                 <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <DockPanel>
@@ -700,7 +706,7 @@
                 </Border>
             </StackPanel>
 
-            <StackPanel x:Name="TwitchPanel" Visibility="Collapsed">
+            <StackPanel x:Name="TwitchPanel" Visibility="{Binding TwitchPanelVisibility}">
                 <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <DockPanel>
@@ -860,30 +866,47 @@
                 </Border>
             </StackPanel>
 
-            <StackPanel x:Name="BilibiliPanel" Visibility="Collapsed">
-                <Border Style="{StaticResource SurfaceCard}">
+            <StackPanel x:Name="BilibiliPanel" Visibility="{Binding BilibiliPanelVisibility}">
+                <Border x:Name="BilibiliAccountCard" Style="{StaticResource SurfaceCard}">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="哔哩哔哩" Style="{StaticResource SectionTitle}"/>
                             <TextBlock Text="优先使用官方扫码登录。所有哔哩哔哩请求均由独立 Worker 直连完成。" Style="{StaticResource FieldHint}"/>
-                            <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" FontWeight="SemiBold" Margin="0,14,0,0"/>
-                            <TextBlock Text="{Binding BilibiliDetails.DirectNetworkText}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,5,0,0"/>
+                            <TextBlock Text="{Binding BilibiliDetails.LoginStateText}" FontWeight="SemiBold" Margin="0,14,0,0"/>
+                            <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding BilibiliDetails.NetworkMode, StringFormat=网络模式：{0} / 直连}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,5,0,0"/>
+                            <TextBlock Text="{Binding BilibiliDetails.DirectNetworkText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            <WrapPanel Margin="0,10,0,0">
+                                <TextBlock Text="运行状态：" Foreground="{DynamicResource Text.Secondary}"/>
+                                <TextBlock Text="{Binding Bilibili.Status}" FontWeight="SemiBold" Margin="2,0,10,0"/>
+                                <TextBlock Text="{Binding Bilibili.ConnectionStateText}" Foreground="{DynamicResource Accent.Primary}"/>
+                            </WrapPanel>
                             <WrapPanel Margin="0,12,0,0">
-                                <Button Content="扫码登录" Visibility="{Binding BilibiliDetails.LoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnBilibiliQrLogin"/>
-                                <Button Content="退出登录" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{StaticResource DangerButton}" Padding="14,0" Margin="8,0,0,0" Click="OnBilibiliLogout"/>
-                                <Button Content="开始掉宝" Tag="Bilibili" Visibility="{Binding Bilibili.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
-                                <Button Content="停止掉宝" Tag="Bilibili" Visibility="{Binding Bilibili.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/>
-                                <Button Content="刷新进度" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnBilibiliRefresh"/>
-                                <Button Content="发现活动" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnBilibiliDiscover"/>
+                                <Button x:Name="BilibiliQrLoginButton" Content="扫码登录" Visibility="{Binding BilibiliDetails.LoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0"
+                                        Command="{Binding BilibiliDetails.ScanQrLoginCommand}"/>
+                                <Button Content="退出登录" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{StaticResource DangerButton}" Padding="14,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.LogoutCommand}"/>
+                                <Button x:Name="BilibiliStartButton" Content="开始掉宝" Visibility="{Binding Bilibili.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0"
+                                        Command="{Binding BilibiliDetails.StartCommand}"/>
+                                <Button x:Name="BilibiliStopButton" Content="停止掉宝" Visibility="{Binding Bilibili.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.StopCommand}"/>
+                                <Button x:Name="BilibiliRefreshButton" Content="刷新进度" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.RefreshCommand}"/>
+                                <Button x:Name="BilibiliDiscoverButton" Content="发现活动" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.DiscoverCommand}"/>
                             </WrapPanel>
                             <TextBlock Text="{Binding BilibiliDetails.QrStateText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0" TextWrapping="Wrap"/>
                             <WrapPanel Margin="0,8,0,0">
-                                <Button Content="取消扫码" Visibility="{Binding BilibiliDetails.QrVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnBilibiliQrCancel"/>
+                                <Button x:Name="BilibiliQrCancelButton" Content="取消扫码" Visibility="{Binding BilibiliDetails.QrCancelVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0"
+                                        Command="{Binding BilibiliDetails.CancelQrCommand}"/>
+                                <Button Content="重新获取二维码" Visibility="{Binding BilibiliDetails.QrRetryVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.ReacquireQrCommand}"/>
                                 <TextBlock Text="扫码登录成功后，账号信息与加密凭据会自动保存。" Foreground="{DynamicResource Text.Muted}" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
                             </WrapPanel>
                         </StackPanel>
-                        <Border Grid.Column="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="18,0,0,0">
+                        <Border x:Name="BilibiliQrCard" Grid.Column="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="18,0,0,0"
+                                Visibility="{Binding BilibiliDetails.QrAreaVisibility}">
                             <Image Source="{Binding BilibiliDetails.QrImagePath}" Visibility="{Binding BilibiliDetails.QrImageVisibility}" Width="170" Height="170" Stretch="Uniform"/>
                         </Border>
                     </Grid>
@@ -897,7 +920,8 @@
                             <TextBlock Text="仅用于故障排查或无法扫码时。Cookie 只通过受控 Worker 请求传递，并在 Worker 内以 Windows CurrentUser DPAPI 加密保存。" Style="{StaticResource FieldHint}"/>
                             <TextBlock Text="手动导入 Cookie" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/>
                             <PasswordBox x:Name="BilibiliCookieBox"/>
-                            <Button Content="导入并验证 Cookie" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnBilibiliManualCookie"/>
+                            <Button Content="导入并验证 Cookie" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Margin="0,10,0,0"
+                                    Command="{Binding BilibiliDetails.ManualCookieCommand}"/>
                             <TextBlock Text="不写入 settings.json，不出现在命令行、日志或诊断包中。" Style="{StaticResource FieldHint}"/>
                         </StackPanel>
                     </Border>
@@ -906,14 +930,17 @@
                             <TextBlock Text="活动与直播间" Style="{StaticResource SectionTitle}"/>
                             <TextBlock Text="自动发现只显示从当前直播间读取到的活动；无法发现时可手动指定 URL 或房间号。" Style="{StaticResource FieldHint}"/>
                             <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBox x:Name="BilibiliRoomInput" Style="{StaticResource HintTextBox}" Tag="直播间 URL 或 Room ID"/>
-                                <Button Grid.Column="1" Content="添加" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnBilibiliAddRoom"/>
+                                <TextBox x:Name="BilibiliRoomInput" Style="{StaticResource HintTextBox}" Tag="直播间 URL 或 Room ID"
+                                         Text="{Binding BilibiliDetails.RoomReference, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <Button Grid.Column="1" Content="添加" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0"
+                                        Command="{Binding BilibiliDetails.AddRoomCommand}"/>
                             </Grid>
-                            <TextBox x:Name="BilibiliRoomNameInput" Style="{StaticResource HintTextBox}" Tag="直播间名称（可选）" Margin="0,8,0,0"/>
-                            <ListBox ItemsSource="{Binding BilibiliDetails.Rooms}" ItemTemplate="{StaticResource BilibiliRoomRowTemplate}" MinHeight="70" MaxHeight="210" Margin="0,10,0,0"/>
+                            <TextBox x:Name="BilibiliRoomNameInput" Style="{StaticResource HintTextBox}" Tag="直播间名称（可选）" Margin="0,8,0,0"
+                                     Text="{Binding BilibiliDetails.RoomName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                            <ListBox x:Name="BilibiliRoomList" ItemsSource="{Binding BilibiliDetails.Rooms}" ItemTemplate="{StaticResource BilibiliRoomRowTemplate}" MinHeight="70" MaxHeight="210" Margin="0,10,0,0"/>
                             <TextBlock Text="{Binding BilibiliDetails.Activities.Count, StringFormat=已发现活动：{0} 个}" Foreground="{DynamicResource Text.Secondary}" Margin="0,10,0,0"/>
                             <ListBox ItemsSource="{Binding BilibiliDetails.Activities}" MinHeight="50" MaxHeight="160" Margin="0,6,0,0">
-                                <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4,5"><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding TaskText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,2,0,0"/><TextBlock Text="{Binding SourceText}" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,2,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                                <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4,5"><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="11" Margin="0,2,0,0"/><TextBlock Text="{Binding RoomText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,2,0,0"/><TextBlock Text="{Binding TaskText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,2,0,0"/><TextBlock Text="{Binding SourceText}" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,2,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
                             </ListBox>
                         </StackPanel>
                     </Border>
@@ -924,31 +951,32 @@
                         <TextBlock Text="观看模式与任务设置" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="多线程加速表示每个直播间的并发观看 Session 数；沿用上游每个 Session 独立 asyncio 连接与 1 秒错峰启动。" Style="{StaticResource FieldHint}"/>
                         <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,8,0"><TextBlock Text="观看模式" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="BilibiliWatchModePicker" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnBilibiliWatchModeChanged"><ComboBoxItem Content="标准模式（每房间 1 Session）" Tag="standard"/><ComboBoxItem Content="多线程加速模式" Tag="multi"/></ComboBox></StackPanel>
-                            <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="每房间并发 Session" Style="{StaticResource FieldLabel}"/><TextBox x:Name="BilibiliSessionsPerRoomText" Style="{StaticResource HintTextBox}" Tag="1"/></StackPanel>
-                            <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="错峰重连延迟" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliReconnectDelayText" Style="{StaticResource HintTextBox}" Tag="8"/></DockPanel></StackPanel>
+                            <StackPanel Margin="0,0,8,0"><TextBlock Text="观看模式" Style="{StaticResource FieldLabel}"/><ComboBox x:Name="BilibiliWatchModePicker" Style="{StaticResource ThemeComboBox}" SelectedValue="{Binding BilibiliDetails.WatchMode, Mode=TwoWay}" SelectedValuePath="Tag"><ComboBoxItem Content="标准模式（每房间 1 Session）" Tag="standard"/><ComboBoxItem Content="多线程加速模式" Tag="multi"/></ComboBox></StackPanel>
+                            <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="每房间并发 Session" Style="{StaticResource FieldLabel}"/><TextBox x:Name="BilibiliSessionsPerRoomText" Style="{StaticResource HintTextBox}" Tag="1" Text="{Binding BilibiliDetails.SessionsPerRoomText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+                            <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="错峰重连延迟" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliReconnectDelayText" Style="{StaticResource HintTextBox}" Tag="8" Text="{Binding BilibiliDetails.ReconnectDelayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></DockPanel></StackPanel>
                         </Grid>
                         <TextBlock Text="{Binding BilibiliDetails.SessionEstimateText}" Foreground="{DynamicResource Accent.Primary}" Margin="0,10,0,0"/>
                         <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,8,0"><TextBlock Text="官方任务查询间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒（至少 10）" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliTaskIntervalText" Style="{StaticResource HintTextBox}" Tag="30"/></DockPanel></StackPanel>
-                            <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="高级 Task IDs（可选）" Style="{StaticResource FieldLabel}"/><TextBox x:Name="BilibiliTaskIdsText" Style="{StaticResource HintTextBox}" Tag="多个 ID 用逗号或空格分隔"/></StackPanel>
+                            <StackPanel Margin="0,0,8,0"><TextBlock Text="官方任务查询间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒（至少 10）" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliTaskIntervalText" Style="{StaticResource HintTextBox}" Tag="30" Text="{Binding BilibiliDetails.TaskIntervalText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></DockPanel></StackPanel>
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="高级 Task IDs（可选）" Style="{StaticResource FieldLabel}"/><TextBox x:Name="BilibiliTaskIdsText" Style="{StaticResource HintTextBox}" Tag="多个 ID 用逗号或空格分隔" Text="{Binding BilibiliDetails.TaskIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
                         </Grid>
                         <WrapPanel Margin="0,14,0,0">
-                            <CheckBox x:Name="BilibiliEnabledCheck" Style="{StaticResource ThemeCheckBox}" Content="启用哔哩哔哩" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="BilibiliAutoDiscoverCheck" Style="{StaticResource ThemeCheckBox}" Content="自动发现当前活动" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="BilibiliAutoClaimCheck" Style="{StaticResource ThemeCheckBox}" Content="自动领取奖励" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="BilibiliTaskNotificationsCheck" Style="{StaticResource ThemeCheckBox}" Content="任务完成通知" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="BilibiliReconnectCheck" Style="{StaticResource ThemeCheckBox}" Content="断线自动重连" IsChecked="True"/>
+                            <CheckBox x:Name="BilibiliEnabledCheck" Style="{StaticResource ThemeCheckBox}" Content="启用哔哩哔哩" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.Enabled, Mode=TwoWay}"/>
+                            <CheckBox x:Name="BilibiliAutoTaskProgress" Style="{StaticResource ThemeCheckBox}" Content="自动查询任务进度" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.AutoTaskProgress, Mode=TwoWay}"/>
+                            <CheckBox x:Name="BilibiliAutoDiscoverCheck" Style="{StaticResource ThemeCheckBox}" Content="自动发现当前活动" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.AutoDiscover, Mode=TwoWay}"/>
+                            <CheckBox x:Name="BilibiliAutoClaimCheck" Style="{StaticResource ThemeCheckBox}" Content="自动领取奖励" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.AutoClaim, Mode=TwoWay}"/>
+                            <CheckBox x:Name="BilibiliTaskNotificationsCheck" Style="{StaticResource ThemeCheckBox}" Content="任务完成通知" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.TaskNotifications, Mode=TwoWay}"/>
+                            <CheckBox x:Name="BilibiliReconnectCheck" Style="{StaticResource ThemeCheckBox}" Content="断线自动重连" IsChecked="{Binding BilibiliDetails.ReconnectEnabled, Mode=TwoWay}"/>
                         </WrapPanel>
                         <WrapPanel Margin="0,12,0,0">
-                            <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource ThemeCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,0,18,0" Click="OnAutoStartChanged"/>
-                            <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource ThemeCheckBox}" Content="上次正在掉宝时自动恢复掉宝"/>
+                            <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource ThemeCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.AutoRestore, Mode=TwoWay}" Click="OnAutoStartChanged"/>
+                            <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource ThemeCheckBox}" Content="上次正在掉宝时自动恢复掉宝" IsChecked="{Binding BilibiliDetails.AutoResume, Mode=TwoWay}" Click="OnAutoStartChanged"/>
                         </WrapPanel>
                         <TextBlock Text="Bilibili 网络连接：DIRECT（固定直连，不使用 CloudLight Blizzard 全局代理或系统代理环境变量）。" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,12,0,0" TextWrapping="Wrap"/>
                         <TextBlock Text="Gotify / Server 酱 URL（可选，保存后加密）" Style="{StaticResource FieldLabel}" Margin="0,14,0,6"/>
                         <PasswordBox x:Name="BilibiliNotifierUrlBox"/>
                         <TextBlock Text="{Binding BilibiliDetails.NotifierText}" Style="{StaticResource FieldHint}"/>
-                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSaveBilibili"/><Button Content="清除第三方通知" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnClearBilibiliNotifier"/><Button Content="读取 Session 详情" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnBilibiliSessionDetails"/></WrapPanel>
+                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="14,0" Command="{Binding BilibiliDetails.SaveSettingsCommand}"/><Button Content="清除第三方通知" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Command="{Binding BilibiliDetails.ClearNotifierCommand}"/><Button Content="刷新 Session 详情" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Command="{Binding BilibiliDetails.RefreshSessionsCommand}"/></WrapPanel>
                     </StackPanel>
                 </Border>
 
@@ -958,7 +986,7 @@
                         <StackPanel>
                             <DockPanel><TextBlock Text="官方任务进度" Style="{StaticResource SectionTitle}"/><TextBlock DockPanel.Dock="Right" Text="{Binding BilibiliDetails.SessionSummary}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center"/></DockPanel>
                             <TextBlock Text="{Binding BilibiliDetails.LastApiSuccessAt, StringFormat=最近成功 API：{0}}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0"/>
-                            <ListBox ItemsSource="{Binding BilibiliDetails.Tasks}" ItemTemplate="{StaticResource BilibiliTaskRowTemplate}" MinHeight="100" MaxHeight="360" Margin="0,10,0,0"/>
+                            <ListBox x:Name="BilibiliTaskList" ItemsSource="{Binding BilibiliDetails.Tasks}" ItemTemplate="{StaticResource BilibiliTaskRowTemplate}" MinHeight="100" MaxHeight="360" Margin="0,10,0,0"/>
                             <TextBlock Text="尚未读取到官方任务进度。请先发现活动或填写 Task IDs。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" Margin="8,12" TextWrapping="Wrap">
                                 <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding BilibiliDetails.Tasks.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                             </TextBlock>
@@ -968,15 +996,23 @@
                     </Border>
                     <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0">
                         <StackPanel>
-                            <TextBlock Text="会话详情" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="会话状态" Style="{StaticResource SectionTitle}"/>
                             <TextBlock Text="活动 / 连接中 / 等待重连 / 失败按聚合状态显示；每个 Session 仍由上游独立运行。" Style="{StaticResource FieldHint}"/>
-                            <ListBox ItemsSource="{Binding BilibiliDetails.Sessions}" ItemTemplate="{StaticResource BilibiliSessionRowTemplate}" MinHeight="100" MaxHeight="390" Margin="0,10,0,0"/>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <StackPanel><TextBlock Text="目标" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding BilibiliDetails.ConfiguredSessions}" FontSize="18" FontWeight="SemiBold"/></StackPanel>
+                                <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="活动" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding BilibiliDetails.ActiveSessions}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Status.Success}"/></StackPanel>
+                                <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="连接中" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding BilibiliDetails.ConnectingSessions}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/></StackPanel>
+                                <StackPanel Grid.Column="3" Margin="8,0,0,0"><TextBlock Text="重连中" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding BilibiliDetails.RetryingSessions}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Status.Warning}"/></StackPanel>
+                                <StackPanel Grid.Column="4" Margin="8,0,0,0"><TextBlock Text="失败" Foreground="{DynamicResource Text.Muted}" FontSize="11"/><TextBlock Text="{Binding BilibiliDetails.FailedSessions}" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Status.Error}"/></StackPanel>
+                            </Grid>
+                            <ListBox x:Name="BilibiliSessionList" ItemsSource="{Binding BilibiliDetails.Sessions}" ItemTemplate="{StaticResource BilibiliSessionRowTemplate}" MinHeight="100" MaxHeight="390" Margin="0,10,0,0"/>
                         </StackPanel>
                     </Border>
                 </Grid>
             </StackPanel>
 
-            <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" Visibility="{Binding TwitchPanelVisibility}">
                     <StackPanel>
                         <DockPanel LastChildFill="True">
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
@@ -1017,7 +1053,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
+                <Border x:Name="TwitchSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" Visibility="{Binding TwitchPanelVisibility}"><StackPanel>
                     <TextBlock Text="Twitch 设置" Style="{StaticResource SectionTitle}"/>
                     <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}"/>
                     <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>

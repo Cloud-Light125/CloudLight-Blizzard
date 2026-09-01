@@ -467,10 +467,12 @@ class BilibiliWorkerContractTests(unittest.TestCase):
                 state = worker.save_settings({"settings": {
                     "enabled": True, "autoResumeDrops": True, "watchMode": "multi",
                     "sessionsPerRoom": 80, "reconnectDelay": 12, "taskInterval": 10,
+                    "autoTaskProgress": False,
                     "autoClaim": True, "taskNotifications": True, "reconnectEnabled": True,
                     "taskIds": ["task-a", "task-b", "task-a"],
                 }})
                 self.assertEqual(state["settings"]["sessionsPerRoom"], 80)
+                self.assertFalse(state["settings"]["autoTaskProgress"])
                 self.assertEqual(state["taskIds"], ["task-a", "task-b"])
             finally:
                 self._close_worker(worker)
@@ -479,6 +481,7 @@ class BilibiliWorkerContractTests(unittest.TestCase):
             try:
                 self.assertEqual(len(restored.get_rooms({})["rooms"]), 2)
                 self.assertEqual(restored.load_state({})["settings"]["sessionsPerRoom"], 80)
+                self.assertFalse(restored.load_state({})["settings"]["autoTaskProgress"])
                 self.assertEqual(restored.load_state({})["taskIds"], ["task-a", "task-b"])
             finally:
                 self._close_worker(restored)

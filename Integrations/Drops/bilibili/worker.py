@@ -430,10 +430,15 @@ class BilibiliProgressPoller:
     def _run(self) -> None:
         first = True
         while not self._stop_event.is_set():
+            if not self._worker.auto_task_progress:
+                self._stop_event.wait(1.0)
+                continue
             if not first:
                 self._stop_event.wait(self._worker.task_interval)
                 if self._stop_event.is_set():
                     return
+                if not self._worker.auto_task_progress:
+                    continue
             first = False
             try:
                 asyncio.run(self._worker.poll_progress_once())
@@ -554,6 +559,7 @@ class BilibiliWorker(WorkerBase):
                 "sessionsPerRoom": 1,
                 "reconnectDelay": DEFAULT_RECONNECT_DELAY_SECONDS,
                 "taskInterval": DEFAULT_TASK_INTERVAL_SECONDS,
+                "autoTaskProgress": True,
                 "autoClaim": False,
                 "taskNotifications": True,
                 "autoDiscover": True,
@@ -612,6 +618,11 @@ class BilibiliWorker(WorkerBase):
     def task_interval(self) -> int:
         with self._state_lock:
             return int(self._state["settings"].get("taskInterval", DEFAULT_TASK_INTERVAL_SECONDS))
+
+    @property
+    def auto_task_progress(self) -> bool:
+        with self._state_lock:
+            return bool(self._state["settings"].get("autoTaskProgress", True))
 
     @property
     def reconnect_enabled(self) -> bool:
@@ -1034,6 +1045,8 @@ class BilibiliWorker(WorkerBase):
             if "taskInterval" in incoming or "task_query_interval_seconds" in incoming:
                 settings["taskInterval"] = positive_int(incoming.get("taskInterval", incoming.get("task_query_interval_seconds")), "任务查询间隔")
                 settings["taskInterval"] = max(MIN_TASK_INTERVAL_SECONDS, settings["taskInterval"])
+            if "autoTaskProgress" in incoming:
+                settings["autoTaskProgress"] = bool(incoming["autoTaskProgress"])
             if "autoClaim" in incoming:
                 settings["autoClaim"] = bool(incoming["autoClaim"])
             if "taskNotifications" in incoming:

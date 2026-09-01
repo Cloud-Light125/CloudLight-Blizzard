@@ -439,6 +439,42 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private string _networkProxyStatus = "网络与代理：正在读取设置";
     public string NetworkProxyStatus { get => _networkProxyStatus; private set => Set(ref _networkProxyStatus, value); }
 
+    private DropsPlatform _selectedPlatform = DropsPlatform.Soop;
+    public DropsPlatform SelectedPlatform
+    {
+        get => _selectedPlatform;
+        private set
+        {
+            if (!SetSelectedPlatform(value)) return;
+            Raise(nameof(SoopPanelVisibility));
+            Raise(nameof(YouTubePanelVisibility));
+            Raise(nameof(TwitchPanelVisibility));
+            Raise(nameof(BilibiliPanelVisibility));
+        }
+    }
+
+    public Visibility SoopPanelVisibility => SelectedPlatform == DropsPlatform.Soop
+        ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility YouTubePanelVisibility => SelectedPlatform == DropsPlatform.YouTube
+        ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TwitchPanelVisibility => SelectedPlatform == DropsPlatform.Twitch
+        ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility BilibiliPanelVisibility => SelectedPlatform == DropsPlatform.Bilibili
+        ? Visibility.Visible : Visibility.Collapsed;
+
+    public void SelectPlatform(DropsPlatform platform)
+    {
+        SelectedPlatform = platform;
+    }
+
+    private bool SetSelectedPlatform(DropsPlatform platform)
+    {
+        if (_selectedPlatform == platform) return false;
+        _selectedPlatform = platform;
+        Raise(nameof(SelectedPlatform));
+        return true;
+    }
+
     private bool _isSoopRefreshing;
     public bool IsSoopRefreshing
     {

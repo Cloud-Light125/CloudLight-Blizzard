@@ -53,6 +53,24 @@ public partial class DropsPage : UserControl
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
+        _vm.BilibiliDetails.ConfigureCommands(new(
+            ScanQrLogin: StartBilibiliQrLoginAsync,
+            CancelQr: CancelBilibiliQrAsync,
+            ReacquireQr: StartBilibiliQrLoginAsync,
+            ManualCookie: ImportBilibiliCookieAsync,
+            Logout: LogoutBilibiliAsync,
+            Discover: DiscoverBilibiliAsync,
+            Refresh: () => RefreshBilibiliAsync(),
+            AddRoom: AddBilibiliRoomAsync,
+            RemoveRoom: RemoveBilibiliRoomAsync,
+            SetRoomEnabled: SetBilibiliRoomEnabledAsync,
+            Start: () => StartPlatformAsync(DropsPlatform.Bilibili),
+            Stop: () => StopPlatformAsync(DropsPlatform.Bilibili),
+            SaveSettings: () => SaveBilibiliSettingsAsync(showError: true),
+            ClearNotifier: ClearBilibiliNotifierAsync,
+            RefreshSessions: RefreshBilibiliSessionsAsync,
+            ClaimReward: ClaimBilibiliRewardAsync));
+        _vm.BilibiliDetails.CommandFailed += (_, ex) => ShowError(ex, "哔哩哔哩操作失败");
         main.SetDropsDiagnosticSnapshotProvider(_vm.CreateDiagnosticSnapshot);
         DataContext = _vm;
         _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
@@ -64,14 +82,18 @@ public partial class DropsPage : UserControl
         BilibiliAutoResume.IsChecked = main.Settings.AutoResumeBilibiliDrops;
         _vm.BilibiliDetails.AutoRestore = main.Settings.AutoStartBilibili;
         _vm.BilibiliDetails.AutoResume = main.Settings.AutoResumeBilibiliDrops;
+        _vm.BilibiliDetails.Enabled = main.Settings.BilibiliEnabled;
         _vm.BilibiliDetails.WatchMode = main.Settings.BilibiliWatchMode;
         _vm.BilibiliDetails.SessionsPerRoom = Math.Max(1, main.Settings.BilibiliSessionsPerRoom);
+        _vm.BilibiliDetails.ReconnectDelayText = Math.Max(1, main.Settings.BilibiliReconnectDelaySeconds).ToString();
+        _vm.BilibiliDetails.TaskIntervalText = Math.Max(10, main.Settings.BilibiliTaskIntervalSeconds).ToString();
+        _vm.BilibiliDetails.TaskIdsText = string.Join(", ", main.Settings.BilibiliTaskIds ?? []);
         _vm.BilibiliDetails.AutoClaim = main.Settings.BilibiliAutoClaim;
         _vm.BilibiliDetails.TaskNotifications = main.Settings.BilibiliTaskNotifications;
         _vm.SetSoopAutoStartEnabled(main.Settings.AutoStartSoop);
         _vm.SetTwitchAutoStartEnabled(main.Settings.AutoStartTwitch);
         SoopTab.IsChecked = true;
-        SoopPanel.Visibility = Visibility.Visible;
+        _vm.SelectPlatform(DropsPlatform.Soop);
         _vm.RefreshTemporalStatus(DateTimeOffset.Now);
         _retryDisplayTimer.Start();
         _initialized = true;
@@ -275,18 +297,11 @@ public partial class DropsPage : UserControl
         if (platform == DropsPlatform.Bilibili)
         {
             _vm?.BilibiliDetails.ApplyState(state);
-            SelectTag(BilibiliWatchModePicker, Text(settings, "watchMode", "standard"));
-            BilibiliSessionsPerRoomText.Text = Int(settings, "sessionsPerRoom", _main?.Settings.BilibiliSessionsPerRoom ?? 1).ToString();
-            BilibiliReconnectDelayText.Text = Int(settings, "reconnectDelay", _main?.Settings.BilibiliReconnectDelaySeconds ?? 8).ToString();
-            BilibiliTaskIntervalText.Text = Int(settings, "taskInterval", _main?.Settings.BilibiliTaskIntervalSeconds ?? 30).ToString();
-            BilibiliEnabledCheck.IsChecked = Bool(settings, "enabled", _main?.Settings.BilibiliEnabled ?? false);
-            BilibiliAutoDiscoverCheck.IsChecked = Bool(settings, "autoDiscover", true);
-            BilibiliReconnectCheck.IsChecked = Bool(settings, "reconnectEnabled", true);
-            BilibiliAutoClaimCheck.IsChecked = Bool(settings, "autoClaim", _main?.Settings.BilibiliAutoClaim ?? false);
-            BilibiliTaskNotificationsCheck.IsChecked = Bool(settings, "taskNotifications", _main?.Settings.BilibiliTaskNotifications ?? true);
-            BilibiliTaskIdsText.Text = string.Join(", ", ArrayStrings(state, "taskIds"));
-            BilibiliAutoStart.IsChecked = _main?.Settings.AutoStartBilibili == true;
-            BilibiliAutoResume.IsChecked = _main?.Settings.AutoResumeBilibiliDrops == true;
+            if (_main is not null && _vm is not null)
+            {
+                _vm.BilibiliDetails.AutoRestore = _main.Settings.AutoStartBilibili;
+                _vm.BilibiliDetails.AutoResume = _main.Settings.AutoResumeBilibiliDrops;
+            }
             return;
         }
 
@@ -355,10 +370,7 @@ public partial class DropsPage : UserControl
     {
         if (!_initialized || sender is not RadioButton { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         _platform = platform;
-        SoopPanel.Visibility = platform == DropsPlatform.Soop ? Visibility.Visible : Visibility.Collapsed;
-        YouTubePanel.Visibility = platform == DropsPlatform.YouTube ? Visibility.Visible : Visibility.Collapsed;
-        TwitchPanel.Visibility = platform == DropsPlatform.Twitch ? Visibility.Visible : Visibility.Collapsed;
-        BilibiliPanel.Visibility = platform == DropsPlatform.Bilibili ? Visibility.Visible : Visibility.Collapsed;
+        _vm?.SelectPlatform(platform);
         await EnsureLogTailStartedAsync();
         if (_logTail is not null) await _logTail.RefreshAsync(platform);
         RenderLogBuffer();
@@ -392,6 +404,7 @@ public partial class DropsPage : UserControl
                 // An explicit Start action is an opt-in for this provider,
                 // so keep the persisted Enabled flag consistent with the UI.
                 BilibiliEnabledCheck.IsChecked = true;
+                _vm.BilibiliDetails.Enabled = true;
                 if (!await SaveBilibiliSettingsAsync(showError: true)) return;
                 if (!await EnsureBilibiliCredentialsAsync(showError: true)) return;
                 _vm.BeginBilibiliStart(automatic);
@@ -874,6 +887,11 @@ public partial class DropsPage : UserControl
         _main.Settings.AutoStartTwitch = TwitchAutoStart.IsChecked == true;
         _main.Settings.AutoStartBilibili = BilibiliAutoStart.IsChecked == true;
         _main.Settings.AutoResumeBilibiliDrops = BilibiliAutoResume.IsChecked == true;
+        if (_vm is not null)
+        {
+            _vm.BilibiliDetails.AutoRestore = _main.Settings.AutoStartBilibili;
+            _vm.BilibiliDetails.AutoResume = _main.Settings.AutoResumeBilibiliDrops;
+        }
         _vm?.SetSoopAutoStartEnabled(_main.Settings.AutoStartSoop);
         _vm?.SetTwitchAutoStartEnabled(_main.Settings.AutoStartTwitch);
         _main.Settings.Save();
@@ -979,11 +997,10 @@ public partial class DropsPage : UserControl
         finally { _loading = false; }
     }
 
-    private async void OnBilibiliRefresh(object sender, RoutedEventArgs e) => await RefreshBilibiliAsync();
-
-    private async void OnBilibiliDiscover(object sender, RoutedEventArgs e)
+    private async Task DiscoverBilibiliAsync()
     {
         if (_vm == null || _loading) return;
+        _loading = true;
         try
         {
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "discover");
@@ -993,9 +1010,10 @@ public partial class DropsPage : UserControl
                 ShowInfo(Text(result, "message"), "哔哩哔哩活动发现");
         }
         catch (Exception ex) { ShowError(ex, "发现哔哩哔哩活动失败"); }
+        finally { _loading = false; }
     }
 
-    private async void OnBilibiliQrLogin(object sender, RoutedEventArgs e)
+    private async Task StartBilibiliQrLoginAsync()
     {
         if (_vm == null || _bilibiliQrPollingTask is { IsCompleted: false }) return;
         try
@@ -1010,7 +1028,11 @@ public partial class DropsPage : UserControl
             await _bilibiliQrPollingTask;
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { ShowError(ex, "哔哩哔哩扫码登录失败"); }
+        catch (Exception ex)
+        {
+            _vm.BilibiliDetails.SetQrError("登录失败：" + SensitiveDataRedactor.Redact(ex.Message));
+            ShowError(ex, "哔哩哔哩扫码登录失败");
+        }
         finally
         {
             if (_bilibiliQrPollingCts?.IsCancellationRequested == true)
@@ -1044,7 +1066,7 @@ public partial class DropsPage : UserControl
         }
     }
 
-    private async void OnBilibiliQrCancel(object sender, RoutedEventArgs e)
+    private async Task CancelBilibiliQrAsync()
     {
         _bilibiliQrPollingCts?.Cancel();
         if (_vm == null) return;
@@ -1056,7 +1078,7 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "取消哔哩哔哩扫码失败"); }
     }
 
-    private async void OnBilibiliManualCookie(object sender, RoutedEventArgs e)
+    private async Task ImportBilibiliCookieAsync()
     {
         if (_vm == null) return;
         var cookie = BilibiliCookieBox.Password.Trim();
@@ -1080,7 +1102,7 @@ public partial class DropsPage : UserControl
         }
     }
 
-    private async void OnBilibiliLogout(object sender, RoutedEventArgs e)
+    private async Task LogoutBilibiliAsync()
     {
         if (_vm == null || MessageBox.Show("退出哔哩哔哩登录并删除本机加密凭据？\n\n直播间和其它设置会保留。", "退出哔哩哔哩登录",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -1101,28 +1123,29 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "退出哔哩哔哩登录失败"); }
     }
 
-    private async void OnBilibiliAddRoom(object sender, RoutedEventArgs e)
+    private async Task AddBilibiliRoomAsync()
     {
         if (_vm == null) return;
-        var reference = BilibiliRoomInput.Text.Trim();
+        var details = _vm.BilibiliDetails;
+        var reference = details.RoomReference.Trim();
         if (string.IsNullOrWhiteSpace(reference)) { ShowInfo("请输入直播间 URL 或 Room ID。", "添加直播间"); return; }
         try
         {
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "add_room", new
             {
-                roomId = reference, name = BilibiliRoomNameInput.Text.Trim(), enabled = true,
+                roomId = reference, name = details.RoomName.Trim(), enabled = true,
             });
             ApplyBilibiliResult(result);
             SyncBilibiliSettingsToApp();
-            BilibiliRoomInput.Clear();
-            BilibiliRoomNameInput.Clear();
+            details.RoomReference = "";
+            details.RoomName = "";
         }
         catch (Exception ex) { ShowError(ex, "添加哔哩哔哩直播间失败"); }
     }
 
-    private async void OnBilibiliRemoveRoom(object sender, RoutedEventArgs e)
+    private async Task RemoveBilibiliRoomAsync(object? parameter)
     {
-        if (_vm == null || sender is not Button { Tag: BilibiliRoomViewModel room }) return;
+        if (_vm == null || parameter is not BilibiliRoomViewModel room) return;
         try
         {
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "remove_room", new { roomId = room.Id });
@@ -1132,30 +1155,19 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "删除哔哩哔哩直播间失败"); }
     }
 
-    private async void OnBilibiliRoomEnabledChanged(object sender, RoutedEventArgs e)
+    private async Task SetBilibiliRoomEnabledAsync(object? parameter)
     {
-        if (_vm == null || sender is not CheckBox { Tag: BilibiliRoomViewModel room, IsChecked: var enabled }) return;
+        if (_vm == null || parameter is not BilibiliRoomViewModel room) return;
         try
         {
-            var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "set_room_enabled", new { roomId = room.Id, enabled = enabled == true });
+            var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "set_room_enabled", new { roomId = room.Id, enabled = room.Enabled });
             ApplyBilibiliResult(result);
             SyncBilibiliSettingsToApp();
         }
         catch (Exception ex) { ShowError(ex, "更新哔哩哔哩直播间状态失败"); }
     }
 
-    private void OnBilibiliWatchModeChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_vm == null || BilibiliWatchModePicker == null) return;
-        var mode = SelectedTag(BilibiliWatchModePicker, "standard");
-        _vm.BilibiliDetails.WatchMode = mode;
-        if (mode == "standard") BilibiliSessionsPerRoomText.Text = "1";
-    }
-
-    private async void OnSaveBilibili(object sender, RoutedEventArgs e)
-        => await SaveBilibiliSettingsAsync(showError: true);
-
-    private async void OnClearBilibiliNotifier(object sender, RoutedEventArgs e)
+    private async Task ClearBilibiliNotifierAsync()
     {
         if (_vm == null || MessageBox.Show("删除已保存的 Gotify / Server 酱通知配置？", "清除第三方通知",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -1172,7 +1184,7 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "清除哔哩哔哩通知配置失败"); }
     }
 
-    private async void OnBilibiliSessionDetails(object sender, RoutedEventArgs e)
+    private async Task RefreshBilibiliSessionsAsync()
     {
         if (_vm == null) return;
         try
@@ -1183,9 +1195,9 @@ public partial class DropsPage : UserControl
         catch (Exception ex) { ShowError(ex, "读取哔哩哔哩 Session 详情失败"); }
     }
 
-    private async void OnClaimBilibiliReward(object sender, RoutedEventArgs e)
+    private async Task ClaimBilibiliRewardAsync(object? parameter)
     {
-        if (_vm == null || sender is not Button { DataContext: BilibiliTaskViewModel task } || !task.CanClaim) return;
+        if (_vm == null || parameter is not BilibiliTaskViewModel task || !task.CanClaim) return;
         task.IsClaiming = true;
         try
         {
@@ -1237,37 +1249,42 @@ public partial class DropsPage : UserControl
     private async Task<bool> SaveBilibiliSettingsAsync(bool showError)
     {
         if (_vm == null || _main == null) return false;
-        var mode = SelectedTag(BilibiliWatchModePicker, "standard");
-        if (!int.TryParse(BilibiliSessionsPerRoomText.Text.Trim(), out var sessions) || sessions <= 0 || sessions > 128)
+        var details = _vm.BilibiliDetails;
+        var mode = details.WatchMode;
+        if (!int.TryParse(details.SessionsPerRoomText.Trim(), out var sessions) || sessions <= 0 || sessions > 128)
         {
             if (showError) ShowInfo("每房间并发 Session 必须是 1 到 128 的正整数。", "保存哔哩哔哩设置");
             return false;
         }
         if (mode == "standard") sessions = 1;
-        if (!int.TryParse(BilibiliReconnectDelayText.Text.Trim(), out var reconnect) || reconnect <= 0)
+        if (!int.TryParse(details.ReconnectDelayText.Trim(), out var reconnect) || reconnect <= 0)
         {
             if (showError) ShowInfo("重连延迟必须是正整数秒。", "保存哔哩哔哩设置");
             return false;
         }
-        if (!int.TryParse(BilibiliTaskIntervalText.Text.Trim(), out var interval) || interval < 10)
+        if (!int.TryParse(details.TaskIntervalText.Trim(), out var interval) || interval < 10)
         {
             if (showError) ShowInfo("官方任务查询间隔不能小于 10 秒。", "保存哔哩哔哩设置");
             return false;
         }
-        var taskIds = ParseTaskIds(BilibiliTaskIdsText.Text);
+        details.SessionsPerRoom = sessions;
+        details.ReconnectDelayText = reconnect.ToString();
+        details.TaskIntervalText = interval.ToString();
+        var taskIds = ParseTaskIds(details.TaskIdsText);
         var settings = new Dictionary<string, object?>
         {
-            ["enabled"] = BilibiliEnabledCheck.IsChecked == true,
-            ["autoRestore"] = BilibiliAutoStart.IsChecked == true,
-            ["autoResumeDrops"] = BilibiliAutoResume.IsChecked == true,
+            ["enabled"] = details.Enabled,
+            ["autoRestore"] = details.AutoRestore,
+            ["autoResumeDrops"] = details.AutoResume,
             ["watchMode"] = mode,
             ["sessionsPerRoom"] = sessions,
             ["reconnectDelay"] = reconnect,
             ["taskInterval"] = interval,
-            ["reconnectEnabled"] = BilibiliReconnectCheck.IsChecked == true,
-            ["autoDiscover"] = BilibiliAutoDiscoverCheck.IsChecked == true,
-            ["autoClaim"] = BilibiliAutoClaimCheck.IsChecked == true,
-            ["taskNotifications"] = BilibiliTaskNotificationsCheck.IsChecked == true,
+            ["autoTaskProgress"] = details.AutoTaskProgress,
+            ["reconnectEnabled"] = details.ReconnectEnabled,
+            ["autoDiscover"] = details.AutoDiscover,
+            ["autoClaim"] = details.AutoClaim,
+            ["taskNotifications"] = details.TaskNotifications,
             ["taskIds"] = taskIds,
         };
         var notifier = BilibiliNotifierUrlBox.Password.Trim();
@@ -1321,17 +1338,17 @@ public partial class DropsPage : UserControl
     {
         if (_main == null || _vm == null) return;
         var details = _vm.BilibiliDetails;
-        _main.Settings.BilibiliEnabled = BilibiliEnabledCheck.IsChecked == true;
-        _main.Settings.AutoStartBilibili = BilibiliAutoStart.IsChecked == true;
-        _main.Settings.AutoResumeBilibiliDrops = BilibiliAutoResume.IsChecked == true;
+        _main.Settings.BilibiliEnabled = details.Enabled;
+        _main.Settings.AutoStartBilibili = details.AutoRestore;
+        _main.Settings.AutoResumeBilibiliDrops = details.AutoResume;
         _main.Settings.BilibiliRoomIds = details.Rooms.Select(room => room.Id).Distinct().ToList();
-        _main.Settings.BilibiliTaskIds = (taskIds ?? ParseTaskIds(BilibiliTaskIdsText.Text)).ToList();
-        _main.Settings.BilibiliWatchMode = mode ?? SelectedTag(BilibiliWatchModePicker, details.WatchMode);
+        _main.Settings.BilibiliTaskIds = (taskIds ?? ParseTaskIds(details.TaskIdsText)).ToList();
+        _main.Settings.BilibiliWatchMode = mode ?? details.WatchMode;
         _main.Settings.BilibiliSessionsPerRoom = sessions ?? Math.Max(1, details.SessionsPerRoom);
-        _main.Settings.BilibiliReconnectDelaySeconds = reconnect ?? ParseInt(BilibiliReconnectDelayText, 8);
-        _main.Settings.BilibiliTaskIntervalSeconds = interval ?? ParseInt(BilibiliTaskIntervalText, 30);
-        _main.Settings.BilibiliAutoClaim = BilibiliAutoClaimCheck.IsChecked == true;
-        _main.Settings.BilibiliTaskNotifications = BilibiliTaskNotificationsCheck.IsChecked == true;
+        _main.Settings.BilibiliReconnectDelaySeconds = reconnect ?? Math.Max(1, details.ReconnectDelay);
+        _main.Settings.BilibiliTaskIntervalSeconds = interval ?? Math.Max(10, details.TaskInterval);
+        _main.Settings.BilibiliAutoClaim = details.AutoClaim;
+        _main.Settings.BilibiliTaskNotifications = details.TaskNotifications;
         _main.Settings.Save();
     }
 
