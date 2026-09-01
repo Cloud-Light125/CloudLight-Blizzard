@@ -1,11 +1,13 @@
 using System.Reflection;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using InlineRun = System.Windows.Documents.Run;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using System.Windows.Threading;
@@ -34,15 +36,32 @@ public static class UiVisualTreeSelfTest
         TraceSource? bindingSource = null;
         TraceListener? bindingListener = null;
         SourceLevels? previousBindingLevel = null;
+        DropsHostService? requestOverrideHost = null;
+        DispatcherUnhandledExceptionEventHandler? dispatcherUnhandledHandler = null;
+        var dispatcherExceptions = new List<Exception>();
+        string? settingsPath = null;
+        FileSnapshot? settingsSnapshot = null;
         try
         {
+            settingsPath = AppSettings.FilePath;
+            settingsSnapshot = CaptureFile(settingsPath);
             bindingSource = PresentationTraceSources.DataBindingSource;
             previousBindingLevel = bindingSource.Switch.Level;
             bindingListener = new BindingErrorTraceListener();
             bindingSource.Switch.Level = SourceLevels.Error;
             bindingSource.Listeners.Add(bindingListener);
+            dispatcherUnhandledHandler = (_, args) =>
+            {
+                dispatcherExceptions.Add(args.Exception);
+                args.Handled = true;
+            };
+            Application.Current.DispatcherUnhandledException += dispatcherUnhandledHandler;
             window = new MainWindow(startHidden: true);
             Application.Current.MainWindow = window;
+            requestOverrideHost = typeof(MainWindow).GetField("_vm", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) is MainViewModel mainViewModel ? mainViewModel.DropsHost : null;
+            requestOverrideHost?.ConfigureRequestOverrideForSelfTest((_, _, _, _) =>
+                Task.FromResult(JsonSerializer.SerializeToElement(new { })));
             window.ShowActivated = false;
             window.Opacity = 0;
             window.ApplyTemplate();
@@ -286,6 +305,156 @@ public static class UiVisualTreeSelfTest
                     : null;
                 Assert(contentOrder is { IsAfter: true }, checks,
                     $"运行日志区域位于真实 Bilibili 内容之后（panelPath={contentOrder?.FirstPath ?? "?"}, logPath={contentOrder?.SecondPath ?? "?"}）");
+
+                var roomList = FindNamed(dropsPage, "BilibiliRoomList") as ListBox;
+                var roomInput = FindNamed(dropsPage, "BilibiliRoomInput") as TextBox;
+                var roomNameInput = FindNamed(dropsPage, "BilibiliRoomNameInput") as TextBox;
+                var addRoomButton = FindVisual(dropsPage, value =>
+                    value is Button button && string.Equals(button.Content as string, "添加", StringComparison.Ordinal)) as Button;
+                var bindingErrorsBeforeRoom = BindingErrorCount(bindingListener);
+                var dispatcherErrorsBeforeRoom = dispatcherExceptions.Count;
+                const long testRoomId = 24681357;
+                var testRoomUrl = $"https://live.bilibili.com/{testRoomId}";
+                var mockCommands = new List<string>();
+                object? addRoomPayload = null;
+
+                requestOverrideHost?.ConfigureRequestOverrideForSelfTest((platform, command, payload, _) =>
+                {
+                    mockCommands.Add(command);
+                    if (command == "add_room") addRoomPayload = payload;
+                    var hasRoom = command is "add_room" or "set_room_enabled";
+                    var rooms = hasRoom
+                        ? new object[]
+                        {
+                            new
+                            {
+                                id = testRoomId,
+                                name = "真实回归测试直播间",
+                                url = testRoomUrl,
+                                enabled = command == "add_room",
+                                liveStatus = "1",
+                            },
+                        }
+                        : Array.Empty<object>();
+                    return Task.FromResult(JsonSerializer.SerializeToElement(new { rooms }));
+                });
+
+                if (roomInput is not null) roomInput.Text = testRoomUrl;
+                if (roomNameInput is not null) roomNameInput.Text = "真实回归测试直播间";
+                Assert(requestOverrideHost is not null && roomInput is not null && roomNameInput is not null &&
+                       string.Equals(bilibiliDetails.RoomReference, testRoomUrl, StringComparison.Ordinal) &&
+                       string.Equals(bilibiliDetails.RoomName, "真实回归测试直播间", StringComparison.Ordinal),
+                    checks, "真实 Bilibili 添加控件通过 TwoWay Binding 写入 URL 和房间名称");
+                Assert(addRoomButton is not null && addRoomButton.Command == bilibiliDetails.AddRoomCommand &&
+                       addRoomButton.Command.CanExecute(addRoomButton.CommandParameter),
+                    checks, "真实 Bilibili 添加按钮绑定 AddRoomCommand 且可执行");
+                if (addRoomButton?.Command is not null)
+                    addRoomButton.Command.Execute(addRoomButton.CommandParameter);
+
+                var addCompleted = WaitForDispatcherCondition(dropsPage.Dispatcher,
+                    () => bilibiliDetails.Rooms.Count == 1 && string.IsNullOrWhiteSpace(bilibiliDetails.RoomReference),
+                    TimeSpan.FromSeconds(5));
+                dropsPage.UpdateLayout();
+                roomList?.UpdateLayout();
+                var addedRoom = bilibiliDetails.Rooms.SingleOrDefault();
+                var roomContainer = roomList is not null && addedRoom is not null
+                    ? roomList.ItemContainerGenerator.ContainerFromItem(addedRoom) as ListBoxItem
+                    : null;
+                var roomNameText = roomContainer is not null
+                    ? FindVisual(roomContainer, value => value is TextBlock text &&
+                        string.Equals(text.Text, "真实回归测试直播间", StringComparison.Ordinal)) as TextBlock
+                    : null;
+                var roomInfo = roomContainer is not null
+                    ? FindVisual(roomContainer, value => value is TextBlock text &&
+                        text.Inlines.OfType<InlineRun>().Any(run => run.Text == "Room ID：")) as TextBlock
+                    : null;
+                var roomInlineText = roomInfo is null
+                    ? ""
+                    : string.Concat(roomInfo.Inlines.OfType<InlineRun>().Select(run => run.Text));
+                var displayRuns = roomInfo?.Inlines.OfType<InlineRun>()
+                    .Where(run => run.Text == addedRoom?.RoomIdText ||
+                                  run.Text == addedRoom?.Status ||
+                                  run.Text == addedRoom?.SessionText)
+                    .ToArray() ?? [];
+                var roomCheckBox = roomContainer is not null
+                    ? FindVisual(roomContainer, value => value is CheckBox) as CheckBox
+                    : null;
+                var roomDeleteButton = roomContainer is not null
+                    ? FindVisual(roomContainer, value => value is Button button &&
+                        string.Equals(button.Content as string, "删除", StringComparison.Ordinal)) as Button
+                    : null;
+                var enabledBinding = roomCheckBox is not null
+                    ? BindingOperations.GetBindingExpression(roomCheckBox, ToggleButton.IsCheckedProperty)
+                    : null;
+                Assert(addCompleted && mockCommands.Contains("add_room", StringComparer.Ordinal) &&
+                       addRoomPayload is not null && JsonSerializer.Serialize(addRoomPayload).Contains(testRoomUrl, StringComparison.Ordinal),
+                    checks, "AddRoomCommand → mock Worker 返回房间 → Rooms collection 增加");
+                Assert(roomContainer is not null && roomContainer.ContentTemplate is not null && roomInfo is not null &&
+                       roomNameText is not null && roomNameText.IsVisible && roomInfo.IsVisible &&
+                       roomInlineText.Contains(testRoomId.ToString(), StringComparison.Ordinal) &&
+                       roomInlineText.Contains("直播中", StringComparison.Ordinal) &&
+                       roomInlineText.Contains("—", StringComparison.Ordinal),
+                    checks, "真实 BilibiliRoomRowTemplate 已实例化并完成 Measure/Arrange/Render，房间名称、Room ID、状态和 Session 状态可见");
+                Assert(displayRuns.Length == 3 && displayRuns.All(run =>
+                        BindingOperations.GetBindingExpression(run, InlineRun.TextProperty)?.ParentBinding.Mode == BindingMode.OneWay),
+                    checks, "Bilibili 房间行的 RoomIdText、Status、SessionText Run.Text 均为 OneWay");
+                Assert(roomCheckBox is not null && roomCheckBox.IsChecked == true &&
+                       roomCheckBox.Command == bilibiliDetails.SetRoomEnabledCommand &&
+                       roomCheckBox.CommandParameter is BilibiliRoomViewModel &&
+                       enabledBinding?.ParentBinding.Mode == BindingMode.TwoWay,
+                    checks, "启用 CheckBox 保留合理的 TwoWay Binding，并绑定 SetRoomEnabledCommand");
+                Assert(roomDeleteButton is not null && roomDeleteButton.Command == bilibiliDetails.RemoveRoomCommand &&
+                       roomDeleteButton.CommandParameter is BilibiliRoomViewModel,
+                    checks, "删除按钮已在真实房间模板中实例化并绑定 RemoveRoomCommand");
+                Assert(BindingErrorCount(bindingListener) == bindingErrorsBeforeRoom,
+                    checks, "添加并渲染 Bilibili 房间后没有新增 WPF Binding Error");
+                Assert(dispatcherExceptions.Count == dispatcherErrorsBeforeRoom &&
+                       !dispatcherExceptions.Skip(dispatcherErrorsBeforeRoom).Any(error =>
+                           ContainsExceptionType(error, typeof(InvalidOperationException))),
+                    checks, "添加并渲染 Bilibili 房间后没有 DispatcherUnhandledException/InvalidOperationException");
+
+                if (addedRoom is not null)
+                {
+                    if (roomCheckBox is not null) roomCheckBox.IsChecked = false;
+                    else addedRoom.Enabled = false;
+                    var setCommand = roomCheckBox?.Command ?? bilibiliDetails.SetRoomEnabledCommand;
+                    var setParameter = roomCheckBox?.CommandParameter ?? addedRoom;
+                    setCommand.Execute(setParameter);
+                }
+                var disabledCompleted = WaitForDispatcherCondition(dropsPage.Dispatcher,
+                    () => bilibiliDetails.Rooms.Count == 1 && !bilibiliDetails.Rooms[0].Enabled,
+                    TimeSpan.FromSeconds(5));
+                dropsPage.UpdateLayout();
+                roomList?.UpdateLayout();
+                Assert(disabledCompleted && mockCommands.Contains("set_room_enabled", StringComparer.Ordinal),
+                    checks, "SetRoomEnabledCommand → mock Worker 返回停用状态 → 房间列表保持一致");
+
+                var currentRoom = bilibiliDetails.Rooms.SingleOrDefault();
+                var currentContainer = roomList is not null && currentRoom is not null
+                    ? roomList.ItemContainerGenerator.ContainerFromItem(currentRoom) as ListBoxItem
+                    : null;
+                var currentDeleteButton = currentContainer is not null
+                    ? FindVisual(currentContainer, value => value is Button button &&
+                        string.Equals(button.Content as string, "删除", StringComparison.Ordinal)) as Button
+                    : null;
+                if (currentRoom is not null)
+                {
+                    var removeCommand = currentDeleteButton?.Command ?? bilibiliDetails.RemoveRoomCommand;
+                    var removeParameter = currentDeleteButton?.CommandParameter ?? currentRoom;
+                    removeCommand.Execute(removeParameter);
+                }
+                var removedCompleted = WaitForDispatcherCondition(dropsPage.Dispatcher,
+                    () => bilibiliDetails.Rooms.Count == 0, TimeSpan.FromSeconds(5));
+                dropsPage.UpdateLayout();
+                roomList?.UpdateLayout();
+                var addIndex = mockCommands.IndexOf("add_room");
+                var setIndex = mockCommands.IndexOf("set_room_enabled");
+                var removeIndex = mockCommands.IndexOf("remove_room");
+                Assert(removedCompleted && removeIndex > setIndex && setIndex > addIndex,
+                    checks, "RemoveRoomCommand → mock Worker 返回空房间 → Rooms collection 和模板正常移除");
+                Assert(BindingErrorCount(bindingListener) == bindingErrorsBeforeRoom &&
+                       dispatcherExceptions.Count == dispatcherErrorsBeforeRoom,
+                    checks, "启用/停用/删除房间命令链未产生 Binding Error 或 DispatcherUnhandledException");
             }
 
             var plan = new SwitchPlan
@@ -305,7 +474,6 @@ public static class UiVisualTreeSelfTest
             Assert(bindingListener is not BindingErrorTraceListener errors || !errors.HasErrors,
                 checks, "WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误");
 
-            checks.Insert(0, "UI navigation integration selftest: " + (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
         }
         catch (Exception ex)
         {
@@ -313,6 +481,7 @@ public static class UiVisualTreeSelfTest
         }
         finally
         {
+            requestOverrideHost?.ConfigureRequestOverrideForSelfTest(null);
             if (bindingSource is not null && bindingListener is not null)
             {
                 try { bindingSource.Listeners.Remove(bindingListener); } catch { }
@@ -331,6 +500,18 @@ public static class UiVisualTreeSelfTest
                 catch (Exception ex) { checks.Add("FAIL UI 清理：" + ex.GetBaseException().Message); }
                 try { window.Close(); } catch { }
             }
+            if (dispatcherUnhandledHandler is not null)
+            {
+                try { Application.Current.DispatcherUnhandledException -= dispatcherUnhandledHandler; }
+                catch { }
+            }
+            if (settingsPath is not null && settingsSnapshot is not null)
+            {
+                try { RestoreFile(settingsPath, settingsSnapshot); }
+                catch (Exception ex) { checks.Add("FAIL UI 测试恢复 settings.json：" + ex.Message); }
+            }
+            checks.Insert(0, "UI navigation integration selftest: " +
+                (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
             try
             {
                 var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
@@ -345,6 +526,43 @@ public static class UiVisualTreeSelfTest
 
     private static void Assert(bool condition, ICollection<string> checks, string description) =>
         checks.Add((condition ? "PASS " : "FAIL ") + description);
+
+    private sealed record FileSnapshot(bool Exists, byte[] Content, DateTime LastWriteTimeUtc);
+
+    private static FileSnapshot CaptureFile(string path) =>
+        File.Exists(path)
+            ? new(true, File.ReadAllBytes(path), File.GetLastWriteTimeUtc(path))
+            : new(false, Array.Empty<byte>(), default);
+
+    private static void RestoreFile(string path, FileSnapshot snapshot)
+    {
+        if (!snapshot.Exists)
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, snapshot.Content);
+        File.SetLastWriteTimeUtc(path, snapshot.LastWriteTimeUtc);
+    }
+
+    private static int BindingErrorCount(TraceListener? listener) =>
+        listener is BindingErrorTraceListener binding ? binding.ErrorCount : 0;
+
+    private static bool WaitForDispatcherCondition(Dispatcher dispatcher, Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+            DrainDispatcher(dispatcher);
+        return condition();
+    }
+
+    private static bool ContainsExceptionType(Exception error, Type type)
+    {
+        for (Exception? current = error; current is not null; current = current.InnerException)
+            if (type.IsInstanceOfType(current)) return true;
+        return false;
+    }
 
     private static FrameworkElement? FindNamed(FrameworkElement root, string name)
     {
@@ -434,6 +652,7 @@ public static class UiVisualTreeSelfTest
     private sealed class BindingErrorTraceListener : TraceListener
     {
         public bool HasErrors { get; private set; }
+        public int ErrorCount { get; private set; }
 
         public override void Write(string? message) => Capture(message);
         public override void WriteLine(string? message) => Capture(message);
@@ -442,7 +661,10 @@ public static class UiVisualTreeSelfTest
         {
             if (!string.IsNullOrWhiteSpace(message) &&
                 message.Contains("System.Windows.Data Error", StringComparison.OrdinalIgnoreCase))
+            {
                 HasErrors = true;
+                ErrorCount++;
+            }
         }
     }
 }

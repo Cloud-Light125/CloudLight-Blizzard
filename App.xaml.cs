@@ -14,6 +14,10 @@ public partial class App : Application
     public const string ShowEventName = @"Local\CloudLight Blizzard.Show";
     internal static bool IsHeadlessSelfTest { get; private set; }
     private const string MutexName = @"Local\CloudLight Blizzard.SingleInstance";
+    private static readonly object ErrorDialogSync = new();
+    private static readonly TimeSpan ErrorDialogThrottle = TimeSpan.FromSeconds(3);
+    private static string? _lastErrorDialogSignature;
+    private static DateTimeOffset _lastErrorDialogAt;
     private Mutex? _singleInstance;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -47,6 +51,7 @@ public partial class App : Application
             IsHeadlessSelfTest = true;
             base.OnStartup(e);
             var exitCode = UiVisualTreeSelfTest.Run(e.Args[1]);
+            Environment.ExitCode = exitCode;
             Shutdown(exitCode);
             return;
         }
@@ -263,8 +268,25 @@ public partial class App : Application
     private void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         WriteCrash(e.Exception);
-        MessageBox.Show(e.Exception.Message, "出错了", MessageBoxButton.OK, MessageBoxImage.Error);
+        if (ShouldShowUnhandledDialog(e.Exception))
+            MessageBox.Show(e.Exception.Message, "出错了", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
+    }
+
+    internal static bool ShouldShowUnhandledDialog(Exception ex)
+    {
+        var root = ex.GetBaseException();
+        var signature = $"{root.GetType().FullName}|{root.Message}";
+        var now = DateTimeOffset.UtcNow;
+        lock (ErrorDialogSync)
+        {
+            if (string.Equals(_lastErrorDialogSignature, signature, StringComparison.Ordinal) &&
+                now - _lastErrorDialogAt < ErrorDialogThrottle)
+                return false;
+            _lastErrorDialogSignature = signature;
+            _lastErrorDialogAt = now;
+            return true;
+        }
     }
 
     private static void WriteCrash(Exception? ex)

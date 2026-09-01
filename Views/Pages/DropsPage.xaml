@@ -294,7 +294,7 @@
                 <StackPanel Grid.Column="1" Margin="10,0,8,0">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                     <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,3,0,0">
-                        <Run Text="Room ID："/><Run Text="{Binding RoomIdText}"/><Run Text=" · "/><Run Text="{Binding Status}"/><Run Text=" · "/><Run Text="{Binding SessionText}"/>
+                        <Run Text="Room ID："/><Run Text="{Binding RoomIdText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Status, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding SessionText, Mode=OneWay}"/>
                     </TextBlock>
                 </StackPanel>
                 <Button Grid.Column="2" Content="删除" Style="{StaticResource DangerButton}" Height="28" Padding="10,0"

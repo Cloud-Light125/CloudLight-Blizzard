@@ -33,6 +33,7 @@ public sealed class DropsHostService : IAsyncDisposable
     private readonly object _sync = new();
     private bool _disposing;
     private DropsProxySettings _proxySettings = new(false, "", false);
+    private Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? _requestOverrideForSelfTest;
 
     public event EventHandler<WorkerEvent>? EventReceived;
     public event EventHandler<WorkerSnapshot>? SnapshotChanged;
@@ -63,6 +64,10 @@ public sealed class DropsHostService : IAsyncDisposable
     public async Task<JsonElement> RequestAsync(DropsPlatform platform, string command, object? payload = null,
         CancellationToken cancellationToken = default)
     {
+        var requestOverride = _requestOverrideForSelfTest;
+        if (requestOverride is not null)
+            return await requestOverride(platform, command, payload, cancellationToken).ConfigureAwait(false);
+
         var worker = await EnsureConnectedAsync(platform, cancellationToken).ConfigureAwait(false);
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -209,6 +214,10 @@ public sealed class DropsHostService : IAsyncDisposable
     }
 
     public void ConfigureProxy(DropsProxySettings settings) => _proxySettings = settings;
+
+    internal void ConfigureRequestOverrideForSelfTest(
+        Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? handler) =>
+        _requestOverrideForSelfTest = handler;
 
     private async Task<WorkerConnection> EnsureConnectedAsync(DropsPlatform platform, CancellationToken cancellationToken)
     {

@@ -2292,8 +2292,12 @@ public static class FeatureSelfTest
         Assert(OverviewViewModel.FormatStatus("正常", DateTimeOffset.Now.AddHours(-1), DateTimeOffset.Now)
                    .Contains("状态可能已过期", StringComparison.Ordinal) &&
                OverviewViewModel.FormatStatus("正常", null) == "未检查",
-            "Overview labels unknown and stale state instead of presenting it as current");
-        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/overview freshness)");
+           "Overview labels unknown and stale state instead of presenting it as current");
+        var duplicateError = new InvalidOperationException($"selftest-error-{Guid.NewGuid():N}");
+        Assert(App.ShouldShowUnhandledDialog(duplicateError) &&
+               !App.ShouldShowUnhandledDialog(new InvalidOperationException(duplicateError.Message)),
+            "identical unhandled errors are throttled to one dialog while each occurrence remains loggable");
+        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/overview freshness/error-dialog throttle)");
     }
 
     private static void WriteRuntimeFiles(string gameRoot)
