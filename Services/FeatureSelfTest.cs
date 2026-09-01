@@ -2132,9 +2132,57 @@ public static class FeatureSelfTest
             Assert(dropsVm.Platforms.Count == 4 && dropsVm.Platforms.Any(item => item.Platform == DropsPlatform.Bilibili) &&
                    dropsVm.BilibiliDetails.LoggedIn && dropsVm.BilibiliDetails.Tasks.Count == 2 &&
                    dropsVm.BilibiliDetails.ConfiguredSessions == 80 && dropsVm.BilibiliDetails.ActiveSessions == 76 &&
-                   dropsVm.BilibiliDetails.DirectNetworkText.StartsWith("DIRECT", StringComparison.Ordinal),
+                   dropsVm.BilibiliDetails.NetworkMode == "DIRECT",
                 "Bilibili is projected through the shared four-platform Drops state and JSONL fields");
             var bilibili = dropsVm.BilibiliDetails;
+            Assert(!typeof(DropsPlatformViewModel).GetProperties().Any(property =>
+                           property.Name is "RecoveryStageText" or "LastHeartbeatText" or
+                           "LastProgressText" or "LastReconnectText" or "NextRetryText") &&
+                   typeof(DropsViewModel).GetMethod("RestartWorkerAsync") is null &&
+                   typeof(DropsHostService).GetMethod("RestartAsync") is not null &&
+                   Enum.GetNames<DropsConnectionState>().Contains("WaitingRetry") &&
+                   Enum.GetNames<DropsConnectionState>().Contains("Recovering"),
+                "Drops 页面移除独立自愈展示/UI-only 重启入口，但保留 Worker 重启与恢复状态模型");
+            using var emptyBilibiliState = JsonDocument.Parse("""
+                {"running":false,"networkMode":"DIRECT","account":{"loggedIn":false,"uid":0,"userName":""},
+                 "rooms":[],"settings":{"watchMode":"standard","sessionsPerRoom":1},
+                 "sessions":{"configuredSessions":0,"activeSessions":0,"connectingSessions":0,"retryingSessions":0,"failedSessions":0,"sessions":[]}}
+                """);
+            dropsVm.ApplyState(DropsPlatform.Bilibili, emptyBilibiliState.RootElement);
+            Assert(!dropsVm.BilibiliQuickStart.Steps[0].Satisfied &&
+                   !dropsVm.BilibiliQuickStart.Steps[1].Satisfied,
+                "Bilibili quick-start uses live account/room state for the incomplete login and room steps");
+            bilibili.HandleEvent("account", JsonSerializer.SerializeToElement(new
+            {
+                loggedIn = true, uid = 42, userName = "Cloudlight",
+            }));
+            Assert(dropsVm.BilibiliQuickStart.Steps[0].Satisfied,
+                "Bilibili quick-start step 1 completes immediately after the account event");
+            dropsVm.ApplyState(DropsPlatform.Bilibili, bilibiliState.RootElement);
+            Assert(dropsVm.BilibiliQuickStart.Steps[1].Satisfied &&
+                   dropsVm.BilibiliQuickStart.Steps[2].Satisfied &&
+                   dropsVm.BilibiliQuickStart.Steps[2].StateText.Contains("多 Session", StringComparison.Ordinal) &&
+                   !dropsVm.BilibiliQuickStart.Steps[3].Satisfied,
+                "Bilibili quick-start derives room, multi-Session and stopped state from the live projection");
+            bilibili.SessionsPerRoomText = "8";
+            Assert(!dropsVm.BilibiliQuickStart.Steps[2].Satisfied &&
+                   dropsVm.BilibiliQuickStart.Steps[2].StateText.Contains("待保存", StringComparison.Ordinal),
+                "Bilibili quick-start marks an unsaved Session change as pending");
+            dropsVm.ApplyState(DropsPlatform.Bilibili, bilibiliState.RootElement);
+            dropsVm.Bilibili.Running = true;
+            Assert(dropsVm.BilibiliQuickStart.Steps[3].StateKind == "progress" &&
+                   dropsVm.BilibiliQuickStart.Steps[3].StateText.Contains("76 / 80 Session", StringComparison.Ordinal),
+                "Bilibili quick-start step 4 shows active/target Sessions while Drops is running");
+            dropsVm.Bilibili.Running = false;
+            Assert(!dropsVm.BilibiliQuickStart.Steps[3].Satisfied &&
+                   dropsVm.BilibiliQuickStart.Steps[3].StateText.Contains("未开始", StringComparison.Ordinal),
+                "Bilibili quick-start step 4 returns to not-started after Drops stops");
+            dropsVm.UpdateProxySettings(true, "http://127.0.0.1:7897", true, true);
+            Assert(bilibili.BilibiliUseProxy && bilibili.GlobalProxyEnabled &&
+                   bilibili.NetworkMode == "PROXY" && bilibili.ProxyEndpointText == "127.0.0.1:7897" &&
+                   bilibili.NetworkPolicyText.Contains("全局代理", StringComparison.Ordinal),
+                "Bilibili VM projects the explicit global proxy policy without exposing credentials");
+            dropsVm.UpdateProxySettings(false, "", false, false);
             Assert(bilibili.ScanQrLoginCommand is not null && bilibili.CancelQrCommand is not null &&
                    bilibili.LogoutCommand is not null && bilibili.DiscoverCommand is not null &&
                    bilibili.AddRoomCommand is not null && bilibili.RemoveRoomCommand is not null &&
@@ -2151,6 +2199,7 @@ public static class FeatureSelfTest
             Assert(dropsVm.SelectedPlatform == DropsPlatform.Bilibili &&
                    dropsVm.BilibiliPanelVisibility == Visibility.Visible &&
                    dropsVm.SoopPanelVisibility == Visibility.Collapsed &&
+                   dropsVm.YouTubePanelVisibility == Visibility.Collapsed &&
                    dropsVm.TwitchPanelVisibility == Visibility.Collapsed,
                 "Bilibili platform selection drives the bound content visibility");
             var changedProperties = new HashSet<string>(StringComparer.Ordinal);

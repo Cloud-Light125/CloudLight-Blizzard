@@ -150,7 +150,7 @@ public sealed class DiagnosticService
         Define("update.metadata", "更新", "更新元数据与安装包", async token => await CheckUpdateMetadataAsync(token)),
         Define("drops.worker", "Drops", "Drops Worker 生命周期", _ => Task.FromResult(CheckDropsWorker())),
         Define("drops.platforms", "Drops", "SOOP / Twitch / YouTube / 哔哩哔哩状态", _ => Task.FromResult(CheckDropsPlatforms())),
-        Define("drops.bilibili", "Drops", "哔哩哔哩 Worker、直连与凭据", _ => Task.FromResult(CheckBilibiliProvider())),
+        Define("drops.bilibili", "Drops", "哔哩哔哩 Worker、网络与凭据", _ => Task.FromResult(CheckBilibiliProvider())),
     };
 
     private CheckDefinition Define(string id, string category, string name,
@@ -366,7 +366,7 @@ public sealed class DiagnosticService
                 $"更新={report.Update.Message} / {report.Update.Route}",
                 $"SOOP={(report.Soop?.Message ?? "未执行")} / {report.Soop?.Route ?? "n/a"}",
                 $"Twitch={(report.Twitch?.Message ?? "未执行")} / {report.Twitch?.Route ?? "n/a"}",
-                $"哔哩哔哩={(report.Bilibili?.Message ?? "未执行")} / {report.Bilibili?.Route ?? "n/a"}（固定直连）",
+                $"哔哩哔哩={(report.Bilibili?.Message ?? "未执行")} / {report.Bilibili?.Route ?? "n/a"}",
             }.Concat(reasons.Count == 0 ? Array.Empty<string>() : new[] { "建议=" + string.Join("；", reasons) })
              .Select(DiagnosticSanitizer.Sanitize)));
     }
@@ -438,6 +438,11 @@ public sealed class DiagnosticService
         var protocol = snapshot?.Lifecycle is WorkerLifecycle.Running or WorkerLifecycle.Starting
             ? "Worker 已启动，hello/JSONL 管道可用" : "尚未执行本次启动握手";
         var lastError = ReadString(state, "lastError");
+        var globalProxyEnabled = settings.EnableProxy &&
+            ProxyValidator.TryNormalize(settings.ProxyUrl, out _, out _);
+        var expectedNetworkMode = settings.BilibiliUseProxy && globalProxyEnabled ? "PROXY" : "DIRECT";
+        var networkMode = ReadString(state, "networkMode", fallback: expectedNetworkMode);
+        var proxyFallbackActive = ReadBool(state, "proxyFallbackActive");
         var details = string.Join("; ", new[]
         {
             $"启用={settings.BilibiliEnabled}",
@@ -445,9 +450,12 @@ public sealed class DiagnosticService
             $"Worker路径={DiagnosticSanitizer.SanitizePath(File.Exists(packaged) ? packaged : development)}",
             $"完整性={integrity}",
             $"启动/握手={protocol}",
-            "网络模式=DIRECT",
+            $"网络模式={networkMode}{(proxyFallbackActive ? "（代理失败，当前回退直连）" : "")}",
+            $"Use Global Proxy={settings.BilibiliUseProxy}",
+            $"Global Proxy Enabled={globalProxyEnabled}",
+            $"Fallback Direct={settings.FallbackDirect}",
             "代理环境隔离=Worker 启动时清理 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY 及小写变量",
-            "HTTP 客户端隔离=httpx trust_env=false；未设置显式 proxy",
+            "HTTP 客户端隔离=httpx trust_env=false；DIRECT 使用 proxy=None，PROXY 使用 CloudLight Blizzard 显式代理",
             $"凭据可用={(credentialAvailable || ReadBool(state, "credentialAvailable") ? "是（DPAPI）" : "否")}",
             $"登录状态={ReadString(state, "account", "loggedIn", fallback: settings.BilibiliUid > 0 ? "已登录" : "未登录")}",
             $"活动/任务={ReadArrayLength(state, "activities")}/{tasks}",
@@ -456,9 +464,9 @@ public sealed class DiagnosticService
             $"ConfiguredSessions={configuredSessions}; ActiveSessions={activeSessions}; ConnectingSessions={ReadInt(state, "sessions", "connectingSessions")}; RetryingSessions={ReadInt(state, "sessions", "retryingSessions")}; FailedSessions={ReadInt(state, "sessions", "failedSessions")}",
             $"最近进度={ReadString(state, "lastProgressAt")}; 最近成功 API={ReadString(state, "lastApiSuccessAt")}; 最近恢复={ReadString(state, "lastRecoveryAt")}; 最近错误={lastError}",
         });
-        return NewCheck("drops.bilibili", "Drops", "哔哩哔哩 Worker、直连与凭据", severity,
+        return NewCheck("drops.bilibili", "Drops", "哔哩哔哩 Worker、网络与凭据", severity,
             !workerExists ? "Bilibili Worker 缺失" : settings.BilibiliEnabled && !credentialAvailable && !ReadBool(state, "credentialAvailable")
-                ? "等待扫码登录" : "直连策略与 Worker 状态已检查", details);
+                ? "等待扫码登录" : $"{networkMode} 策略与 Worker 状态已检查", details);
     }
 
     private static string? FindDevelopmentBilibiliWorker(string start)
@@ -505,10 +513,10 @@ public sealed class DiagnosticService
         return owner.TryGetProperty(property, out var value) && value.TryGetInt32(out var result) ? result : 0;
     }
 
-    private static bool ReadBool(JsonElement owner, string property)
+    private static bool ReadBool(JsonElement owner, string property, bool fallback = false)
     {
         return owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty(property, out var value) &&
-            value.ValueKind is JsonValueKind.True or JsonValueKind.False && value.GetBoolean();
+            value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : fallback;
     }
 
     private static string ReadString(JsonElement owner, string property, string? child = null, string fallback = "无")
@@ -535,10 +543,13 @@ public sealed class DiagnosticService
         $"ConfigurationDirectory: {AppPaths.Current.Root}",
         $"LogsDirectory: {AppPaths.Current.LogsDir}",
         $"ProxyEnabled: {_vm.Settings.EnableProxy}",
-        $"ProxyUrl: {_vm.Settings.ProxyUrl}",
+        $"ProxyUrl: {NetworkDiagnosticService.SafeProxyDisplay(_vm.Settings)}",
         $"FallbackDirect: {_vm.Settings.FallbackDirect}",
-        "BilibiliNetworkMode: DIRECT",
-        "BilibiliProxyEnvironmentIsolation: HTTP_PROXY/HTTPS_PROXY/ALL_PROXY and lowercase variants are removed in the child Worker",
+        $"BilibiliUseProxy: {_vm.Settings.BilibiliUseProxy}",
+        $"BilibiliGlobalProxyEnabled: {_vm.Settings.EnableProxy && ProxyValidator.TryNormalize(_vm.Settings.ProxyUrl, out _, out _)}",
+        $"BilibiliFallbackDirect: {_vm.Settings.FallbackDirect}",
+        $"BilibiliNetworkMode: {(_vm.Settings.BilibiliUseProxy && _vm.Settings.EnableProxy && ProxyValidator.TryNormalize(_vm.Settings.ProxyUrl, out _, out _) ? "PROXY" : "DIRECT")}",
+        "BilibiliProxyEnvironmentIsolation: HTTP_PROXY/HTTPS_PROXY/ALL_PROXY and lowercase variants are removed in the child Worker; httpx trust_env=false",
     }));
 
     private string BuildSnapshotSummary()

@@ -73,7 +73,8 @@ public partial class DropsPage : UserControl
         _vm.BilibiliDetails.CommandFailed += (_, ex) => ShowError(ex, "哔哩哔哩操作失败");
         main.SetDropsDiagnosticSnapshotProvider(_vm.CreateDiagnosticSnapshot);
         DataContext = _vm;
-        _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect);
+        _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect,
+            main.Settings.BilibiliUseProxy);
         main.DropsHost.EventReceived += OnWorkerEvent;
         SoopAutoStart.IsChecked = main.Settings.AutoStartSoop;
         TwitchAutoStart.IsChecked = main.Settings.AutoStartTwitch;
@@ -90,6 +91,7 @@ public partial class DropsPage : UserControl
         _vm.BilibiliDetails.TaskIdsText = string.Join(", ", main.Settings.BilibiliTaskIds ?? []);
         _vm.BilibiliDetails.AutoClaim = main.Settings.BilibiliAutoClaim;
         _vm.BilibiliDetails.TaskNotifications = main.Settings.BilibiliTaskNotifications;
+        _vm.BilibiliDetails.MarkSettingsSaved();
         _vm.SetSoopAutoStartEnabled(main.Settings.AutoStartSoop);
         _vm.SetTwitchAutoStartEnabled(main.Settings.AutoStartTwitch);
         SoopTab.IsChecked = true;
@@ -208,7 +210,8 @@ public partial class DropsPage : UserControl
     {
         if (_vm == null || _loading) return;
         if (_main != null)
-            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl, _main.Settings.FallbackDirect);
+            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl, _main.Settings.FallbackDirect,
+                _main.Settings.BilibiliUseProxy);
         _loading = true;
         try
         {
@@ -542,6 +545,30 @@ public partial class DropsPage : UserControl
                 break;
             case "twitch_start":
                 await StartPlatformAsync(DropsPlatform.Twitch);
+                break;
+            case "bilibili_login":
+                BilibiliAccountCard.BringIntoView();
+                if (_vm.BilibiliDetails.LoggedIn) break;
+                await StartBilibiliQrLoginAsync();
+                break;
+            case "bilibili_room":
+                if (_vm.BilibiliDetails.Rooms.Count > 0)
+                    BilibiliRoomList.BringIntoView();
+                else
+                {
+                    BilibiliRoomInput.BringIntoView();
+                    BilibiliRoomInput.Focus();
+                }
+                break;
+            case "bilibili_settings":
+                BilibiliSettingsCard.BringIntoView();
+                if (_vm.BilibiliDetails.SettingsDirty)
+                    await SaveBilibiliSettingsAsync(showError: true);
+                else
+                    BilibiliWatchModePicker.Focus();
+                break;
+            case "bilibili_start":
+                await StartPlatformAsync(DropsPlatform.Bilibili);
                 break;
         }
     }
@@ -940,20 +967,6 @@ public partial class DropsPage : UserControl
 
     private void OnTwitchRetryNow(object sender, RoutedEventArgs e) => _vm?.RetryTwitchNow();
 
-    private async void OnRestartWorker(object sender, RoutedEventArgs e)
-    {
-        if (_vm == null || sender is not Button { Tag: DropsPlatform platform }) return;
-        try
-        {
-            await _vm.RestartWorkerAsync(platform);
-            await LoadPlatformAsync(platform);
-        }
-        catch (Exception ex)
-        {
-            ShowError(ex, $"重启 {PlatformName(platform)} Worker 失败");
-        }
-    }
-
     private async void OnTwitchReload(object sender, RoutedEventArgs e)
         => await RefreshTwitchAsync();
 
@@ -1295,6 +1308,13 @@ public partial class DropsPage : UserControl
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "save_settings", new { settings });
             ApplyBilibiliResult(result);
             SyncBilibiliSettingsToApp(mode, sessions, reconnect, interval, taskIds);
+            var proxySettings = new DropsProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl,
+                _main.Settings.FallbackDirect, _main.Settings.BilibiliUseProxy);
+            _main.DropsHost.ConfigureProxy(proxySettings);
+            await _main.DropsHost.ApplyProxyAsync(proxySettings);
+            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl,
+                _main.Settings.FallbackDirect, _main.Settings.BilibiliUseProxy);
+            details.MarkSettingsSaved();
             BilibiliNotifierUrlBox.Clear();
             return true;
         }
@@ -1349,6 +1369,7 @@ public partial class DropsPage : UserControl
         _main.Settings.BilibiliTaskIntervalSeconds = interval ?? Math.Max(10, details.TaskInterval);
         _main.Settings.BilibiliAutoClaim = details.AutoClaim;
         _main.Settings.BilibiliTaskNotifications = details.TaskNotifications;
+        _main.Settings.BilibiliUseProxy = details.BilibiliUseProxy;
         _main.Settings.Save();
     }
 
@@ -1738,7 +1759,7 @@ public partial class DropsPage : UserControl
                 : title.Contains("SOOP", StringComparison.OrdinalIgnoreCase)
                     ? "SOOP 掉宝服务运行失败，请查看运行日志。"
                     : title.Contains("哔哩哔哩", StringComparison.OrdinalIgnoreCase) || title.Contains("Bilibili", StringComparison.OrdinalIgnoreCase)
-                        ? "哔哩哔哩掉宝服务运行失败，请检查直连网络、登录状态和运行日志。"
+                        ? "哔哩哔哩掉宝服务运行失败，请检查网络策略、登录状态和运行日志。"
                     : SafeUiError(ex, title);
         var dialog = new PlatformErrorWindow(title, message) { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() == true)

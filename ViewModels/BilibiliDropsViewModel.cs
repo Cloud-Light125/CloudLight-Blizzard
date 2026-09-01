@@ -165,6 +165,8 @@ public sealed class BilibiliDropsViewModel : ObservableObject
 {
     private readonly DropsPlatformViewModel _platform;
     private readonly List<BilibiliAsyncCommand> _commands = [];
+    private bool _suppressSettingsDirty;
+    private bool _settingsDirty;
 
     public BilibiliDropsViewModel(DropsPlatformViewModel platform)
     {
@@ -320,6 +322,24 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         ? Visibility.Visible : Visibility.Collapsed;
     public Visibility QrImageVisibility => File.Exists(QrImagePath) ? Visibility.Visible : Visibility.Collapsed;
 
+    public bool SettingsDirty
+    {
+        get => _settingsDirty;
+        private set
+        {
+            Set(ref _settingsDirty, value);
+            Raise(nameof(SettingsSaveStateText));
+            Raise(nameof(SettingsSaveButtonText));
+        }
+    }
+    public string SettingsSaveStateText => SettingsDirty ? "待保存" : "已保存";
+    public string SettingsSaveButtonText => SettingsDirty ? "保存设置" : "设置已保存";
+
+    private void MarkSettingsDirty()
+    {
+        if (!_suppressSettingsDirty) SettingsDirty = true;
+    }
+
     private string _watchMode = "standard";
     public string WatchMode
     {
@@ -327,9 +347,11 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         set
         {
             var normalized = value == "multi" ? "multi" : "standard";
+            var changed = _watchMode != normalized;
             Set(ref _watchMode, normalized);
             Raise(nameof(ModeText));
             if (normalized == "standard") SessionsPerRoom = 1;
+            if (changed) MarkSettingsDirty();
         }
     }
     public string ModeText => WatchMode == "multi" ? "多线程加速模式" : "标准模式";
@@ -344,6 +366,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             {
                 _sessionsPerRoom = normalized;
                 Raise(nameof(SessionsPerRoom));
+                MarkSettingsDirty();
             }
             var text = normalized.ToString();
             if (_sessionsPerRoomText != text)
@@ -364,6 +387,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             {
                 _sessionsPerRoomText = value;
                 Raise(nameof(SessionsPerRoomText));
+                MarkSettingsDirty();
             }
             if (int.TryParse(value, out var sessions))
                 SessionsPerRoom = sessions;
@@ -402,10 +426,120 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public string LastProgressAt { get => _lastProgressAt; private set => Set(ref _lastProgressAt, value); }
     private string _lastApiSuccessAt = "";
     public string LastApiSuccessAt { get => _lastApiSuccessAt; private set => Set(ref _lastApiSuccessAt, value); }
-    private string _directNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
-    public string DirectNetworkText { get => _directNetworkText; private set => Set(ref _directNetworkText, value); }
+    private bool _bilibiliUseProxy;
+    public bool BilibiliUseProxy
+    {
+        get => _bilibiliUseProxy;
+        set
+        {
+            if (_bilibiliUseProxy == value) return;
+            _bilibiliUseProxy = value;
+            Raise(nameof(BilibiliUseProxy));
+            RaiseNetworkProperties();
+            MarkSettingsDirty();
+        }
+    }
+    private bool _globalProxyEnabled;
+    public bool GlobalProxyEnabled
+    {
+        get => _globalProxyEnabled;
+        private set { Set(ref _globalProxyEnabled, value); RaiseNetworkProperties(); }
+    }
+    private string _globalProxyUrl = "";
+    private bool _fallbackDirect;
+    public bool FallbackDirect
+    {
+        get => _fallbackDirect;
+        private set { Set(ref _fallbackDirect, value); RaiseNetworkProperties(); }
+    }
+    private bool _proxyFallbackActive;
+    public bool ProxyFallbackActive
+    {
+        get => _proxyFallbackActive;
+        private set { Set(ref _proxyFallbackActive, value); RaiseNetworkProperties(); }
+    }
     private string _networkMode = "DIRECT";
-    public string NetworkMode { get => _networkMode; private set => Set(ref _networkMode, value); }
+    public string NetworkMode
+    {
+        get => _networkMode;
+        private set { Set(ref _networkMode, value); RaiseNetworkProperties(); }
+    }
+    public string NetworkModeText => ProxyFallbackActive
+        ? "网络模式：DIRECT / 直连 · 代理失败，当前回退直连"
+        : NetworkMode == "PROXY"
+            ? $"网络模式：PROXY / {ProxyEndpointText}"
+            : "网络模式：DIRECT / 直连";
+    public string NetworkPolicyText => BilibiliUseProxy
+        ? GlobalProxyEnabled
+            ? $"已选择 CloudLight Blizzard 全局代理{(FallbackDirect ? " · 代理失败时允许直连" : "")}"
+            : "全局代理尚未启用/配置，哔哩哔哩当前使用直连。"
+        : "默认直连；未使用 CloudLight Blizzard 全局代理。";
+    public string ProxyEndpointText
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_globalProxyUrl)) return "未配置";
+            if (!Uri.TryCreate(_globalProxyUrl, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
+                return "地址无效";
+            return uri.Port > 0 ? $"{uri.Host}:{uri.Port}" : uri.Host;
+        }
+    }
+    public string ProxyConfigurationText => $"{NetworkModeText} · {NetworkPolicyText}";
+    public Visibility ProxyConfigurationWarningVisibility => BilibiliUseProxy && !GlobalProxyEnabled
+        ? Visibility.Visible : Visibility.Collapsed;
+    private void RaiseNetworkProperties()
+    {
+        Raise(nameof(NetworkModeText));
+        Raise(nameof(NetworkPolicyText));
+        Raise(nameof(ProxyEndpointText));
+        Raise(nameof(ProxyConfigurationText));
+        Raise(nameof(ProxyConfigurationWarningVisibility));
+    }
+
+    public void UpdateNetworkSettings(bool useProxy, bool globalProxyEnabled,
+        string proxyUrl, bool fallbackDirect)
+    {
+        _globalProxyUrl = proxyUrl?.Trim() ?? "";
+        GlobalProxyEnabled = globalProxyEnabled && !string.IsNullOrWhiteSpace(_globalProxyUrl);
+        FallbackDirect = fallbackDirect;
+        var previous = _suppressSettingsDirty;
+        _suppressSettingsDirty = true;
+        try { BilibiliUseProxy = useProxy; }
+        finally { _suppressSettingsDirty = previous; }
+        // A new settings snapshot supersedes a previous transient fallback;
+        // the next worker state event can mark it active again if needed.
+        ProxyFallbackActive = false;
+        NetworkMode = BilibiliUseProxy && GlobalProxyEnabled ? "PROXY" : "DIRECT";
+        RaiseNetworkProperties();
+    }
+
+    internal void MarkSettingsSaved() => SettingsDirty = false;
+
+    private void ApplyNetworkState(JsonElement state)
+    {
+        if (state.ValueKind != JsonValueKind.Object) return;
+        var previous = _suppressSettingsDirty;
+        _suppressSettingsDirty = true;
+        try
+        {
+            if (state.TryGetProperty("useGlobalProxy", out var useGlobalProxy) &&
+                useGlobalProxy.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                BilibiliUseProxy = useGlobalProxy.GetBoolean();
+            if (state.TryGetProperty("globalProxyEnabled", out var globalProxyEnabled) &&
+                globalProxyEnabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                GlobalProxyEnabled = globalProxyEnabled.GetBoolean();
+            if (state.TryGetProperty("fallbackDirect", out var fallbackDirect) &&
+                fallbackDirect.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                FallbackDirect = fallbackDirect.GetBoolean();
+            if (state.TryGetProperty("proxyFallbackActive", out var fallbackActive) &&
+                fallbackActive.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                ProxyFallbackActive = fallbackActive.GetBoolean();
+        }
+        finally { _suppressSettingsDirty = previous; }
+        if (state.TryGetProperty("networkMode", out var networkMode) && networkMode.ValueKind == JsonValueKind.String)
+            NetworkMode = networkMode.GetString() is "PROXY" ? "PROXY" : "DIRECT";
+        RaiseNetworkProperties();
+    }
     private bool _autoClaim;
     public bool AutoClaim { get => _autoClaim; set => Set(ref _autoClaim, value); }
     private bool _autoTaskProgress = true;
@@ -427,23 +561,29 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public void ApplyState(JsonElement state)
     {
         if (state.ValueKind != JsonValueKind.Object) return;
-        if (state.TryGetProperty("account", out var account) && account.ValueKind == JsonValueKind.Object)
-            ApplyAccount(account);
-        if (state.TryGetProperty("rooms", out var rooms)) ApplyRooms(rooms);
-        if (state.TryGetProperty("activities", out var activities)) ApplyActivities(activities);
-        if (state.TryGetProperty("tasks", out var tasks)) ApplyTasks(tasks);
-        if (state.TryGetProperty("rewards", out var rewards)) ApplyRewards(rewards);
-        if (state.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
-            ApplySettings(settings);
-        if (state.TryGetProperty("sessions", out var sessions)) ApplySessions(sessions);
-        TaskIdsText = state.TryGetProperty("taskIds", out var taskIds) && taskIds.ValueKind == JsonValueKind.Array
-            ? string.Join(", ", taskIds.EnumerateArray().Select(item => item.ToString()))
-            : TaskIdsText;
-        LastProgressAt = Text(state, "lastProgressAt");
-        LastApiSuccessAt = Text(state, "lastApiSuccessAt");
-        Enabled = Bool(state, "settings", "enabled", Enabled);
-        NetworkMode = "DIRECT";
-        DirectNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
+        var previous = _suppressSettingsDirty;
+        _suppressSettingsDirty = true;
+        try
+        {
+            if (state.TryGetProperty("account", out var account) && account.ValueKind == JsonValueKind.Object)
+                ApplyAccount(account);
+            if (state.TryGetProperty("rooms", out var rooms)) ApplyRooms(rooms);
+            if (state.TryGetProperty("activities", out var activities)) ApplyActivities(activities);
+            if (state.TryGetProperty("tasks", out var tasks)) ApplyTasks(tasks);
+            if (state.TryGetProperty("rewards", out var rewards)) ApplyRewards(rewards);
+            if (state.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
+                ApplySettings(settings);
+            if (state.TryGetProperty("sessions", out var sessions)) ApplySessions(sessions);
+            TaskIdsText = state.TryGetProperty("taskIds", out var taskIds) && taskIds.ValueKind == JsonValueKind.Array
+                ? string.Join(", ", taskIds.EnumerateArray().Select(item => item.ToString()))
+                : TaskIdsText;
+            LastProgressAt = Text(state, "lastProgressAt");
+            LastApiSuccessAt = Text(state, "lastApiSuccessAt");
+            Enabled = Bool(state, "settings", "enabled", Enabled);
+            ApplyNetworkState(state);
+        }
+        finally { _suppressSettingsDirty = previous; }
+        SettingsDirty = false;
         Raise(nameof(SessionEstimateText));
     }
 
@@ -478,8 +618,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             case "session": ApplySessions(payload); break;
             case "status":
                 if (payload.TryGetProperty("sessions", out var statusSessions)) ApplySessions(statusSessions);
-                NetworkMode = "DIRECT";
-                DirectNetworkText = "DIRECT · 不使用 CloudLight Blizzard 全局代理";
+                ApplyNetworkState(payload);
                 break;
         }
         Raise(nameof(SessionEstimateText));
@@ -508,12 +647,17 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             room.PropertyChanged += OnRoomPropertyChanged;
             Rooms.Add(room);
         }
+        Raise(nameof(Rooms));
         Raise(nameof(SessionEstimateText));
     }
 
     private void OnRoomPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BilibiliRoomViewModel.Enabled)) Raise(nameof(SessionEstimateText));
+        if (e.PropertyName == nameof(BilibiliRoomViewModel.Enabled))
+        {
+            Raise(nameof(Rooms));
+            Raise(nameof(SessionEstimateText));
+        }
     }
 
     private void ApplyActivities(JsonElement value)

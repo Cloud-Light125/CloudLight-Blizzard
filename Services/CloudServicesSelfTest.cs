@@ -323,6 +323,17 @@ public static class CloudServicesSelfTest
                    !copy.Contains("Alice", StringComparison.Ordinal) &&
                    !copy.Contains("user:password", StringComparison.Ordinal),
                    "copied diagnostics redact tokens, cookies, proxy credentials, and Windows user paths");
+
+            proxySettings.ProxyUrl = "http://127.0.0.1:7897";
+            proxySettings.BilibiliUseProxy = true;
+            var bilibiliPolicyCopy = service.BuildCopyText(new RuntimeDiagnosticContext(
+                "2.0.6", true, true, "国服", "VerifiedDifference", "Ready",
+                new DropsRuntimeDiagnosticSnapshot("运行中", "等待网络恢复", "已停止", "刚刚", "5 分钟前", "无", "无")), null);
+            Assert(bilibiliPolicyCopy.Contains("哔哩哔哩网络模式：Proxy", StringComparison.Ordinal) &&
+                   bilibiliPolicyCopy.Contains("Use Global Proxy=True", StringComparison.Ordinal) &&
+                   bilibiliPolicyCopy.Contains("trust_env=false", StringComparison.Ordinal),
+                   "copied diagnostics report the selected Bilibili global proxy policy without credentials");
+            proxySettings.BilibiliUseProxy = false;
         }
         var directSettings = new AppSettings { EnableProxy = false };
         var directTimeout = new CloudNetworkProbeResult(false, "Direct", 15_000, null,

@@ -24,6 +24,7 @@ public sealed class AppSettings
     public bool AutoStartSoop { get; set; }
     public bool AutoStartTwitch { get; set; }
     public bool BilibiliEnabled { get; set; }
+    public bool BilibiliUseProxy { get; set; }
     public bool AutoStartBilibili { get; set; }
     public bool AutoResumeBilibiliDrops { get; set; }
     public string BilibiliUserName { get; set; } = "";

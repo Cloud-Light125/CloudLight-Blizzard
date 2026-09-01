@@ -65,6 +65,48 @@ async def request_with_transient_retry(
     raise RuntimeError("unreachable retry state")
 
 
+async def request_with_network_fallback(
+    request_coro: Callable[[], Awaitable[httpx.Response]],
+    fallback_request_coro: Callable[[], Awaitable[httpx.Response]] | None,
+    *,
+    method: str,
+    url: str,
+    logger: logging.Logger,
+    on_fallback: Callable[[], None] | None = None,
+) -> httpx.Response:
+    """Retry a proxy connection through direct only for network failures.
+
+    HTTP responses are deliberately not caught here.  In particular, 401,
+    403, 412, 429 and other Bilibili business responses must never trigger a
+    route change.
+    """
+
+    try:
+        return await request_with_transient_retry(
+            request_coro,
+            method=method,
+            url=url,
+            logger=logger,
+        )
+    except (
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.ConnectError,
+        httpx.RemoteProtocolError,
+    ):
+        if fallback_request_coro is None:
+            raise
+        if on_fallback is not None:
+            on_fallback()
+        logger.warning("%s %s 代理连接失败，回退直连", method, url)
+        return await request_with_transient_retry(
+            fallback_request_coro,
+            method=method,
+            url=url,
+            logger=logger,
+        )
+
+
 async def signed_get_json(
     *,
     http: httpx.AsyncClient,
@@ -76,21 +118,32 @@ async def signed_get_json(
     headers: dict[str, str] | None = None,
     follow_redirects: bool = False,
     retry_on_wbi_miss: bool = True,
+    fallback_http: httpx.AsyncClient | None = None,
+    on_network_fallback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     retries = 2 if retry_on_wbi_miss else 1
     for retry in range(retries):
         signed_params = await sign_wbi(params)
-        response = await request_with_transient_retry(
-            lambda: http.get(
-                url,
-                params=signed_params,
-                headers=headers,
-                follow_redirects=follow_redirects,
-            ),
+        request = lambda client=http: client.get(
+            url,
+            params=signed_params,
+            headers=headers,
+            follow_redirects=follow_redirects,
+        )
+        fallback_request = None if fallback_http is None else lambda: fallback_http.get(
+            url,
+            params=signed_params,
+            headers=headers,
+            follow_redirects=follow_redirects,
+        )
+        response = await request_with_network_fallback(
+            request,
+            fallback_request,
             method="GET",
             url=url,
             logger=logger,
+            on_fallback=on_network_fallback,
         )
         response.raise_for_status()
         payload = response.json()
@@ -118,21 +171,32 @@ async def signed_post_json(
     body: dict[str, Any],
     headers: dict[str, str] | None = None,
     retry_on_wbi_miss: bool = True,
+    fallback_http: httpx.AsyncClient | None = None,
+    on_network_fallback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     retries = 2 if retry_on_wbi_miss else 1
     for retry in range(retries):
         signed_params = await sign_wbi(params)
-        response = await request_with_transient_retry(
-            lambda: http.post(
-                url,
-                params=signed_params,
-                json=body,
-                headers=headers,
-            ),
+        request = lambda client=http: client.post(
+            url,
+            params=signed_params,
+            json=body,
+            headers=headers,
+        )
+        fallback_request = None if fallback_http is None else lambda: fallback_http.post(
+            url,
+            params=signed_params,
+            json=body,
+            headers=headers,
+        )
+        response = await request_with_network_fallback(
+            request,
+            fallback_request,
             method="POST",
             url=url,
             logger=logger,
+            on_fallback=on_network_fallback,
         )
         response.raise_for_status()
         payload = response.json()
@@ -160,21 +224,32 @@ async def signed_post_query_json(
     headers: dict[str, str] | None = None,
     follow_redirects: bool = False,
     retry_on_wbi_miss: bool = True,
+    fallback_http: httpx.AsyncClient | None = None,
+    on_network_fallback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     retries = 2 if retry_on_wbi_miss else 1
     for retry in range(retries):
         signed_params = await sign_wbi(params)
-        response = await request_with_transient_retry(
-            lambda: http.post(
-                url,
-                params=signed_params,
-                headers=headers,
-                follow_redirects=follow_redirects,
-            ),
+        request = lambda client=http: client.post(
+            url,
+            params=signed_params,
+            headers=headers,
+            follow_redirects=follow_redirects,
+        )
+        fallback_request = None if fallback_http is None else lambda: fallback_http.post(
+            url,
+            params=signed_params,
+            headers=headers,
+            follow_redirects=follow_redirects,
+        )
+        response = await request_with_network_fallback(
+            request,
+            fallback_request,
             method="POST",
             url=url,
             logger=logger,
+            on_fallback=on_network_fallback,
         )
         response.raise_for_status()
         payload = response.json()
@@ -202,21 +277,32 @@ async def signed_post_form_json(
     body: dict[str, Any],
     headers: dict[str, str] | None = None,
     retry_on_wbi_miss: bool = True,
+    fallback_http: httpx.AsyncClient | None = None,
+    on_network_fallback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     retries = 2 if retry_on_wbi_miss else 1
     for retry in range(retries):
         signed_params = await sign_wbi(params)
-        response = await request_with_transient_retry(
-            lambda: http.post(
-                url,
-                params=signed_params,
-                data=body,
-                headers=headers,
-            ),
+        request = lambda client=http: client.post(
+            url,
+            params=signed_params,
+            data=body,
+            headers=headers,
+        )
+        fallback_request = None if fallback_http is None else lambda: fallback_http.post(
+            url,
+            params=signed_params,
+            data=body,
+            headers=headers,
+        )
+        response = await request_with_network_fallback(
+            request,
+            fallback_request,
             method="POST",
             url=url,
             logger=logger,
+            on_fallback=on_network_fallback,
         )
         response.raise_for_status()
         payload = response.json()

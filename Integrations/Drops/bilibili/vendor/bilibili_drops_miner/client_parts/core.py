@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -22,11 +22,15 @@ from bilibili_drops_miner.client_parts.cookies import (
 )
 from bilibili_drops_miner.client_parts.http import (
     is_rate_limited_payload,
-    request_with_transient_retry,
+    request_with_network_fallback,
     signed_get_json,
     signed_post_form_json,
     signed_post_json,
     signed_post_query_json,
+)
+from direct_network import (
+    BilibiliNetworkPolicy,
+    create_async_client,
 )
 from bilibili_drops_miner.client_parts.live import (
     parse_danmu_server_conf,
@@ -92,22 +96,54 @@ _extract_task_indicator_values = extract_task_indicator_values
 class BilibiliClient:
     MIXIN_KEY_ENC_TAB = WBI_MIXIN_KEY_ENC_TAB
 
-    def __init__(self, cookie: str) -> None:
+    def __init__(
+        self,
+        cookie: str,
+        *,
+        network_policy: BilibiliNetworkPolicy | None = None,
+        on_network_fallback: Callable[[], None] | None = None,
+    ) -> None:
         ensure_anyio_asyncio_backend_ready()
 
+        self.network_policy = network_policy or BilibiliNetworkPolicy.direct()
+        self._on_network_fallback = on_network_fallback
+        self._network_fallback_active = False
         self.cookie_map, self.cookie_header, self.bili_jct = build_cookie_state(cookie)
         self.user_agent = DEFAULT_USER_AGENT
         self.live_buvid = self._generate_live_buvid()
         self.live_uuid = str(uuid.uuid4())
         self._wbi_cache: tuple[str, str] | None = None
 
-        self._http = httpx.AsyncClient(
+        headers = build_default_headers(self.user_agent, self.cookie_header)
+        self._http = create_async_client(
+            self.network_policy,
             timeout=20.0,
-            headers=build_default_headers(self.user_agent, self.cookie_header),
-            # CloudLight's Bilibili provider is direct-only.  Do not allow
-            # httpx to re-enable a proxy from the parent environment.
-            trust_env=False,
+            headers=headers,
         )
+        self._fallback_http = (
+            create_async_client(
+                BilibiliNetworkPolicy.direct(),
+                timeout=20.0,
+                headers=headers,
+            )
+            if self.network_policy.has_explicit_proxy and self.network_policy.fallback_direct
+            else None
+        )
+
+    @property
+    def network_mode(self) -> str:
+        return "DIRECT" if self._network_fallback_active else self.network_policy.mode
+
+    @property
+    def network_fallback_active(self) -> bool:
+        return self._network_fallback_active
+
+    def _mark_network_fallback(self) -> None:
+        if self._network_fallback_active:
+            return
+        self._network_fallback_active = True
+        if self._on_network_fallback is not None:
+            self._on_network_fallback()
 
     def update_cookie(self, cookie: str) -> None:
         self.cookie_map, self.cookie_header, self.bili_jct = build_cookie_state(
@@ -115,13 +151,23 @@ class BilibiliClient:
             fallback_buvid3=self.cookie_map.get("buvid3"),
         )
         self._http.headers["Cookie"] = self.cookie_header
+        if self._fallback_http is not None:
+            self._fallback_http.headers["Cookie"] = self.cookie_header
         self._wbi_cache = None
 
     async def close(self) -> None:
         await self._http.aclose()
+        if self._fallback_http is not None:
+            await self._fallback_http.aclose()
 
     async def nav(self) -> dict[str, Any]:
-        response = await self._http.get("https://api.bilibili.com/x/web-interface/nav")
+        url = "https://api.bilibili.com/x/web-interface/nav"
+        response = await self._request_with_transient_retry(
+            lambda: self._http.get(url),
+            method="GET",
+            url=url,
+            fallback_request_coro=None if self._fallback_http is None else lambda: self._fallback_http.get(url),
+        )
         response.raise_for_status()
         payload = response.json()
         validate_nav_payload(payload)
@@ -192,12 +238,15 @@ class BilibiliClient:
         *,
         method: str,
         url: str,
+        fallback_request_coro=None,
     ) -> httpx.Response:
-        return await request_with_transient_retry(
+        return await request_with_network_fallback(
             request_coro,
+            fallback_request_coro,
             method=method,
             url=url,
             logger=LOGGER,
+            on_fallback=self._mark_network_fallback,
         )
 
     async def _signed_get_json(
@@ -219,6 +268,8 @@ class BilibiliClient:
             headers=headers,
             follow_redirects=follow_redirects,
             retry_on_wbi_miss=retry_on_wbi_miss,
+            fallback_http=self._fallback_http,
+            on_network_fallback=self._mark_network_fallback,
         )
 
     async def _signed_post_json(
@@ -240,6 +291,8 @@ class BilibiliClient:
             body=body,
             headers=headers,
             retry_on_wbi_miss=retry_on_wbi_miss,
+            fallback_http=self._fallback_http,
+            on_network_fallback=self._mark_network_fallback,
         )
 
     async def _signed_post_query_json(
@@ -261,6 +314,8 @@ class BilibiliClient:
             headers=headers,
             follow_redirects=follow_redirects,
             retry_on_wbi_miss=retry_on_wbi_miss,
+            fallback_http=self._fallback_http,
+            on_network_fallback=self._mark_network_fallback,
         )
 
     async def _signed_post_form_json(
@@ -282,6 +337,8 @@ class BilibiliClient:
             body=body,
             headers=headers,
             retry_on_wbi_miss=retry_on_wbi_miss,
+            fallback_http=self._fallback_http,
+            on_network_fallback=self._mark_network_fallback,
         )
 
     async def get_danmu_server(self, room_id: int) -> DanmuServerConf:
@@ -318,6 +375,11 @@ class BilibiliClient:
             ),
             method="GET",
             url="https://api.live.bilibili.com/room/v1/Room/get_info",
+            fallback_request_coro=None if self._fallback_http is None else lambda: self._fallback_http.get(
+                "https://api.live.bilibili.com/room/v1/Room/get_info",
+                params={"room_id": room_id},
+                headers=self._live_headers(room_id),
+            ),
         )
         response.raise_for_status()
         return parse_room_owner_uid(response.json(), room_id)
@@ -337,6 +399,11 @@ class BilibiliClient:
             ),
             method="GET",
             url="https://api.live.bilibili.com/xlive/general-interface/v1/guard/GuardActive",
+            fallback_request_coro=None if self._fallback_http is None else lambda: self._fallback_http.get(
+                "https://api.live.bilibili.com/xlive/general-interface/v1/guard/GuardActive",
+                params={"ruid": resolved_ruid, "platform": "pc"},
+                headers=self._live_headers(room_id),
+            ),
         )
         response.raise_for_status()
         watch_time, rusername = parse_guard_active_watch_time(

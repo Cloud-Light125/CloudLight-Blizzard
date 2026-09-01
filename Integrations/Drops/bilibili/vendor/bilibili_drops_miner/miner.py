@@ -50,7 +50,7 @@ class BilibiliWatchTimeMiner:
         return plans
 
     async def _probe_login(self) -> tuple[int | None, str]:
-        client = BilibiliClient(self.config.cookie)
+        client = BilibiliClient(self.config.cookie, network_policy=self.config.network_policy)
         try:
             return await client.get_self_info()
         finally:
@@ -65,7 +65,7 @@ class BilibiliWatchTimeMiner:
         if self._stop_event.is_set():
             return
 
-        client = BilibiliClient(self.config.cookie)
+        client = BilibiliClient(self.config.cookie, network_policy=self.config.network_policy)
         with self._clients_lock:
             # The Cookie may have changed while this client was being built.
             # Registration and updates share this lock, so calibrate against

@@ -180,7 +180,8 @@ public partial class SettingsPage : UserControl
         _vm.Settings.ProxyUrl = url;
         _vm.Settings.FallbackDirect = FallbackDirectBox.IsChecked == true;
         _vm.Settings.Save();
-        var settings = new DropsProxySettings(enabled, url, _vm.Settings.FallbackDirect);
+        var settings = new DropsProxySettings(enabled, url, _vm.Settings.FallbackDirect,
+            _vm.Settings.BilibiliUseProxy);
         _vm.DropsHost.ConfigureProxy(settings);
         await _vm.DropsHost.ApplyProxyAsync(settings);
         ProxyNoticeText.Text = enabled

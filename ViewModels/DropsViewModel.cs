@@ -174,7 +174,6 @@ public sealed class DropsPlatformViewModel : ObservableObject
             if (_connectionState == value) return;
             Set(ref _connectionState, value);
             Raise(nameof(ConnectionStateText));
-            Raise(nameof(RecoveryStageText));
         }
     }
     public string ConnectionStateText => ConnectionState switch
@@ -188,42 +187,14 @@ public sealed class DropsPlatformViewModel : ObservableObject
         DropsConnectionState.Stopped => "已停止",
         _ => "未连接",
     };
-    public string RecoveryStageText => ConnectionState switch
-    {
-        DropsConnectionState.Connecting => "正在建立连接",
-        DropsConnectionState.Connected => "连接正常 · 自动恢复已完成",
-        DropsConnectionState.Degraded => "连接质量下降 · 后台仍在监控",
-        DropsConnectionState.WaitingRetry => NextRetryText == "—" ? "正在等待下次重试" : $"正在等待重试 · {NextRetryText}",
-        DropsConnectionState.Recovering => "正在重新连接并验证登录状态",
-        DropsConnectionState.Failed => "恢复流程失败 · 可以立即重试",
-        DropsConnectionState.Stopped => "Worker 已停止",
-        _ => "尚未建立连接",
-    };
-
     private DateTimeOffset? _lastHeartbeatAt;
     public DateTimeOffset? LastHeartbeatAt { get => _lastHeartbeatAt; internal set => Set(ref _lastHeartbeatAt, value); }
-    private string _lastHeartbeatText = "—";
-    public string LastHeartbeatText { get => _lastHeartbeatText; internal set => Set(ref _lastHeartbeatText, value); }
     private DateTimeOffset? _lastProgressAt;
     public DateTimeOffset? LastProgressAt { get => _lastProgressAt; internal set => Set(ref _lastProgressAt, value); }
-    private string _lastProgressText = "—";
-    public string LastProgressText { get => _lastProgressText; internal set => Set(ref _lastProgressText, value); }
     private DateTimeOffset? _lastReconnectAt;
     public DateTimeOffset? LastReconnectAt { get => _lastReconnectAt; internal set => Set(ref _lastReconnectAt, value); }
-    private string _lastReconnectText = "—";
-    public string LastReconnectText { get => _lastReconnectText; internal set => Set(ref _lastReconnectText, value); }
     private DateTimeOffset? _nextRetryAt;
     public DateTimeOffset? NextRetryAt { get => _nextRetryAt; internal set => Set(ref _nextRetryAt, value); }
-    private string _nextRetryText = "—";
-    public string NextRetryText
-    {
-        get => _nextRetryText;
-        internal set
-        {
-            Set(ref _nextRetryText, value);
-            Raise(nameof(RecoveryStageText));
-        }
-    }
     private int _consecutiveFailures;
     public int ConsecutiveFailures { get => _consecutiveFailures; internal set => Set(ref _consecutiveFailures, Math.Max(0, value)); }
     private int _reconnectCount;
@@ -435,6 +406,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         new("①", "Twitch 登录", "首次使用需要通过 Twitch 登录流程完成授权。", "twitch_login"),
         new("②", "设置掉宝偏好", "不确定如何设置时保持默认即可；优先游戏会影响活动和频道顺序。", "twitch_settings"),
         new("③", "启动 Twitch 掉宝", "登录成功不代表当前已经启动掉宝。", "twitch_start"));
+    public DropsQuickStartGuide BilibiliQuickStart { get; } = new(
+        new("①", "登录哔哩哔哩", "使用哔哩哔哩 App 扫描二维码完成登录。", "bilibili_login"),
+        new("②", "添加直播间", "添加直播间 URL 或 Room ID，也可以通过活动发现选择直播间。", "bilibili_room"),
+        new("③", "配置观看方式", "选择标准模式或多 Session 模式，并保存设置。", "bilibili_settings"),
+        new("④", "开始掉宝", "启动后会按当前房间和 Session 配置运行。", "bilibili_start"));
 
     private string _networkProxyStatus = "网络与代理：正在读取设置";
     public string NetworkProxyStatus { get => _networkProxyStatus; private set => Set(ref _networkProxyStatus, value); }
@@ -568,20 +544,32 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         Platforms = [Soop, YouTube, Twitch, Bilibili];
         Twitch.Status = "Twitch 尚未连接";
         Twitch.Summary = "尚未登录 Twitch";
+        BilibiliDetails.PropertyChanged += (_, _) => UpdateBilibiliQuickStart();
+        Bilibili.PropertyChanged += (_, _) => UpdateBilibiliQuickStart();
         _host.SnapshotChanged += OnSnapshotChanged;
         _host.EventReceived += OnEventReceived;
+        UpdateBilibiliQuickStart();
     }
 
-    public void UpdateProxySettings(bool enabled, string proxyUrl, bool fallbackDirect)
+    public void UpdateProxySettings(bool enabled, string proxyUrl, bool fallbackDirect,
+        bool bilibiliUseProxy = false)
     {
+        BilibiliDetails.UpdateNetworkSettings(bilibiliUseProxy, enabled, proxyUrl, fallbackDirect);
         if (!enabled)
         {
             NetworkProxyStatus = "网络与代理：当前直连";
             return;
         }
-        var endpoint = string.IsNullOrWhiteSpace(proxyUrl) ? "尚未填写代理地址" : proxyUrl.Trim();
+        var endpoint = string.IsNullOrWhiteSpace(proxyUrl) ? "尚未填写代理地址" : SafeProxyEndpoint(proxyUrl);
         NetworkProxyStatus = $"网络与代理：已启用 · {endpoint}" +
                              (fallbackDirect ? " · 代理失败时允许直连" : "");
+    }
+
+    private static string SafeProxyEndpoint(string proxyUrl)
+    {
+        if (!ProxyValidator.TryNormalize(proxyUrl, out var normalized, out _)) return "代理地址无效";
+        var uri = new Uri(normalized);
+        return uri.Port > 0 ? $"{uri.Host}:{uri.Port}" : uri.Host;
     }
 
     public void RefreshTemporalStatus(DateTimeOffset now)
@@ -709,12 +697,6 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         vm.ConnectionState = state;
         vm.NextRetryAt = platform == DropsPlatform.Soop ? _soopNextRetryAt :
             platform == DropsPlatform.Twitch ? _twitchNextRetryAt : null;
-        vm.NextRetryText = vm.NextRetryAt is { } retry
-            ? $"{Math.Max(0, (int)Math.Ceiling((retry - now).TotalSeconds))} 秒后重试"
-            : "—";
-        vm.LastHeartbeatText = RelativeTime(vm.LastHeartbeatAt, now);
-        vm.LastProgressText = RelativeTime(vm.LastProgressAt, now);
-        vm.LastReconnectText = RelativeTime(vm.LastReconnectAt, now);
         if (previous != state && (state is DropsConnectionState.Connected or DropsConnectionState.Failed or
             DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering))
             AddRecoveryEvent(platform, StateEventTitle(state), vm.Summary, state);
@@ -729,14 +711,6 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _ => "状态变化",
     };
 
-    private static string RelativeTime(DateTimeOffset? timestamp, DateTimeOffset now)
-    {
-        if (timestamp is null) return "—";
-        var seconds = Math.Max(0, (now - timestamp.Value).TotalSeconds);
-        return seconds < 10 ? "刚刚" : seconds < 60 ? $"{Math.Max(1, (int)seconds)} 秒前" :
-            seconds < 3600 ? $"{Math.Max(1, (int)(seconds / 60))} 分钟前" :
-            timestamp.Value.ToLocalTime().ToString("MM-dd HH:mm");
-    }
 
     private void TouchHeartbeat(DropsPlatform platform, bool progress = false)
     {
@@ -1242,36 +1216,6 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public Task<JsonElement> StartAsync(DropsPlatform platform) => _host.StartAsync(platform);
     public Task<JsonElement> StopAsync(DropsPlatform platform) => _host.StopAsync(platform);
-    public async Task RestartWorkerAsync(DropsPlatform platform, CancellationToken token = default)
-    {
-        var vm = For(platform);
-        Dispatch(() =>
-        {
-            vm.ConnectionState = DropsConnectionState.Recovering;
-            vm.WorkerHealth = "重启中";
-            AddRecoveryEvent(platform, "重启 Drops Worker", "正在重启 CloudLight Blizzard 自己启动的后台服务。",
-                DropsConnectionState.Recovering);
-        });
-        try
-        {
-            await _host.RestartAsync(platform, token).ConfigureAwait(false);
-            Dispatch(() =>
-            {
-                TouchHeartbeat(platform);
-                AddRecoveryEvent(platform, "Worker 已恢复", "后台服务已重新建立连接。", DropsConnectionState.Connected);
-            });
-        }
-        catch (Exception ex)
-        {
-            Dispatch(() =>
-            {
-                vm.ConnectionState = DropsConnectionState.Failed;
-                vm.WorkerHealth = "异常";
-                AddRecoveryEvent(platform, "Worker 重启失败", ex.Message, DropsConnectionState.Failed);
-            });
-            throw;
-        }
-    }
     public Task<JsonElement> ClearTwitchAuthenticationAsync(CancellationToken token = default) =>
         _host.ClearTwitchAuthenticationAsync(token);
 
@@ -1593,7 +1537,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         vm.Summary = platform == DropsPlatform.YouTube
             ? "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。"
             : platform == DropsPlatform.Bilibili
-                ? "Python SSL 组件无法加载，无法直连哔哩哔哩。请重新安装 CloudLight Blizzard。"
+                ? "Python SSL 组件无法加载，无法访问哔哩哔哩。请重新安装 CloudLight Blizzard。"
                 : "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。";
     }
 
@@ -2316,6 +2260,53 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Twitch.Running && loggedIn ? "● 正在进行" : "○ Twitch 当前未运行", Twitch.Running && loggedIn,
             loggedIn && !Twitch.Running ? "开始 Twitch 掉宝" : "");
         TwitchQuickStart.RefreshSummary();
+    }
+
+    private void UpdateBilibiliQuickStart()
+    {
+        var details = BilibiliDetails;
+        var qrInProgress = details.QrState is "waiting_scan" or "scanned_pending";
+        var loginText = details.LoggedIn
+            ? $"✓ 已完成 · 已登录：{(string.IsNullOrWhiteSpace(details.UserName) ? $"UID {details.Uid}" : details.UserName)}"
+            : qrInProgress ? $"● 正在进行 · {details.QrStateText}" : "○ 未完成 · 尚未登录";
+        BilibiliQuickStart.Steps[0].Update(
+            details.LoggedIn ? "complete" : qrInProgress ? "progress" : "incomplete",
+            loginText,
+            details.LoggedIn,
+            details.LoggedIn ? "" : "扫码登录");
+
+        var totalRooms = details.Rooms.Count;
+        var enabledRooms = details.Rooms.Count(room => room.Enabled);
+        var roomText = enabledRooms > 0
+            ? $"✓ 已完成 · 已添加 {enabledRooms} 个直播间"
+            : totalRooms > 0
+                ? $"○ 未完成 · 已添加 {totalRooms} 个直播间，但尚未启用"
+                : "○ 未完成 · 尚未添加直播间";
+        BilibiliQuickStart.Steps[1].Update(
+            enabledRooms > 0 ? "complete" : "incomplete",
+            roomText,
+            enabledRooms > 0,
+            enabledRooms > 0 ? "" : totalRooms > 0 ? "启用直播间" : "添加直播间");
+
+        var validMode = details.WatchMode is "standard" or "multi" &&
+                        details.SessionsPerRoom is >= 1 and <= 128;
+        var modeText = details.WatchMode == "multi"
+            ? $"多 Session · 每房间 {details.SessionsPerRoom} Session"
+            : "标准模式 · 每房间 1 Session";
+        BilibiliQuickStart.Steps[2].Update(
+            validMode && !details.SettingsDirty ? "complete" : "progress",
+            !validMode ? "○ 未完成 · 观看方式配置无效" : details.SettingsDirty ? $"● 待保存 · {modeText}" : $"✓ 已完成 · {modeText}",
+            validMode && !details.SettingsDirty,
+            validMode && !details.SettingsDirty ? "" : "保存设置");
+
+        var running = Bilibili.Running;
+        var sessionText = $"{details.ActiveSessions} / {details.ConfiguredSessions} Session 活动";
+        BilibiliQuickStart.Steps[3].Update(
+            running ? "progress" : "incomplete",
+            running ? $"● 正在运行 · {sessionText}" : "○ 未开始 · 当前未运行",
+            running,
+            running ? "" : "开始掉宝");
+        BilibiliQuickStart.RefreshSummary();
     }
 
     private void RebuildTwitchCampaigns()

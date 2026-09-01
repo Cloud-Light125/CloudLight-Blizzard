@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import httpx
+
+from direct_network import BilibiliNetworkPolicy, create_http_client
 
 
 QR_GENERATE_URL = (
@@ -118,16 +120,58 @@ def build_login_cookie_string(
 class QrLoginApi:
     """One Bilibili QR login session backed by one HTTP client/cookie jar."""
 
-    def __init__(self, client: httpx.Client | None = None) -> None:
-        self._client = client or httpx.Client(
+    def __init__(
+        self,
+        client: httpx.Client | None = None,
+        *,
+        network_policy: BilibiliNetworkPolicy | None = None,
+        on_network_fallback: Callable[[], None] | None = None,
+    ) -> None:
+        self._network_policy = network_policy or BilibiliNetworkPolicy.direct()
+        self._on_network_fallback = on_network_fallback
+        self._network_fallback_active = False
+        self._client = client or create_http_client(
+            self._network_policy,
             headers=_HEADERS,
             timeout=httpx.Timeout(10.0, connect=10.0),
             follow_redirects=False,
-            trust_env=False,
         )
+        self._fallback_client = (
+            create_http_client(
+                BilibiliNetworkPolicy.direct(),
+                headers=_HEADERS,
+                timeout=httpx.Timeout(10.0, connect=10.0),
+                follow_redirects=False,
+            )
+            if client is None and self._network_policy.has_explicit_proxy and self._network_policy.fallback_direct
+            else None
+        )
+        self._cookie_client = self._client
+
+    @property
+    def network_mode(self) -> str:
+        return "DIRECT" if self._network_fallback_active else self._network_policy.mode
+
+    def _get(self, url: str, **kwargs: Any) -> httpx.Response:
+        try:
+            return self._client.get(url, **kwargs)
+        except (
+            httpx.ConnectTimeout,
+            httpx.ReadTimeout,
+            httpx.ConnectError,
+            httpx.RemoteProtocolError,
+        ):
+            if self._fallback_client is None:
+                raise
+            self._network_fallback_active = True
+            self._fallback_client.cookies.update(self._client.cookies)
+            self._cookie_client = self._fallback_client
+            if self._on_network_fallback is not None:
+                self._on_network_fallback()
+            return self._fallback_client.get(url, **kwargs)
 
     def generate(self) -> QrLoginChallenge:
-        response = self._client.get(QR_GENERATE_URL)
+        response = self._get(QR_GENERATE_URL)
         response.raise_for_status()
         try:
             payload = response.json()
@@ -136,7 +180,7 @@ class QrLoginApi:
         return parse_generate_payload(payload)
 
     def poll(self, key: str) -> QrPollResult:
-        response = self._client.get(QR_POLL_URL, params={"qrcode_key": key})
+        response = self._get(QR_POLL_URL, params={"qrcode_key": key})
         response.raise_for_status()
         try:
             payload = response.json()
@@ -145,11 +189,13 @@ class QrLoginApi:
         status = parse_poll_payload(payload)
         if status is not QrLoginStatus.SUCCESS:
             return QrPollResult(status=status)
-        cookie = build_login_cookie_string(response.cookies, self._client.cookies)
+        cookie = build_login_cookie_string(response.cookies, self._cookie_client.cookies)
         return QrPollResult(status=status, cookie=cookie)
 
     def close(self) -> None:
         self._client.close()
+        if self._fallback_client is not None:
+            self._fallback_client.close()
 
     def __enter__(self) -> QrLoginApi:
         return self

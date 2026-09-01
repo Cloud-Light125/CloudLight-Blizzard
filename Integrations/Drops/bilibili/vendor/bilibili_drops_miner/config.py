@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from direct_network import BilibiliNetworkPolicy
+
 
 @dataclass(slots=True)
 class MinerConfig:
@@ -13,6 +15,7 @@ class MinerConfig:
     task_query_interval_seconds: int = 30
     notify_urls: list[str] = field(default_factory=list)
     notify_on_task_complete: bool = True
+    network_policy: BilibiliNetworkPolicy = field(default_factory=BilibiliNetworkPolicy.direct)
 
     def validate(self) -> None:
         if not self.cookie.strip():

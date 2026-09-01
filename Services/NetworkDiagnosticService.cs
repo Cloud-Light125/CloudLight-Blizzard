@@ -30,7 +30,7 @@ public sealed record NetworkDiagnosticReport(
         yield return CopyLine("更新服务", Update);
         if (Soop is not null) yield return CopyLine("SOOP", Soop);
         if (Twitch is not null) yield return CopyLine("Twitch", Twitch);
-        if (Bilibili is not null) yield return CopyLine("哔哩哔哩（固定直连）", Bilibili);
+        if (Bilibili is not null) yield return CopyLine("哔哩哔哩", Bilibili);
     }
 
     private static string Format(string name, CloudNetworkProbeResult result, bool proxyLine = false)
@@ -114,8 +114,9 @@ public sealed class NetworkDiagnosticService
                 () => new HttpRequestMessage(HttpMethod.Get, "https://www.twitch.tv/"),
                 "diagnostic-twitch", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
             DefaultRoute(), cancellationToken);
+        var bilibiliRoute = BilibiliRoute();
         var bilibiliTask = ProbeWithTimeoutAsync(
-            ProbeBilibiliDirectAsync, "Direct", cancellationToken);
+            ProbeBilibiliAsync, bilibiliRoute, cancellationToken);
         await Task.WhenAll(announcementTask, updateTask, soopTask, twitchTask, bilibiliTask).ConfigureAwait(false);
         return new NetworkDiagnosticReport(DateTimeOffset.Now, proxy,
             await announcementTask.ConfigureAwait(false), await updateTask.ConfigureAwait(false),
@@ -154,7 +155,7 @@ public sealed class NetworkDiagnosticService
             $"YouTube 最后成功：{context.Drops.YouTubeLastSuccess}",
             $"哔哩哔哩：{context.Drops.BilibiliStatus}",
             $"哔哩哔哩最后成功：{context.Drops.BilibiliLastSuccess}",
-            "哔哩哔哩网络模式：DIRECT（Worker 清理代理环境变量，HTTP 客户端 trust_env=false）",
+            $"哔哩哔哩网络模式：{BilibiliRoute()}（Use Global Proxy={_settings.BilibiliUseProxy}; Global Proxy Enabled={BilibiliGlobalProxyEnabled()}; Fallback Direct={_settings.FallbackDirect}；Worker 清理代理环境变量，HTTP 客户端 trust_env=false）",
         ]);
         if (!string.IsNullOrWhiteSpace(context.Drops.RecentNetworkError))
             lines.Add($"最近网络错误：{context.Drops.RecentNetworkError}");
@@ -170,36 +171,96 @@ public sealed class NetworkDiagnosticService
     }
 
     private string DefaultRoute() => _settings.EnableProxy ? "Proxy" : "Direct";
+    private bool BilibiliGlobalProxyEnabled() => _settings.EnableProxy &&
+        ProxyValidator.TryNormalize(_settings.ProxyUrl, out _, out _);
+    private string BilibiliRoute() => _settings.BilibiliUseProxy && BilibiliGlobalProxyEnabled()
+        ? "Proxy" : "Direct";
     private static bool IsSuccess(HttpStatusCode status) => (int)status is >= 200 and < 300;
 
-    private async Task<CloudNetworkProbeResult> ProbeBilibiliDirectAsync(CancellationToken cancellationToken)
+    private async Task<CloudNetworkProbeResult> ProbeBilibiliAsync(CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var route = BilibiliRoute();
+        using var client = CreateBilibiliClient();
         try
         {
-            using var client = _directClientFactory();
-            using var response = await client.GetAsync("https://live.bilibili.com/",
-                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            var status = response.StatusCode;
-            var success = (int)status is >= 200 and < 400;
-            return new CloudNetworkProbeResult(success, "Direct", stopwatch.ElapsedMilliseconds,
-                (int)status, null, success ? "正常" : $"HTTP {(int)status}");
+            return await ProbeBilibiliAttemptAsync(client, route, stopwatch, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
-                null, CloudNetworkFailureKind.DirectConnectionFailed, "连接超时");
+            return route == "Proxy" && _settings.FallbackDirect
+                ? await ProbeBilibiliFallbackAsync(stopwatch, cancellationToken).ConfigureAwait(false)
+                : BilibiliNetworkFailure(route, stopwatch, "连接超时");
         }
         catch (HttpRequestException)
         {
-            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
-                null, CloudNetworkFailureKind.DirectConnectionFailed, "直连失败");
+            return route == "Proxy" && _settings.FallbackDirect
+                ? await ProbeBilibiliFallbackAsync(stopwatch, cancellationToken).ConfigureAwait(false)
+                : BilibiliNetworkFailure(route, stopwatch, route == "Proxy" ? "代理失败" : "直连失败");
         }
         catch
         {
-            return new CloudNetworkProbeResult(false, "Direct", stopwatch.ElapsedMilliseconds,
-                null, CloudNetworkFailureKind.DirectConnectionFailed, "诊断请求失败");
+            return BilibiliNetworkFailure(route, stopwatch, "诊断请求失败");
         }
+    }
+
+    private static async Task<CloudNetworkProbeResult> ProbeBilibiliAttemptAsync(
+        HttpClient client, string route, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync("https://live.bilibili.com/",
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        var status = response.StatusCode;
+        var success = (int)status is >= 200 and < 400;
+        return new CloudNetworkProbeResult(success, route, stopwatch.ElapsedMilliseconds,
+            (int)status, null, success ? "正常" : $"HTTP {(int)status}");
+    }
+
+    private async Task<CloudNetworkProbeResult> ProbeBilibiliFallbackAsync(
+        Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        using var direct = _directClientFactory();
+        try
+        {
+            return await ProbeBilibiliAttemptAsync(direct, "DirectFallback", stopwatch, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return BilibiliFallbackFailure(stopwatch, "连接超时");
+        }
+        catch (HttpRequestException)
+        {
+            return BilibiliFallbackFailure(stopwatch, "代理和直连回退均失败");
+        }
+        catch
+        {
+            return BilibiliFallbackFailure(stopwatch, "代理和直连回退均失败");
+        }
+    }
+
+    private static CloudNetworkProbeResult BilibiliNetworkFailure(
+        string route, Stopwatch stopwatch, string message) =>
+        new(false, route, stopwatch.ElapsedMilliseconds, null,
+            route == "Proxy" ? CloudNetworkFailureKind.ProxyConnectionFailed
+                : CloudNetworkFailureKind.DirectConnectionFailed,
+            message);
+
+    private static CloudNetworkProbeResult BilibiliFallbackFailure(
+        Stopwatch stopwatch, string message) =>
+        new(false, "Proxy→DirectFallback", stopwatch.ElapsedMilliseconds, null,
+            CloudNetworkFailureKind.ProxyAndDirectConnectionFailed, message);
+
+    private HttpClient CreateBilibiliClient()
+    {
+        if (BilibiliRoute() != "Proxy" || !ProxyValidator.TryNormalize(_settings.ProxyUrl, out var normalized, out _))
+            return _directClientFactory();
+        return new HttpClient(new HttpClientHandler
+        {
+            UseProxy = true,
+            Proxy = new WebProxy(normalized),
+            AllowAutoRedirect = true,
+        }) { Timeout = ProbeTimeout };
     }
 
     private static HttpClient CreateDirectClient() => new(new HttpClientHandler

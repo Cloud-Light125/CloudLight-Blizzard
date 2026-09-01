@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -24,7 +25,12 @@ for path in (str(DROPS_DIR), str(BILIBILI_DIR)):
         sys.path.insert(0, path)
 
 import worker as bilibili_worker  # noqa: E402
-from direct_network import PROXY_ENVIRONMENT_NAMES  # noqa: E402
+from direct_network import (  # noqa: E402
+    BilibiliNetworkPolicy,
+    PROXY_ENVIRONMENT_NAMES,
+    build_network_policy,
+    create_http_client,
+)
 from Shared.protocol import redact  # noqa: E402
 from bilibili_drops_miner.client import BilibiliClient  # noqa: E402
 from bilibili_drops_miner.client_parts.models import (  # noqa: E402
@@ -48,6 +54,7 @@ from bilibili_drops_miner.client_parts.rewards import (  # noqa: E402
 )
 from bilibili_drops_miner.client_parts.task_discovery import fetch_live_task_groups  # noqa: E402
 from bilibili_drops_miner.client_parts.tasks import parse_task_progress_payload  # noqa: E402
+from bilibili_drops_miner.client_parts.http import request_with_network_fallback  # noqa: E402
 
 
 class BilibiliWorkerContractTests(unittest.TestCase):
@@ -96,14 +103,15 @@ class BilibiliWorkerContractTests(unittest.TestCase):
                     os.environ[name] = value
 
     def test_direct_clients_and_static_discovery_never_trust_environment_proxy(self) -> None:
-        source_files = (
+        factory_source = (BILIBILI_DIR / "direct_network.py").read_text(encoding="utf-8")
+        self.assertIn('"trust_env": False', factory_source)
+        self.assertIn('"proxy": None', factory_source)
+        for path in (
             BILIBILI_DIR / "vendor" / "bilibili_drops_miner" / "client_parts" / "core.py",
             BILIBILI_DIR / "vendor" / "bilibili_drops_miner" / "client_parts" / "qr_login.py",
             BILIBILI_DIR / "vendor" / "bilibili_drops_miner" / "client_parts" / "task_discovery.py",
-            BILIBILI_DIR / "vendor" / "bilibili_drops_miner" / "notifier.py",
-        )
-        for path in source_files:
-            self.assertIn("trust_env=False", path.read_text(encoding="utf-8"), str(path))
+        ):
+            self.assertIn("create_", path.read_text(encoding="utf-8"), str(path))
 
         client = BilibiliClient("SESSDATA=s; bili_jct=j; DedeUserID=1")
         try:
@@ -127,6 +135,137 @@ class BilibiliWorkerContractTests(unittest.TestCase):
         groups = fetch_live_task_groups(123, transport=httpx.MockTransport(handler))
         self.assertEqual(groups, [])
         self.assertEqual(seen_urls, ["https://live.bilibili.com/123"])
+
+    def test_explicit_proxy_and_network_fallback_never_use_environment_proxy(self) -> None:
+        class ProxyHandler(__import__("http.server", fromlist=["BaseHTTPRequestHandler"]).BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                proxy_requests.append(self.path)
+                body = b"proxy-ok"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args: object) -> None:
+                return
+
+        from http.server import ThreadingHTTPServer
+
+        proxy_requests: list[str] = []
+        proxy_server = ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+        proxy_thread = threading.Thread(target=proxy_server.serve_forever, daemon=True)
+        proxy_thread.start()
+        previous_http_proxy = os.environ.get("HTTP_PROXY")
+        os.environ["HTTP_PROXY"] = "http://127.0.0.1:9"
+        proxy_client = None
+        fallback_client = None
+        direct_server = None
+        try:
+            policy = build_network_policy(
+                use_proxy=True,
+                proxy_url=f"http://127.0.0.1:{proxy_server.server_port}",
+                fallback_direct=False,
+            )
+            proxy_client = create_http_client(policy, timeout=3.0)
+            response = proxy_client.get("http://bilibili.test/explicit")
+            self.assertEqual(response.text, "proxy-ok")
+            self.assertFalse(proxy_client._trust_env)
+            self.assertTrue(proxy_requests and proxy_requests[-1].startswith("http://bilibili.test/"))
+
+            class DirectHandler(__import__("http.server", fromlist=["BaseHTTPRequestHandler"]).BaseHTTPRequestHandler):
+                def do_GET(self) -> None:  # noqa: N802
+                    direct_requests.append(self.path)
+                    body = b"direct-ok"
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, *_args: object) -> None:
+                    return
+
+            direct_requests: list[str] = []
+            direct_server = ThreadingHTTPServer(("127.0.0.1", 0), DirectHandler)
+            direct_thread = threading.Thread(target=direct_server.serve_forever, daemon=True)
+            direct_thread.start()
+            with socket.socket() as reserved:
+                reserved.bind(("127.0.0.1", 0))
+                unavailable_port = reserved.getsockname()[1]
+            fallback_policy = BilibiliNetworkPolicy(
+                use_proxy=True,
+                proxy_url=f"http://127.0.0.1:{unavailable_port}",
+                fallback_direct=True,
+            )
+            fallback_client = BilibiliClient(
+                "SESSDATA=s; bili_jct=j; DedeUserID=1",
+                network_policy=fallback_policy,
+            )
+            fallback_url = f"http://127.0.0.1:{direct_server.server_port}/fallback"
+            response = asyncio.run(fallback_client._request_with_transient_retry(
+                lambda: fallback_client._http.get(fallback_url),
+                method="GET",
+                url=fallback_url,
+                fallback_request_coro=lambda: fallback_client._fallback_http.get(fallback_url),
+            ))
+            self.assertEqual(response.text, "direct-ok")
+            self.assertTrue(direct_requests)
+            self.assertEqual(fallback_client.network_mode, "DIRECT")
+            self.assertTrue(fallback_client.network_fallback_active)
+            asyncio.run(fallback_client.close())
+            fallback_client = None
+
+            no_fallback = BilibiliClient(
+                "SESSDATA=s; bili_jct=j; DedeUserID=1",
+                network_policy=BilibiliNetworkPolicy(
+                    use_proxy=True,
+                    proxy_url=f"http://127.0.0.1:{unavailable_port}",
+                    fallback_direct=False,
+                ),
+            )
+            try:
+                with self.assertRaises((httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError)):
+                    asyncio.run(no_fallback._request_with_transient_retry(
+                        lambda: no_fallback._http.get(fallback_url),
+                        method="GET",
+                        url=fallback_url,
+                    ))
+            finally:
+                asyncio.run(no_fallback.close())
+
+            for status_code in (401, 403, 412, 429):
+                fallback_calls = 0
+
+                async def business_error(status: int = status_code) -> httpx.Response:
+                    return httpx.Response(status)
+
+                async def should_not_be_called() -> httpx.Response:
+                    nonlocal fallback_calls
+                    fallback_calls += 1
+                    return httpx.Response(200)
+
+                business_response = asyncio.run(request_with_network_fallback(
+                    business_error,
+                    should_not_be_called,
+                    method="GET",
+                    url="https://bilibili.test/business",
+                    logger=__import__("logging").getLogger(__name__),
+                ))
+                self.assertEqual(business_response.status_code, status_code)
+                self.assertEqual(fallback_calls, 0)
+        finally:
+            if proxy_client is not None:
+                proxy_client.close()
+            if fallback_client is not None:
+                asyncio.run(fallback_client.close())
+            proxy_server.shutdown()
+            proxy_server.server_close()
+            if direct_server is not None:
+                direct_server.shutdown()
+                direct_server.server_close()
+            if previous_http_proxy is None:
+                os.environ.pop("HTTP_PROXY", None)
+            else:
+                os.environ["HTTP_PROXY"] = previous_http_proxy
 
     def test_room_url_and_session_validation(self) -> None:
         self.assertEqual(bilibili_worker.parse_room_reference("123"), 123)
@@ -628,7 +767,7 @@ class BilibiliWorkerContractTests(unittest.TestCase):
             self.assertNotIn("fake-secret", file_text)
             self.assertEqual(read_protected(path), secret)
 
-    def test_worker_protocol_is_direct_even_when_child_receives_proxy_environment(self) -> None:
+    def test_worker_protocol_uses_explicit_bilibili_network_policy(self) -> None:
         worker_path = BILIBILI_DIR / "worker.py"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -664,20 +803,26 @@ class BilibiliWorkerContractTests(unittest.TestCase):
             hello = request("hello", "hello", {"protocol": 1})
             self.assertEqual(hello["platform"], "bilibili")
             self.assertEqual(hello["networkMode"], "DIRECT")
-            self.assertEqual(hello["proxyPolicy"], "ignored")
+            self.assertEqual(hello["proxyPolicy"], "direct")
             proxy_result = request("proxy", "set_proxy", {
                 "enableProxy": True, "proxyUrl": "http://127.0.0.1:9", "fallbackDirect": False,
+                "bilibiliUseProxy": True,
             })
-            self.assertTrue(proxy_result["ignored"])
-            self.assertEqual(proxy_result["networkMode"], "DIRECT")
-            self.assertEqual(proxy_result["proxyUrl"], "")
+            self.assertEqual(proxy_result["networkMode"], "PROXY")
+            self.assertTrue(proxy_result["useGlobalProxy"])
+            self.assertTrue(proxy_result["globalProxyEnabled"])
+            self.assertNotIn("proxyUrl", proxy_result)
             state = request("state", "load_state")
-            self.assertEqual(state["networkMode"], "DIRECT")
+            self.assertEqual(state["networkMode"], "PROXY")
+            self.assertTrue(state["useGlobalProxy"])
             self.assertFalse(state["credentialAvailable"])
             shutdown = request("shutdown", "shutdown")
             self.assertTrue(shutdown["shutdown"])
             self.assertEqual(process.wait(timeout=10), 0)
-            self.assertNotIn("127.0.0.1:9", (root / "worker.log").read_text(encoding="utf-8"))
+            worker_log = (root / "worker.log").read_text(encoding="utf-8")
+            self.assertIn("network=PROXY", worker_log)
+            self.assertIn("proxy=127.0.0.1:9", worker_log)
+            self.assertNotIn("user:password", worker_log)
             if process.stdin is not None:
                 process.stdin.close()
             if process.stdout is not None:

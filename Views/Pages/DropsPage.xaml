@@ -19,17 +19,6 @@
             <Setter Property="Margin" Value="0,6,0,0"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
-        <Style x:Key="RecoveryStateText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource Text.Muted}"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Connected"><Setter Property="Foreground" Value="{DynamicResource Status.Success}"/></DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Connecting"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Recovering"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Degraded"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="WaitingRetry"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Failed"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
-            </Style.Triggers>
-        </Style>
         <Style x:Key="HintTextBox" TargetType="TextBox" BasedOn="{StaticResource InputBox}">
             <Setter Property="Padding" Value="9,0"/>
             <Setter Property="Template">
@@ -350,7 +339,7 @@
                             Padding="13,0" Margin="16,0,0,0" Click="OnOpenProxySettings"/>
                     <StackPanel>
                         <TextBlock Text="{Binding NetworkProxyStatus}" FontWeight="SemiBold"/>
-                        <TextBlock Text="SOOP、YouTube 与 Twitch 共用此网络设置。哔哩哔哩掉宝固定直连，不使用全局代理。Chrome / Brave 的本机调试连接始终直连。"
+                        <TextBlock Text="SOOP、YouTube 与 Twitch 共用此网络设置。哔哩哔哩默认直连，可在哔哩哔哩设置中选择使用 CloudLight Blizzard 全局代理。Chrome / Brave 的本机调试连接始终直连。"
                                    Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
@@ -387,91 +376,6 @@
                     </StackPanel>
                 </Border>
             </UniformGrid>
-
-            <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
-                <StackPanel>
-                    <DockPanel>
-                        <TextBlock Text="自愈状态" Style="{StaticResource SectionTitle}" />
-                        <TextBlock DockPanel.Dock="Right" Text="自动重试不会终止现有恢复流程"
-                                   Foreground="{DynamicResource Text.Muted}" FontSize="11"
-                                   VerticalAlignment="Center" />
-                    </DockPanel>
-                    <ItemsControl ItemsSource="{Binding Platforms}" Margin="0,10,0,0">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><UniformGrid Columns="4" /></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
-                                        Padding="12,10" Margin="0,0,8,0">
-                                    <StackPanel>
-                                        <DockPanel>
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ConnectionStateText}"
-                                                       Style="{StaticResource RecoveryStateText}" />
-                                        </DockPanel>
-                                        <TextBlock Text="{Binding RecoveryStageText}" Foreground="{DynamicResource Text.Secondary}"
-                                                   Margin="0,5,0,0" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding WorkerHealth, StringFormat=Worker：{0}}"
-                                                   Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0" />
-                                        <TextBlock Text="{Binding LastHeartbeatText, StringFormat=最近心跳：{0}}"
-                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,0,0" />
-                                        <TextBlock Text="{Binding LastProgressText, StringFormat=最近进度：{0}}"
-                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
-                                        <TextBlock Text="{Binding LastReconnectText, StringFormat=最近重连：{0}}"
-                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
-                                        <TextBlock Text="{Binding ConsecutiveFailures, StringFormat=连续失败：{0}}"
-                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
-                                        <TextBlock Text="{Binding ReconnectCount, StringFormat=自动重连：{0} 次}"
-                                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" />
-                                        <TextBlock Text="{Binding NextRetryText, StringFormat=下次重试：{0}}"
-                                                   Foreground="{DynamicResource Status.Warning}" FontSize="11" Margin="0,3,0,0" />
-                                        <Button Content="重启 Worker" Tag="{Binding Platform}"
-                                                Style="{StaticResource SecondaryButton}" Padding="10,0"
-                                                HorizontalAlignment="Left" Margin="0,8,0,0"
-                                                Click="OnRestartWorker" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <DockPanel Margin="0,12,0,0">
-                        <TextBlock Text="最近事件" Style="{StaticResource SectionTitle}" />
-                        <TextBlock DockPanel.Dock="Right" Text="最多保留 10 条"
-                                   Foreground="{DynamicResource Text.Muted}" FontSize="11" />
-                    </DockPanel>
-                    <ListBox ItemsSource="{Binding RecoveryEvents}" MaxHeight="150" Margin="0,8,0,0">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="4,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="62" /><ColumnDefinition Width="74" />
-                                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource Text.Muted}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding PlatformText}" FontWeight="SemiBold" />
-                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Accent.Primary}" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Detail}" Foreground="{DynamicResource Text.Secondary}"
-                                               Margin="10,0,0,0" TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <TextBlock Text="暂无恢复事件。网络中断、重试与恢复过程会显示在这里。"
-                               Foreground="{DynamicResource Text.Muted}" Margin="4,8,0,0">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding RecoveryEvents.Count}" Value="0">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-            </Border>
 
             <StackPanel Orientation="Horizontal" Margin="0,20,0,12">
                 <RadioButton x:Name="SoopTab" Content="SOOP" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged"/>
@@ -873,11 +777,11 @@
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="哔哩哔哩" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Text="优先使用官方扫码登录。所有哔哩哔哩请求均由独立 Worker 直连完成。" Style="{StaticResource FieldHint}"/>
+                            <TextBlock Text="优先使用官方扫码登录。所有哔哩哔哩请求均由独立 Worker 按当前网络策略完成。" Style="{StaticResource FieldHint}"/>
                             <TextBlock Text="{Binding BilibiliDetails.LoginStateText}" FontWeight="SemiBold" Margin="0,14,0,0"/>
                             <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0"/>
-                            <TextBlock Text="{Binding BilibiliDetails.NetworkMode, StringFormat=网络模式：{0} / 直连}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,5,0,0"/>
-                            <TextBlock Text="{Binding BilibiliDetails.DirectNetworkText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding BilibiliDetails.NetworkModeText}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding BilibiliDetails.NetworkPolicyText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
                             <WrapPanel Margin="0,10,0,0">
                                 <TextBlock Text="运行状态：" Foreground="{DynamicResource Text.Secondary}"/>
                                 <TextBlock Text="{Binding Bilibili.Status}" FontWeight="SemiBold" Margin="2,0,10,0"/>
@@ -913,6 +817,12 @@
                     </Grid>
                 </Border>
 
+                <Expander x:Name="BilibiliQuickStartCard" Header="{Binding BilibiliQuickStart.Summary}" IsExpanded="{Binding BilibiliQuickStart.IsExpanded, Mode=TwoWay}"
+                          Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
+                    <ItemsControl ItemsSource="{Binding BilibiliQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                                  Margin="12,6,0,0"/>
+                </Expander>
+
                 <Grid Margin="0,14,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*"/><ColumnDefinition Width="0.9*"/></Grid.ColumnDefinitions>
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0">
@@ -947,7 +857,7 @@
                     </Border>
                 </Grid>
 
-                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
+                <Border x:Name="BilibiliSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="观看模式与任务设置" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="多线程加速表示每个直播间的并发观看 Session 数；沿用上游每个 Session 独立 asyncio 连接与 1 秒错峰启动。" Style="{StaticResource FieldHint}"/>
@@ -957,6 +867,23 @@
                             <StackPanel Grid.Column="2" Margin="8,0,0,0"><TextBlock Text="错峰重连延迟" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliReconnectDelayText" Style="{StaticResource HintTextBox}" Tag="8" Text="{Binding BilibiliDetails.ReconnectDelayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></DockPanel></StackPanel>
                         </Grid>
                         <TextBlock Text="{Binding BilibiliDetails.SessionEstimateText}" Foreground="{DynamicResource Accent.Primary}" Margin="0,10,0,0"/>
+                        <Border x:Name="BilibiliNetworkCard" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,14,0,0">
+                            <StackPanel>
+                                <TextBlock Text="网络" Style="{StaticResource SectionTitle}"/>
+                                <CheckBox x:Name="BilibiliUseProxyCheck" Style="{StaticResource ThemeCheckBox}"
+                                          Content="使用 CloudLight Blizzard 全局代理"
+                                          IsChecked="{Binding BilibiliDetails.BilibiliUseProxy, Mode=TwoWay}"/>
+                                <TextBlock Text="{Binding BilibiliDetails.NetworkModeText}" Foreground="{DynamicResource Text.Secondary}"
+                                           FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding BilibiliDetails.NetworkPolicyText}" Foreground="{DynamicResource Text.Muted}"
+                                           FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                <TextBlock Text="全局代理尚未启用/配置，哔哩哔哩当前使用直连。"
+                                           Foreground="{DynamicResource Status.Warning}" FontSize="11" Margin="0,5,0,0"
+                                           Visibility="{Binding BilibiliDetails.ProxyConfigurationWarningVisibility}" TextWrapping="Wrap"/>
+                                <Button Content="前往网络设置" Style="{StaticResource SecondaryButton}" Padding="12,0"
+                                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnOpenProxySettings"/>
+                            </StackPanel>
+                        </Border>
                         <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,8,0"><TextBlock Text="官方任务查询间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒（至少 10）" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="BilibiliTaskIntervalText" Style="{StaticResource HintTextBox}" Tag="30" Text="{Binding BilibiliDetails.TaskIntervalText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></DockPanel></StackPanel>
                             <StackPanel Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="高级 Task IDs（可选）" Style="{StaticResource FieldLabel}"/><TextBox x:Name="BilibiliTaskIdsText" Style="{StaticResource HintTextBox}" Tag="多个 ID 用逗号或空格分隔" Text="{Binding BilibiliDetails.TaskIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
@@ -973,7 +900,7 @@
                             <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource ThemeCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,0,18,0" IsChecked="{Binding BilibiliDetails.AutoRestore, Mode=TwoWay}" Click="OnAutoStartChanged"/>
                             <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource ThemeCheckBox}" Content="上次正在掉宝时自动恢复掉宝" IsChecked="{Binding BilibiliDetails.AutoResume, Mode=TwoWay}" Click="OnAutoStartChanged"/>
                         </WrapPanel>
-                        <TextBlock Text="Bilibili 网络连接：DIRECT（固定直连，不使用 CloudLight Blizzard 全局代理或系统代理环境变量）。" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding BilibiliDetails.ProxyConfigurationText}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,12,0,0" TextWrapping="Wrap"/>
                         <TextBlock Text="Gotify / Server 酱 URL（可选，保存后加密）" Style="{StaticResource FieldLabel}" Margin="0,14,0,6"/>
                         <PasswordBox x:Name="BilibiliNotifierUrlBox"/>
                         <TextBlock Text="{Binding BilibiliDetails.NotifierText}" Style="{StaticResource FieldHint}"/>

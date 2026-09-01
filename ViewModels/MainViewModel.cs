@@ -325,7 +325,8 @@ public sealed class MainViewModel : ObservableObject
         CloudHttpClients = new CloudHttpClientFactory(_settings);
         UpdateDownloader = new UpdateDownloadService(CloudHttpClients);
         FeedbackService = new FeedbackService(_settings, httpClients: CloudHttpClients);
-        DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
+        DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect,
+            _settings.BilibiliUseProxy));
         DropsHost.EventReceived += (sender, message) =>
         {
             if (message.Name != "legacy_proxy" || _settings.EnableProxy || !string.IsNullOrWhiteSpace(_settings.ProxyUrl)) return;
@@ -335,7 +336,8 @@ public sealed class MainViewModel : ObservableObject
             _settings.ProxyUrl = url;
             _settings.FallbackDirect = message.Payload.TryGetProperty("fallbackDirect", out var fallback) && fallback.GetBoolean();
             _settings.Save();
-            DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect));
+            DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect,
+                _settings.BilibiliUseProxy));
         };
         UpdateChecks = new UpdateCheckCoordinator(new UpdateService(_settings, CloudHttpClients), _settings);
         _paths = new BattleNetPaths();

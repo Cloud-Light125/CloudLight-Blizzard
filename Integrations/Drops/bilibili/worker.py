@@ -1,4 +1,4 @@
-"""CloudLight Blizzard's direct-only Bilibili Drops Worker.
+"""CloudLight Blizzard's explicitly routed Bilibili Drops Worker.
 
 The process owns all Bilibili network activity and speaks the shared JSONL
 Worker protocol on stdout.  Human-readable logs go to the log file only.
@@ -31,8 +31,10 @@ if str(VENDOR) not in sys.path:
 
 # This must happen before importing httpx, anyio, qrcode, or the vendored core.
 from direct_network import (  # noqa: E402
-    direct_httpx_kwargs,
+    BilibiliNetworkPolicy,
+    build_network_policy,
     proxy_environment_is_clean,
+    safe_proxy_label,
     scrub_proxy_environment,
 )
 
@@ -47,6 +49,7 @@ from Shared.protocol import (  # noqa: E402
     read_json,
     redact,
     run_worker,
+    validate_proxy_url,
 )
 
 from bilibili_drops_miner.client import BilibiliClient  # noqa: E402
@@ -212,11 +215,15 @@ class BilibiliSessionPool:
         get_reconnect_enabled: Callable[[], bool],
         get_uid: Callable[[], int],
         on_change: Callable[[], None],
+        get_network_policy: Callable[[], BilibiliNetworkPolicy] | None = None,
+        on_network_fallback: Callable[[], None] | None = None,
     ) -> None:
         self._get_cookie = get_cookie
         self._get_reconnect_delay = get_reconnect_delay
         self._get_reconnect_enabled = get_reconnect_enabled
         self._get_uid = get_uid
+        self._get_network_policy = get_network_policy or BilibiliNetworkPolicy.direct
+        self._on_network_fallback = on_network_fallback or (lambda: None)
         self._on_change = on_change
         self._lock = threading.RLock()
         self._records: dict[str, SessionRecord] = {}
@@ -350,7 +357,12 @@ class BilibiliSessionPool:
         self._set_state(record, "stopped")
 
     async def _run_session(self, record: SessionRecord, uid: int) -> None:
-        client = BilibiliClient(self._get_cookie())
+        network_policy = self._get_network_policy()
+        client = BilibiliClient(
+            self._get_cookie(),
+            network_policy=network_policy,
+            on_network_fallback=self._on_network_fallback,
+        )
         stop_event = asyncio.Event()
         config = MinerConfig(
             cookie=self._get_cookie(),
@@ -359,6 +371,7 @@ class BilibiliSessionPool:
             reconnect_delay_seconds=self._get_reconnect_delay(),
             task_ids=[],
             task_query_interval_seconds=DEFAULT_TASK_INTERVAL_SECONDS,
+            network_policy=network_policy,
         )
         notifier = MultiPlatformNotifier([])
 
@@ -495,6 +508,11 @@ class BilibiliWorker(WorkerBase):
         self._cookie = ""
         self._uid = 0
         self._uname = ""
+        self._network_policy = BilibiliNetworkPolicy.direct()
+        self._global_proxy_enabled = False
+        self._bilibili_use_proxy = False
+        self._fallback_direct = False
+        self._network_fallback_active = False
         self._qr_api: QrLoginApi | None = None
         self._qr_key = ""
         self._claimed_ids: set[str] = set()
@@ -507,6 +525,8 @@ class BilibiliWorker(WorkerBase):
             lambda: self.reconnect_enabled,
             lambda: self.uid,
             self._publish_session_event,
+            self._network_policy_snapshot,
+            self._mark_network_fallback,
         )
         self._progress_poller = BilibiliProgressPoller(self)
         self._login_watchdog = BilibiliLoginWatchdog(self)
@@ -540,7 +560,8 @@ class BilibiliWorker(WorkerBase):
             vendor_logger.setLevel(logging.INFO)
             vendor_logger.propagate = False
         self.logger.info(
-            "Bilibili Worker version=cloudlight-1 upstream_commit=a0d8bd51728aabaef66c651613324adba15d9ce8 network=DIRECT proxy_env_scrubbed=%s",
+            "Bilibili Worker version=cloudlight-1 upstream_commit=a0d8bd51728aabaef66c651613324adba15d9ce8 network=%s proxy_env_scrubbed=%s",
+            self._network_policy.mode,
             len(_REMOVED_PROXY_VARIABLES),
         )
 
@@ -629,6 +650,34 @@ class BilibiliWorker(WorkerBase):
         with self._state_lock:
             return bool(self._state["settings"].get("reconnectEnabled", True))
 
+    def _network_policy_snapshot(self) -> BilibiliNetworkPolicy:
+        with self._state_lock:
+            return self._network_policy
+
+    def _network_state(self) -> dict[str, Any]:
+        with self._state_lock:
+            policy = self._network_policy
+            use_global_proxy = self._bilibili_use_proxy
+            global_proxy_enabled = self._global_proxy_enabled
+            fallback_direct = self._fallback_direct
+            fallback_active = self._network_fallback_active
+        return {
+            "networkMode": "DIRECT" if fallback_active else policy.mode,
+            "proxyPolicy": "global" if policy.has_explicit_proxy else "direct",
+            "useGlobalProxy": use_global_proxy,
+            "globalProxyEnabled": global_proxy_enabled,
+            "fallbackDirect": fallback_direct,
+            "proxyFallbackActive": fallback_active,
+        }
+
+    def _mark_network_fallback(self) -> None:
+        with self._state_lock:
+            if self._network_fallback_active:
+                return
+            self._network_fallback_active = True
+        self.logger.warning("Bilibili 代理连接失败，当前回退直连")
+        self._emit_status()
+
     def _load_protected_credentials(self) -> None:
         try:
             value = read_protected(self._credential_path)
@@ -637,12 +686,6 @@ class BilibiliWorker(WorkerBase):
             value = None
         if value:
             self._cookie = value
-            try:
-                uid, uname = asyncio.run(self.probe_account())
-            except Exception:
-                uid, uname = None, ""
-            if uid:
-                self._uid, self._uname = uid, uname
 
     def _load_protected_notifier(self) -> None:
         try:
@@ -701,8 +744,7 @@ class BilibiliWorker(WorkerBase):
             "summary": self._summary_text(),
             "running": self.running,
             "connectionState": self._connection_state(snapshot),
-            "networkMode": "DIRECT",
-            "proxyPolicy": "ignored",
+            **self._network_state(),
             "sessions": snapshot,
         })
 
@@ -727,7 +769,7 @@ class BilibiliWorker(WorkerBase):
     def _publish_session_event(self) -> None:
         snapshot = self._pool.snapshot()
         event("session", {
-            "networkMode": "DIRECT",
+            **self._network_state(),
             "status": self._status_text(),
             "summary": self._summary_text(),
             "running": self.running,
@@ -753,8 +795,7 @@ class BilibiliWorker(WorkerBase):
     def hello(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = super().hello(payload)
         result.update({
-            "networkMode": "DIRECT",
-            "proxyPolicy": "ignored",
+            **self._network_state(),
             "upstreamCommit": "a0d8bd51728aabaef66c651613324adba15d9ce8",
             "credentialAvailable": bool(self.cookie),
         })
@@ -769,8 +810,7 @@ class BilibiliWorker(WorkerBase):
             "status": self._status_text(),
             "summary": self._summary_text(),
             "connectionState": self._connection_state(self._pool.snapshot()),
-            "networkMode": "DIRECT",
-            "proxyPolicy": "ignored",
+            **self._network_state(),
             "account": self._account_state(),
             "credentialAvailable": bool(self.cookie),
             "sessions": self._pool.snapshot(),
@@ -781,10 +821,60 @@ class BilibiliWorker(WorkerBase):
         return state
 
     def set_proxy(self, payload: dict[str, Any]) -> dict[str, Any]:
-        # DropsHostService sends this to every platform.  Bilibili explicitly
-        # ignores it and never returns the configured proxy URL.
-        self.logger.info("忽略全局代理设置：Bilibili 网络策略为 DIRECT")
-        return {"enableProxy": False, "proxyUrl": "", "fallbackDirect": False, "networkMode": "DIRECT", "ignored": True}
+        enabled = bool(payload.get("enableProxy", payload.get("EnableProxy", False)))
+        proxy_url = str(payload.get("proxyUrl", payload.get("ProxyUrl", "")) or "").strip()
+        fallback_direct = bool(payload.get("fallbackDirect", payload.get("FallbackDirect", False)))
+        use_global_proxy = bool(payload.get("bilibiliUseProxy", payload.get("BilibiliUseProxy", False)))
+        if enabled and proxy_url:
+            proxy_url = validate_proxy_url(proxy_url)
+
+        new_policy = build_network_policy(
+            use_proxy=use_global_proxy,
+            proxy_url=proxy_url if enabled else "",
+            fallback_direct=fallback_direct,
+        )
+        with self._state_lock:
+            previous = (
+                self._network_policy,
+                self._global_proxy_enabled,
+                self._bilibili_use_proxy,
+                self._fallback_direct,
+            )
+            self._network_policy = new_policy
+            self._global_proxy_enabled = enabled and bool(proxy_url)
+            self._bilibili_use_proxy = use_global_proxy
+            self._fallback_direct = fallback_direct
+            self._network_fallback_active = False
+        changed = previous != (
+            new_policy,
+            enabled and bool(proxy_url),
+            use_global_proxy,
+            fallback_direct,
+        )
+        if changed:
+            self._close_qr()
+            if self.running:
+                # Rebuild the complete Session pool at one boundary so no
+                # Bilibili Session remains on the old route after a setting
+                # change.
+                self._pool.stop()
+                self._pool.revive()
+                self._reconcile_sessions()
+        self.logger.info(
+            "Bilibili network policy: network=%s proxy=%s fallback_direct=%s",
+            self._network_state()["networkMode"],
+            safe_proxy_label(proxy_url) if new_policy.has_explicit_proxy else "none",
+            fallback_direct,
+        )
+        if self.cookie and not self.uid:
+            try:
+                uid, uname = asyncio.run(self.probe_account())
+                if uid:
+                    with self._state_lock:
+                        self._uid, self._uname = uid, uname
+            except Exception as exc:
+                self.logger.debug("应用 Bilibili 网络策略后账号探测失败：%s", safe_message(exc))
+        return self._network_state()
 
     def set_credentials(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw = str(payload.get("cookie", "")).strip()
@@ -840,7 +930,10 @@ class BilibiliWorker(WorkerBase):
         except ImportError as exc:
             raise RuntimeError("二维码组件未打包，请重新安装 CloudLight Blizzard") from exc
         self.qr_cancel({})
-        self._qr_api = QrLoginApi()
+        self._qr_api = QrLoginApi(
+            network_policy=self._network_policy_snapshot(),
+            on_network_fallback=self._mark_network_fallback,
+        )
         challenge = self._qr_api.generate()
         self._qr_key = challenge.key
         image = qrcode.make(challenge.url)
@@ -1070,7 +1163,7 @@ class BilibiliWorker(WorkerBase):
                 self._state["settings"]["notifyUrlsConfigured"] = bool(urls)
         self._reconcile_sessions()
         self._save_state()
-        event("status", {"settings": self._settings_state(), "networkMode": "DIRECT"})
+        event("status", {"settings": self._settings_state(), **self._network_state()})
         return self.load_state({})
 
     def _reconcile_sessions(self) -> None:
@@ -1111,7 +1204,11 @@ class BilibiliWorker(WorkerBase):
         for room in selected:
             room_id = int(room["id"])
             try:
-                groups = fetch_live_task_groups(room_id)
+                groups = fetch_live_task_groups(
+                    room_id,
+                    network_policy=self._network_policy_snapshot(),
+                    on_network_fallback=self._mark_network_fallback,
+                )
                 for index, group in enumerate(groups, start=1):
                     ids = [str(item).strip() for item in group.get("task_ids", []) if str(item).strip()]
                     if not ids:
@@ -1152,7 +1249,11 @@ class BilibiliWorker(WorkerBase):
         }
 
     async def _fetch_room_statuses(self, room_ids: list[int]) -> dict[int, int]:
-        client = BilibiliClient(self.cookie)
+        client = BilibiliClient(
+            self.cookie,
+            network_policy=self._network_policy_snapshot(),
+            on_network_fallback=self._mark_network_fallback,
+        )
         statuses: dict[int, int] = {}
         try:
             for room_id in room_ids:
@@ -1168,7 +1269,11 @@ class BilibiliWorker(WorkerBase):
     async def probe_account(self) -> tuple[int | None, str]:
         if not self.cookie:
             return None, ""
-        client = BilibiliClient(self.cookie)
+        client = BilibiliClient(
+            self.cookie,
+            network_policy=self._network_policy_snapshot(),
+            on_network_fallback=self._mark_network_fallback,
+        )
         try:
             return await client.get_self_info()
         finally:
@@ -1236,7 +1341,11 @@ class BilibiliWorker(WorkerBase):
             task_ids = list(self._state.get("taskIds", []))
         if not task_ids or not self.cookie:
             return
-        client = BilibiliClient(self.cookie)
+        client = BilibiliClient(
+            self.cookie,
+            network_policy=self._network_policy_snapshot(),
+            on_network_fallback=self._mark_network_fallback,
+        )
         try:
             progresses = await client.get_task_progress(task_ids)
             completed_to_notify: list[TaskProgress] = []
@@ -1350,7 +1459,11 @@ class BilibiliWorker(WorkerBase):
         self.require_runtime()
         if not self.cookie:
             raise ValueError("请先扫码登录 Bilibili")
-        client = BilibiliClient(self.cookie)
+        client = BilibiliClient(
+            self.cookie,
+            network_policy=self._network_policy_snapshot(),
+            on_network_fallback=self._mark_network_fallback,
+        )
         try:
             results = asyncio.run(self._claim_with_client(client, [task_id], automatic=False))
         finally:

@@ -238,6 +238,9 @@ public static class UiVisualTreeSelfTest
                 var bilibiliPanel = FindNamed(dropsPage, "BilibiliPanel");
                 var bilibiliAccount = FindNamed(dropsPage, "BilibiliAccountCard");
                 var bilibiliQrLogin = FindNamed(dropsPage, "BilibiliQrLoginButton");
+                var bilibiliQuickStart = FindNamed(dropsPage, "BilibiliQuickStartCard");
+                var bilibiliNetwork = FindNamed(dropsPage, "BilibiliNetworkCard");
+                var bilibiliUseProxy = FindNamed(dropsPage, "BilibiliUseProxyCheck");
                 var soopPanel = FindNamed(dropsPage, "SoopPanel");
                 var youtubePanel = FindNamed(dropsPage, "YouTubePanel");
                 var twitchPanel = FindNamed(dropsPage, "TwitchPanel");
@@ -251,6 +254,21 @@ public static class UiVisualTreeSelfTest
                        bilibiliQrLogin.Visibility == Visibility.Visible && bilibiliQrLogin.IsVisible &&
                        VisualPath(dropsPage, bilibiliQrLogin) is not null,
                     checks, "未登录状态下扫码登录按钮存在于有效视觉树");
+                var removedRecoveryLabels = new[]
+                {
+                    "自愈状态", "最近心跳", "最近进度", "连续失败", "自动重连次数", "下次重试", "重启 Worker",
+                };
+                Assert(removedRecoveryLabels.All(label =>
+                        FindVisual(dropsPage, value => value is TextBlock text &&
+                            string.Equals(text.Text, label, StringComparison.Ordinal)) is null),
+                    checks, "Drops 页面已移除独立自愈状态区域及其 UI-only 字段/按钮");
+                Assert(bilibiliQuickStart is Expander &&
+                       FindVisual(bilibiliQuickStart, value => value is ItemsControl) is not null,
+                    checks, "Bilibili 页面包含复用 QuickStartStepTemplate 的快速开始卡片");
+                Assert(bilibiliNetwork is Border && bilibiliUseProxy is CheckBox bilibiliProxyCheck &&
+                       string.Equals(bilibiliProxyCheck.Content as string,
+                            "使用 CloudLight Blizzard 全局代理", StringComparison.Ordinal),
+                    checks, "Bilibili 网络卡片包含正式的全局代理选项");
                 Assert(soopPanel is StackPanel && soopPanel.Visibility == Visibility.Collapsed && !soopPanel.IsVisible &&
                        youtubePanel is StackPanel && youtubePanel.Visibility == Visibility.Collapsed && !youtubePanel.IsVisible &&
                        twitchPanel is StackPanel && twitchPanel.Visibility == Visibility.Collapsed && !twitchPanel.IsVisible,

@@ -18,7 +18,8 @@ public enum DropsConnectionState
     Stopped,
 }
 
-public sealed record DropsProxySettings(bool EnableProxy, string ProxyUrl, bool FallbackDirect);
+public sealed record DropsProxySettings(bool EnableProxy, string ProxyUrl, bool FallbackDirect,
+    bool BilibiliUseProxy = false);
 
 public sealed record DropsRuntimeDiagnosticSnapshot(
     string SoopStatus,

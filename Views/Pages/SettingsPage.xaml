@@ -32,7 +32,7 @@
             <Border x:Name="NetworkProxyCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="网络代理" Style="{StaticResource SectionTitle}"/>
-                    <TextBlock Text="公告、反馈、软件更新与 SOOP、YouTube、Twitch 共用这一套 HTTP / HTTPS 代理。"
+                    <TextBlock Text="公告、反馈、软件更新与 SOOP、YouTube、Twitch 共用这一套 HTTP / HTTPS 代理；哔哩哔哩默认直连，可在掉宝页面单独选择是否使用。"
                                Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,13"/>
                     <CheckBox x:Name="EnableProxyBox" Style="{StaticResource ThemeCheckBox}" Content="启用网络代理"
                               Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged"/>

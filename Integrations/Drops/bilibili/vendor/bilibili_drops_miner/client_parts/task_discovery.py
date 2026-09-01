@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
 from bilibili_drops_miner.client_parts.cookies import DEFAULT_USER_AGENT
 from bilibili_drops_miner.utils import extract_bili_live_task_groups
+from direct_network import BilibiliNetworkPolicy, create_http_client
 
 LIVE_ROOM_URL = "https://live.bilibili.com/{room_id}"
 
@@ -15,6 +16,8 @@ def fetch_live_task_groups(
     *,
     transport: httpx.BaseTransport | None = None,
     timeout: httpx.Timeout | float | None = None,
+    network_policy: BilibiliNetworkPolicy | None = None,
+    on_network_fallback: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch and parse task groups from a live room's static HTML."""
     if room_id <= 0:
@@ -26,13 +29,35 @@ def fetch_live_task_groups(
         "User-Agent": DEFAULT_USER_AGENT,
         "Referer": "https://live.bilibili.com/",
     }
-    with httpx.Client(
-        headers=headers,
-        follow_redirects=True,
-        timeout=request_timeout,
-        transport=transport,
-        trust_env=False,
+    client_options: dict[str, Any] = {
+        "headers": headers,
+        "follow_redirects": True,
+        "timeout": request_timeout,
+    }
+    if transport is not None:
+        client_options["transport"] = transport
+    policy = network_policy or BilibiliNetworkPolicy.direct()
+    with create_http_client(
+        policy,
+        **client_options,
     ) as client:
-        response = client.get(url)
-        response.raise_for_status()
+        try:
+            response = client.get(url)
+            response.raise_for_status()
+        except (
+            httpx.ConnectTimeout,
+            httpx.ReadTimeout,
+            httpx.ConnectError,
+            httpx.RemoteProtocolError,
+        ):
+            if not (policy.has_explicit_proxy and policy.fallback_direct):
+                raise
+            if on_network_fallback is not None:
+                on_network_fallback()
+            with create_http_client(
+                BilibiliNetworkPolicy.direct(),
+                **client_options,
+            ) as fallback_client:
+                response = fallback_client.get(url)
+                response.raise_for_status()
     return extract_bili_live_task_groups(response.text)

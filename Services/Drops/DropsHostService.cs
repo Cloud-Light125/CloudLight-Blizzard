@@ -314,9 +314,8 @@ public sealed class DropsHostService : IAsyncDisposable
         };
         if (platform == DropsPlatform.Bilibili)
         {
-            // The Bilibili provider is a hard direct-connect exception.  Do
-            // not inherit proxy variables from the WPF process even when the
-            // global proxy is enabled for the other providers.
+            // Bilibili always receives its route explicitly through set_proxy;
+            // never inherit ambient proxy variables from the WPF process.
             foreach (var variable in new[]
                      { "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy" })
                 startInfo.Environment.Remove(variable);
@@ -382,7 +381,7 @@ public sealed class DropsHostService : IAsyncDisposable
                         {
                             DropsPlatform.Twitch => "Twitch 后台无法启动 HTTPS：Python SSL 运行库无法加载。请重新安装 CloudLight Blizzard。",
                             DropsPlatform.YouTube => "Python SSL 组件无法加载，无法访问 YouTube。请重新安装 CloudLight Blizzard。",
-                            DropsPlatform.Bilibili => "Python SSL 组件无法加载，无法直连哔哩哔哩。请重新安装 CloudLight Blizzard。",
+                            DropsPlatform.Bilibili => "Python SSL 组件无法加载，无法访问哔哩哔哩。请重新安装 CloudLight Blizzard。",
                             _ => "Python SSL 组件无法加载，SOOP 后台无法建立 HTTPS 连接。请重新安装 CloudLight Blizzard。",
                         };
                         EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "runtime_error",
