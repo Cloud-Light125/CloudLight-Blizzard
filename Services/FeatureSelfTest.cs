@@ -1633,6 +1633,12 @@ public static class FeatureSelfTest
         Assert(loaded.RegionStoragePath == @"D:\Region Data", "custom region storage persisted");
         Assert(loaded.SkippedUpdateVersion == "1.0.1", "skipped update version persists in settings.json");
         Assert(loaded.PreferenceFor(123456).Region == AccountRegionOverride.China, "account preference persisted");
+        var legacyNavigationPath = Path.Combine(workspace, "legacy-navigation-settings.json");
+        File.WriteAllText(legacyNavigationPath, "{\"LastMainSection\":\"overview\"}");
+        var legacyNavigation = AppSettings.LoadFrom(legacyNavigationPath);
+        Assert(legacyNavigation.LastMainSection == "accounts" &&
+               AppSettings.NormalizeMainSection("not-a-page") == "accounts",
+            "removed overview and unknown saved sections safely fall back to accounts");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
         report.AppendLine("TEST 9 settings/account list: PASS");
@@ -2078,7 +2084,7 @@ public static class FeatureSelfTest
             "password=abcdef\npasswd=abcdef\nsecret=abcdef";
         var reportModel = new DiagnosticRunReport
         {
-            AppVersion = "2.0.10",
+            AppVersion = "2.1.0",
             StartedAt = DateTimeOffset.Now.AddSeconds(-1),
             CompletedAt = DateTimeOffset.Now,
             Checks = [
@@ -2182,7 +2188,7 @@ public static class FeatureSelfTest
             var readOnlyAt = readOnlySettings.LastUpdateCheckAt;
             var readOnlyFailure = readOnlySettings.LastUpdateFailure;
             var readOnlyCoordinator = new UpdateCheckCoordinator(
-                new StubUpdateService(UpdateResult("2.0.10", hasUpdate: false)), readOnlySettings);
+                new StubUpdateService(UpdateResult("2.1.0", hasUpdate: false)), readOnlySettings);
             var readOnlyResult = await readOnlyCoordinator.CheckReadOnlyAsync();
             Assert(readOnlyResult.Status == UpdateCheckResultStatus.Success &&
                    readOnlyCoordinator.LastResult is null && readOnlyCoordinator.LastCheckAt is null &&
@@ -2289,15 +2295,11 @@ public static class FeatureSelfTest
             await gate.FlushForSelfTestAsync();
             Assert(true, "Toast notification exceptions are swallowed outside business flow");
         }
-        Assert(OverviewViewModel.FormatStatus("正常", DateTimeOffset.Now.AddHours(-1), DateTimeOffset.Now)
-                   .Contains("状态可能已过期", StringComparison.Ordinal) &&
-               OverviewViewModel.FormatStatus("正常", null) == "未检查",
-           "Overview labels unknown and stale state instead of presenting it as current");
         var duplicateError = new InvalidOperationException($"selftest-error-{Guid.NewGuid():N}");
         Assert(App.ShouldShowUnhandledDialog(duplicateError) &&
                !App.ShouldShowUnhandledDialog(new InvalidOperationException(duplicateError.Message)),
             "identical unhandled errors are throttled to one dialog while each occurrence remains loggable");
-        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/overview freshness/error-dialog throttle)");
+        report.AppendLine("TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/error-dialog throttle)");
     }
 
     private static void WriteRuntimeFiles(string gameRoot)
@@ -2384,7 +2386,7 @@ public static class FeatureSelfTest
         return new UpdateCheckResult
         {
             Status = UpdateCheckResultStatus.Success,
-            CurrentVersion = "2.0.10",
+            CurrentVersion = "2.1.0",
             LatestVersion = version,
             HasUpdate = true,
             Tag = $"v{version}",

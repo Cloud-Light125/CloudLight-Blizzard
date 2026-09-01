@@ -21,7 +21,6 @@ public partial class MainWindow : Window
     internal static readonly TimeSpan AnnouncementRefreshInterval = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _vm;
     private readonly AccountsPage _accountsPage = new();
-    private readonly OverviewPage _overviewPage = new();
     private readonly RegionFilesPage _regionPage = new();
     private readonly StatsPage _statsPage = new();
     private readonly DropsPage _dropsPage = new();
@@ -77,7 +76,6 @@ public partial class MainWindow : Window
         Height = _vm.Settings.WindowHeight >= MinHeight ? _vm.Settings.WindowHeight : Height;
         if (_vm.Settings.WindowMaximized) WindowState = WindowState.Maximized;
 
-        _overviewPage.Initialize(_vm, _announcementService);
         _accountsPage.Initialize(_vm);
         _regionPage.Initialize(_vm);
         _statsPage.Initialize(_vm);
@@ -123,7 +121,6 @@ public partial class MainWindow : Window
         }
         if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault());
         if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
-        if (OverviewNav.IsChecked == true) await _overviewPage.RefreshAsync();
         if (SnapshotsNav.IsChecked == true) await _snapshotsPage.RefreshAsync();
         _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
         _watchTimer.Start();
@@ -165,7 +162,7 @@ public partial class MainWindow : Window
         _announcements = announcements;
         if (newAnnouncement is not null)
             Notify(new NotificationRequest("CloudLight Blizzard 公告", newAnnouncement.Title,
-                NotificationCategory.Announcements, "overview", $"announcement:{newAnnouncement.Id}:{newAnnouncement.Revision}"));
+                NotificationCategory.Announcements, "accounts", $"announcement:{newAnnouncement.Id}:{newAnnouncement.Revision}"));
     }
 
     internal async Task OpenAnnouncementsAsync()
@@ -262,10 +259,11 @@ public partial class MainWindow : Window
         if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
         switch (action)
         {
+            case "accounts": AccountsNav.IsChecked = true; break;
             case "updates": OpenUpdateSettings(); break;
             case "drops": OpenDrops(); break;
             case "region": OpenRegion(); break;
-            default: OverviewNav.IsChecked = true; break;
+            default: AccountsNav.IsChecked = true; break;
         }
         ShowFromTray();
     }
@@ -444,9 +442,15 @@ public partial class MainWindow : Window
 
     private void SelectSavedSection()
     {
-        switch (_vm.Settings.LastMainSection)
+        var section = AppSettings.NormalizeMainSection(_vm.Settings.LastMainSection);
+        if (!string.Equals(_vm.Settings.LastMainSection, section, StringComparison.Ordinal))
         {
-            case "overview": OverviewNav.IsChecked = true; break;
+            _vm.Settings.LastMainSection = section;
+            _vm.Settings.Save();
+        }
+        switch (section)
+        {
+            case "accounts": AccountsNav.IsChecked = true; break;
             case "region": RegionNav.IsChecked = true; break;
             case "stats": StatsNav.IsChecked = true; break;
             case "drops": DropsNav.IsChecked = true; break;
@@ -454,7 +458,7 @@ public partial class MainWindow : Window
             case "diagnostics": DiagnosticsNav.IsChecked = true; break;
             case "settings": SettingsNav.IsChecked = true; break;
             case "about": AboutNav.IsChecked = true; break;
-            default: OverviewNav.IsChecked = true; break;
+            default: AccountsNav.IsChecked = true; break;
         }
     }
 
@@ -463,7 +467,6 @@ public partial class MainWindow : Window
         if (!_pagesReady || sender is not RadioButton { Tag: string section }) return;
         PageHost.Content = section switch
         {
-            "overview" => _overviewPage,
             "region" => _regionPage,
             "stats" => _statsPage,
             "drops" => _dropsPage,
@@ -473,12 +476,11 @@ public partial class MainWindow : Window
             "about" => _aboutPage,
             _ => _accountsPage,
         };
-        AccountFooter.Visibility = section is "accounts" or "overview" ? Visibility.Visible : Visibility.Collapsed;
+        AccountFooter.Visibility = section == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         _vm.Settings.LastMainSection = section;
         _vm.Settings.Save();
         await Dispatcher.Yield(DispatcherPriority.Render);
         if (section == "region") await _regionPage.RefreshAsync();
-        if (section == "overview") await _overviewPage.RefreshAsync();
         if (section == "stats") _statsPage.OnPageOpened();
         if (section == "drops") await _dropsPage.RefreshAsync();
         if (section == "snapshots") await _snapshotsPage.RefreshAsync();

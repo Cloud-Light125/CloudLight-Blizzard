@@ -68,6 +68,12 @@
         <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
         <Setter Property="Margin" Value="0,5,0,0" />
     </Style>
+    <Style x:Key="FieldHint" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
     <Style x:Key="SectionTitle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="18" />
         <Setter Property="FontWeight" Value="SemiBold" />

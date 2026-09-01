@@ -45,6 +45,7 @@ public static class UiVisualTreeSelfTest
         {
             settingsPath = AppSettings.FilePath;
             settingsSnapshot = CaptureFile(settingsPath);
+            File.WriteAllText(settingsPath, "{\"LastMainSection\":\"overview\"}");
             bindingSource = PresentationTraceSources.DataBindingSource;
             previousBindingLevel = bindingSource.Switch.Level;
             bindingListener = new BindingErrorTraceListener();
@@ -71,7 +72,6 @@ public static class UiVisualTreeSelfTest
 
             var navigation = new[]
             {
-                (Name: "OverviewNav", Tag: "overview"),
                 (Name: "AccountsNav", Tag: "accounts"),
                 (Name: "RegionNav", Tag: "region"),
                 (Name: "StatsNav", Tag: "stats"),
@@ -87,21 +87,35 @@ public static class UiVisualTreeSelfTest
                 Assert(control is not null && string.Equals(control.Tag as string, item.Tag, StringComparison.Ordinal),
                     checks, $"导航 {item.Tag} 存在且 Tag 正确");
             }
+            Assert(FindNamed(window, "OverviewNav") is null &&
+                   typeof(MainWindow).GetField("_overviewPage", BindingFlags.Instance | BindingFlags.NonPublic) is null,
+                checks, "概览导航和 MainWindow 概览页面生命周期已完全移除");
 
-            Assert(FindNamed(window, "PageHost") is ContentControl, checks, "主窗口包含单一 PageHost");
+            var pageHost = FindNamed(window, "PageHost") as ContentControl;
+            var accountFooter = FindNamed(window, "AccountFooter") as Border;
+            var windowViewModel = typeof(MainWindow).GetField("_vm", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as MainViewModel;
+            var accountsPage = typeof(MainWindow).GetField("_accountsPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as AccountsPage;
+            Assert(pageHost is not null, checks, "主窗口包含单一 PageHost");
+            Assert(windowViewModel?.Settings.LastMainSection == "accounts" &&
+                   FindNamed(window, "AccountsNav") is RadioButton { IsChecked: true } &&
+                   ReferenceEquals(pageHost?.Content, accountsPage),
+                checks, "旧 LastMainSection=overview 安全迁移到 accounts 并默认打开账号页面");
+            Assert(accountFooter?.Visibility == Visibility.Visible,
+                checks, "AccountFooter 在账号页面可见");
             Assert(window.MinWidth >= 1000 && window.MinHeight >= 660, checks, "主窗口设置了窄窗口安全最小尺寸");
 
             var pages = new[]
             {
-                (Field: "_overviewPage", Name: "概览"),
-                (Field: "_accountsPage", Name: "账号"),
-                (Field: "_regionPage", Name: "区服切换"),
-                (Field: "_statsPage", Name: "战绩"),
-                (Field: "_dropsPage", Name: "Drops"),
-                (Field: "_snapshotsPage", Name: "区服快照"),
-                (Field: "_diagnosticsPage", Name: "诊断中心"),
-                (Field: "_settingsPage", Name: "设置"),
-                (Field: "_aboutPage", Name: "关于"),
+                (Field: "_accountsPage", Nav: "AccountsNav", Tag: "accounts", Name: "账号"),
+                (Field: "_regionPage", Nav: "RegionNav", Tag: "region", Name: "区服切换"),
+                (Field: "_statsPage", Nav: "StatsNav", Tag: "stats", Name: "战绩"),
+                (Field: "_dropsPage", Nav: "DropsNav", Tag: "drops", Name: "Drops"),
+                (Field: "_snapshotsPage", Nav: "SnapshotsNav", Tag: "snapshots", Name: "区服快照"),
+                (Field: "_diagnosticsPage", Nav: "DiagnosticsNav", Tag: "diagnostics", Name: "诊断中心"),
+                (Field: "_settingsPage", Nav: "SettingsNav", Tag: "settings", Name: "设置"),
+                (Field: "_aboutPage", Nav: "AboutNav", Tag: "about", Name: "关于"),
             };
             foreach (var item in pages)
             {
@@ -117,6 +131,27 @@ public static class UiVisualTreeSelfTest
                 page?.Arrange(new Rect(0, 0, 1400, 900));
                 Assert(page is not null && ContainsVisual(page, value => value is ScrollViewer), checks,
                     $"{item.Name} 页面包含可滚动视觉树");
+            }
+
+            if (pageHost is not null)
+            {
+                foreach (var item in pages)
+                {
+                    var page = typeof(MainWindow).GetField(item.Field, BindingFlags.Instance | BindingFlags.NonPublic)
+                        ?.GetValue(window) as UserControl;
+                    var nav = FindNamed(window, item.Nav) as RadioButton;
+                    if (page is null || nav is null) continue;
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        nav.IsChecked = false;
+                        nav.IsChecked = true;
+                    }, DispatcherPriority.Input);
+                    DrainDispatcher(window.Dispatcher);
+                    Assert(ReferenceEquals(pageHost.Content, page),
+                        checks, $"真实导航 {item.Tag} 将 {item.Name} 页面放入 PageHost");
+                    Assert((item.Tag == "accounts") == (accountFooter?.Visibility == Visibility.Visible),
+                        checks, $"真实导航 {item.Tag} 的 AccountFooter 可见性正确");
+                }
             }
 
             var dropsPage = typeof(MainWindow).GetField("_dropsPage", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -136,8 +171,6 @@ public static class UiVisualTreeSelfTest
                 window.Show();
                 window.UpdateLayout();
 
-                var pageHost = FindNamed(window, "PageHost") as ContentControl;
-                var overviewNav = FindNamed(window, "OverviewNav") as RadioButton;
                 var dropsNav = FindNamed(window, "DropsNav") as RadioButton;
                 var soopTab = FindNamed(dropsPage, "SoopTab") as RadioButton;
                 var youtubeTab = FindNamed(dropsPage, "YouTubeTab") as RadioButton;
@@ -146,31 +179,20 @@ public static class UiVisualTreeSelfTest
                 var initializedField = typeof(DropsPage).GetField("_initialized", BindingFlags.Instance | BindingFlags.NonPublic);
                 var platformField = typeof(DropsPage).GetField("_platform", BindingFlags.Instance | BindingFlags.NonPublic);
                 var initializedBeforeClick = initializedField?.GetValue(dropsPage) is true;
-                Assert(pageHost is not null && overviewNav is not null && dropsNav is not null &&
+                Assert(pageHost is not null && dropsNav is not null &&
                        soopTab is not null && youtubeTab is not null && twitchTab is not null && bilibiliTab is not null,
-                    checks, "真实 MainWindow 包含导航、PageHost、SOOP Tab 与哔哩哔哩 Tab");
+                    checks, "真实 MainWindow 包含 PageHost、SOOP Tab 与哔哩哔哩 Tab");
                 Assert(dropsVm.SelectedPlatform == DropsPlatform.Soop && initializedBeforeClick,
                     checks, "真实页面初始化完成且初始平台为 SOOP");
 
-                if (pageHost is not null && overviewNav is not null && dropsNav is not null &&
+                if (pageHost is not null && dropsNav is not null &&
                     soopTab is not null && youtubeTab is not null && twitchTab is not null && bilibiliTab is not null)
                 {
-                    // Exercise the actual MainWindow navigation event chain rather than
-                    // assigning PageHost.Content directly. The initial saved section can
-                    // already be Drops, so force a real Overview -> Drops transition.
+                    // Exercise the actual MainWindow navigation event chain after the
+                    // main navigation loop has visited every supported page.
                     window.Dispatcher.Invoke(() =>
                     {
                         dropsNav.IsChecked = false;
-                        overviewNav.IsChecked = false;
-                        overviewNav.IsChecked = true;
-                    }, DispatcherPriority.Input);
-                    DrainDispatcher(window.Dispatcher);
-                    Assert(pageHost.Content is OverviewPage, checks,
-                        "MainWindow 真实导航先切换到 Overview 页面");
-
-                    window.Dispatcher.Invoke(() =>
-                    {
-                        overviewNav.IsChecked = false;
                         dropsNav.IsChecked = true;
                     }, DispatcherPriority.Input);
                     DrainDispatcher(window.Dispatcher);

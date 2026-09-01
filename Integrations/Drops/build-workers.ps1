@@ -86,6 +86,14 @@ function Build-Worker {
     if ($LASTEXITCODE -ne 0) { throw "$Platform Worker build failed." }
 }
 
+function Invoke-ContractTests {
+    param([string]$Label, [string]$RelativeTestPath)
+
+    Write-Host "$Label Python contract tests" -ForegroundColor Cyan
+    & $buildPython -m unittest discover -s (Join-Path $dropsRoot $RelativeTestPath) -p "test*.py" -v
+    if ($LASTEXITCODE -ne 0) { throw "$Label Python contract tests failed." }
+}
+
 $tlsRuntimeArgs = @()
 if ($Platforms.Count -gt 0) {
     # A venv created from Conda can import _ssl from the base interpreter while
@@ -167,11 +175,13 @@ if ($Platforms -contains "bilibili") {
     ) + $tlsRuntimeArgs
     Build-Worker -Platform "bilibili" -ExtraArgs $bilibiliArgs
     Copy-Item -LiteralPath (Join-Path $dropsRoot "bilibili\LICENSE") -Destination (Join-Path $artifacts "bilibili\BiliBiliDropsMiner-MIT.txt") -Force
-
-    Write-Host "Bilibili Worker Python contract tests" -ForegroundColor Cyan
-    & $buildPython -m unittest discover -s (Join-Path $dropsRoot "bilibili\tests") -p "test*.py" -v
-    if ($LASTEXITCODE -ne 0) { throw "Bilibili Worker Python contract tests failed." }
 }
+
+if ($Platforms.Count -gt 0) { Invoke-ContractTests -Label "Shared" -RelativeTestPath "Shared\tests" }
+if ($Platforms -contains "youtube") { Invoke-ContractTests -Label "YouTube" -RelativeTestPath "youtube\tests" }
+if ($Platforms -contains "twitch") { Invoke-ContractTests -Label "Twitch" -RelativeTestPath "twitch\tests" }
+if ($Platforms -contains "soop") { Invoke-ContractTests -Label "SOOP" -RelativeTestPath "soop\tests" }
+if ($Platforms -contains "bilibili") { Invoke-ContractTests -Label "Bilibili" -RelativeTestPath "bilibili\tests" }
 
 foreach ($platform in $Platforms) {
     $worker = Join-Path $artifacts "$platform\$platform-worker.exe"

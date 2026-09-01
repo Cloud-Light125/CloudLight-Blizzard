@@ -129,7 +129,7 @@ public sealed class DiagnosticService
     private List<CheckDefinition> BuildChecks() => new()
     {
         Define("app.version", "应用", "当前版本", _ => Task.FromResult(NewCheck("app.version", "应用", "当前版本", DiagnosticSeverity.Healthy,
-            $"CloudLight Blizzard {_vm.UpdateChecks.CurrentVersion}", "正式版本保持为 2.0.10。"))),
+            $"CloudLight Blizzard {_vm.UpdateChecks.CurrentVersion}", $"正式版本为 {_vm.UpdateChecks.CurrentVersion}。"))),
         Define("app.runtime", "应用", ".NET / 系统运行环境", _ => Task.FromResult(NewCheck("app.runtime", "应用", ".NET / 系统运行环境", DiagnosticSeverity.Healthy,
             $"{RuntimeInformation.OSDescription} · {RuntimeInformation.OSArchitecture}",
             $"Runtime={RuntimeInformation.FrameworkDescription}; Process={Environment.Is64BitProcess switch { true => "x64", false => "x86" }}; 启动时间={Process.GetCurrentProcess().StartTime:yyyy-MM-dd HH:mm:ss}"))),

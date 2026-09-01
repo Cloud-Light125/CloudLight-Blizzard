@@ -1,4 +1,4 @@
-# CloudLight Blizzard 2.0.10
+# CloudLight Blizzard 2.1.0
 
 ## Release Readiness 人工 GUI 验收清单
 
@@ -6,9 +6,9 @@
 
 总用时约 15 分钟。每项完成后勾选，并记录窗口尺寸、Windows 版本和 DPI。
 
-1. **打开 Overview（约 1 分钟）**
-   - 操作：启动程序，保持在 Overview，点击一次“刷新”。
-   - 预期：页面正常出现；区服、网络、更新、快照和 Drops 卡片都有明确状态。网络/更新没有检查过时显示“未检查”，已有结果显示“HH:mm 检查”；超过 TTL 显示“状态可能已过期”。刷新不启动网络诊断、完整快照 Hash、全盘扫描或 Drops Worker。
+1. **打开账号（约 1 分钟）**
+   - 操作：启动程序，保持在“账号”，点击一次“刷新账号”。
+   - 预期：账号页面正常出现；当前账号、已保存账号和账号操作均可见。刷新只更新账号状态，不启动网络诊断、完整快照 Hash、全盘扫描或 Drops Worker。
 
 2. **打开 Diagnostics（约 30 秒）**
    - 操作：进入“诊断中心”。
@@ -59,11 +59,11 @@
     - 预期：显示最近检查时间和结果。安装包只有在元数据包含合法 `sha256:<64 hex>`、大小、白名单 URL 且 SHA-256 校验成功后才允许启动；取消/重试不会启动多个 installer 或多次退出应用。
 
 14. **窄窗口（约 30 秒）**
-    - 操作：将窗口调整到接近最小宽高，在 Overview、Diagnostics、Drops 和 Snapshot 间切换。
+    - 操作：将窗口调整到接近最小宽高，在账号、Diagnostics、Drops 和 Snapshot 间切换。
     - 预期：不出现截断到无法操作的按钮、横向溢出或页面崩溃；长路径、错误和诊断文本可滚动/换行。
 
 15. **Windows 125% / 150% DPI（约 2 分钟）**
-    - 操作：在 Windows 显示设置分别使用 125% 和 150%（必要时重新登录/启动程序），重复检查 Overview、Diagnostics、Switch Preview、Drops 和更新对话框。
+    - 操作：在 Windows 显示设置分别使用 125% 和 150%（必要时重新登录/启动程序），重复检查账号、Diagnostics、Switch Preview、Drops 和更新对话框。
     - 预期：文字、按钮、Toast、列表和进度条不重叠；高 DPI 下仍能看到取消/关闭/开始切换按钮；VisualTree selftest 与 WPF binding selftest 保持通过。
 
 ## 记录

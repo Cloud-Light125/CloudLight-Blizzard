@@ -9,7 +9,7 @@
             <TextBlock Text="CloudLight Blizzard" FontSize="24" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding AppVersion}" Foreground="{DynamicResource Accent.Primary}" Margin="0,8,0,0"/>
             <TextBlock Text="国服 / 国际服切换、Drops、公告与在线更新工具。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,14,0,0"/>
-            <TextBlock Text="本版本保持 2.0.10。" Foreground="{DynamicResource Text.Muted}" Margin="0,10,0,0"/>
+            <TextBlock Text="本版本为 2.1.0。" Foreground="{DynamicResource Text.Muted}" Margin="0,10,0,0"/>
         </StackPanel></Border>
         <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0"><StackPanel>
             <TextBlock Text="开源组件 / Third-party licenses" Style="{StaticResource SectionTitle}"/>

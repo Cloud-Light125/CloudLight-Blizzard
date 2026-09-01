@@ -61,7 +61,7 @@ public sealed class AppSettings
     public bool NotifyDrops { get; set; } = true;
     public bool NotifyUpdates { get; set; } = true;
     public bool NotifyAnnouncements { get; set; } = true;
-    public string LastMainSection { get; set; } = "overview";
+    public string LastMainSection { get; set; } = "accounts";
     public Dictionary<string, AccountPreference> AccountPreferences { get; set; } = new();
 
     public static string FilePath
@@ -116,11 +116,20 @@ public sealed class AppSettings
         s.AccountPreferences ??= new();
         s.ProxyUrl ??= "";
         s.CloudServiceBaseUrl = CloudServiceConfiguration.NormalizeBaseUrl(s.CloudServiceBaseUrl);
+        s.LastMainSection = NormalizeMainSection(s.LastMainSection);
 
         // 重写时会丢弃旧版本不再识别的字段。
         if (rewrite) s.SaveTo(path);
         return s;
     }
+
+    internal static string NormalizeMainSection(string? section) => section switch
+    {
+        "accounts" or "region" or "stats" or "drops" or "snapshots" or "diagnostics" or "settings" or "about" => section,
+        // "overview" was removed in 2.1.0; old settings must open a real page.
+        "overview" => "accounts",
+        _ => "accounts",
+    };
 
     public void Save()
     {

@@ -15,7 +15,7 @@ public sealed record NotificationRequest(
     string Title,
     string Message,
     NotificationCategory Category,
-    string Action = "overview",
+    string Action = "accounts",
     string? DedupeKey = null);
 
 public interface INotificationService : IDisposable
