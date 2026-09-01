@@ -865,6 +865,7 @@
                         </StackPanel>
                 </Border>
             </StackPanel>
+            </StackPanel>
 
             <StackPanel x:Name="BilibiliPanel" Visibility="{Binding BilibiliPanelVisibility}">
                 <Border x:Name="BilibiliAccountCard" Style="{StaticResource SurfaceCard}">
@@ -1069,7 +1070,6 @@
                     <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
                     <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveTwitch"/>
                 </StackPanel></Border>
-            </StackPanel>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                 <StackPanel><DockPanel><TextBlock Text="运行日志" Style="{StaticResource SectionTitle}"/><WrapPanel DockPanel.Dock="Right"><Button Content="复制全部" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnCopyAllLogs"/><Button Content="清空显示" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnClearLogDisplay"/></WrapPanel></DockPanel>

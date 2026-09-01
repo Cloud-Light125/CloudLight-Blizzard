@@ -43,6 +43,8 @@ public static class UiVisualTreeSelfTest
             bindingSource.Listeners.Add(bindingListener);
             window = new MainWindow(startHidden: true);
             Application.Current.MainWindow = window;
+            window.ShowActivated = false;
+            window.Opacity = 0;
             window.ApplyTemplate();
             window.Measure(new Size(1440, 960));
             window.Arrange(new Rect(0, 0, 1440, 960));
@@ -106,20 +108,56 @@ public static class UiVisualTreeSelfTest
                 checks, "Drops 页面实例化了共享 DropsViewModel 与 BilibiliDropsViewModel");
             if (dropsPage is not null && dropsVm is not null && bilibiliDetails is not null)
             {
+                // MainWindow navigation also refreshes all four providers. Keep this
+                // deterministic UI test focused on the real visual/event chain by
+                // holding the page's existing loading guard while the transparent
+                // window is shown; no product control or visibility is overridden.
+                typeof(DropsPage).GetField("_loading", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.SetValue(dropsPage, true);
+                window.Show();
+                window.UpdateLayout();
+
                 var pageHost = FindNamed(window, "PageHost") as ContentControl;
+                var overviewNav = FindNamed(window, "OverviewNav") as RadioButton;
+                var dropsNav = FindNamed(window, "DropsNav") as RadioButton;
                 var soopTab = FindNamed(dropsPage, "SoopTab") as RadioButton;
+                var youtubeTab = FindNamed(dropsPage, "YouTubeTab") as RadioButton;
+                var twitchTab = FindNamed(dropsPage, "TwitchTab") as RadioButton;
                 var bilibiliTab = FindNamed(dropsPage, "BilibiliTab") as RadioButton;
                 var initializedField = typeof(DropsPage).GetField("_initialized", BindingFlags.Instance | BindingFlags.NonPublic);
                 var platformField = typeof(DropsPage).GetField("_platform", BindingFlags.Instance | BindingFlags.NonPublic);
                 var initializedBeforeClick = initializedField?.GetValue(dropsPage) is true;
-                Assert(pageHost is not null && soopTab is not null && bilibiliTab is not null,
-                    checks, "Drops 页面包含真实 PageHost、SOOP Tab 与哔哩哔哩 Tab");
+                Assert(pageHost is not null && overviewNav is not null && dropsNav is not null &&
+                       soopTab is not null && youtubeTab is not null && twitchTab is not null && bilibiliTab is not null,
+                    checks, "真实 MainWindow 包含导航、PageHost、SOOP Tab 与哔哩哔哩 Tab");
                 Assert(dropsVm.SelectedPlatform == DropsPlatform.Soop && initializedBeforeClick,
                     checks, "真实页面初始化完成且初始平台为 SOOP");
 
-                if (pageHost is not null && soopTab is not null && bilibiliTab is not null)
+                if (pageHost is not null && overviewNav is not null && dropsNav is not null &&
+                    soopTab is not null && youtubeTab is not null && twitchTab is not null && bilibiliTab is not null)
                 {
-                    pageHost.Content = dropsPage;
+                    // Exercise the actual MainWindow navigation event chain rather than
+                    // assigning PageHost.Content directly. The initial saved section can
+                    // already be Drops, so force a real Overview -> Drops transition.
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        dropsNav.IsChecked = false;
+                        overviewNav.IsChecked = false;
+                        overviewNav.IsChecked = true;
+                    }, DispatcherPriority.Input);
+                    DrainDispatcher(window.Dispatcher);
+                    Assert(pageHost.Content is OverviewPage, checks,
+                        "MainWindow 真实导航先切换到 Overview 页面");
+
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        overviewNav.IsChecked = false;
+                        dropsNav.IsChecked = true;
+                    }, DispatcherPriority.Input);
+                    DrainDispatcher(window.Dispatcher);
+                    Assert(ReferenceEquals(pageHost.Content, dropsPage), checks,
+                        "MainWindow 真实导航将自身持有的 DropsPage 放入 PageHost");
+
                     dropsPage.ApplyTemplate();
                     dropsPage.Measure(new Size(1400, 900));
                     dropsPage.Arrange(new Rect(0, 0, 1400, 900));
@@ -157,10 +195,55 @@ public static class UiVisualTreeSelfTest
                 dropsPage.Arrange(new Rect(0, 0, 1400, 900));
                 dropsPage.UpdateLayout();
                 var bilibiliPanel = FindNamed(dropsPage, "BilibiliPanel");
+                var bilibiliAccount = FindNamed(dropsPage, "BilibiliAccountCard");
+                var bilibiliQrLogin = FindNamed(dropsPage, "BilibiliQrLoginButton");
+                var soopPanel = FindNamed(dropsPage, "SoopPanel");
+                var youtubePanel = FindNamed(dropsPage, "YouTubePanel");
+                var twitchPanel = FindNamed(dropsPage, "TwitchPanel");
                 Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible,
                     checks, "Checked 事件链更新 BilibiliPanel.Visibility=Visible");
-                Assert(bilibiliPanel is StackPanel && bilibiliPanel.ActualHeight > 0,
-                    checks, "切换到哔哩哔哩后实际 Bilibili 内容面板有布局高度");
+                Assert(bilibiliPanel is StackPanel && bilibiliPanel.IsVisible && bilibiliPanel.ActualHeight > 0,
+                    checks, "切换到哔哩哔哩后 BilibiliPanel 在真实窗口中可见且有布局高度");
+                Assert(bilibiliAccount is Border && bilibiliAccount.IsVisible && bilibiliAccount.ActualHeight > 0,
+                    checks, "未登录状态下 BilibiliAccountCard 在真实窗口中可见且有布局高度");
+                Assert(!bilibiliDetails.LoggedIn && bilibiliQrLogin is Button &&
+                       bilibiliQrLogin.Visibility == Visibility.Visible && bilibiliQrLogin.IsVisible &&
+                       VisualPath(dropsPage, bilibiliQrLogin) is not null,
+                    checks, "未登录状态下扫码登录按钮存在于有效视觉树");
+                Assert(soopPanel is StackPanel && soopPanel.Visibility == Visibility.Collapsed && !soopPanel.IsVisible &&
+                       youtubePanel is StackPanel && youtubePanel.Visibility == Visibility.Collapsed && !youtubePanel.IsVisible &&
+                       twitchPanel is StackPanel && twitchPanel.Visibility == Visibility.Collapsed && !twitchPanel.IsVisible,
+                    checks, "选择哔哩哔哩后其它三个平台面板均被正确隐藏");
+                checks.Add($"PASS Drops navigation state: SelectedPlatform={dropsVm.SelectedPlatform} BilibiliTabChecked={bilibiliTab?.IsChecked} BilibiliPanelVisibility={bilibiliPanel?.Visibility} BilibiliPanelIsVisible={bilibiliPanel?.IsVisible} BilibiliPanelHeight={bilibiliPanel?.ActualHeight:0.##}");
+                if (soopTab is RadioButton soopPlatformTab && soopPanel is StackPanel soopPlatformPanel &&
+                    youtubeTab is RadioButton youtubePlatformTab && youtubePanel is StackPanel youtubePlatformPanel &&
+                    twitchTab is RadioButton twitchPlatformTab && twitchPanel is StackPanel twitchPlatformPanel &&
+                    bilibiliTab is RadioButton bilibiliPlatformTab && bilibiliPanel is StackPanel bilibiliPlatformPanel)
+                {
+                    var platformViews = new[]
+                    {
+                        (Platform: DropsPlatform.Soop, Tab: soopPlatformTab, Panel: soopPlatformPanel),
+                        (Platform: DropsPlatform.YouTube, Tab: youtubePlatformTab, Panel: youtubePlatformPanel),
+                        (Platform: DropsPlatform.Twitch, Tab: twitchPlatformTab, Panel: twitchPlatformPanel),
+                        (Platform: DropsPlatform.Bilibili, Tab: bilibiliPlatformTab, Panel: bilibiliPlatformPanel),
+                    };
+                    foreach (var selected in platformViews)
+                    {
+                        dropsPage.Dispatcher.Invoke(() =>
+                        {
+                            selected.Tab.IsChecked = false;
+                            selected.Tab.IsChecked = true;
+                        }, DispatcherPriority.Input);
+                        DrainDispatcher(dropsPage.Dispatcher);
+                        Assert(selected.Tab.IsChecked == true && dropsVm.SelectedPlatform == selected.Platform,
+                            checks, $"真实平台 Tab 切换到 {selected.Platform} 后状态同步");
+                        Assert(selected.Panel.Visibility == Visibility.Visible && selected.Panel.IsVisible && selected.Panel.ActualHeight > 0,
+                            checks, $"真实平台 {selected.Platform} 内容可见且有布局高度");
+                        foreach (var other in platformViews.Where(item => item.Platform != selected.Platform))
+                            Assert(other.Panel.Visibility == Visibility.Collapsed && !other.Panel.IsVisible,
+                                checks, $"选择 {selected.Platform} 后 {other.Platform} 内容隐藏");
+                    }
+                }
                 if (bilibiliPanel is not null)
                 {
                     var bindingExpression = BindingOperations.GetBindingExpression(
