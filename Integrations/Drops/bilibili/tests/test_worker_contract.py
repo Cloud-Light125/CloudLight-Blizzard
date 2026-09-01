@@ -141,6 +141,111 @@ class BilibiliWorkerContractTests(unittest.TestCase):
             bilibili_worker.positive_int(129, "sessions", maximum=128)
         self.assertEqual(bilibili_worker.positive_int("80", "sessions", maximum=128), 80)
 
+    def test_discover_after_adding_room_uses_internal_room_id_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = bilibili_worker.BilibiliWorker(root / "data", root / "worker.log")
+            try:
+                added = worker.add_room({
+                    "roomId": "https://live.bilibili.com/101",
+                    "name": "发现测试房间",
+                })
+                self.assertEqual(added["rooms"][0]["id"], 101)
+                with worker._state_lock:
+                    worker._state["rooms"][0]["liveStatus"] = 0
+                    worker._state["rooms"][0]["lastError"] = "上一次发现失败"
+
+                async def fetch_statuses(room_ids: list[int]) -> dict[int, int]:
+                    self.assertEqual(room_ids, [101])
+                    return {101: 1}
+
+                worker._fetch_room_statuses = fetch_statuses
+                with patch.object(bilibili_worker, "fetch_live_task_groups", return_value=[]):
+                    result = worker.discover({})
+
+                self.assertEqual(result["activities"], [])
+                self.assertEqual(result["taskIds"], [])
+                self.assertIn("未自动发现活动", result["message"])
+                room = result["rooms"][0]
+                self.assertEqual(room["id"], 101)
+                self.assertEqual(room["liveStatus"], 1)
+                self.assertEqual(room["lastError"], "")
+                self.assertNotIn("roomId", worker._state["rooms"][0])
+
+                log = worker.log_file.read_text(encoding="utf-8")
+                self.assertIn("活动发现：rooms=1 groups=0 tasks=0", log)
+                self.assertNotIn("discovery_failed", log)
+                self.assertNotIn("ERROR", log)
+            finally:
+                self._close_worker(worker)
+
+    def test_discover_activity_uses_room_id_only_in_activity_wire_dto(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = bilibili_worker.BilibiliWorker(root / "data", root / "worker.log")
+            try:
+                worker.add_room({"roomId": "https://live.bilibili.com/101", "name": "活动测试房间"})
+
+                async def fetch_statuses(room_ids: list[int]) -> dict[int, int]:
+                    self.assertEqual(room_ids, [101])
+                    return {101: 2}
+
+                worker._fetch_room_statuses = fetch_statuses
+                groups = [{
+                    "task_ids": ["task-a", "task-b"],
+                    "label": "测试活动",
+                    "active": True,
+                }]
+                with patch.object(bilibili_worker, "fetch_live_task_groups", return_value=groups):
+                    result = worker.discover({})
+
+                self.assertEqual(result["taskIds"], ["task-a", "task-b"])
+                self.assertEqual(len(result["activities"]), 1)
+                activity = result["activities"][0]
+                self.assertEqual(activity["roomId"], 101)
+                self.assertEqual(activity["taskIds"], ["task-a", "task-b"])
+                self.assertEqual(activity["name"], "测试活动")
+                self.assertTrue(activity["active"])
+                self.assertEqual(worker._state["rooms"][0]["id"], 101)
+                self.assertNotIn("roomId", worker._state["rooms"][0])
+                self.assertEqual(result["rooms"][0]["liveStatus"], 2)
+                self.assertEqual(result["rooms"][0]["lastError"], "")
+
+                log = worker.log_file.read_text(encoding="utf-8")
+                self.assertIn("活动发现：rooms=1 groups=1 tasks=2", log)
+                self.assertNotIn("discovery_failed", log)
+            finally:
+                self._close_worker(worker)
+
+    def test_refresh_after_adding_room_does_not_report_discovery_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = bilibili_worker.BilibiliWorker(root / "data", root / "worker.log")
+            try:
+                worker.add_room({"roomId": "https://live.bilibili.com/101", "name": "刷新测试房间"})
+
+                async def fetch_statuses(room_ids: list[int]) -> dict[int, int]:
+                    self.assertEqual(room_ids, [101])
+                    return {101: 1}
+
+                worker._fetch_room_statuses = fetch_statuses
+                with patch.object(bilibili_worker, "fetch_live_task_groups", return_value=[]):
+                    result = worker.refresh({})
+
+                self.assertEqual(result["activities"], [])
+                self.assertEqual(result["taskIds"], [])
+                self.assertEqual(result["rooms"][0]["id"], 101)
+                self.assertEqual(result["rooms"][0]["liveStatus"], 1)
+                self.assertEqual(result["rooms"][0]["lastError"], "")
+                self.assertEqual(result["lastError"], "")
+
+                log = worker.log_file.read_text(encoding="utf-8")
+                self.assertIn("活动发现：rooms=1 groups=0 tasks=0", log)
+                self.assertNotIn("discovery_failed", log)
+                self.assertNotIn("后台请求失败：'roomId'", log)
+            finally:
+                self._close_worker(worker)
+
     def test_qr_status_account_and_safe_cookie_parsing(self) -> None:
         challenge = parse_generate_payload({
             "code": 0,

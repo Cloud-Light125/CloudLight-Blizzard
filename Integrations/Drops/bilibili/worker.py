@@ -1128,13 +1128,14 @@ class BilibiliWorker(WorkerBase):
             except Exception as exc:
                 errors.append(f"房间 {room_id}: {safe_message(exc)}")
         discovered_ids = list(dict.fromkeys(discovered_ids))
+        selected_room_ids = {int(item["id"]) for item in selected}
         with self._state_lock:
             self._state["activities"] = activities
             if self._state["settings"].get("autoDiscover", True) and discovered_ids:
                 self._state["taskIds"] = discovered_ids
             self._state["lastApiSuccessAt"] = utc_now() if activities or not errors else self._state.get("lastApiSuccessAt", "")
             for room in self._state["rooms"]:
-                if any(int(item["roomId"]) == int(room["id"]) for item in selected):
+                if int(room["id"]) in selected_room_ids:
                     room["lastError"] = ""
                     if int(room["id"]) in room_statuses:
                         room["liveStatus"] = room_statuses[int(room["id"])]
