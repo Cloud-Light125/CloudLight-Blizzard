@@ -139,11 +139,13 @@ try {
     if ($setup.Length -le 0) { throw '生成的安装包大小为 0。' }
     $setupProductVersion = ([string]$setup.VersionInfo.ProductVersion).Trim()
     $setupFileVersion = ([string]$setup.VersionInfo.FileVersion).Trim()
-    if ($setupProductVersion -ne '2.1.0' -or $setupFileVersion -ne '2.1.0.0') {
-        throw "安装包版本元数据不正确（ProductVersion=$setupProductVersion，FileVersion=$setupFileVersion）。"
+    $setupProductVersionRaw = ([string]$setup.VersionInfo.ProductVersionRaw).Trim()
+    $setupFileVersionRaw = ([string]$setup.VersionInfo.FileVersionRaw).Trim()
+    if ($setupProductVersionRaw -ne '2.1.0.0' -or $setupFileVersionRaw -ne '2.1.0.0') {
+        throw "安装包版本元数据不正确（ProductVersion=$setupProductVersion/$setupProductVersionRaw，FileVersion=$setupFileVersion/$setupFileVersionRaw）。"
     }
-    Write-Host "Installer ProductVersion: $setupProductVersion"
-    Write-Host "Installer FileVersion: $setupFileVersion"
+    Write-Host "Installer ProductVersion: $setupProductVersion (raw $setupProductVersionRaw)"
+    Write-Host "Installer FileVersion: $setupFileVersion (raw $setupFileVersionRaw)"
     Write-Host '[8/8] Installer payload validation' -ForegroundColor Cyan
     $publishedDllHash = (Get-FileHash -LiteralPath $publishedDll -Algorithm SHA256).Hash.ToLowerInvariant()
     $payloadValidationRoot = Join-Path $root 'obj\installer-payload-selftest'
