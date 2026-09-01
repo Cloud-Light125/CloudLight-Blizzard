@@ -27,9 +27,21 @@
   <!-- 开 UseWindowsForms 只为用 NotifyIcon 托盘;移除它自动注入的全局 using,
        免得 System.Windows.Forms/System.Drawing 与 WPF 的 MessageBox/Application/Brushes 冲突。
        托盘那一个文件里手动全限定即可。 -->
+  <PropertyGroup>
+    <BuildCommit Condition="'$(BuildCommit)' == ''">unknown</BuildCommit>
+    <BuildTimestamp Condition="'$(BuildTimestamp)' == ''">unknown</BuildTimestamp>
+    <BilibiliUiSchema Condition="'$(BilibiliUiSchema)' == ''">2</BilibiliUiSchema>
+  </PropertyGroup>
+
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="BuildCommit" Value="$(BuildCommit)" />
+    <AssemblyMetadata Include="BuildTimestamp" Value="$(BuildTimestamp)" />
+    <AssemblyMetadata Include="BilibiliUiSchema" Value="$(BilibiliUiSchema)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -110,6 +110,7 @@ public partial class App : Application
             return;
         }
 
+        BuildProvenance.WriteStartupLog(AppPaths.Current.LogsDir);
         var settings = AppSettings.Load();
         var logSession = new PlatformLogSession(AppPaths.Current.LogsDir);
 

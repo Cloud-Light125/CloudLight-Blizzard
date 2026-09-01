@@ -5,6 +5,18 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+$buildCommit = (& git -C $root rev-parse --short=12 HEAD 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
+    throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
+}
+$buildTimestamp = [DateTimeOffset]::Now.ToString('yyyy-MM-ddTHH:mm:ss.fffzzz')
+$buildSourceState = (& git -C $root status --porcelain --untracked-files=no 2>$null | Out-String).Trim()
+$buildSourceState = if ([string]::IsNullOrWhiteSpace($buildSourceState)) { 'clean' } else { 'dirty' }
+$msbuildProperties = @(
+    "-p:BuildCommit=$buildCommit",
+    "-p:BuildTimestamp=$buildTimestamp",
+    '-p:BilibiliUiSchema=2'
+)
 $buildOriginalPath = $env:PATH
 $buildOriginalCondaPrefix = $env:CONDA_PREFIX
 $buildOriginalPythonHome = $env:PYTHONHOME
@@ -49,6 +61,9 @@ try {
     Write-Host "Inno Setup: $(if ($iscc) { $iscc } else { 'not found' })"
     Write-Host 'Architecture: x64'
     Write-Host 'Publish RID: win-x64'
+    Write-Host "Build commit: $buildCommit"
+    Write-Host "Build timestamp: $buildTimestamp"
+    Write-Host "Source state: $buildSourceState"
 
     if (-not $iscc) {
         throw '未找到 Inno Setup 6（ISCC.exe）。请安装 Inno Setup 6，或将 ISCC.exe 加入 PATH 后重新运行 build.ps1。'
@@ -59,22 +74,22 @@ try {
     }
 
     if (-not $SkipDropsWorkers) {
-        Write-Host '[1/6] Drops Workers' -ForegroundColor Cyan
+        Write-Host '[1/8] Drops Workers' -ForegroundColor Cyan
         & (Join-Path $root 'Integrations\Drops\build-workers.ps1') -Python $pythonInfo.Path
         if ($LASTEXITCODE -ne 0) { throw 'Drops Worker 构建失败。请检查上方 Python/SSL 环境摘要和 pip 错误。' }
     }
-    else { Write-Host '[1/6] Drops Workers skipped' -ForegroundColor Yellow }
+    else { Write-Host '[1/8] Drops Workers skipped' -ForegroundColor Yellow }
 
-    Write-Host '[2/6] dotnet restore' -ForegroundColor Cyan
-    & dotnet restore 'CloudLight Blizzard.csproj' -r win-x64 -v minimal
+    Write-Host '[2/8] dotnet restore' -ForegroundColor Cyan
+    & dotnet restore 'CloudLight Blizzard.csproj' -r win-x64 -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'dotnet restore 失败。请检查 .NET 8 SDK 和 NuGet 网络。' }
 
-    Write-Host '[3/6] dotnet build (Release)' -ForegroundColor Cyan
-    & dotnet build 'CloudLight Blizzard.csproj' -c Release --no-restore -v minimal
+    Write-Host '[3/8] dotnet build (Release)' -ForegroundColor Cyan
+    & dotnet build 'CloudLight Blizzard.csproj' -c Release --no-restore -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'Release 构建失败。' }
 
-    Write-Host '[4/6] dotnet publish' -ForegroundColor Cyan
-    & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained false -o publish --no-restore -v minimal
+    Write-Host '[4/8] dotnet publish' -ForegroundColor Cyan
+    & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained false -o publish --no-restore -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish 失败。' }
     $publishedExe = Join-Path $root 'publish\CloudLight Blizzard.exe'
     $publishedDll = Join-Path $root 'publish\CloudLight Blizzard.dll'
@@ -86,7 +101,7 @@ try {
     }
     Remove-Item publish\*.pdb -ErrorAction SilentlyContinue
 
-    Write-Host '[5/6] publish selftest' -ForegroundColor Cyan
+    Write-Host '[5/8] publish selftest' -ForegroundColor Cyan
     $selftestRoot = Join-Path $root 'obj\publish-selftest'
     Remove-Item -LiteralPath $selftestRoot -Recurse -Force -ErrorAction SilentlyContinue
     # WinExe apphosts do not provide a stable synchronous console/process
@@ -102,14 +117,55 @@ try {
         throw '发布目录 FeatureSelfTest 未通过，请查看 obj\publish-selftest\feature-selftest.txt。'
     }
 
-    Write-Host '[6/6] Inno Setup + artifact validation' -ForegroundColor Cyan
-    & $iscc installer\app.iss | Out-Null
+    Write-Host '[6/8] WPF navigation integration selftest' -ForegroundColor Cyan
+    $uiSelftestRoot = Join-Path $root 'obj\publish-ui-selftest'
+    Remove-Item -LiteralPath $uiSelftestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    & dotnet $publishedDll '--ui-selftest' (Join-Path $uiSelftestRoot 'ui-navigation-selftest.txt')
+    if ($LASTEXITCODE -ne 0) { throw '发布目录 WPF navigation integration selftest 进程失败。' }
+    $uiSelftestReport = Join-Path $uiSelftestRoot 'ui-navigation-selftest.txt'
+    if (-not (Test-Path -LiteralPath $uiSelftestReport -PathType Leaf)) {
+        throw '发布目录 WPF navigation integration selftest 未生成报告。'
+    }
+    if (-not (Get-Content -LiteralPath $uiSelftestReport -Raw).Contains('UI navigation integration selftest: PASS')) {
+        throw '发布目录 WPF navigation integration selftest 未通过，请查看 obj\publish-ui-selftest\ui-navigation-selftest.txt。'
+    }
+
+    Write-Host '[7/8] Inno Setup' -ForegroundColor Cyan
+    $publishDir = (Resolve-Path (Join-Path $root 'publish')).Path
+    & $iscc ("/DPublishDir=$publishDir") (Join-Path $root 'installer\app.iss') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 构建失败。' }
-    $setup = Get-ChildItem installer\out\*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $setup = Get-Item (Join-Path $root 'installer\out\CloudLight-Blizzard-2.1.0-win-x64-Setup.exe') -ErrorAction SilentlyContinue
     if (-not $setup) { throw 'Inno Setup 未生成安装包。' }
     if ($setup.Length -le 0) { throw '生成的安装包大小为 0。' }
-    $sha = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host '[8/8] Installer payload validation' -ForegroundColor Cyan
+    $publishedDllHash = (Get-FileHash -LiteralPath $publishedDll -Algorithm SHA256).Hash.ToLowerInvariant()
+    $payloadValidationRoot = Join-Path $root 'obj\installer-payload-selftest'
+    Remove-Item -LiteralPath $payloadValidationRoot -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $payloadValidationRoot -Force | Out-Null
+    $payloadLog = Join-Path $payloadValidationRoot 'inno-payload.log'
+    $payloadInstallFallback = Join-Path $payloadValidationRoot 'fallback-install'
+    $payloadArgs = @(
+        '/PAYLOADVERIFY', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOCANCEL',
+        '/NOCLOSEAPPLICATIONS', '/NOICONS',
+        ('/DIR="' + $payloadInstallFallback + '"'), ('/LOG="' + $payloadLog + '"')
+    )
+    $payloadProcess = Start-Process -FilePath $setup.FullName -ArgumentList $payloadArgs -Wait -PassThru
+    if (-not (Test-Path -LiteralPath $payloadLog -PathType Leaf)) {
+        throw "Inno payload validation 未生成日志（exit $($payloadProcess.ExitCode)）。"
+    }
+    $payloadLogText = Get-Content -LiteralPath $payloadLog -Raw
+    $publishedExeHash = (Get-FileHash -LiteralPath $publishedExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $expectedPayloadExeLine = "PAYLOAD_VERIFY EXE_SHA256=$publishedExeHash"
+    $expectedPayloadLine = "PAYLOAD_VERIFY DLL_SHA256=$publishedDllHash"
+    if (-not $payloadLogText.Contains($expectedPayloadExeLine) -or
+        -not $payloadLogText.Contains($expectedPayloadLine) -or
+        $payloadLogText.Contains('PAYLOAD_VERIFY FAIL')) {
+        throw "Installer payload 与 publish EXE/DLL 不一致（exe=$publishedExeHash，dll=$publishedDllHash，exit=$($payloadProcess.ExitCode)）。"
+    }
+    $sha = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Host "Publish: $publishedExe ($((Get-Item $publishedExe).Length) bytes)" -ForegroundColor Green
+    Write-Host "Publish DLL SHA256: $publishedDllHash"
+    Write-Host "Installer payload DLL SHA256: $publishedDllHash"
     Write-Host "Setup: $($setup.FullName)" -ForegroundColor Green
     Write-Host "SHA256: $sha"
     Write-Host "Setup size: $([math]::Round($setup.Length / 1MB, 2)) MB"

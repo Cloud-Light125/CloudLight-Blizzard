@@ -4,8 +4,11 @@ using System.Text;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using System.Windows.Threading;
 using CloudLightBlizzard.Services.Drops;
 using CloudLightBlizzard.Services.OverwatchRegion;
 using CloudLightBlizzard.Views;
@@ -103,14 +106,74 @@ public static class UiVisualTreeSelfTest
                 checks, "Drops 页面实例化了共享 DropsViewModel 与 BilibiliDropsViewModel");
             if (dropsPage is not null && dropsVm is not null && bilibiliDetails is not null)
             {
-                dropsVm.SelectPlatform(DropsPlatform.Bilibili);
+                var pageHost = FindNamed(window, "PageHost") as ContentControl;
+                var soopTab = FindNamed(dropsPage, "SoopTab") as RadioButton;
+                var bilibiliTab = FindNamed(dropsPage, "BilibiliTab") as RadioButton;
+                var initializedField = typeof(DropsPage).GetField("_initialized", BindingFlags.Instance | BindingFlags.NonPublic);
+                var platformField = typeof(DropsPage).GetField("_platform", BindingFlags.Instance | BindingFlags.NonPublic);
+                var initializedBeforeClick = initializedField?.GetValue(dropsPage) is true;
+                Assert(pageHost is not null && soopTab is not null && bilibiliTab is not null,
+                    checks, "Drops 页面包含真实 PageHost、SOOP Tab 与哔哩哔哩 Tab");
+                Assert(dropsVm.SelectedPlatform == DropsPlatform.Soop && initializedBeforeClick,
+                    checks, "真实页面初始化完成且初始平台为 SOOP");
+
+                if (pageHost is not null && soopTab is not null && bilibiliTab is not null)
+                {
+                    pageHost.Content = dropsPage;
+                    dropsPage.ApplyTemplate();
+                    dropsPage.Measure(new Size(1400, 900));
+                    dropsPage.Arrange(new Rect(0, 0, 1400, 900));
+                    dropsPage.UpdateLayout();
+
+                    var routedChecked = false;
+                    RoutedEventHandler checkedHandler = (_, args) =>
+                    {
+                        if (ReferenceEquals(args.OriginalSource, bilibiliTab)) routedChecked = true;
+                    };
+                    dropsPage.AddHandler(ToggleButton.CheckedEvent, checkedHandler, handledEventsToo: true);
+                    try
+                    {
+                        // Force a false -> true transition so this test always exercises
+                        // RadioButton.Checked even when a previous navigation selected the tab.
+                        dropsPage.Dispatcher.Invoke(() =>
+                        {
+                            bilibiliTab.IsChecked = false;
+                            bilibiliTab.IsChecked = true;
+                        }, DispatcherPriority.Input);
+                        DrainDispatcher(dropsPage.Dispatcher);
+                    }
+                    finally { dropsPage.RemoveHandler(ToggleButton.CheckedEvent, checkedHandler); }
+
+                    var platformAfterClick = platformField?.GetValue(dropsPage) is DropsPlatform value ? value : (DropsPlatform?)null;
+                    Assert(routedChecked, checks, "BilibiliTab.IsChecked=true 触发并冒泡了真实 Checked RoutedEvent");
+                    Assert(platformAfterClick == DropsPlatform.Bilibili, checks,
+                        $"Checked 事件链更新 DropsPage._platform（实际={platformAfterClick?.ToString() ?? "null"}）");
+                    Assert(dropsVm.SelectedPlatform == DropsPlatform.Bilibili, checks,
+                        "Checked 事件链更新 DropsViewModel.SelectedPlatform=Bilibili");
+                }
+
                 dropsPage.ApplyTemplate();
                 dropsPage.Measure(new Size(1400, 900));
                 dropsPage.Arrange(new Rect(0, 0, 1400, 900));
                 dropsPage.UpdateLayout();
                 var bilibiliPanel = FindNamed(dropsPage, "BilibiliPanel");
-                Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible && bilibiliPanel.ActualHeight > 0,
-                    checks, "切换到哔哩哔哩后实际 Bilibili 内容面板可见且有布局高度");
+                Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible,
+                    checks, "Checked 事件链更新 BilibiliPanel.Visibility=Visible");
+                Assert(bilibiliPanel is StackPanel && bilibiliPanel.ActualHeight > 0,
+                    checks, "切换到哔哩哔哩后实际 Bilibili 内容面板有布局高度");
+                if (bilibiliPanel is not null)
+                {
+                    var bindingExpression = BindingOperations.GetBindingExpression(
+                        bilibiliPanel, UIElement.VisibilityProperty);
+                    Assert(bindingExpression is not null &&
+                           string.Equals(bindingExpression.ParentBinding.Path?.Path,
+                               "BilibiliPanelVisibility", StringComparison.Ordinal) &&
+                           bindingExpression.DataItem is DropsViewModel &&
+                           !bindingExpression.HasError,
+                        checks, "BilibiliPanel.Visibility Binding 指向当前 DropsViewModel.BilibiliPanelVisibility 且无错误");
+                    Assert(bilibiliPanel.DataContext is DropsViewModel,
+                        checks, "BilibiliPanel.DataContext 是 DropsViewModel");
+                }
                 Assert(FindNamed(dropsPage, "BilibiliAccountCard") is Border &&
                        FindNamed(dropsPage, "BilibiliQrCard") is Border,
                     checks, "Bilibili 账号卡片和二维码区域存在于实际内容树");
@@ -133,6 +196,13 @@ public static class UiVisualTreeSelfTest
                 var twitchSettings = FindNamed(dropsPage, "TwitchSettingsCard");
                 Assert(twitchSettings is Border && twitchSettings.Visibility == Visibility.Collapsed,
                     checks, "哔哩哔哩选中时不会显示 Twitch 通用活动和设置卡片");
+
+                var logTitle = FindVisual(dropsPage, value => value is TextBlock text && text.Text == "运行日志");
+                var contentOrder = bilibiliPanel is not null && logTitle is not null
+                    ? CompareVisualOrder(bilibiliPanel, logTitle)
+                    : null;
+                Assert(contentOrder is { IsAfter: true }, checks,
+                    $"运行日志区域位于真实 Bilibili 内容之后（panelPath={contentOrder?.FirstPath ?? "?"}, logPath={contentOrder?.SecondPath ?? "?"}）");
             }
 
             var plan = new SwitchPlan
@@ -152,7 +222,7 @@ public static class UiVisualTreeSelfTest
             Assert(bindingListener is not BindingErrorTraceListener errors || !errors.HasErrors,
                 checks, "WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误");
 
-            checks.Insert(0, "UI VisualTree selftest: " + (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
+            checks.Insert(0, "UI navigation integration selftest: " + (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
         }
         catch (Exception ex)
         {
@@ -203,6 +273,61 @@ public static class UiVisualTreeSelfTest
 
     private static bool ContainsVisual(DependencyObject root, Func<DependencyObject, bool> predicate) =>
         FindVisual(root, predicate) is not null;
+
+    private static void DrainDispatcher(Dispatcher dispatcher)
+    {
+        var frame = new DispatcherFrame();
+        dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
+            new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
+
+    private static (bool IsAfter, string FirstPath, string SecondPath)? CompareVisualOrder(
+        DependencyObject first, DependencyObject second)
+    {
+        var firstAncestors = new HashSet<DependencyObject>();
+        for (var current = first; current is not null; current = VisualTreeHelper.GetParent(current))
+            firstAncestors.Add(current);
+
+        DependencyObject? common = null;
+        for (var current = second; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (firstAncestors.Contains(current))
+            {
+                common = current;
+                break;
+            }
+        }
+        if (common is null) return null;
+
+        var firstPath = VisualPath(common, first);
+        var secondPath = VisualPath(common, second);
+        if (firstPath is null || secondPath is null) return null;
+        var length = Math.Min(firstPath.Count, secondPath.Count);
+        for (var i = 0; i < length; i++)
+        {
+            if (firstPath[i] == secondPath[i]) continue;
+            return (secondPath[i] > firstPath[i], FormatPath(firstPath), FormatPath(secondPath));
+        }
+        return (secondPath.Count > firstPath.Count, FormatPath(firstPath), FormatPath(secondPath));
+    }
+
+    private static List<int>? VisualPath(DependencyObject root, DependencyObject target)
+    {
+        if (ReferenceEquals(root, target)) return [];
+        if (root is not Visual and not Visual3D) return null;
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var path = VisualPath(VisualTreeHelper.GetChild(root, index), target);
+            if (path is null) continue;
+            path.Insert(0, index);
+            return path;
+        }
+        return null;
+    }
+
+    private static string FormatPath(IReadOnlyList<int> path) =>
+        path.Count == 0 ? "root" : string.Join('/', path);
 
     private static FrameworkElement? FindVisual(DependencyObject root, Func<DependencyObject, bool> predicate)
     {

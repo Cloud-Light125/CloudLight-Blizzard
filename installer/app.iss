@@ -38,6 +38,10 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Keep a temporary, non-installed copy so build.ps1 can verify the compressed
+; installer payload without installing the application or touching shortcuts.
+Source: "{#PublishDir}\CloudLight Blizzard.exe"; Flags: dontcopy
+Source: "{#PublishDir}\CloudLight Blizzard.dll"; Flags: dontcopy
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "CloudLight.CloudLightBlizzard"
@@ -47,6 +51,60 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+var
+  PayloadVerifyRequested: Boolean;
+
+function HasCommandLineParam(const Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Name) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+function VerifyInstallerPayload: Boolean;
+var
+  PayloadExeFile: String;
+  PayloadFile: String;
+  PayloadExeHash: String;
+  PayloadHash: String;
+begin
+  Result := False;
+  try
+    ExtractTemporaryFile('CloudLight Blizzard.exe');
+    ExtractTemporaryFile('CloudLight Blizzard.dll');
+    PayloadExeFile := ExpandConstant('{tmp}\CloudLight Blizzard.exe');
+    PayloadFile := ExpandConstant('{tmp}\CloudLight Blizzard.dll');
+    if (not FileExists(PayloadExeFile)) or (not FileExists(PayloadFile)) then
+    begin
+      Log('PAYLOAD_VERIFY FAIL missing extracted CloudLight Blizzard.exe or CloudLight Blizzard.dll');
+      Exit;
+    end;
+    PayloadExeHash := Lowercase(GetSHA256OfFile(PayloadExeFile));
+    PayloadHash := Lowercase(GetSHA256OfFile(PayloadFile));
+    Log('PAYLOAD_VERIFY EXE_SHA256=' + PayloadExeHash);
+    Log('PAYLOAD_VERIFY DLL_SHA256=' + PayloadHash);
+    Log('PAYLOAD_VERIFY PASS');
+    Result := True;
+  except
+    Log('PAYLOAD_VERIFY FAIL exception');
+  end;
+end;
+
+procedure InitializeWizard;
+begin
+  if not PayloadVerifyRequested then
+    Exit;
+
+  VerifyInstallerPayload;
+  Abort;
+end;
+
 function IsDesktopRuntimeInstalled: Boolean;
 var
   RuntimeNames: TArrayOfString;
@@ -85,6 +143,13 @@ function InitializeSetup: Boolean;
 var
   ErrorCode: Integer;
 begin
+  PayloadVerifyRequested := HasCommandLineParam('/PAYLOADVERIFY');
+  if PayloadVerifyRequested then
+  begin
+    Result := True;
+    Exit;
+  end;
+
   Result := True;
   if not IsDesktopRuntimeInstalled then
   begin
