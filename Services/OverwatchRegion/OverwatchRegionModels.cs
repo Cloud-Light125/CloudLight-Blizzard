@@ -315,9 +315,6 @@ public sealed class RegionSnapshotStatus
     public bool HasWarnings { get; set; }
     public IReadOnlyList<RegionFileIssue> FileIssues { get; set; } = Array.Empty<RegionFileIssue>();
     public RegionVerificationLevel VerificationLevel { get; set; } = RegionVerificationLevel.RoundTrip;
-    public bool Step4Pending { get; set; }
-    public OverwatchRegion? Step4Region { get; set; }
-    public bool CanRunStep4Now { get; set; }
     public bool ChinaReferenceAvailable { get; set; }
     public bool InternationalReferenceAvailable { get; set; }
     public bool PossibleGameUpdate { get; set; }

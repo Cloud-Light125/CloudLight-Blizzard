@@ -819,13 +819,6 @@ public sealed class OverwatchRegionManager
                         Reason = item.Reason,
                     })).ToList(),
             VerificationLevel = generation.VerificationLevel,
-            Step4Pending = generation.BackupMode == RegionBackupMode.VerifiedDifference &&
-                           generation.VerificationLevel == RegionVerificationLevel.RoundTrip,
-            Step4Region = generation.BackupMode == RegionBackupMode.VerifiedDifference
-                ? generation.TargetRegion : null,
-            CanRunStep4Now = generation.BackupMode == RegionBackupMode.VerifiedDifference &&
-                             generation.VerificationLevel == RegionVerificationLevel.RoundTrip &&
-                             pointer.LastSuccessfulRegion == generation.TargetRegion,
             ChinaReferenceAvailable = chinaReference is not null,
             InternationalReferenceAvailable = internationalReference is not null,
             PossibleGameUpdate = compatibility.Status == GenerationCompatibility.Updated ||
@@ -1869,14 +1862,6 @@ public sealed class OverwatchRegionManager
             try { if (Directory.Exists(working)) Directory.Delete(working, true); } catch { }
             throw;
         }
-    }
-
-    public bool ShouldOfferStep4(OverwatchRegion target)
-    {
-        var active = _store.LoadActive();
-        return active is { Generation.BackupMode: RegionBackupMode.VerifiedDifference } &&
-               active.Value.Generation.VerificationLevel == RegionVerificationLevel.RoundTrip &&
-               active.Value.Generation.TargetRegion == target;
     }
 
     public async Task<Step4VerificationResult> VerifyFourthStepAsync(string gameRoot,

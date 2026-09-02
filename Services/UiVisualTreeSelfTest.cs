@@ -155,6 +155,17 @@ public static class UiVisualTreeSelfTest
                 }
             }
 
+            var regionPage = typeof(MainWindow).GetField("_regionPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as RegionFilesPage;
+            var manualRegionValidationUiPresent = regionPage is not null &&
+                FindVisual(regionPage, value => value is Button button &&
+                    button.Content is string content && new[]
+                    {
+                        "检查备份完整性", "执行第四步验证", "恢复第四步提醒",
+                    }.Contains(content, StringComparer.Ordinal)) is not null;
+            Assert(!manualRegionValidationUiPresent,
+                checks, "区服文件页已移除手动完整性验证和第四步验证入口");
+
             var aboutPage = typeof(MainWindow).GetField("_aboutPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as AboutPage;
             var componentsList = aboutPage is null ? null : FindNamed(aboutPage, "ThirdPartyComponentsList") as ItemsControl;
@@ -180,6 +191,7 @@ public static class UiVisualTreeSelfTest
             var snapshotEmptyDetails = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotDetailsEmptyPanel");
             var snapshotActionsPresent = false;
             var snapshotVerificationUiPresent = false;
+            var snapshotRouteBindingsOneWay = false;
             if (snapshotList?.ItemTemplate is DataTemplate snapshotTemplate &&
                 snapshotTemplate.LoadContent() is FrameworkElement snapshotTemplateRoot)
             {
@@ -191,6 +203,23 @@ public static class UiVisualTreeSelfTest
                     FindVisual(snapshotTemplateRoot, value => value is TextBlock text &&
                         (text.Text?.Contains("验证", StringComparison.Ordinal) == true ||
                          text.Text?.Contains("未验证", StringComparison.Ordinal) == true)) is not null;
+                var routeText = FindVisual(snapshotTemplateRoot, value => value is TextBlock text &&
+                    text.Inlines.OfType<InlineRun>().Any(run =>
+                    {
+                        var binding = BindingOperations.GetBindingBase(run, InlineRun.TextProperty) as Binding;
+                        return binding?.Path?.Path is "SourceText" or "TargetText";
+                    })) as TextBlock;
+                var routeBindings = routeText?.Inlines.OfType<InlineRun>()
+                    .Where(run =>
+                    {
+                        var binding = BindingOperations.GetBindingBase(run, InlineRun.TextProperty) as Binding;
+                        return binding?.Path?.Path is "SourceText" or "TargetText";
+                    }).ToArray() ?? [];
+                snapshotRouteBindingsOneWay = routeBindings.Length == 2 && routeBindings.All(run =>
+                    BindingOperations.GetBindingBase(run, InlineRun.TextProperty) is Binding
+                    {
+                        Mode: BindingMode.OneWay,
+                    });
             }
             Assert(snapshotsPage is not null && snapshotsVm is not null && snapshotSummary is Border &&
                    snapshotWorkspace is Grid snapshotGrid && snapshotGrid.ColumnDefinitions.Count == 2 &&
@@ -204,9 +233,10 @@ public static class UiVisualTreeSelfTest
                    FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "路径与时间") is not null &&
                    FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "基本信息") is not null &&
                    !snapshotVerificationUiPresent &&
+                   snapshotRouteBindingsOneWay &&
                    FindVisual(snapshotsPage, value => value is ProgressBar ||
                        value is Button button && button.Content as string == "取消验证") is null,
-                 checks, "区服快照页摘要和详情分组标签清晰可见");
+                 checks, "区服快照页摘要和详情分组标签清晰可见，路线只读绑定为 OneWay");
             Assert(snapshotDetails is Border && snapshotEmptyDetails is Border &&
                    ((snapshotsVm?.HasSelectedSnapshot == true && snapshotDetails.Visibility == Visibility.Visible) ||
                     (snapshotsVm?.HasSelectedSnapshot != true && snapshotEmptyDetails.Visibility == Visibility.Visible)),

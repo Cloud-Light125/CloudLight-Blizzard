@@ -44,7 +44,7 @@
                                 </Border>
                             </WrapPanel>
                             <TextBlock Margin="0,5,0,0">
-                                <Run Text="{Binding SourceText}"/><Run Text=" → "/><Run Text="{Binding TargetText}"/>
+                                <Run Text="{Binding SourceText, Mode=OneWay}"/><Run Text=" → "/><Run Text="{Binding TargetText, Mode=OneWay}"/>
                             </TextBlock>
                         </StackPanel>
                         <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="10,0,0,0" VerticalAlignment="Top">
@@ -157,7 +157,7 @@
                                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                                     <StackPanel>
                                         <TextBlock Text="来源 → 目标" Style="{StaticResource SnapshotDetailLabel}"/>
-                                        <TextBlock Style="{StaticResource SnapshotDetailValue}"><Run Text="{Binding SourceText}"/><Run Text=" → "/><Run Text="{Binding TargetText}"/></TextBlock>
+                                        <TextBlock Style="{StaticResource SnapshotDetailValue}"><Run Text="{Binding SourceText, Mode=OneWay}"/><Run Text=" → "/><Run Text="{Binding TargetText, Mode=OneWay}"/></TextBlock>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Margin="12,0,0,0">
                                         <TextBlock Text="快照 ID" Style="{StaticResource SnapshotDetailLabel}"/>

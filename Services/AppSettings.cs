@@ -47,7 +47,6 @@ public sealed class AppSettings
     public string? OverwatchGamePath { get; set; }
     public string? RegionStoragePath { get; set; }
     public RegionBackupMode RegionBackupMode { get; set; } = RegionBackupMode.VerifiedDifference;
-    public bool Step4ReminderIgnored { get; set; }
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }
     public DateTimeOffset? RemindAfter { get; set; }

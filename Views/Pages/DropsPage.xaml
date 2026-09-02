@@ -308,7 +308,7 @@
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                 </DockPanel>
                 <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="10.5" Margin="0,3,0,0" TextTrimming="CharacterEllipsis">
-                    <Run Text="{Binding RoomText}"/><Run Text=" · "/><Run Text="{Binding TaskText}"/>
+                    <Run Text="{Binding RoomText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding TaskText, Mode=OneWay}"/>
                 </TextBlock>
             </StackPanel>
         </DataTemplate>

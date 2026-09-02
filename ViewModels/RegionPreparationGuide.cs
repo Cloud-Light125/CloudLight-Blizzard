@@ -15,7 +15,7 @@ public enum RegionPreparationState
     Outdated,
     Mixed,
     SwitchingRegion,
-    ValidatingBackup,
+    CheckingCurrentFiles,
     Error,
 }
 
@@ -25,7 +25,7 @@ public enum RegionOperationPhase
     PreparingCurrentRegion,
     BuildingBackup,
     SwitchingRegion,
-    ValidatingBackup,
+    CheckingCurrentFiles,
 }
 
 public enum RegionPreparationAction
@@ -34,7 +34,6 @@ public enum RegionPreparationAction
     ChooseInternational,
     ContinueOtherRegion,
     Cancel,
-    Validate,
     Restart,
     RestoreChina,
     RestoreInternational,
@@ -87,7 +86,6 @@ public sealed class RegionPreparationGuide
     public bool CanChooseCurrentRegion { get; init; }
     public bool CanContinueOtherRegion { get; init; }
     public bool CanCancel { get; init; }
-    public bool CanValidate { get; init; }
     public bool CanRestart { get; init; }
     public bool CanRestore { get; init; }
     public bool CanRetry { get; init; }
@@ -237,7 +235,6 @@ public sealed class RegionPreparationGuide
                                      state is RegionPreparationState.WaitingForOtherRegion or
                                          RegionPreparationState.WaitingForOriginalRegion,
             CanCancel = busy && operation is RegionOperationPhase.PreparingCurrentRegion or RegionOperationPhase.BuildingBackup,
-            CanValidate = !isOperationallyBusy && backupCanSwitch && state is RegionPreparationState.Ready or RegionPreparationState.Mixed,
             CanRestart = !isOperationallyBusy && state != RegionPreparationState.NotPrepared,
             CanRestore = !isOperationallyBusy && backupCanSwitch && state == RegionPreparationState.Mixed,
             CanRetry = !isOperationallyBusy && state == RegionPreparationState.Error,
@@ -256,7 +253,7 @@ public sealed class RegionPreparationGuide
                 RegionPreparationState.WaitingForOriginalRegion,
             ShowProgress = state is RegionPreparationState.PreparingCurrentRegion or RegionPreparationState.BuildingBackup or
                 RegionPreparationState.AnalyzingOtherRegion or RegionPreparationState.VerifyingDifferences or
-                RegionPreparationState.SwitchingRegion or RegionPreparationState.ValidatingBackup,
+                RegionPreparationState.SwitchingRegion or RegionPreparationState.CheckingCurrentFiles,
             ShowCompletedPreparationSteps = state is RegionPreparationState.BuildingBackup or
                 RegionPreparationState.AnalyzingOtherRegion or RegionPreparationState.VerifyingDifferences,
             ShowReady = state == RegionPreparationState.Ready,
@@ -289,7 +286,7 @@ public sealed class RegionPreparationGuide
             return RegionPreparationState.BuildingBackup;
         }
         if (operation == RegionOperationPhase.SwitchingRegion) return RegionPreparationState.SwitchingRegion;
-        if (operation == RegionOperationPhase.ValidatingBackup) return RegionPreparationState.ValidatingBackup;
+        if (operation == RegionOperationPhase.CheckingCurrentFiles) return RegionPreparationState.CheckingCurrentFiles;
         if (!string.IsNullOrWhiteSpace(error)) return RegionPreparationState.Error;
         if (restartRequested) return RegionPreparationState.NotPrepared;
         if (status.State == RegionBackupState.Preparing)
@@ -343,8 +340,8 @@ public sealed class RegionPreparationGuide
             "游戏文件可能处于一次未完成的区服切换状态。\n\n现有本地备份仍然可用，可以直接恢复："),
         RegionPreparationState.SwitchingRegion => ("正在处理", "正在恢复区服文件",
             "正在使用现有本地备份恢复守望先锋区服文件，请稍候。"),
-        RegionPreparationState.ValidatingBackup => ("正在检查", "正在检查备份完整性",
-            "正在检查当前区服备份是否可以正常使用。"),
+        RegionPreparationState.CheckingCurrentFiles => ("正在检查", "正在检查当前区服文件状态",
+            "正在检查当前游戏目录与已保存区服状态的差异。"),
         _ => ("需要处理", "区服文件暂时无法使用",
             "读取或处理区服文件时遇到问题，请重新检查。"),
     };
@@ -358,7 +355,7 @@ public sealed class RegionPreparationGuide
         RegionPreparationState.WaitingForOtherRegion when mode == RegionBackupMode.VerifiedDifference => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.RedoStep1, RegionPreparationAction.Restart },
         RegionPreparationState.WaitingForOtherRegion => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.Restart },
         RegionPreparationState.WaitingForOriginalRegion => new[] { RegionPreparationAction.ContinueOtherRegion, RegionPreparationAction.RedoStep2, RegionPreparationAction.ReturnToStep1, RegionPreparationAction.Restart },
-        RegionPreparationState.Ready => new[] { RegionPreparationAction.Validate, RegionPreparationAction.Restart },
+        RegionPreparationState.Ready => new[] { RegionPreparationAction.Restart },
         RegionPreparationState.Outdated => new[] { RegionPreparationAction.Restart },
         RegionPreparationState.Mixed => new[] { RegionPreparationAction.RestoreChina, RegionPreparationAction.RestoreInternational },
         RegionPreparationState.Error => new[] { RegionPreparationAction.Retry },
@@ -372,7 +369,7 @@ public sealed class RegionPreparationGuide
         RegionPreparationState.AnalyzingOtherRegion => "正在分析另一区服文件差异……",
         RegionPreparationState.VerifyingDifferences => "正在验证区服差异文件……",
         RegionPreparationState.SwitchingRegion => "正在恢复区服文件…",
-        RegionPreparationState.ValidatingBackup => "正在检查区服备份…",
+        RegionPreparationState.CheckingCurrentFiles => "正在检查当前区服文件状态…",
         _ => "正在准备区服文件…",
     };
 

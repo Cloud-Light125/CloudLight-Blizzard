@@ -91,11 +91,6 @@ public partial class RegionFilesPage : UserControl
             await _vm.CompleteRegionBackupAsync();
     }
 
-    private async void OnValidate(object sender, RoutedEventArgs e)
-    {
-        if (_vm?.RegionGuide.CanValidate == true) await _vm.ValidateRegionBackupAsync();
-    }
-
     private void OnReprepare(object sender, RoutedEventArgs e)
     {
         if (_vm?.RegionGuide.CanRestart != true) return;
@@ -202,10 +197,4 @@ public partial class RegionFilesPage : UserControl
             await _vm.ResetCurrentRegionStateAsync();
     }
 
-    private async void OnStep4(object sender, RoutedEventArgs e)
-    {
-        if (_vm?.CanRunStep4 == true) await _vm.RunStep4ManuallyAsync();
-    }
-
-    private void OnRestoreStep4Reminder(object sender, RoutedEventArgs e) => _vm?.RestoreStep4Reminder();
 }

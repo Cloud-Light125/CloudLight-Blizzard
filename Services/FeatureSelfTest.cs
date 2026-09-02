@@ -849,7 +849,7 @@ public static class FeatureSelfTest
         var ready = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, false, null, backupRoot);
         Assert(ready.State == RegionPreparationState.Ready && !ready.ShowNotPrepared,
             "Ready hides first preparation choices");
-        AssertActions(ready, RegionPreparationAction.Validate, RegionPreparationAction.Restart);
+        AssertActions(ready, RegionPreparationAction.Restart);
 
         var restartStep = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, true, false, null, backupRoot);
         Assert(restartStep.State == RegionPreparationState.NotPrepared && readyStatus.ActiveGenerationId == "existing-active",
@@ -904,9 +904,9 @@ public static class FeatureSelfTest
 
         readyStatus.CurrentRegion = CurrentGameRegion.China;
         var busy = RegionPreparationGuide.Create(readyStatus, RegionOperationPhase.None, false, true, null, backupRoot);
-        Assert(!busy.CanChangePaths && !busy.CanClear && !busy.CanRestart && !busy.CanValidate &&
+        Assert(!busy.CanChangePaths && !busy.CanClear && !busy.CanRestart &&
                !busy.CanSwitchChina && !busy.CanSwitchInternational,
-            "Busy disables path changes, clear, reprepare, validation, and region switching");
+            "Busy disables path changes, clear, reprepare, and region switching");
         report.AppendLine("TEST 5 region preparation guide: PASS (NotPrepared/Preparing/Waiting/Building/Ready/Outdated/Mixed/Error and Busy gates)");
     }
 
@@ -1363,8 +1363,9 @@ public static class FeatureSelfTest
             .Where(line => !line.Contains("\"VerificationLevel\"", StringComparison.Ordinal)));
         var step4Manager = new OverwatchRegionManager(step4Root, () => false, 0);
         var legacyStatus = await step4Manager.GetStatusAsync(step4Game, verifyFiles: false);
-        Assert(legacyStatus.State == RegionBackupState.Ready && legacyStatus.Step4Pending,
-            "legacy three-step Ready defaults to RoundTrip and Step4Pending");
+        Assert(legacyStatus.State == RegionBackupState.Ready &&
+               legacyStatus.VerificationLevel == RegionVerificationLevel.RoundTrip,
+            "legacy three-step Ready defaults to the RoundTrip verification level");
         var pointerBefore = File.ReadAllText(step4Store.ActiveGenerationFile);
         using (var cancelled = new CancellationTokenSource())
         {
