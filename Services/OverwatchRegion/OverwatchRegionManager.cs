@@ -549,7 +549,7 @@ public sealed class OverwatchRegionManager
             hashBackups: true, token, progress: null).ConfigureAwait(false);
         if (eligibility.Status != plan.Eligibility ||
             eligibility.FileIssueCount != plan.EligibilityFileIssueCount)
-            throw new InvalidDataException("预览后快照可用性已变化，请重新验证快照并生成新的切换预览。");
+            throw new InvalidDataException("预览后快照可用性已变化，请重新生成切换预览。");
 
         var detection = DetectionResult.Unknown;
         if (eligibility.Status == RegionSwitchEligibility.Normal)

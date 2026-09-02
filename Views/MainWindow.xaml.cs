@@ -665,7 +665,6 @@ public partial class MainWindow : Window
         if (_exitCleanupStarted) return;
         _exitCleanupStarted = true;
         try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
-        try { _snapshotsPage.Dispose(); } catch { }
         try { _diagnosticsPage.Dispose(); } catch { }
         try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
         try { _announcementService.Dispose(); } catch { }

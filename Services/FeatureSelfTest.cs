@@ -1982,20 +1982,62 @@ public static class FeatureSelfTest
         plan.RequiredDiskSpace = plan.EstimatedBytes + 256L * 1024 * 1024;
 
         var snapshots = new SnapshotManagerService(manager);
+        var verificationFile = Path.Combine(storeRoot, "snapshot-verification.json");
+        File.WriteAllText(verificationFile, "legacy snapshot verification data");
+        var verificationFileBeforeList = File.ReadAllText(verificationFile);
         var listed = snapshots.List();
-        Assert(listed.Count == 1 && listed[0].GenerationId == generationId && listed[0].FileCount > 0,
-            "snapshot manager lists managed generation metadata and file count");
-        var verified = await snapshots.VerifyAsync(game, generationId);
-        Assert(verified.State == SnapshotDisplayState.Normal && verified.DamagedCount == 0,
-            "snapshot manager verifies the active generation through the existing validator");
-        var chinaBackup = new OverwatchRegionBackupStore(storeRoot).BackupFile(generationId, GameRegion.China, "region.dat");
+        Assert(listed.Count == 1 && listed[0].GenerationId == generationId && listed[0].FileCount > 0 &&
+               listed[0].State == SnapshotDisplayState.Normal && string.IsNullOrEmpty(listed[0].StateReason) &&
+               File.ReadAllText(verificationFile) == verificationFileBeforeList,
+            "snapshot manager lists a ready generation as normal and ignores legacy verification data");
+        var normalItem = new SnapshotItemViewModel(listed[0]);
+        Assert(normalItem.StateText == "正常" && !normalItem.StateText.Contains("验证", StringComparison.Ordinal) &&
+               typeof(SnapshotManagerService).GetMethod("VerifyAsync") is null &&
+               typeof(SnapshotsViewModel).GetMethod("VerifyAsync") is null &&
+               typeof(SnapshotItemViewModel).GetProperty("IsVerifying") is null &&
+               typeof(SnapshotDescriptor).GetProperty("LastVerifiedAtUtc") is null,
+            "snapshot UI and page services expose no manual verification workflow or unverified state");
+        var snapshotStore = new OverwatchRegionBackupStore(storeRoot);
+        var chinaBackup = snapshotStore.BackupFile(generationId, GameRegion.China, "region.dat");
         var originalChina = File.ReadAllBytes(chinaBackup);
-        File.WriteAllBytes(chinaBackup, originalChina.Select(value => (byte)(value ^ 0x1)).ToArray());
-        var corrupt = await snapshots.VerifyAsync(game, generationId);
-        var corruptStatus = await manager.GetStatusAsync(game, verifyFiles: true, verifyBackupHashes: true);
-        Assert(corrupt.State == SnapshotDisplayState.Corrupt && corrupt.DamagedCount > 0,
-            $"snapshot verification exposes a corrupted backup (state={corrupt.State}, damaged={corrupt.DamagedCount}, missing={corrupt.MissingCount}, summary={corrupt.Summary}, eligibility={corruptStatus.SwitchEligibility}, issues={corruptStatus.BackupFileIssueCount})");
+        File.Delete(chinaBackup);
+        var missing = snapshots.List().Single(item => item.GenerationId == generationId);
+        Assert(missing.State == SnapshotDisplayState.Missing,
+            "snapshot manager marks a generation with a missing backup file as missing");
         File.WriteAllBytes(chinaBackup, originalChina);
+        var pairFile = Path.Combine(snapshotStore.GenerationRoot(generationId), "pair.json");
+        var originalPair = File.ReadAllBytes(pairFile);
+        File.Delete(pairFile);
+        var missingPair = snapshots.List().Single(item => item.GenerationId == generationId);
+        Assert(missingPair.State == SnapshotDisplayState.Missing,
+            "snapshot manager keeps a generation with a missing pair.json visible as missing");
+        File.WriteAllBytes(pairFile, originalPair);
+
+        File.WriteAllBytes(chinaBackup, originalChina.Select(value => (byte)(value ^ 0x1)).ToArray());
+        var corruptStatus = await manager.GetStatusAsync(game, verifyFiles: true, verifyBackupHashes: true);
+        Assert(corruptStatus.SwitchEligibility == RegionSwitchEligibility.BackupUnavailable &&
+               corruptStatus.BackupFileIssueCount > 0,
+            $"region switch safety detects a corrupted backup through size/hash checks (eligibility={corruptStatus.SwitchEligibility}, issues={corruptStatus.BackupFileIssueCount})");
+        File.WriteAllBytes(chinaBackup, originalChina);
+
+        var generation = snapshotStore.LoadGeneration(generationId) ??
+                         throw new InvalidDataException("snapshot fixture generation disappeared");
+        generation.State = RegionBackupState.Stale;
+        snapshotStore.SaveGeneration(generation);
+        var expired = snapshots.List().Single(item => item.GenerationId == generationId);
+        Assert(expired.State == SnapshotDisplayState.Expired,
+            "snapshot manager maps a stale generation to expired");
+        generation.State = RegionBackupState.Error;
+        snapshotStore.SaveGeneration(generation);
+        var corrupt = snapshots.List().Single(item => item.GenerationId == generationId);
+        Assert(corrupt.State == SnapshotDisplayState.Corrupt,
+            "snapshot manager maps an errored generation to corrupt");
+        generation.State = RegionBackupState.Ready;
+        snapshotStore.SaveGeneration(generation);
+        var normal = snapshots.List().Single(item => item.GenerationId == generationId);
+        Assert(normal.State == SnapshotDisplayState.Normal,
+            "snapshot manager returns a ready, complete generation to normal");
+
         var activeDeleteBlocked = false;
         try { snapshots.Delete(generationId); }
         catch (InvalidOperationException) { activeDeleteBlocked = true; }
@@ -2067,7 +2109,22 @@ public static class FeatureSelfTest
         var executed = await manager.ExecuteSwitchPlanAsync(game, plan);
         Assert(executed.Outcome == RegionSwitchOutcome.Success && File.ReadAllText(Path.Combine(game, "region.dat")) == "CN",
             "executor applies the exact preview plan after confirmation");
-        report.AppendLine("TEST 12 snapshots and switch preview: PASS (list/verify/corrupt/delete safety/read-only preview/shared plan/disk and invalid snapshot blockers)");
+
+        Assert(await manager.StartPreparationAsync(game, GameRegion.China) == RegionBackupState.Preparing,
+            "snapshot fixture can start a second generation while retaining the first");
+        File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
+        File.WriteAllText(Path.Combine(game, ".build.info"), "build-3");
+        Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
+            "snapshot fixture can complete a second generation");
+        var withHistory = snapshots.List();
+        var historical = withHistory.Single(item => item.GenerationId == generationId);
+        var current = withHistory.Single(item => item.IsActive);
+        Assert(!historical.IsActive && current.IsActive,
+            "only the newest generation is marked as current");
+        Assert(snapshots.Delete(generationId) && !snapshots.List().Any(item => item.GenerationId == generationId),
+            "historical snapshot can be deleted while current snapshot remains protected");
+
+        report.AppendLine("TEST 12 snapshots and switch preview: PASS (direct state/listing, missing/corrupt/expired, legacy-file ignore, delete safety, historical deletion, read-only preview, shared plan, disk and invalid snapshot blockers)");
     }
 
     private static async Task RunDiagnosticsAndNotificationTests(string workspace, StringBuilder report)
@@ -2084,7 +2141,7 @@ public static class FeatureSelfTest
             "password=abcdef\npasswd=abcdef\nsecret=abcdef";
         var reportModel = new DiagnosticRunReport
         {
-            AppVersion = "2.1.0",
+            AppVersion = "2.1.1",
             StartedAt = DateTimeOffset.Now.AddSeconds(-1),
             CompletedAt = DateTimeOffset.Now,
             Checks = [
@@ -2435,7 +2492,7 @@ public static class FeatureSelfTest
         return new UpdateCheckResult
         {
             Status = UpdateCheckResultStatus.Success,
-            CurrentVersion = "2.1.0",
+            CurrentVersion = "2.1.1",
             LatestVersion = version,
             HasUpdate = true,
             Tag = $"v{version}",

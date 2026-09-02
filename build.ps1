@@ -134,14 +134,14 @@ try {
     $publishDir = (Resolve-Path (Join-Path $root 'publish')).Path
     & $iscc ("/DPublishDir=$publishDir") (Join-Path $root 'installer\app.iss') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 构建失败。' }
-    $setup = Get-Item (Join-Path $root 'installer\out\CloudLight-Blizzard-2.1.0-win-x64-Setup.exe') -ErrorAction SilentlyContinue
+    $setup = Get-Item (Join-Path $root 'installer\out\CloudLight-Blizzard-2.1.1-win-x64-Setup.exe') -ErrorAction SilentlyContinue
     if (-not $setup) { throw 'Inno Setup 未生成安装包。' }
     if ($setup.Length -le 0) { throw '生成的安装包大小为 0。' }
     $setupProductVersion = ([string]$setup.VersionInfo.ProductVersion).Trim()
     $setupFileVersion = ([string]$setup.VersionInfo.FileVersion).Trim()
     $setupProductVersionRaw = ([string]$setup.VersionInfo.ProductVersionRaw).Trim()
     $setupFileVersionRaw = ([string]$setup.VersionInfo.FileVersionRaw).Trim()
-    if ($setupProductVersionRaw -ne '2.1.0.0' -or $setupFileVersionRaw -ne '2.1.0.0') {
+    if ($setupProductVersionRaw -ne '2.1.1.0' -or $setupFileVersionRaw -ne '2.1.1.0') {
         throw "安装包版本元数据不正确（ProductVersion=$setupProductVersion/$setupProductVersionRaw，FileVersion=$setupFileVersion/$setupFileVersionRaw）。"
     }
     Write-Host "Installer ProductVersion: $setupProductVersion (raw $setupProductVersionRaw)"

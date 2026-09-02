@@ -144,8 +144,8 @@ public sealed class DiagnosticService
         Define("battlenet.region", "Battle.net", "当前可识别区服状态", async token => await CheckBattleNetRegionAsync(token)),
         Define("region.state", "区服", "当前区服与切换状态", _ => Task.FromResult(CheckRegionState())),
         Define("region.pending", "区服", "未完成操作", _ => Task.FromResult(CheckPendingRegionOperation())),
-        Define("snapshot.verified", "快照", "VerifiedDifference / FullSnapshot", _ => Task.FromResult(CheckSnapshotState())),
-        Define("snapshot.integrity", "快照", "最新快照完整性", async token => await CheckSnapshotIntegrityAsync(token)),
+        Define("snapshot.state", "快照", "快照状态", _ => Task.FromResult(CheckSnapshotState())),
+        Define("snapshot.availability", "快照", "当前快照可用性", async token => await CheckSnapshotAvailabilityAsync(token)),
         Define("network.services", "网络", "代理、公告与更新网络", async token => await CheckNetworkAsync(token)),
         Define("update.metadata", "更新", "更新元数据与安装包", async token => await CheckUpdateMetadataAsync(token)),
         Define("drops.worker", "Drops", "Drops Worker 生命周期", _ => Task.FromResult(CheckDropsWorker())),
@@ -307,41 +307,43 @@ public sealed class DiagnosticService
         try { snapshots = new SnapshotManagerService(_vm.RegionManager).List(); }
         catch (Exception ex)
         {
-            return NewCheck("snapshot.verified", "快照", "VerifiedDifference / FullSnapshot",
+            return NewCheck("snapshot.state", "快照", "VerifiedDifference / FullSnapshot",
                 DiagnosticSeverity.Warning, "无法读取快照目录", ex.Message);
         }
         var hasVerified = snapshots.Any(item => item.Mode == RegionBackupMode.VerifiedDifference);
         var hasFull = snapshots.Any(item => item.Mode == RegionBackupMode.FullSnapshot);
         var damaged = snapshots.Count(item => item.State is SnapshotDisplayState.Corrupt or SnapshotDisplayState.Missing);
         var latestCreated = snapshots.OrderByDescending(item => item.CreatedAtUtc).FirstOrDefault();
-        var latestVerified = snapshots.Where(item => item.LastVerifiedAtUtc.HasValue)
-            .OrderByDescending(item => item.LastVerifiedAtUtc).FirstOrDefault();
+        var expired = snapshots.Count(item => item.State == SnapshotDisplayState.Expired);
+        var unknown = snapshots.Count(item => item.State == SnapshotDisplayState.Unknown);
         var severity = status.State == RegionBackupState.Error || damaged > 0 ? DiagnosticSeverity.Error
             : status.State is RegionBackupState.Empty or RegionBackupState.Legacy || snapshots.Count == 0
                 ? DiagnosticSeverity.Warning
-                : status.State == RegionBackupState.Stale || snapshots.Any(item => item.State is SnapshotDisplayState.Unverified or SnapshotDisplayState.Expired)
+                : status.State == RegionBackupState.Stale || expired > 0 || unknown > 0
                     ? DiagnosticSeverity.Warning : DiagnosticSeverity.Healthy;
-        return NewCheck("snapshot.verified", "快照", "VerifiedDifference / FullSnapshot", severity,
+        return NewCheck("snapshot.state", "快照", "VerifiedDifference / FullSnapshot", severity,
             snapshots.Count == 0 ? "尚未生成快照" : $"已发现 {snapshots.Count:N0} 个快照 · 当前 {status.BackupMode}",
             $"VerifiedDifference={(hasVerified ? "存在" : "未发现")}; FullSnapshot={(hasFull ? "存在" : "未发现")}; " +
-            $"文件数={status.DifferenceCount:N0}; 大小={UpdateDownloadService.FormatBytes(status.BackupBytes)}; " +
-            $"最新创建={FormatDiagnosticTime(latestCreated?.CreatedAtUtc)}; 最新验证={FormatDiagnosticTime(latestVerified?.LastVerifiedAtUtc)}; " +
-            $"损坏/缺失快照={damaged:N0}");
+             $"文件数={status.DifferenceCount:N0}; 大小={UpdateDownloadService.FormatBytes(status.BackupBytes)}; " +
+             $"最新创建={FormatDiagnosticTime(latestCreated?.CreatedAtUtc)}; " +
+             $"损坏/缺失快照={damaged:N0}; 过期/未知快照={expired + unknown:N0}");
     }
 
-    private async Task<DiagnosticCheck> CheckSnapshotIntegrityAsync(CancellationToken token)
+    private async Task<DiagnosticCheck> CheckSnapshotAvailabilityAsync(CancellationToken token)
     {
         try
         {
             var status = await _vm.GetRegionStatusAsync(verifyFiles: true,
                 persistStateChanges: false).ConfigureAwait(false);
-            var severity = status.State == RegionBackupState.Ready ? DiagnosticSeverity.Healthy
+            var severity = status.State == RegionBackupState.Ready &&
+                           status.SwitchEligibility != RegionSwitchEligibility.BackupUnavailable
+                ? DiagnosticSeverity.Healthy
                 : status.State == RegionBackupState.Stale ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error;
-            return NewCheck("snapshot.integrity", "快照", "最新快照完整性", severity,
-                status.State == RegionBackupState.Ready ? "完整且已验证" : $"状态：{status.State}",
-                $"兼容性={status.GenerationCompatibility}; 文件异常={status.BackupFileIssueCount}; 丢失文件={status.SkippedFileCount}");
+            return NewCheck("snapshot.availability", "快照", "当前快照可用性", severity,
+                status.State == RegionBackupState.Ready ? "当前快照可用于区服切换" : $"当前状态：{status.State}",
+                $"兼容性={status.GenerationCompatibility}; 文件异常={status.BackupFileIssueCount}; 缺失文件={status.SkippedFileCount}");
         }
-        catch (Exception ex) { return NewCheck("snapshot.integrity", "快照", "最新快照完整性", DiagnosticSeverity.Warning, "未能验证", ex.Message); }
+        catch (Exception ex) { return NewCheck("snapshot.availability", "快照", "当前快照可用性", DiagnosticSeverity.Warning, "无法读取当前快照", ex.Message); }
     }
 
     private async Task<DiagnosticCheck> CheckNetworkAsync(CancellationToken token)

@@ -12,12 +12,11 @@
             <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsVerifying}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/></DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="Normal"><Setter Property="Foreground" Value="{DynamicResource Status.Success}"/></DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Unverified"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="Expired"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="Corrupt"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="Missing"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="Unknown"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="SnapshotDetailLabel" TargetType="TextBlock">
@@ -70,20 +69,12 @@
                             <TextBlock Text="{Binding CreatedText}" Style="{StaticResource SnapshotDetailValue}"/>
                         </StackPanel>
                     </Grid>
-                    <Grid Margin="0,7,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="最近验证" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding VerifiedText}" Style="{StaticResource SnapshotDetailValue}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                            <TextBlock Text="最近使用" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding UsedText}" Style="{StaticResource SnapshotDetailValue}"/>
-                        </StackPanel>
-                    </Grid>
+                    <StackPanel Margin="0,7,0,0">
+                        <TextBlock Text="最近使用" Style="{StaticResource SnapshotDetailLabel}"/>
+                        <TextBlock Text="{Binding UsedText}" Style="{StaticResource SnapshotDetailValue}"/>
+                    </StackPanel>
                     <WrapPanel Margin="0,10,0,0">
-                        <Button Content="验证" Tag="verify" Height="28" Padding="10,0" Click="OnSnapshotAction"/>
-                        <Button Content="查看详情" Tag="details" Height="28" Padding="10,0" Margin="6,0,0,0" Click="OnSnapshotAction"/>
+                        <Button Content="查看详情" Tag="details" Height="28" Padding="10,0" Click="OnSnapshotAction"/>
                         <Button Content="重新生成" Tag="regenerate" Height="28" Padding="10,0" Margin="6,0,0,0" Click="OnSnapshotAction"/>
                         <Button Content="打开目录" Tag="open" Height="28" Padding="10,0" Margin="6,0,0,0" Click="OnSnapshotAction"/>
                         <Button Content="删除" Tag="delete" Height="28" Padding="10,0" Margin="6,0,0,0"
@@ -96,7 +87,7 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="28,24,22,30">
-            <ctrl:PageHeader Title="区服快照" Description="按模式、区服和验证状态管理已生成的快照">
+            <ctrl:PageHeader Title="区服快照" Description="查看和管理 CloudLight Blizzard 创建的区服文件快照。">
                 <ctrl:PageHeader.HeaderActions>
                     <Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRefresh"/>
                 </ctrl:PageHeader.HeaderActions>
@@ -104,39 +95,9 @@
 
             <Border x:Name="SnapshotSummaryCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="14">
                 <StackPanel>
-                    <UniformGrid Columns="4">
-                        <StackPanel>
-                            <TextBlock Text="快照总数" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding SnapshotCount}" FontSize="20" FontWeight="SemiBold"/>
-                        </StackPanel>
-                        <StackPanel Margin="14,0,0,0">
-                            <TextBlock Text="已验证" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding VerifiedCount}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Status.Success}"/>
-                        </StackPanel>
-                        <StackPanel Margin="14,0,0,0">
-                            <TextBlock Text="未验证 / 需处理" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding UnverifiedCount}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Status.Warning}"/>
-                        </StackPanel>
-                        <StackPanel Margin="14,0,0,0">
-                            <TextBlock Text="受管理根目录" Style="{StaticResource SnapshotDetailLabel}"/>
-                            <TextBlock Text="{Binding ManagedRootText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
-                                       ToolTip="{Binding ManagedRootText}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </UniformGrid>
-                    <Grid Margin="0,12,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Text.Secondary}"
-                                       Margin="0,4,0,0" TextWrapping="Wrap"/>
-                            <ProgressBar Height="6" Margin="0,9,0,0" Minimum="0"
-                                         Maximum="{Binding ProgressMaximum, Mode=OneWay}" Value="{Binding ProgressValue, Mode=OneWay}"
-                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" Content="取消验证" Style="{StaticResource SecondaryButton}" Padding="13,0"
-                                VerticalAlignment="Center" Margin="14,0,0,0"
-                                Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Click="OnCancel"/>
-                    </Grid>
+                    <TextBlock Text="{Binding SnapshotCount, StringFormat=共 {0} 个快照}" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource Text.Secondary}"
+                               Margin="0,5,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 
@@ -208,18 +169,11 @@
 
                         <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,9,0,0">
                             <StackPanel>
-                                <TextBlock Text="状态与验证" FontSize="13" FontWeight="SemiBold"/>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="当前状态" Style="{StaticResource SnapshotDetailLabel}"/>
-                                        <TextBlock Text="{Binding StateText}" Style="{StaticResource SnapshotStateText}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="12,0,0,0">
-                                        <TextBlock Text="最近验证" Style="{StaticResource SnapshotDetailLabel}"/>
-                                        <TextBlock Text="{Binding VerifiedText}" Style="{StaticResource SnapshotDetailValue}"/>
-                                    </StackPanel>
-                                </Grid>
+                                <TextBlock Text="状态" FontSize="13" FontWeight="SemiBold"/>
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Text="当前状态" Style="{StaticResource SnapshotDetailLabel}"/>
+                                    <TextBlock Text="{Binding StateText}" Style="{StaticResource SnapshotStateText}"/>
+                                </StackPanel>
                                 <TextBlock Text="{Binding StateReason}" Visibility="{Binding StateReasonVisibility}"
                                            Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0"/>
                             </StackPanel>
@@ -274,7 +228,7 @@
                     </Border.Style>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="选择一个快照" FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock Text="从左侧列表选择快照后，这里会按基本信息、验证状态、文件大小、路径和时间分组显示详情。"
+                        <TextBlock Text="从左侧列表选择快照后，这里会按基本信息、状态、文件大小、路径和时间分组显示详情。"
                                    Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,7,0,0"/>
                     </StackPanel>
                 </Border>

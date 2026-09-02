@@ -179,12 +179,18 @@ public static class UiVisualTreeSelfTest
             var snapshotDetails = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotDetailsPanel");
             var snapshotEmptyDetails = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotDetailsEmptyPanel");
             var snapshotActionsPresent = false;
+            var snapshotVerificationUiPresent = false;
             if (snapshotList?.ItemTemplate is DataTemplate snapshotTemplate &&
                 snapshotTemplate.LoadContent() is FrameworkElement snapshotTemplateRoot)
             {
-                snapshotActionsPresent = new[] { "verify", "details", "regenerate", "open", "delete" }
+                snapshotActionsPresent = new[] { "details", "regenerate", "open", "delete" }
                     .All(tag => FindVisual(snapshotTemplateRoot, value => value is Button button &&
                         string.Equals(button.Tag as string, tag, StringComparison.Ordinal)) is not null);
+                snapshotVerificationUiPresent = FindVisual(snapshotTemplateRoot, value =>
+                    value is Button button && string.Equals(button.Tag as string, "verify", StringComparison.Ordinal)) is not null ||
+                    FindVisual(snapshotTemplateRoot, value => value is TextBlock text &&
+                        (text.Text?.Contains("验证", StringComparison.Ordinal) == true ||
+                         text.Text?.Contains("未验证", StringComparison.Ordinal) == true)) is not null;
             }
             Assert(snapshotsPage is not null && snapshotsVm is not null && snapshotSummary is Border &&
                    snapshotWorkspace is Grid snapshotGrid && snapshotGrid.ColumnDefinitions.Count == 2 &&
@@ -192,18 +198,21 @@ public static class UiVisualTreeSelfTest
                    snapshotList.ItemTemplate is not null,
                 checks, "区服快照页包含摘要区、左右工作区、列表与快照卡片模板");
             Assert(snapshotsPage is not null &&
-                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "快照总数") is not null &&
-                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "已验证") is not null &&
-                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "未验证 / 需处理") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "快照列表") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "当前状态") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "文件与大小") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "路径与时间") is not null &&
                    FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "基本信息") is not null &&
-                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "状态与验证") is not null,
-                checks, "区服快照页摘要和详情分组标签清晰可见");
+                   !snapshotVerificationUiPresent &&
+                   FindVisual(snapshotsPage, value => value is ProgressBar ||
+                       value is Button button && button.Content as string == "取消验证") is null,
+                 checks, "区服快照页摘要和详情分组标签清晰可见");
             Assert(snapshotDetails is Border && snapshotEmptyDetails is Border &&
                    ((snapshotsVm?.HasSelectedSnapshot == true && snapshotDetails.Visibility == Visibility.Visible) ||
                     (snapshotsVm?.HasSelectedSnapshot != true && snapshotEmptyDetails.Visibility == Visibility.Visible)),
                 checks, "区服快照页按当前选择在详情与空状态之间切换");
             Assert(snapshotActionsPresent,
-                checks, "区服快照卡片保留验证、详情、重新生成、打开目录和删除操作入口");
+                checks, "区服快照卡片保留详情、重新生成、打开目录和删除操作入口，并移除验证入口");
 
             var dropsPage = typeof(MainWindow).GetField("_dropsPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as DropsPage;
