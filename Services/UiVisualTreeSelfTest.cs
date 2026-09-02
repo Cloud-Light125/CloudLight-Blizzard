@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using Ellipse = System.Windows.Shapes.Ellipse;
 using InlineRun = System.Windows.Documents.Run;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
@@ -154,6 +155,56 @@ public static class UiVisualTreeSelfTest
                 }
             }
 
+            var aboutPage = typeof(MainWindow).GetField("_aboutPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as AboutPage;
+            var componentsList = aboutPage is null ? null : FindNamed(aboutPage, "ThirdPartyComponentsList") as ItemsControl;
+            Assert(componentsList is not null && componentsList.Items.Count >= 6,
+                checks, $"关于页第三方组件列表已实例化（实际 {componentsList?.Items.Count ?? 0} 项）");
+            Assert(aboutPage is not null &&
+                   FindVisual(aboutPage, value => value is TextBlock text && text.Text == "BiliBiliDropsMiner") is not null &&
+                   FindVisual(aboutPage, value => value is TextBlock text && text.Text == "Microsoft.Data.Sqlite") is not null &&
+                   FindVisual(aboutPage, value => value is TextBlock text && text.Text == "CommunityToolkit.WinUI.Notifications") is not null,
+                checks, "关于页包含 Worker、SQLite 与 Toast 组件说明");
+            Assert(aboutPage is not null &&
+                   FindVisual(aboutPage, value => value is Button button && button.Content as string == "打开上游项目") is not null &&
+                   FindVisual(aboutPage, value => value is Button button && button.Content as string == "打开第三方说明") is not null,
+                checks, "关于页第三方组件提供上游项目与第三方说明入口");
+
+            var snapshotsPage = typeof(MainWindow).GetField("_snapshotsPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as SnapshotsPage;
+            var snapshotsVm = snapshotsPage?.DataContext as SnapshotsViewModel;
+            var snapshotSummary = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotSummaryCard");
+            var snapshotWorkspace = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotWorkspace");
+            var snapshotList = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotsList") as ListBox;
+            var snapshotDetails = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotDetailsPanel");
+            var snapshotEmptyDetails = snapshotsPage is null ? null : FindNamed(snapshotsPage, "SnapshotDetailsEmptyPanel");
+            var snapshotActionsPresent = false;
+            if (snapshotList?.ItemTemplate is DataTemplate snapshotTemplate &&
+                snapshotTemplate.LoadContent() is FrameworkElement snapshotTemplateRoot)
+            {
+                snapshotActionsPresent = new[] { "verify", "details", "regenerate", "open", "delete" }
+                    .All(tag => FindVisual(snapshotTemplateRoot, value => value is Button button &&
+                        string.Equals(button.Tag as string, tag, StringComparison.Ordinal)) is not null);
+            }
+            Assert(snapshotsPage is not null && snapshotsVm is not null && snapshotSummary is Border &&
+                   snapshotWorkspace is Grid snapshotGrid && snapshotGrid.ColumnDefinitions.Count == 2 &&
+                   snapshotList is not null &&
+                   snapshotList.ItemTemplate is not null,
+                checks, "区服快照页包含摘要区、左右工作区、列表与快照卡片模板");
+            Assert(snapshotsPage is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "快照总数") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "已验证") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "未验证 / 需处理") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "基本信息") is not null &&
+                   FindVisual(snapshotsPage, value => value is TextBlock text && text.Text == "状态与验证") is not null,
+                checks, "区服快照页摘要和详情分组标签清晰可见");
+            Assert(snapshotDetails is Border && snapshotEmptyDetails is Border &&
+                   ((snapshotsVm?.HasSelectedSnapshot == true && snapshotDetails.Visibility == Visibility.Visible) ||
+                    (snapshotsVm?.HasSelectedSnapshot != true && snapshotEmptyDetails.Visibility == Visibility.Visible)),
+                checks, "区服快照页按当前选择在详情与空状态之间切换");
+            Assert(snapshotActionsPresent,
+                checks, "区服快照卡片保留验证、详情、重新生成、打开目录和删除操作入口");
+
             var dropsPage = typeof(MainWindow).GetField("_dropsPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as DropsPage;
             var dropsVm = dropsPage?.DataContext as DropsViewModel;
@@ -176,6 +227,8 @@ public static class UiVisualTreeSelfTest
                 var youtubeTab = FindNamed(dropsPage, "YouTubeTab") as RadioButton;
                 var twitchTab = FindNamed(dropsPage, "TwitchTab") as RadioButton;
                 var bilibiliTab = FindNamed(dropsPage, "BilibiliTab") as RadioButton;
+                var youtubeStartButton = FindNamed(dropsPage, "YouTubeStartButton");
+                var youtubeStopButton = FindNamed(dropsPage, "YouTubeStopButton");
                 var initializedField = typeof(DropsPage).GetField("_initialized", BindingFlags.Instance | BindingFlags.NonPublic);
                 var platformField = typeof(DropsPage).GetField("_platform", BindingFlags.Instance | BindingFlags.NonPublic);
                 var initializedBeforeClick = initializedField?.GetValue(dropsPage) is true;
@@ -241,9 +294,42 @@ public static class UiVisualTreeSelfTest
                 var bilibiliQuickStart = FindNamed(dropsPage, "BilibiliQuickStartCard");
                 var bilibiliNetwork = FindNamed(dropsPage, "BilibiliNetworkCard");
                 var bilibiliUseProxy = FindNamed(dropsPage, "BilibiliUseProxyCheck");
+                var bilibiliSettings = FindNamed(dropsPage, "BilibiliSettingsCard");
+                var bilibiliActivityList = FindNamed(dropsPage, "BilibiliActivityList");
+                var dropsHeader = FindNamed(dropsPage, "DropsPageHeader");
+                var dropsNetworkSummary = FindNamed(dropsPage, "DropsNetworkSummary");
+                var platformTabsBar = FindNamed(dropsPage, "PlatformTabsBar");
+                var platformStatusDots = new[]
+                {
+                    FindNamed(dropsPage, "SoopStatusDot"),
+                    FindNamed(dropsPage, "YouTubeStatusDot"),
+                    FindNamed(dropsPage, "TwitchStatusDot"),
+                    FindNamed(dropsPage, "BilibiliStatusDot"),
+                };
                 var soopPanel = FindNamed(dropsPage, "SoopPanel");
                 var youtubePanel = FindNamed(dropsPage, "YouTubePanel");
                 var twitchPanel = FindNamed(dropsPage, "TwitchPanel");
+                Assert(dropsHeader is not null && dropsNetworkSummary is Border networkSummary &&
+                       networkSummary.ActualHeight > 0 && platformTabsBar is Grid tabsGrid &&
+                       tabsGrid.ColumnDefinitions.Count == 4,
+                    checks, "掉宝页标题、独立网络摘要行和四列平台 Tab 均存在");
+                Assert(platformStatusDots.All(value => value is Ellipse { Style: not null, IsVisible: true }),
+                    checks, "掉宝页四个平台标题均包含可见状态点和统一状态样式");
+                Assert(FindVisual(dropsPage, value => value is UniformGrid grid && grid.Columns >= 4) is null,
+                    checks, "掉宝页顶部四个大平台卡片已从视觉树移除");
+                var proxyRowBelowHeader = false;
+                try
+                {
+                    if (dropsHeader is FrameworkElement header && dropsNetworkSummary is FrameworkElement network &&
+                        header.ActualHeight > 0 && network.ActualHeight > 0)
+                    {
+                        var headerBottom = header.TranslatePoint(new Point(0, header.ActualHeight), dropsPage).Y;
+                        var networkTop = network.TranslatePoint(new Point(0, 0), dropsPage).Y;
+                        proxyRowBelowHeader = networkTop >= headerBottom - 0.5;
+                    }
+                }
+                catch { }
+                Assert(proxyRowBelowHeader, checks, "掉宝页网络代理摘要位于标题区下方且不与右上操作区重叠");
                 Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible,
                     checks, "Checked 事件链更新 BilibiliPanel.Visibility=Visible");
                 Assert(bilibiliPanel is StackPanel && bilibiliPanel.IsVisible && bilibiliPanel.ActualHeight > 0,
@@ -269,6 +355,16 @@ public static class UiVisualTreeSelfTest
                        string.Equals(bilibiliProxyCheck.Content as string,
                             "使用 CloudLight Blizzard 全局代理", StringComparison.Ordinal),
                     checks, "Bilibili 网络卡片包含正式的全局代理选项");
+                Assert(bilibiliSettings is Border && bilibiliActivityList is ListBox &&
+                       FindNamed(dropsPage, "BilibiliWatchModePicker") is ComboBox &&
+                       FindNamed(dropsPage, "BilibiliSessionsPerRoomText") is TextBox &&
+                       FindNamed(dropsPage, "BilibiliReconnectDelayText") is TextBox &&
+                       FindNamed(dropsPage, "BilibiliTaskIntervalText") is TextBox &&
+                       FindNamed(dropsPage, "BilibiliTaskIdsText") is TextBox &&
+                       FindNamed(dropsPage, "BilibiliAutoStart") is CheckBox &&
+                       FindNamed(dropsPage, "BilibiliAutoResume") is CheckBox &&
+                       FindNamed(dropsPage, "BilibiliNotifierUrlBox") is PasswordBox,
+                    checks, "Bilibili 精简设置仍保留活动、观看模式、任务、自动恢复、通知和网络入口");
                 Assert(soopPanel is StackPanel && soopPanel.Visibility == Visibility.Collapsed && !soopPanel.IsVisible &&
                        youtubePanel is StackPanel && youtubePanel.Visibility == Visibility.Collapsed && !youtubePanel.IsVisible &&
                        twitchPanel is StackPanel && twitchPanel.Visibility == Visibility.Collapsed && !twitchPanel.IsVisible,
@@ -326,6 +422,10 @@ public static class UiVisualTreeSelfTest
                        FindNamed(dropsPage, "BilibiliRefreshButton") is Button &&
                        FindNamed(dropsPage, "BilibiliDiscoverButton") is Button,
                     checks, "Bilibili 账号、扫码、开始停止、刷新和活动发现控件存在");
+                Assert(youtubeStartButton is Button && youtubeStopButton is Button &&
+                       string.Equals((youtubeStartButton as Button)?.Tag as string, "YouTube", StringComparison.Ordinal) &&
+                       string.Equals((youtubeStopButton as Button)?.Tag as string, "YouTube", StringComparison.Ordinal),
+                    checks, "删除顶部平台卡片后 YouTube 开始/停止观看入口仍保留在页面标题操作区");
                 Assert(FindNamed(dropsPage, "BilibiliRoomList") is ListBox &&
                        FindNamed(dropsPage, "BilibiliTaskList") is ListBox &&
                        FindNamed(dropsPage, "BilibiliSessionList") is ListBox &&

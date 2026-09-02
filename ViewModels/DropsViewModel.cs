@@ -414,6 +414,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private string _networkProxyStatus = "网络与代理：正在读取设置";
     public string NetworkProxyStatus { get => _networkProxyStatus; private set => Set(ref _networkProxyStatus, value); }
+    private string _networkProxyModeText = "未启用";
+    public string NetworkProxyModeText { get => _networkProxyModeText; private set => Set(ref _networkProxyModeText, value); }
+    private string _networkProxyUrlText = "未配置";
+    public string NetworkProxyUrlText { get => _networkProxyUrlText; private set => Set(ref _networkProxyUrlText, value); }
+    private string _networkProxyFallbackText = "不允许直连回退";
+    public string NetworkProxyFallbackText { get => _networkProxyFallbackText; private set => Set(ref _networkProxyFallbackText, value); }
 
     private DropsPlatform _selectedPlatform = DropsPlatform.Soop;
     public DropsPlatform SelectedPlatform
@@ -555,6 +561,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         bool bilibiliUseProxy = false)
     {
         BilibiliDetails.UpdateNetworkSettings(bilibiliUseProxy, enabled, proxyUrl, fallbackDirect);
+        NetworkProxyModeText = enabled ? "已启用" : "未启用";
+        NetworkProxyUrlText = enabled
+            ? (string.IsNullOrWhiteSpace(proxyUrl) ? "未配置" : SafeProxyEndpoint(proxyUrl))
+            : "未使用";
+        NetworkProxyFallbackText = fallbackDirect ? "允许直连回退" : "不允许直连回退";
         if (!enabled)
         {
             NetworkProxyStatus = "网络与代理：当前直连";

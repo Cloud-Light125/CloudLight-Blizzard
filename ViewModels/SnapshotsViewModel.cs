@@ -26,25 +26,38 @@ public sealed class SnapshotItemViewModel : ObservableObject
     public SnapshotDisplayState State => _descriptor.State;
     public string StateText => _isVerifying ? "验证中" : _descriptor.State switch
     {
-        SnapshotDisplayState.Normal => "正常",
+        SnapshotDisplayState.Normal => "已验证",
         SnapshotDisplayState.Unverified => "未验证",
         SnapshotDisplayState.Verifying => "验证中",
-        SnapshotDisplayState.Corrupt => "损坏",
-        SnapshotDisplayState.Expired => "过期",
-        SnapshotDisplayState.Missing => "缺失",
+        SnapshotDisplayState.Corrupt => "验证失败",
+        SnapshotDisplayState.Expired => "已过期",
+        SnapshotDisplayState.Missing => "文件缺失",
         _ => "未知",
     };
     public string StateReason => _descriptor.StateReason;
+    public Visibility StateReasonVisibility => string.IsNullOrWhiteSpace(StateReason)
+        ? Visibility.Collapsed : Visibility.Visible;
     public bool IsActive => _descriptor.IsActive;
+    public Visibility ActiveVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
     public string RootPath => _descriptor.RootPath;
-    public bool IsVerifying { get => _isVerifying; set { Set(ref _isVerifying, value); Raise(nameof(StateText)); } }
+    public bool IsVerifying
+    {
+        get => _isVerifying;
+        set
+        {
+            Set(ref _isVerifying, value);
+            Raise(nameof(StateText));
+            Raise(nameof(StateReasonVisibility));
+        }
+    }
 
     public void Update(SnapshotDescriptor descriptor)
     {
         _descriptor = descriptor;
         Raise(nameof(ModeText)); Raise(nameof(SourceText)); Raise(nameof(TargetText)); Raise(nameof(CreatedText));
         Raise(nameof(VerifiedText)); Raise(nameof(UsedText)); Raise(nameof(FileCountText)); Raise(nameof(SizeText));
-        Raise(nameof(State)); Raise(nameof(StateText)); Raise(nameof(StateReason)); Raise(nameof(IsActive)); Raise(nameof(RootPath));
+        Raise(nameof(State)); Raise(nameof(StateText)); Raise(nameof(StateReason)); Raise(nameof(StateReasonVisibility));
+        Raise(nameof(IsActive)); Raise(nameof(ActiveVisibility)); Raise(nameof(RootPath));
     }
 }
 
@@ -56,9 +69,12 @@ public sealed class SnapshotsViewModel : ObservableObject, IDisposable
     private string _statusText = "正在读取 CloudLight Blizzard 管理的区服快照。";
     private string _progressText = "";
     private bool _isBusy;
-    private string _detailsText = "";
     private double _progressValue;
     private double _progressMaximum = 1;
+    private SnapshotItemViewModel? _selectedSnapshot;
+    private int _snapshotCount;
+    private int _verifiedCount;
+    private int _unverifiedCount;
 
     public SnapshotsViewModel(MainViewModel main)
     {
@@ -83,14 +99,34 @@ public sealed class SnapshotsViewModel : ObservableObject, IDisposable
     public bool NotBusy => !IsBusy;
     public double ProgressValue { get => _progressValue; private set => Set(ref _progressValue, value); }
     public double ProgressMaximum { get => _progressMaximum; private set => Set(ref _progressMaximum, value); }
-    public string DetailsText { get => _detailsText; private set { Set(ref _detailsText, value); Raise(nameof(HasDetails)); } }
-    public bool HasDetails => !string.IsNullOrWhiteSpace(DetailsText);
+    public SnapshotItemViewModel? SelectedSnapshot
+    {
+        get => _selectedSnapshot;
+        set
+        {
+            if (ReferenceEquals(_selectedSnapshot, value)) return;
+            Set(ref _selectedSnapshot, value);
+            Raise(nameof(HasSelectedSnapshot));
+        }
+    }
+    public bool HasSelectedSnapshot => SelectedSnapshot is not null;
+    public int SnapshotCount { get => _snapshotCount; private set => Set(ref _snapshotCount, value); }
+    public int VerifiedCount { get => _verifiedCount; private set => Set(ref _verifiedCount, value); }
+    public int UnverifiedCount { get => _unverifiedCount; private set => Set(ref _unverifiedCount, value); }
+    public string ManagedRootText => string.IsNullOrWhiteSpace(_main.RegionBackupRoot)
+        ? "未配置受管理目录" : _main.RegionBackupRoot;
 
     public Task RefreshAsync()
     {
+        var selectedId = SelectedSnapshot?.GenerationId;
         var descriptors = Service.List();
         Items.Clear();
         foreach (var descriptor in descriptors) Items.Add(new SnapshotItemViewModel(descriptor));
+        SnapshotCount = Items.Count;
+        VerifiedCount = Items.Count(item => item.State == SnapshotDisplayState.Normal);
+        UnverifiedCount = Items.Count(item => item.State != SnapshotDisplayState.Normal);
+        SelectedSnapshot = Items.FirstOrDefault(item => string.Equals(item.GenerationId, selectedId,
+            StringComparison.OrdinalIgnoreCase)) ?? Items.FirstOrDefault();
         StatusText = Items.Count == 0 ? "尚未生成区服快照。请先在“区服切换”完成一次国服与国际服文件准备。" : $"共 {Items.Count} 个快照 · 仅显示 CloudLight Blizzard 管理的路径。";
         return Task.CompletedTask;
     }
@@ -137,23 +173,11 @@ public sealed class SnapshotsViewModel : ObservableObject, IDisposable
 
     public void ShowDetails(SnapshotItemViewModel item)
     {
-        DetailsText = string.Join(Environment.NewLine,
-            $"快照 ID：{item.GenerationId}",
-            $"模式：{item.ModeText}",
-            $"来源区服：{item.SourceText}",
-            $"目标区服：{item.TargetText}",
-            $"状态：{item.StateText}",
-            $"状态说明：{item.StateReason}",
-            $"创建时间：{item.CreatedText}",
-            $"最后验证：{item.VerifiedText}",
-            $"最后使用：{item.UsedText}",
-            $"文件数量：{item.FileCountText}",
-            $"总大小：{item.SizeText}",
-            $"受管理目录：{item.RootPath}");
+        SelectedSnapshot = item;
         StatusText = $"正在查看 {item.ModeText} 快照详情。";
     }
 
-    public void ClearDetails() => DetailsText = "";
+    public void ClearDetails() => SelectedSnapshot = null;
 
     public bool Delete(SnapshotItemViewModel item)
     {
@@ -161,7 +185,14 @@ public sealed class SnapshotsViewModel : ObservableObject, IDisposable
         try
         {
             var deleted = Service.Delete(item.GenerationId);
-            if (deleted) Items.Remove(item);
+            if (deleted)
+            {
+                Items.Remove(item);
+                SnapshotCount = Items.Count;
+                VerifiedCount = Items.Count(current => current.State == SnapshotDisplayState.Normal);
+                UnverifiedCount = Items.Count(current => current.State != SnapshotDisplayState.Normal);
+                if (ReferenceEquals(SelectedSnapshot, item)) SelectedSnapshot = Items.FirstOrDefault();
+            }
             StatusText = deleted ? "快照已删除。" : "快照不存在或已经删除。";
             return deleted;
         }

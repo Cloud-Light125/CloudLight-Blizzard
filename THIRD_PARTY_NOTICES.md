@@ -47,11 +47,29 @@ kept under `Integrations/Drops/bilibili/licenses/` and are published under
 
 ## Python runtime components
 
-- aiohttp
-- yarl
-- Requests
-- yt-dlp
-- websocket-client
-- PyInstaller (build tool/runtime bootloader)
+- `aiohttp` (Apache-2.0 AND MIT)
+- `yarl` (Apache-2.0)
+- `Requests` (Apache-2.0)
+- `yt-dlp` (public domain)
+- `websocket-client` (Apache-2.0)
+- `truststore` (MIT)
+- `PyInstaller` (GPLv2-or-later with the special exception for distributing built applications; build tool/runtime bootloader)
 
-Each component remains subject to its own published license. CustomTkinter, PySide6 and the original Tkinter GUI are not required by the new Worker UI architecture.
+The YouTube Worker currently pins Requests 2.34.2, yt-dlp 2026.7.4 and
+websocket-client 1.9.0. SOOP and Twitch use the version ranges declared in
+their requirements files. Each component remains subject to its own published
+license. CustomTkinter, PySide6 and the original Tkinter GUI are not required
+by the new Worker UI architecture.
+
+## .NET application packages
+
+- `Microsoft.Data.Sqlite` 8.0.7 — MIT License. Used for local SQLite storage;
+  the package is referenced by `CloudLight Blizzard.csproj` and its runtime
+  assembly is included by the application publish.
+- `CommunityToolkit.WinUI.Notifications` 7.1.2 — MIT License. Used for
+  Windows Toast notifications; the package is referenced by
+  `CloudLight Blizzard.csproj` and its runtime assembly is included by the
+  application publish.
+
+The NuGet package metadata remains the authoritative source for any
+transitive package notices.
