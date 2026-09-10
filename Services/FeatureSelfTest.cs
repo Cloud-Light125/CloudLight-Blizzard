@@ -1996,8 +1996,10 @@ public static class FeatureSelfTest
                typeof(SnapshotManagerService).GetMethod("VerifyAsync") is null &&
                typeof(SnapshotsViewModel).GetMethod("VerifyAsync") is null &&
                typeof(SnapshotItemViewModel).GetProperty("IsVerifying") is null &&
-               typeof(SnapshotDescriptor).GetProperty("LastVerifiedAtUtc") is null,
-            "snapshot UI and page services expose no manual verification workflow or unverified state");
+               typeof(SnapshotDescriptor).GetProperty("LastVerifiedAtUtc") is null &&
+               typeof(SnapshotItemViewModel).GetProperty(nameof(SnapshotItemViewModel.SourceText))?.CanWrite == false &&
+               typeof(SnapshotItemViewModel).GetProperty(nameof(SnapshotItemViewModel.TargetText))?.CanWrite == false,
+            "snapshot UI keeps manual verification removed and route display properties getter-only");
         var snapshotStore = new OverwatchRegionBackupStore(storeRoot);
         var chinaBackup = snapshotStore.BackupFile(generationId, GameRegion.China, "region.dat");
         var originalChina = File.ReadAllBytes(chinaBackup);
@@ -2142,7 +2144,7 @@ public static class FeatureSelfTest
             "password=abcdef\npasswd=abcdef\nsecret=abcdef";
         var reportModel = new DiagnosticRunReport
         {
-            AppVersion = "2.1.1",
+            AppVersion = "2.1.2",
             StartedAt = DateTimeOffset.Now.AddSeconds(-1),
             CompletedAt = DateTimeOffset.Now,
             Checks = [
@@ -2493,7 +2495,7 @@ public static class FeatureSelfTest
         return new UpdateCheckResult
         {
             Status = UpdateCheckResultStatus.Success,
-            CurrentVersion = "2.1.1",
+            CurrentVersion = "2.1.2",
             LatestVersion = version,
             HasUpdate = true,
             Tag = $"v{version}",

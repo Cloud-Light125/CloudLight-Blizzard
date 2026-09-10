@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Markup;
 using Ellipse = System.Windows.Shapes.Ellipse;
 using InlineRun = System.Windows.Documents.Run;
 using System.Windows.Media;
@@ -243,6 +244,12 @@ public static class UiVisualTreeSelfTest
                 checks, "区服快照页按当前选择在详情与空状态之间切换");
             Assert(snapshotActionsPresent,
                 checks, "区服快照卡片保留详情、重新生成、打开目录和删除操作入口，并移除验证入口");
+
+            if (snapshotsPage is not null && snapshotsVm is not null && snapshotList is not null)
+                RunSnapshotBindingRegressionTest(snapshotsPage, snapshotsVm, snapshotList, pageHost,
+                    bindingListener, dispatcherExceptions, checks);
+            else
+                Assert(false, checks, "SnapshotTemplate regression test prerequisites are available");
 
             var dropsPage = typeof(MainWindow).GetField("_dropsPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as DropsPage;
@@ -705,6 +712,178 @@ public static class UiVisualTreeSelfTest
 
     private static void Assert(bool condition, ICollection<string> checks, string description) =>
         checks.Add((condition ? "PASS " : "FAIL ") + description);
+
+    private static void RunSnapshotBindingRegressionTest(
+        SnapshotsPage page,
+        SnapshotsViewModel viewModel,
+        ListBox list,
+        ContentControl? pageHost,
+        TraceListener? bindingListener,
+        IList<Exception> dispatcherExceptions,
+        ICollection<string> checks)
+    {
+        var originalItems = viewModel.Items.ToArray();
+        var originalSelected = viewModel.SelectedSnapshot;
+        var originalPageHostContent = pageHost?.Content;
+        var item = new SnapshotItemViewModel(new SnapshotDescriptor
+        {
+            GenerationId = "ui-selftest-snapshot",
+            Mode = RegionBackupMode.VerifiedDifference,
+            SourceRegion = RegionKind.China,
+            TargetRegion = RegionKind.International,
+            CreatedAtUtc = DateTime.UtcNow,
+            LastUsedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+            FileCount = 2,
+            TotalBytes = 4096,
+            State = SnapshotDisplayState.Normal,
+            RootPath = Path.Combine(Path.GetTempPath(), "CloudLight-Blizzard-UI-selftest-snapshot"),
+        });
+        Window? host = null;
+        ListBoxItem? generatedItem = null;
+        InlineRun[] listRouteRuns = [];
+        InlineRun[] detailsRouteRuns = [];
+        Exception? renderException = null;
+        var bindingErrorsBefore = BindingErrorCount(bindingListener);
+        var dispatcherExceptionsBefore = dispatcherExceptions.Count;
+
+        try
+        {
+            if (ReferenceEquals(pageHost?.Content, page)) pageHost.Content = null;
+            viewModel.Items.Clear();
+            viewModel.Items.Add(item);
+            viewModel.SelectedSnapshot = item;
+
+            host = new Window
+            {
+                Width = 1100,
+                Height = 850,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Opacity = 0,
+                WindowStyle = WindowStyle.ToolWindow,
+                Content = page,
+            };
+            host.Show();
+            host.ApplyTemplate();
+            host.Measure(new Size(1100, 850));
+            host.Arrange(new Rect(0, 0, 1100, 850));
+            host.UpdateLayout();
+            DrainDispatcher(host.Dispatcher);
+            list.ApplyTemplate();
+            list.ScrollIntoView(item);
+            list.UpdateLayout();
+            host.UpdateLayout();
+            WaitForDispatcherCondition(host.Dispatcher, () =>
+            {
+                host.UpdateLayout();
+                return list.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem;
+            }, TimeSpan.FromSeconds(2));
+            generatedItem = list.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
+            if (generatedItem is not null)
+                listRouteRuns = FindRouteRuns(generatedItem);
+
+            var detailsPanel = FindNamed(page, "SnapshotDetailsPanel");
+            if (detailsPanel is not null)
+                detailsRouteRuns = FindRouteRuns(detailsPanel);
+        }
+        catch (Exception ex)
+        {
+            renderException = ex;
+        }
+
+        var observedExceptions = dispatcherExceptions.Skip(dispatcherExceptionsBefore).ToList();
+        if (renderException is not null) observedExceptions.Insert(0, renderException);
+        var bindingErrors = BindingErrorCount(bindingListener) - bindingErrorsBefore;
+        var generatedListItem = generatedItem is not null;
+        var itemWasInViewModel = viewModel.Items.Contains(item);
+        var itemWasInList = list.Items.Contains(item);
+
+        try
+        {
+            if (host is not null)
+            {
+                host.Content = null;
+                if (host.IsVisible) host.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            checks.Add("FAIL SnapshotTemplate regression host cleanup: " + ex.GetBaseException().Message);
+        }
+
+        try
+        {
+            viewModel.SelectedSnapshot = null;
+            viewModel.Items.Clear();
+            foreach (var originalItem in originalItems) viewModel.Items.Add(originalItem);
+            viewModel.SelectedSnapshot = originalSelected;
+            if (pageHost is not null && ReferenceEquals(originalPageHostContent, page))
+                pageHost.Content = page;
+        }
+        catch (Exception ex)
+        {
+            checks.Add("FAIL SnapshotTemplate regression data cleanup: " + ex.GetBaseException().Message);
+        }
+
+        Assert(renderException is null, checks,
+            renderException is null
+                ? "Snapshot list/details render completes without XamlParseException"
+                : $"Snapshot list/details render completes without XamlParseException ({renderException.GetBaseException().GetType().Name}: {renderException.GetBaseException().Message})");
+        Assert(!observedExceptions.Any(error => ContainsExceptionType(error, typeof(XamlParseException))),
+            checks, "Snapshot list/details render has XamlParseException=0");
+        Assert(!observedExceptions.Any(error => ContainsExceptionType(error, typeof(InvalidOperationException))),
+            checks, "Snapshot list/details render has InvalidOperationException=0");
+        Assert(observedExceptions.Count == 0, checks,
+            $"Snapshot list/details render has DispatcherUnhandledException=0 (actual {observedExceptions.Count})");
+        Assert(bindingErrors == 0, checks,
+            $"Snapshot list/details render has WPF Binding Error=0 (actual {bindingErrors})");
+
+        var listSourceRun = listRouteRuns.FirstOrDefault(run => GetInlineBindingPath(run) == "SourceText");
+        var listTargetRun = listRouteRuns.FirstOrDefault(run => GetInlineBindingPath(run) == "TargetText");
+        var detailsSourceRun = detailsRouteRuns.FirstOrDefault(run => GetInlineBindingPath(run) == "SourceText");
+        var detailsTargetRun = detailsRouteRuns.FirstOrDefault(run => GetInlineBindingPath(run) == "TargetText");
+        Assert(generatedListItem && itemWasInViewModel && itemWasInList, checks,
+            "Snapshot list render creates a real ListBoxItem with the test SnapshotItemViewModel");
+        Assert(listSourceRun is not null && listTargetRun is not null &&
+               listSourceRun.Text == MainViewModel.RegionDisplayName(RegionKind.China) &&
+               listTargetRun.Text == MainViewModel.RegionDisplayName(RegionKind.International), checks,
+            "Snapshot list render displays the SourceText and TargetText values");
+        Assert(GetInlineBinding(listSourceRun)?.Mode == BindingMode.OneWay, checks,
+            "Snapshot list SourceText Binding.Mode is OneWay");
+        Assert(GetInlineBinding(listTargetRun)?.Mode == BindingMode.OneWay, checks,
+            "Snapshot list TargetText Binding.Mode is OneWay");
+        Assert(detailsSourceRun is not null && detailsTargetRun is not null, checks,
+            "Snapshot details render instantiates the SourceText and TargetText Runs");
+        Assert(GetInlineBinding(detailsSourceRun)?.Mode == BindingMode.OneWay, checks,
+            "Snapshot details SourceText Binding.Mode is OneWay");
+        Assert(GetInlineBinding(detailsTargetRun)?.Mode == BindingMode.OneWay, checks,
+            "Snapshot details TargetText Binding.Mode is OneWay");
+
+        var sourceProperty = typeof(SnapshotItemViewModel).GetProperty(nameof(SnapshotItemViewModel.SourceText));
+        var targetProperty = typeof(SnapshotItemViewModel).GetProperty(nameof(SnapshotItemViewModel.TargetText));
+        Assert(sourceProperty?.CanWrite == false, checks,
+            "SnapshotItemViewModel.SourceText remains getter-only");
+        Assert(targetProperty?.CanWrite == false, checks,
+            "SnapshotItemViewModel.TargetText remains getter-only");
+    }
+
+    private static InlineRun[] FindRouteRuns(DependencyObject root)
+    {
+        var routeText = FindVisual(root, value => value is TextBlock text &&
+            text.Inlines.OfType<InlineRun>().Any(run =>
+                GetInlineBindingPath(run) is "SourceText" or "TargetText"));
+        return routeText is not TextBlock textBlock
+            ? []
+            : textBlock.Inlines.OfType<InlineRun>()
+                .Where(run => GetInlineBindingPath(run) is "SourceText" or "TargetText")
+                .ToArray();
+    }
+
+    private static Binding? GetInlineBinding(InlineRun? run) => run is null
+        ? null
+        : BindingOperations.GetBindingBase(run, InlineRun.TextProperty) as Binding;
+
+    private static string? GetInlineBindingPath(InlineRun? run) => GetInlineBinding(run)?.Path?.Path;
 
     private sealed record FileSnapshot(bool Exists, byte[] Content, DateTime LastWriteTimeUtc);
 
