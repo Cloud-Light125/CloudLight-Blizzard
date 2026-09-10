@@ -1,4 +1,4 @@
-# CloudLight Blizzard 2.1.1
+# CloudLight Blizzard 2.1.2
 
 ## Release Readiness 人工 GUI 验收清单
 
