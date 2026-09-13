@@ -1198,7 +1198,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _lastSoopSuccessfulAt = DateTimeOffset.Now;
         RefreshTemporalStatus(DateTimeOffset.Now);
         IsSoopRefreshing = false;
-        var available = Tasks.Count(row => Bool(row.Payload, "active"));
+        var available = Tasks.Where(row => Bool(row.Payload, "active"))
+            .Select(row => row.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
         var channels = Accounts.SelectMany(row => row.Payload.TryGetProperty("channels", out var items) &&
                 items.ValueKind == JsonValueKind.Array
                 ? items.EnumerateArray().Select(item => Text(item, "id"))
@@ -1206,16 +1210,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .Count();
-        SoopRefreshStatus = channels == 0
-            ? "已刷新 · 当前没有符合条件的频道"
-            : $"已刷新 · {channels} 个频道 · {available} 个可用任务";
+        SoopRefreshStatus = available == 0
+            ? "已刷新 · 当前没有进行中的掉宝活动"
+            : $"已刷新 · {available} 个当前活动 · {channels} 个可用直播间";
         UpdateSoopQuickStart();
     }
 
     public void FailSoopRefresh()
     {
         IsSoopRefreshing = false;
-        SoopRefreshStatus = "刷新失败，请检查网络或运行日志后重试。";
+        SoopRefreshStatus = "刷新失败，当前显示上次成功数据。";
         UpdateSoopQuickStart();
     }
 
@@ -1878,12 +1882,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Status = (Bool(item, "primary") ? "主账号 · " : "") + (Bool(item, "running") ? "运行中" : "已停止"),
             Payload = item.Clone(),
         });
-        AddRows(state, "tasks", Tasks, item => new DropsRow
-        {
-            Id = Text(item, "id"), Primary = Text(item, "title"),
-            Secondary = $"{Text(item, "type")} · {Text(item, "categoryName")}",
-            Status = Bool(item, "active") ? "进行中" : "未进行", Payload = item.Clone(),
-        });
+        AddSoopTaskRows(state);
         AddRows(state, "inventory", Inventory, item => new DropsRow
         {
             Id = Text(item, "id"), Primary = Text(item, "name"), Secondary = Text(item, "description"),
@@ -1891,7 +1890,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         });
         AddSoopProgressRows(state, replaceAccount: false);
         var activeAccounts = Accounts.Count(row => Bool(row.Payload, "running"));
-        var availableTasks = Tasks.Count(row => Bool(row.Payload, "active"));
+        var availableTasks = Tasks.Where(row => Bool(row.Payload, "active"))
+            .Select(row => row.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
         vm.Status = activeAccounts > 0 || vm.Running
             ? "正在运行"
             : Accounts.Count == 0 ? "未配置" : availableTasks > 0 ? "就绪" : "待刷新";
@@ -1902,6 +1905,23 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             else CompleteSoopRefresh();
         }
         UpdateSoopQuickStart(state);
+    }
+
+    private void AddSoopTaskRows(JsonElement state)
+    {
+        if (!state.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array) return;
+        foreach (var item in tasks.EnumerateArray()
+                     .OrderByDescending(item => Bool(item, "active"))
+                     .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
+        {
+            Tasks.Add(new DropsRow
+            {
+                Id = Text(item, "id"), Primary = Text(item, "title"),
+                Secondary = $"{Text(item, "type")} · {Text(item, "categoryName")}",
+                Status = Bool(item, "active") ? "进行中" : Bool(item, "ended") ? "已结束" : "未开始",
+                Payload = item.Clone(),
+            });
+        }
     }
 
     private void AddSoopProgressRows(JsonElement owner, bool replaceAccount)

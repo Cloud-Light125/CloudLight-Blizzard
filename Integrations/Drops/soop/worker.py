@@ -131,10 +131,11 @@ class SoopWorker(WorkerBase):
             channel = importlib.import_module("cloudlight_soop_core.channel")
             drops = importlib.import_module("cloudlight_soop_core.drops")
             multi = importlib.import_module("cloudlight_soop_core.multi_miner")
+            miner = importlib.import_module("cloudlight_soop_core.miner")
             network = importlib.import_module("cloudlight_soop_core.network")
             self._core = {
                 "config": config, "auth": auth, "channel": channel,
-                "drops": drops, "multi": multi, "network": network,
+                "drops": drops, "multi": multi, "miner": miner, "network": network,
             }
             root_logger = logging.getLogger()
             root_logger.setLevel(logging.INFO)
@@ -219,15 +220,20 @@ class SoopWorker(WorkerBase):
 
     @staticmethod
     def _mission_to_dict(mission: Any) -> dict[str, Any]:
+        active = bool(getattr(mission, "is_event_active", False))
+        items = list(getattr(mission, "items", []))
         return {
             "id": mission.drops_idx, "title": mission.title, "type": mission.type_label,
             "startDate": mission.start_date, "endDate": mission.end_date,
             "categoryName": mission.category_name, "categoryNo": mission.category_no,
-            "active": mission.is_event_active,
+            "active": active,
+            "ended": bool(getattr(mission, "is_truly_ended", not active)),
+            "notYetOpen": bool(getattr(mission, "is_not_yet_open", False)),
+            "completed": bool(items) and all(item.mission_success for item in items),
             "items": [
                 {"name": item.item_name, "requiredMinutes": item.give_term, "viewMinutes": item.view_time,
                  "percent": item.percent, "completed": item.mission_success}
-                for item in mission.items
+                for item in items
             ],
         }
 
@@ -297,6 +303,7 @@ class SoopWorker(WorkerBase):
             "tasks": self.get_tasks({}),
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
+            "channels": self.get_channels({}),
             "coreAvailable": bool(self._core),
             "coreError": self._core_error,
             "proxy": self.proxy,
@@ -359,10 +366,98 @@ class SoopWorker(WorkerBase):
             self._restart_manager()
 
     def refresh(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._core:
+            accounts = [str(uid) for uid in self._core["auth"].list_accounts()]
+        else:
+            accounts = sorted(
+                path.name for path in self.accounts_dir.iterdir()
+                if (path / "cookies.json").is_file()
+            )
+        if accounts:
+            self._require_core()
+
+        self.logger.info("SOOP mission refresh started accounts=%d", len(accounts))
+        self.status("正在刷新掉宝信息…", "正在重新获取 SOOP 活动、奖励和直播间")
+        errors: list[str] = []
+        manager = self._manager
+        running_uids = {
+            str(uid) for uid in getattr(manager, "running_uids", [])
+        } if manager is not None else set()
+        get_miner = getattr(manager, "get_miner", None) if manager is not None else None
+
+        for uid in accounts:
+            try:
+                is_running = uid in running_uids or (
+                    callable(get_miner) and get_miner(uid) is not None
+                )
+                if is_running:
+                    force_refresh = getattr(manager, "force_refresh_account", None)
+                    if not callable(force_refresh):
+                        raise RuntimeError("SOOP Core 不支持运行中账号的即时刷新。")
+                    state = self._submit(force_refresh(uid), timeout=120)
+                else:
+                    cookies = self._core["auth"].load_cookies(uid)
+                    if not cookies:
+                        raise RuntimeError(f"未找到 SOOP 账号 {uid} 的 Session。")
+                    state = self._submit(
+                        self._refresh_saved_account(cookies),
+                        timeout=120,
+                    )
+                if state is None:
+                    raise RuntimeError("SOOP 账号刷新未返回状态。")
+                self._state_callback(state)
+            except Exception as exc:
+                errors.append(f"{uid}: {exc}")
+                self.logger.warning("SOOP mission refresh failed uid=%s: %s", uid, exc)
+
+        persisted = set(accounts)
+        for uid in list(self._states):
+            if uid not in persisted:
+                self._states.pop(uid, None)
+
         state = self.load_state({})
-        state["refreshStatus"] = "success"
-        state["refreshCompleted"] = True
+        tasks = state["tasks"]
+        channels = state["channels"]
+        mission_ids = {str(task.get("id", "")) for task in tasks if task.get("id")}
+        active_mission_ids = {
+            str(task.get("id", "")) for task in tasks
+            if task.get("id") and bool(task.get("active"))
+        }
+        active = len(active_mission_ids)
+        self.logger.info(
+            "SOOP mission refresh %s accounts=%d missions=%d active=%d channels=%d",
+            "failed" if errors else "completed",
+            len(accounts),
+            len(mission_ids),
+            active,
+            len(channels),
+        )
+        state["refreshStatus"] = "failed" if errors else "success"
+        state["refreshCompleted"] = not errors
+        if errors:
+            state["refreshError"] = "；".join(errors)
+            self.status("SOOP 刷新失败", "当前显示上次成功数据")
+        else:
+            state["refreshActiveMissions"] = active
+            state["refreshChannels"] = len(channels)
+            self.status("SOOP 掉宝信息已刷新", f"{active} 个当前活动 · {len(channels)} 个可用直播间")
         return state
+
+    async def _refresh_saved_account(self, cookies: dict[str, str]) -> Any:
+        """Query a saved Session without starting its background miner."""
+        miner_type = getattr(self._core.get("miner"), "SoopMiner", None)
+        if not callable(miner_type):
+            raise RuntimeError("SOOP Core 不支持未运行账号的即时刷新。")
+        miner = miner_type(
+            cookies,
+            channel_config=self._channel_config(),
+            app_config=self._app_config(),
+        )
+        await miner.__aenter__()
+        try:
+            return await miner.force_refresh()
+        finally:
+            await miner.__aexit__()
 
     def login(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
@@ -385,13 +480,39 @@ class SoopWorker(WorkerBase):
         if not uid:
             raise ValueError("账号不能为空")
         if self._manager is not None:
-            self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
-        removed = self._core["auth"].remove_account(uid)
+            try:
+                stopped = self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
+            except Exception as exc:
+                raise RuntimeError("停止 SOOP 账号失败，未删除本地登录信息。") from exc
+            if stopped is False:
+                raise RuntimeError("停止 SOOP 账号失败，未删除本地登录信息。")
+            if uid in {str(item) for item in getattr(self._manager, "running_uids", [])}:
+                raise RuntimeError("停止 SOOP 账号失败，未删除本地登录信息。")
+
+            self.running = bool(getattr(self._manager, "running_uids", []))
+
+        try:
+            removed = bool(self._core["auth"].remove_account(uid))
+        except Exception as exc:
+            raise RuntimeError("SOOP 账号删除失败，本地登录信息仍然存在。") from exc
+        if not removed:
+            raise RuntimeError("SOOP 账号删除失败，本地登录信息仍然存在。")
+
+        try:
+            accounts = [str(item) for item in self._core["auth"].list_accounts()]
+        except Exception as exc:
+            raise RuntimeError("SOOP 账号删除失败，本地登录信息仍然存在。") from exc
+        account_dir = self.accounts_dir / uid
+        cookies_path = account_dir / "cookies.json"
+        if uid in accounts or account_dir.exists() or cookies_path.exists():
+            raise RuntimeError("SOOP 账号删除失败，本地登录信息仍然存在。")
+
         self._states.pop(uid, None)
         if uid == str(self.settings.get("primary_account_uid", "")):
             self.settings["primary_account_uid"] = ""
             atomic_write_json(self.settings_path, self.settings)
-        return {"userid": uid, "removed": removed}
+        self.logger.info("SOOP account deleted userid=%s", uid)
+        return {"userid": uid, "removed": True}
 
     def get_accounts(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         if self._core:

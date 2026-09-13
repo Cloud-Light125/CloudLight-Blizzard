@@ -298,7 +298,8 @@ public static class FeatureSelfTest
                  "tasks":[],"inventory":[],"currentProgress":[],"runtime":{"available":true}}
                 """);
             vm.ApplyState(DropsPlatform.Soop, withChannels.RootElement);
-            Assert(vm.SoopQuickStart.Steps[2].Satisfied && vm.SoopRefreshStatus.Contains("2 个频道"),
+            Assert(vm.SoopQuickStart.Steps[2].Satisfied &&
+                   vm.SoopRefreshStatus.Contains("当前没有进行中的掉宝活动"),
                 "SOOP structured refresh with channels completes quick-start step 3");
 
             using var withoutChannels = JsonDocument.Parse("""
@@ -308,7 +309,7 @@ public static class FeatureSelfTest
                 """);
             vm.ApplyState(DropsPlatform.Soop, withoutChannels.RootElement);
             Assert(vm.SoopQuickStart.Steps[2].Satisfied &&
-                   vm.SoopRefreshStatus.Contains("当前没有符合条件的频道"),
+                   vm.SoopRefreshStatus.Contains("当前没有进行中的掉宝活动"),
                 "SOOP successful empty refresh still completes quick-start step 3");
         }
 

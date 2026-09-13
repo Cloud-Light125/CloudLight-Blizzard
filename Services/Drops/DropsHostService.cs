@@ -76,6 +76,7 @@ public sealed class DropsHostService : IAsyncDisposable
         timeout.CancelAfter(TimeSpan.FromSeconds(command switch
         {
             "refresh" when platform == DropsPlatform.Twitch => 90,
+            "refresh" when platform == DropsPlatform.Soop => 180,
             "auto_start" when platform == DropsPlatform.Twitch => 270,
             "auto_start" when platform == DropsPlatform.Soop => 120,
             "claim_reward" when platform == DropsPlatform.Soop => 90,

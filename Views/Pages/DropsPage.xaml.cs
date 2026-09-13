@@ -332,13 +332,24 @@ public partial class DropsPage : UserControl
 
         SoopPriorityMission.IsEnabled = true;
         SoopPriorityMission.Items.Add(new ComboBoxItem { Content = "自动选择", Tag = "auto" });
-        foreach (var task in tasks.EnumerateArray())
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var activeIds = new HashSet<string>(
+            tasks.EnumerateArray()
+                .Where(item => Bool(item, "active"))
+                .Select(item => Text(item, "id"))
+                .Where(id => !string.IsNullOrWhiteSpace(id)),
+            StringComparer.Ordinal);
+        foreach (var task in tasks.EnumerateArray()
+                     .OrderByDescending(item => Bool(item, "active"))
+                     .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
         {
             var id = Text(task, "id");
-            if (!string.IsNullOrWhiteSpace(id))
+            if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
                 SoopPriorityMission.Items.Add(new ComboBoxItem { Content = Text(task, "title", id), Tag = id });
         }
-        SelectTag(SoopPriorityMission, selectedMission);
+        SelectTag(SoopPriorityMission, selectedMission != "auto" && !activeIds.Contains(selectedMission)
+            ? "auto"
+            : selectedMission);
     }
 
     private void PopulateTwitchLanguages(JsonElement state, string selectedLanguage)
@@ -462,10 +473,10 @@ public partial class DropsPage : UserControl
         try
         {
             var state = await _vm.RequestAsync(DropsPlatform.Soop, "refresh");
-            if (!Bool(state, "refreshCompleted"))
-                throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
             _vm.ApplyState(DropsPlatform.Soop, state);
             PopulateSettings(DropsPlatform.Soop, state);
+            if (!Bool(state, "refreshCompleted"))
+                throw new InvalidOperationException(Text(state, "refreshError", "SOOP 刷新未完成，当前显示上次成功数据。"));
         }
         catch (Exception ex)
         {
@@ -663,8 +674,15 @@ public partial class DropsPage : UserControl
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个 SOOP 账号。", "删除账号"); return; }
         if (MessageBox.Show($"删除 SOOP 账号「{row.Primary}」的本地登录信息？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        _vm.LogoutSoopByUser(row.Id);
-        try { await _vm.RequestAsync(DropsPlatform.Soop, "delete_account", new { userid = row.Id }); await LoadPlatformAsync(DropsPlatform.Soop); }
+        try
+        {
+            var result = await _vm.RequestAsync(DropsPlatform.Soop, "delete_account", new { userid = row.Id });
+            if (!Bool(result, "removed"))
+                throw new InvalidOperationException("SOOP 账号删除失败，本地登录信息仍然存在。");
+            _vm.LogoutSoopByUser(row.Id);
+            await LoadPlatformAsync(DropsPlatform.Soop);
+            ShowInfo("SOOP 账号已删除，本地登录信息已清理。", "删除账号");
+        }
         catch (Exception ex) { ShowError(ex, "删除 SOOP 账号失败"); }
     }
 
