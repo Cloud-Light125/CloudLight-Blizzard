@@ -39,8 +39,8 @@ try {
     }
     $dotnetParsedVersion = $null
     try { $dotnetParsedVersion = [version]$dotnetVersion } catch { }
-    if ($null -eq $dotnetParsedVersion -or $dotnetParsedVersion.Major -ne 8) {
-        throw ".NET SDK 版本不受支持：$dotnetVersion。请安装 .NET 8 SDK。"
+    if ($null -eq $dotnetParsedVersion -or $dotnetParsedVersion.Major -lt 8) {
+        throw ".NET SDK 版本不受支持：$dotnetVersion。请安装 .NET 8 或更高版本 SDK。"
     }
     $isccCandidates = [System.Collections.Generic.List[string]]::new()
     $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
