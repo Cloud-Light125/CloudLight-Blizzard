@@ -230,11 +230,29 @@ class SoopWorker(WorkerBase):
             "ended": bool(getattr(mission, "is_truly_ended", not active)),
             "notYetOpen": bool(getattr(mission, "is_not_yet_open", False)),
             "completed": bool(items) and all(item.mission_success for item in items),
+            "source": "mission", "eventOnly": False,
             "items": [
                 {"name": item.item_name, "requiredMinutes": item.give_term, "viewMinutes": item.view_time,
                  "percent": item.percent, "completed": item.mission_success}
                 for item in items
             ],
+        }
+
+    @staticmethod
+    def _event_to_dict(activity: Any) -> dict[str, Any]:
+        raw = getattr(activity, "raw", {}) or {}
+        active = bool(getattr(activity, "is_event_active", False))
+        return {
+            "id": activity.drops_idx, "title": activity.title, "type": activity.type_label,
+            "startDate": activity.start_date, "endDate": activity.end_date,
+            "categoryName": str(raw.get("cateName") or raw.get("categoryName") or ""),
+            "categoryNo": str(raw.get("cateNo") or raw.get("categoryNo") or ""),
+            "active": active,
+            "ended": bool(getattr(activity, "is_truly_ended", not active)),
+            "notYetOpen": bool(getattr(activity, "is_not_yet_open", False)),
+            "completed": False,
+            "source": "event", "eventOnly": True, "joined": bool(getattr(activity, "acct_conn", False)),
+            "items": [],
         }
 
     @staticmethod
@@ -287,6 +305,7 @@ class SoopWorker(WorkerBase):
             "networkBps": state.network_last_minute_bps,
             "currentProgress": self._current_progress_for_state(state),
             "missions": [self._mission_to_dict(mission) for mission in state.missions],
+            "events": [self._event_to_dict(activity) for activity in getattr(state, "events", [])],
             "inventory": [self._inventory_to_dict(item) for item in state.inventory],
             "channels": [
                 {"id": channel.user_id, "name": channel.user_nick, "broadcastNo": channel.broad_no,
@@ -301,6 +320,7 @@ class SoopWorker(WorkerBase):
             "settings": self._effective_settings(),
             "accounts": self.get_accounts({}),
             "tasks": self.get_tasks({}),
+            "events": self.get_events({}),
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
             "channels": self.get_channels({}),
@@ -418,17 +438,22 @@ class SoopWorker(WorkerBase):
         state = self.load_state({})
         tasks = state["tasks"]
         channels = state["channels"]
-        mission_ids = {str(task.get("id", "")) for task in tasks if task.get("id")}
+        mission_ids = {
+            str(task.get("id", "")) for task in tasks
+            if task.get("id") and not bool(task.get("eventOnly"))
+        }
+        event_ids = {str(item.get("id", "")) for item in state["events"] if item.get("id")}
         active_mission_ids = {
             str(task.get("id", "")) for task in tasks
             if task.get("id") and bool(task.get("active"))
         }
         active = len(active_mission_ids)
         self.logger.info(
-            "SOOP mission refresh %s accounts=%d missions=%d active=%d channels=%d",
+            "SOOP mission refresh %s accounts=%d missions=%d events=%d active=%d channels=%d",
             "failed" if errors else "completed",
             len(accounts),
             len(mission_ids),
+            len(event_ids),
             active,
             len(channels),
         )
@@ -634,10 +659,44 @@ class SoopWorker(WorkerBase):
             self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
         return {"userid": uid, "stopped": True}
 
+    def _tasks_for_state(self, state: Any) -> list[dict[str, Any]]:
+        rows = [{"uid": state.uid, **self._mission_to_dict(mission)} for mission in state.missions]
+        by_id = {
+            str(row["id"]): row for row in rows if str(row.get("id", ""))
+        }
+        for activity in getattr(state, "events", []):
+            activity_row = self._event_to_dict(activity)
+            activity_id = str(activity_row.get("id", ""))
+            if not activity_id:
+                continue
+            existing = by_id.get(activity_id)
+            if existing is None:
+                existing = {"uid": state.uid, **activity_row}
+                rows.append(existing)
+                by_id[activity_id] = existing
+                continue
+            # The activity catalog is the authoritative current/ended status;
+            # the mission row remains the source of progress items.
+            existing["active"] = activity_row["active"]
+            existing["ended"] = activity_row["ended"]
+            existing["notYetOpen"] = activity_row["notYetOpen"]
+            existing["eventActive"] = activity_row["active"]
+            existing["source"] = "mission+event"
+        return rows
+
     def get_tasks(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
         states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
-        return [{"uid": state.uid, **task} for state in states for task in map(self._mission_to_dict, state.missions)]
+        return [task for state in states for task in self._tasks_for_state(state)]
+
+    def get_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        return [
+            {"uid": state.uid, **self._event_to_dict(activity)}
+            for state in states
+            for activity in getattr(state, "events", [])
+        ]
 
     def get_inventory(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()

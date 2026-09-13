@@ -56,7 +56,13 @@ class _FakeManager:
 
 class SoopWorkerContractTests(unittest.TestCase):
     @staticmethod
-    def _state(uid: str, missions: list | None = None, *, running: bool = False) -> SimpleNamespace:
+    def _state(
+        uid: str,
+        missions: list | None = None,
+        events: list | None = None,
+        *,
+        running: bool = False,
+    ) -> SimpleNamespace:
         return SimpleNamespace(
             uid=uid,
             running=running,
@@ -72,6 +78,7 @@ class SoopWorkerContractTests(unittest.TestCase):
             network_downloaded=0,
             network_last_minute_bps=0,
             missions=list(missions or []),
+            events=list(events or []),
             inventory=[],
             available_channels=[],
         )
@@ -93,6 +100,21 @@ class SoopWorkerContractTests(unittest.TestCase):
             is_truly_ended=not active,
             is_not_yet_open=False,
             items=[item],
+        )
+
+    @staticmethod
+    def _event(idx: str, *, active: bool = True) -> SimpleNamespace:
+        return SimpleNamespace(
+            drops_idx=idx,
+            title=f"Activity {idx}",
+            type_label="固定型",
+            start_date="2026-01-01",
+            end_date="2099-12-31" if active else "2020-01-01",
+            is_event_active=active,
+            is_truly_ended=not active,
+            is_not_yet_open=False,
+            acct_conn=False,
+            raw={"cateName": "Overwatch"},
         )
 
     @staticmethod
@@ -311,6 +333,43 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertTrue(result["refreshCompleted"])
                 self.assertIn("new", {task["id"] for task in result["tasks"]})
                 self.assertEqual({task["id"] for task in worker.get_tasks({})}, {"old", "new"})
+            finally:
+                self._close(worker)
+
+    def test_refresh_exposes_new_event_when_mission_cache_is_old(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                old = self._mission("old")
+                event = self._event("owwc-day-2")
+                old_state = self._state("account", [old], [self._event("old")], running=True)
+                refreshed = self._state("account", [old], [self._event("old"), event], running=True)
+
+                class Auth:
+                    def list_accounts(self) -> list[str]:
+                        return ["account"]
+
+                class Manager:
+                    running_uids = ["account"]
+
+                    def get_miner(self, uid: str) -> object:
+                        return object()
+
+                    async def force_refresh_account(self, uid: str) -> SimpleNamespace:
+                        return refreshed
+
+                worker._core = {"auth": Auth()}
+                worker._manager = Manager()
+                worker._states["account"] = old_state
+
+                result = worker.refresh({})
+
+                activity = next(task for task in result["tasks"] if task["id"] == "owwc-day-2")
+                self.assertTrue(activity["active"])
+                self.assertTrue(activity["eventOnly"])
+                self.assertEqual(activity["categoryName"], "Overwatch")
+                self.assertIn("owwc-day-2", {item["id"] for item in result["events"]})
             finally:
                 self._close(worker)
 
