@@ -1911,6 +1911,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     {
         if (!state.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array) return;
         foreach (var item in tasks.EnumerateArray()
+                     .Where(item => !Bool(item, "ended"))
                      .OrderByDescending(item => Bool(item, "active"))
                      .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
         {

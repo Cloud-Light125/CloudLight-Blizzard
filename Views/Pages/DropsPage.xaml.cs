@@ -335,11 +335,12 @@ public partial class DropsPage : UserControl
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var activeIds = new HashSet<string>(
             tasks.EnumerateArray()
-                .Where(item => Bool(item, "active"))
+                .Where(item => Bool(item, "active") && !Bool(item, "ended"))
                 .Select(item => Text(item, "id"))
                 .Where(id => !string.IsNullOrWhiteSpace(id)),
             StringComparer.Ordinal);
         foreach (var task in tasks.EnumerateArray()
+                     .Where(item => !Bool(item, "ended"))
                      .OrderByDescending(item => Bool(item, "active"))
                      .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
         {

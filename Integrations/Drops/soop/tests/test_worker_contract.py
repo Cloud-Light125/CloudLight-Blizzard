@@ -373,6 +373,22 @@ class SoopWorkerContractTests(unittest.TestCase):
             finally:
                 self._close(worker)
 
+    def test_get_tasks_hides_ended_missions_and_events_but_keeps_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                ended_mission = self._mission("old-mission", active=False)
+                ended_event = self._event("old-event", active=False)
+                state = self._state("account", [ended_mission], [ended_event])
+                worker._states["account"] = state
+
+                self.assertEqual(worker.get_tasks({}), [])
+                self.assertEqual(len(worker._states["account"].missions), 1)
+                self.assertEqual(len(worker._states["account"].events), 1)
+            finally:
+                self._close(worker)
+
     def test_refresh_saved_account_queries_session_without_starting_manager(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

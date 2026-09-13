@@ -682,7 +682,9 @@ class SoopWorker(WorkerBase):
             existing["notYetOpen"] = activity_row["notYetOpen"]
             existing["eventActive"] = activity_row["active"]
             existing["source"] = "mission+event"
-        return rows
+        # Keep ended activities in the Core state for history/diagnostics, but
+        # never expose them as current tasks to the WPF task list or selector.
+        return [row for row in rows if not bool(row.get("ended", False))]
 
     def get_tasks(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
