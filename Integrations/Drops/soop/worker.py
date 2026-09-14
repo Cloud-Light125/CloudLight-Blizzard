@@ -46,6 +46,33 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
+def is_actionable_task(task: dict[str, Any], *, allow_upcoming: bool = False) -> bool:
+    """Shared Worker task policy for display selection and execution inputs."""
+    if bool(task.get("eventOnly")) or bool(task.get("ended")) or bool(task.get("completed")):
+        return False
+    if bool(task.get("active")):
+        return True
+    return allow_upcoming and bool(task.get("notYetOpen"))
+
+
+def _task_lifecycle_label(
+    *,
+    active: bool,
+    ended: bool,
+    not_yet_open: bool,
+    completed: bool = False,
+) -> str:
+    if completed:
+        return "completed"
+    if active:
+        return "active"
+    if not_yet_open:
+        return "upcoming"
+    if ended:
+        return "ended"
+    return "unknown"
+
+
 class SoopWorker(WorkerBase):
     platform = "soop"
 
@@ -207,10 +234,38 @@ class SoopWorker(WorkerBase):
             current = current.__cause__ or current.__context__
         return False
 
+    def _normalize_priority_mission_id(self, *, fallback_if_missing: bool) -> bool:
+        """Keep a saved priority only while it remains selectable.
+
+        An upcoming incomplete mission is valid saved configuration even
+        though it is not an execution candidate yet.  A completed/ended
+        mission is never valid, and refreshes may clear a missing ID once the
+        complete snapshot is available.
+        """
+        selected = str(self.settings.get("priority_mission_id", "auto")).strip() or "auto"
+        if selected == "auto":
+            return False
+
+        tasks = [
+            task
+            for state in self._states.values()
+            for task in self._tasks_for_state(state, include_ended=True)
+            if str(task.get("id", "")) == selected and not bool(task.get("eventOnly"))
+        ]
+        if not tasks and not fallback_if_missing:
+            return False
+        if any(is_actionable_task(task, allow_upcoming=True) for task in tasks):
+            return False
+
+        self.settings["priority_mission_id"] = "auto"
+        atomic_write_json(self.settings_path, self.settings)
+        return True
+
     def _state_callback(self, state: Any) -> None:
         with self._state_changed:
             self._states[state.uid] = state
             self._state_changed.notify_all()
+        self._normalize_priority_mission_id(fallback_if_missing=False)
         event("account_status", self._state_to_dict(state))
         active = sum(1 for item in self._states.values() if item.running)
         if state.uid == self._auto_start_uid:
@@ -219,17 +274,27 @@ class SoopWorker(WorkerBase):
             self.status("运行中" if active else "已停止", f"{active}/{len(self.get_accounts({}))} 个账号运行")
 
     @staticmethod
+    def _mission_is_completed(mission: Any, items: list[Any] | None = None) -> bool:
+        reward_items = items if items is not None else list(getattr(mission, "items", []))
+        completed = bool(getattr(mission, "completed", getattr(mission, "is_completed", False)))
+        return completed or (bool(reward_items) and all(item.mission_success for item in reward_items))
+
+    @staticmethod
     def _mission_to_dict(mission: Any) -> dict[str, Any]:
         active = bool(getattr(mission, "is_event_active", False))
+        ended = bool(getattr(mission, "is_truly_ended", not active))
+        not_yet_open = bool(getattr(mission, "is_not_yet_open", False))
         items = list(getattr(mission, "items", []))
+        completed = SoopWorker._mission_is_completed(mission, items)
         return {
             "id": mission.drops_idx, "title": mission.title, "type": mission.type_label,
             "startDate": mission.start_date, "endDate": mission.end_date,
             "categoryName": mission.category_name, "categoryNo": mission.category_no,
-            "active": active,
-            "ended": bool(getattr(mission, "is_truly_ended", not active)),
-            "notYetOpen": bool(getattr(mission, "is_not_yet_open", False)),
-            "completed": bool(items) and all(item.mission_success for item in items),
+            "active": active, "ended": ended, "notYetOpen": not_yet_open,
+            "completed": completed,
+            "lifecycle": _task_lifecycle_label(
+                active=active, ended=ended, not_yet_open=not_yet_open, completed=completed,
+            ),
             "source": "mission", "eventOnly": False,
             "items": [
                 {"name": item.item_name, "requiredMinutes": item.give_term, "viewMinutes": item.view_time,
@@ -242,15 +307,18 @@ class SoopWorker(WorkerBase):
     def _event_to_dict(activity: Any) -> dict[str, Any]:
         raw = getattr(activity, "raw", {}) or {}
         active = bool(getattr(activity, "is_event_active", False))
+        ended = bool(getattr(activity, "is_truly_ended", not active))
+        not_yet_open = bool(getattr(activity, "is_not_yet_open", False))
         return {
             "id": activity.drops_idx, "title": activity.title, "type": activity.type_label,
             "startDate": activity.start_date, "endDate": activity.end_date,
             "categoryName": str(raw.get("cateName") or raw.get("categoryName") or ""),
             "categoryNo": str(raw.get("cateNo") or raw.get("categoryNo") or ""),
-            "active": active,
-            "ended": bool(getattr(activity, "is_truly_ended", not active)),
-            "notYetOpen": bool(getattr(activity, "is_not_yet_open", False)),
+            "active": active, "ended": ended, "notYetOpen": not_yet_open,
             "completed": False,
+            "lifecycle": _task_lifecycle_label(
+                active=active, ended=ended, not_yet_open=not_yet_open,
+            ),
             "source": "event", "eventOnly": True, "joined": bool(getattr(activity, "acct_conn", False)),
             "items": [],
         }
@@ -279,6 +347,8 @@ class SoopWorker(WorkerBase):
 
         rows: list[dict[str, Any]] = []
         for mission in missions_for_channel(state.missions, current_channel):
+            if self._mission_is_completed(mission):
+                continue
             item = mission.active_item()
             if item is None:
                 continue
@@ -295,6 +365,8 @@ class SoopWorker(WorkerBase):
         return rows
 
     def _state_to_dict(self, state: Any) -> dict[str, Any]:
+        tasks = self._tasks_for_state(state)
+        all_tasks = self.get_tasks({})
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
             "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
@@ -303,9 +375,15 @@ class SoopWorker(WorkerBase):
             "heartbeatStatus": state.heartbeat_status, "heartbeatLastSuccess": state.heartbeat_last_success,
             "networkUploaded": state.network_uploaded, "networkDownloaded": state.network_downloaded,
             "networkBps": state.network_last_minute_bps,
+            "settings": {"priority_mission_id": str(self.settings.get("priority_mission_id", "auto"))},
             "currentProgress": self._current_progress_for_state(state),
             "missions": [self._mission_to_dict(mission) for mission in state.missions],
             "events": [self._event_to_dict(activity) for activity in getattr(state, "events", [])],
+            "tasks": tasks,
+            "displayTasks": tasks,
+            "selectableTasks": [task for task in tasks if is_actionable_task(task, allow_upcoming=True)],
+            "allTasks": all_tasks,
+            "allSelectableTasks": [task for task in all_tasks if is_actionable_task(task, allow_upcoming=True)],
             "inventory": [self._inventory_to_dict(item) for item in state.inventory],
             "channels": [
                 {"id": channel.user_id, "name": channel.user_nick, "broadcastNo": channel.broad_no,
@@ -315,11 +393,16 @@ class SoopWorker(WorkerBase):
         }
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tasks = self.get_tasks({})
         return {
             "running": self.running,
             "settings": self._effective_settings(),
             "accounts": self.get_accounts({}),
-            "tasks": self.get_tasks({}),
+            # ``tasks`` is the backwards-compatible display/history collection.
+            # Selection consumers must use the explicit actionable collection.
+            "tasks": tasks,
+            "displayTasks": tasks,
+            "selectableTasks": [task for task in tasks if is_actionable_task(task, allow_upcoming=True)],
             "events": self.get_events({}),
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
@@ -340,6 +423,7 @@ class SoopWorker(WorkerBase):
                 self.settings[key] = changes[key]
         self._validate_settings()
         atomic_write_json(self.settings_path, self.settings)
+        self._normalize_priority_mission_id(fallback_if_missing=False)
         if self.running:
             self._restart_manager()
         return self._effective_settings()
@@ -437,6 +521,8 @@ class SoopWorker(WorkerBase):
 
         state = self.load_state({})
         tasks = state["tasks"]
+        if self._normalize_priority_mission_id(fallback_if_missing=True):
+            state["settings"] = self._effective_settings()
         channels = state["channels"]
         mission_ids = {
             str(task.get("id", "")) for task in tasks
@@ -445,7 +531,7 @@ class SoopWorker(WorkerBase):
         event_ids = {str(item.get("id", "")) for item in state["events"] if item.get("id")}
         active_mission_ids = {
             str(task.get("id", "")) for task in tasks
-            if task.get("id") and bool(task.get("active"))
+            if task.get("id") and is_actionable_task(task)
         }
         active = len(active_mission_ids)
         self.logger.info(
@@ -659,7 +745,7 @@ class SoopWorker(WorkerBase):
             self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
         return {"userid": uid, "stopped": True}
 
-    def _tasks_for_state(self, state: Any) -> list[dict[str, Any]]:
+    def _tasks_for_state(self, state: Any, *, include_ended: bool = False) -> list[dict[str, Any]]:
         rows = [{"uid": state.uid, **self._mission_to_dict(mission)} for mission in state.missions]
         by_id = {
             str(row["id"]): row for row in rows if str(row.get("id", ""))
@@ -675,16 +761,25 @@ class SoopWorker(WorkerBase):
                 rows.append(existing)
                 by_id[activity_id] = existing
                 continue
-            # The activity catalog is the authoritative current/ended status;
-            # the mission row remains the source of progress items.
+            # The activity catalog is the authoritative activity-window status;
+            # the mission row remains the source of account progress and
+            # completion.  Never let catalog ``live``/activity data overwrite
+            # the structured completed flag from mission items.
             existing["active"] = activity_row["active"]
             existing["ended"] = activity_row["ended"]
             existing["notYetOpen"] = activity_row["notYetOpen"]
             existing["eventActive"] = activity_row["active"]
+            existing["activityLifecycle"] = activity_row["lifecycle"]
             existing["source"] = "mission+event"
-        # Keep ended activities in the Core state for history/diagnostics, but
-        # never expose them as current tasks to the WPF task list or selector.
-        return [row for row in rows if not bool(row.get("ended", False))]
+        # Keep fully completed missions in the display/history snapshot even
+        # after the event window closes.  Other ended activities remain in the
+        # Core state for diagnostics but are not current WPF tasks.
+        if include_ended:
+            return rows
+        return [
+            row for row in rows
+            if not bool(row.get("ended", False)) or bool(row.get("completed", False))
+        ]
 
     def get_tasks(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()

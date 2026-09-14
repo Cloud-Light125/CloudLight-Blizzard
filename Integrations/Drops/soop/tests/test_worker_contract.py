@@ -84,9 +84,16 @@ class SoopWorkerContractTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _mission(idx: str, *, active: bool = True) -> SimpleNamespace:
+    def _mission(
+        idx: str,
+        *,
+        active: bool = True,
+        completed: bool = False,
+        not_yet_open: bool = False,
+    ) -> SimpleNamespace:
         item = SimpleNamespace(
-            item_name=f"reward-{idx}", give_term=60, view_time=1, percent=1, mission_success=False,
+            item_name=f"reward-{idx}", give_term=60, view_time=60 if completed else 1,
+            percent=100 if completed else 1, mission_success=completed,
         )
         return SimpleNamespace(
             drops_idx=idx,
@@ -97,8 +104,8 @@ class SoopWorkerContractTests(unittest.TestCase):
             category_name="",
             category_no="",
             is_event_active=active,
-            is_truly_ended=not active,
-            is_not_yet_open=False,
+            is_truly_ended=not active and not not_yet_open,
+            is_not_yet_open=not_yet_open,
             items=[item],
         )
 
@@ -388,6 +395,62 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertEqual(len(worker._states["account"].events), 1)
             finally:
                 self._close(worker)
+
+    def test_completed_mission_stays_in_display_tasks_but_not_selectable_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                completed = self._mission("done", completed=True)
+                completed_ended = self._mission("done-ended", active=False, completed=True)
+                partial = self._mission("partial")
+                upcoming = self._mission("upcoming", active=False, not_yet_open=True)
+                worker._states["account"] = self._state(
+                    "account", [completed, completed_ended, partial, upcoming], [self._event("done")], running=False,
+                )
+
+                state = worker.load_state({})
+                display_ids = {task["id"] for task in state["tasks"]}
+                selectable_ids = {task["id"] for task in state["selectableTasks"]}
+                completed_row = next(task for task in state["tasks"] if task["id"] == "done")
+
+                self.assertEqual(display_ids, {"done", "done-ended", "partial", "upcoming"})
+                self.assertTrue(completed_row["completed"])
+                self.assertEqual(selectable_ids, {"partial", "upcoming"})
+            finally:
+                self._close(worker)
+
+    def test_priority_keeps_upcoming_and_falls_back_after_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            worker_closed = False
+            try:
+                upcoming = self._mission("priority", active=False, not_yet_open=True)
+                worker._states["account"] = self._state("account", [upcoming])
+
+                worker.save_settings({"settings": {"priority_mission_id": "priority"}})
+                self.assertEqual(worker.settings["priority_mission_id"], "priority")
+
+                # WorkerBase uses one process-wide logger name, so release the
+                # first instance before constructing the reload instance.
+                self._close(worker)
+                worker_closed = True
+                reloaded = SoopWorker(root / "data", root / "soop.log")
+                try:
+                    reloaded._states["account"] = self._state("account", [upcoming])
+                    self.assertEqual(reloaded.load_state({})["settings"]["priority_mission_id"], "priority")
+
+                    completed = self._mission("priority", completed=True)
+                    reloaded._state_callback(self._state("account", [completed]))
+                    self.assertEqual(reloaded.settings["priority_mission_id"], "auto")
+                    self.assertEqual(reloaded.load_state({})["settings"]["priority_mission_id"], "auto")
+                finally:
+                    self._close(reloaded)
+
+            finally:
+                if not worker_closed:
+                    self._close(worker)
 
     def test_refresh_saved_account_queries_session_without_starting_manager(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

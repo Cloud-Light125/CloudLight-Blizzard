@@ -227,6 +227,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public IReadOnlyList<DropsPlatformViewModel> Platforms { get; }
     public ObservableCollection<DropsRow> Accounts { get; } = new();
     public ObservableCollection<DropsRow> Tasks { get; } = new();
+    // ``Tasks`` is the complete display snapshot.  This collection is the
+    // SOOP priority/selection view and intentionally excludes ended,
+    // event-only, and fully completed tasks.
+    public ObservableCollection<DropsRow> SoopSelectableTasks { get; } = new();
     public ObservableCollection<DropsRow> Inventory { get; } = new();
     public ObservableCollection<DropsRow> Channels { get; } = new();
     public ObservableCollection<DropsRow> History { get; } = new();
@@ -1198,7 +1202,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _lastSoopSuccessfulAt = DateTimeOffset.Now;
         RefreshTemporalStatus(DateTimeOffset.Now);
         IsSoopRefreshing = false;
-        var available = Tasks.Where(row => Bool(row.Payload, "active"))
+        var available = SoopSelectableTasks.Where(row => Bool(row.Payload, "active"))
             .Select(row => row.Id)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
@@ -1851,7 +1855,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var vm = For(platform);
         if (state.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
         if (state.TryGetProperty("status", out var status)) vm.Status = status.GetString() ?? vm.Status;
-        Accounts.Clear(); Tasks.Clear(); Inventory.Clear(); Channels.Clear(); History.Clear();
+        Accounts.Clear(); Tasks.Clear(); SoopSelectableTasks.Clear(); Inventory.Clear(); Channels.Clear(); History.Clear();
         SoopCurrentProgress.Clear();
         switch (platform)
         {
@@ -1863,6 +1867,36 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
             !Bool(runtime, "available", true))
             ApplyRuntimeError(platform, Text(runtime, "code"), Text(runtime, "message"));
+    }
+
+    internal void ApplySoopAccountStatus(JsonElement state)
+    {
+        if (!state.TryGetProperty("uid", out var uidValue) || uidValue.ValueKind != JsonValueKind.String)
+            return;
+        var uid = uidValue.GetString() ?? "";
+        if (string.IsNullOrWhiteSpace(uid)) return;
+
+        if (state.TryGetProperty("tasks", out var tasks) && tasks.ValueKind == JsonValueKind.Array)
+        {
+            for (var index = Tasks.Count - 1; index >= 0; index--)
+                if (string.Equals(Text(Tasks[index].Payload, "uid"), uid, StringComparison.Ordinal))
+                    Tasks.RemoveAt(index);
+            for (var index = SoopSelectableTasks.Count - 1; index >= 0; index--)
+                if (string.Equals(Text(SoopSelectableTasks[index].Payload, "uid"), uid, StringComparison.Ordinal))
+                    SoopSelectableTasks.RemoveAt(index);
+            AddSoopTaskRows(state);
+        }
+
+        AddSoopProgressRows(state, replaceAccount: true);
+        if (state.TryGetProperty("running", out var running) && running.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            Soop.Running = running.GetBoolean();
+        if (state.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
+            Soop.Status = status.GetString() ?? Soop.Status;
+        var available = SoopSelectableTasks.Select(row => row.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        Soop.Summary = $"{Accounts.Count} 个账号 · {available} 个可用任务";
     }
 
     private void ApplySoop(JsonElement state, DropsPlatformViewModel vm)
@@ -1890,7 +1924,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         });
         AddSoopProgressRows(state, replaceAccount: false);
         var activeAccounts = Accounts.Count(row => Bool(row.Payload, "running"));
-        var availableTasks = Tasks.Where(row => Bool(row.Payload, "active"))
+        var availableTasks = SoopSelectableTasks.Where(row => Bool(row.Payload, "active"))
             .Select(row => row.Id)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
@@ -1911,17 +1945,21 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     {
         if (!state.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array) return;
         foreach (var item in tasks.EnumerateArray()
-                     .Where(item => !Bool(item, "ended"))
+                     .Where(item => !Bool(item, "ended") || Bool(item, "completed"))
                      .OrderByDescending(item => Bool(item, "active"))
                      .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
         {
-            Tasks.Add(new DropsRow
+            var row = new DropsRow
             {
                 Id = Text(item, "id"), Primary = Text(item, "title"),
                 Secondary = $"{Text(item, "type")} · {Text(item, "categoryName")}",
-                Status = Bool(item, "active") ? "进行中" : Bool(item, "ended") ? "已结束" : "未开始",
+                Status = SoopTaskPolicy.Status(item),
+                Completed = Bool(item, "completed"),
                 Payload = item.Clone(),
-            });
+            };
+            Tasks.Add(row);
+            if (SoopTaskPolicy.IsSelectable(item))
+                SoopSelectableTasks.Add(row);
         }
     }
 
@@ -2344,6 +2382,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void RebuildTwitchCampaigns()
     {
         Tasks.Clear();
+        SoopSelectableTasks.Clear();
         foreach (var item in _twitchCampaigns.Where(IsTwitchCampaignVisible))
         {
             var completed = Number(item, "completedDrops");

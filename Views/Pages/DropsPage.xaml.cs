@@ -321,8 +321,29 @@ public partial class DropsPage : UserControl
 
     private void PopulateSoopMissions(JsonElement state, string selectedMission)
     {
+        if (!state.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array)
+        {
+            PopulateSoopMissionOptions(default, selectedMission);
+            return;
+        }
+        PopulateSoopMissionOptions(tasks, selectedMission);
+    }
+
+    private void PopulateSoopMissionOptions(JsonElement tasks, string selectedMission)
+    {
         SoopPriorityMission.Items.Clear();
-        if (!state.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array || tasks.GetArrayLength() == 0)
+        if (tasks.ValueKind != JsonValueKind.Array)
+        {
+            SoopPriorityMission.Items.Add(new ComboBoxItem { Content = "暂无可选任务", Tag = "auto", IsEnabled = false });
+            SoopPriorityMission.SelectedIndex = 0;
+            SoopPriorityMission.IsEnabled = false;
+            return;
+        }
+
+        var selectableTasks = tasks.EnumerateArray()
+            .Where(SoopTaskPolicy.IsSelectable)
+            .ToArray();
+        if (selectableTasks.Length == 0)
         {
             SoopPriorityMission.Items.Add(new ComboBoxItem { Content = "暂无可选任务", Tag = "auto", IsEnabled = false });
             SoopPriorityMission.SelectedIndex = 0;
@@ -333,14 +354,12 @@ public partial class DropsPage : UserControl
         SoopPriorityMission.IsEnabled = true;
         SoopPriorityMission.Items.Add(new ComboBoxItem { Content = "自动选择", Tag = "auto" });
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var activeIds = new HashSet<string>(
-            tasks.EnumerateArray()
-                .Where(item => Bool(item, "active") && !Bool(item, "ended"))
+        var selectableIds = new HashSet<string>(
+            selectableTasks
                 .Select(item => Text(item, "id"))
                 .Where(id => !string.IsNullOrWhiteSpace(id)),
             StringComparer.Ordinal);
-        foreach (var task in tasks.EnumerateArray()
-                     .Where(item => !Bool(item, "ended"))
+        foreach (var task in selectableTasks
                      .OrderByDescending(item => Bool(item, "active"))
                      .ThenBy(item => Text(item, "endDate"), StringComparer.Ordinal))
         {
@@ -348,7 +367,7 @@ public partial class DropsPage : UserControl
             if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
                 SoopPriorityMission.Items.Add(new ComboBoxItem { Content = Text(task, "title", id), Tag = id });
         }
-        SelectTag(SoopPriorityMission, selectedMission != "auto" && !activeIds.Contains(selectedMission)
+        SelectTag(SoopPriorityMission, selectedMission != "auto" && !selectableIds.Contains(selectedMission)
             ? "auto"
             : selectedMission);
     }
@@ -1650,6 +1669,24 @@ public partial class DropsPage : UserControl
 
     private void OnWorkerEvent(object? sender, WorkerEvent message)
     {
+        if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
+        {
+            var payload = message.Payload.Clone();
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_vm == null) return;
+                if (_platform != DropsPlatform.Soop) return;
+                _vm.ApplySoopAccountStatus(payload);
+                if (!payload.TryGetProperty("allTasks", out var allTasks) || allTasks.ValueKind != JsonValueKind.Array)
+                    return;
+                var selected = payload.TryGetProperty("settings", out var settings) &&
+                               settings.ValueKind == JsonValueKind.Object
+                    ? Text(settings, "priority_mission_id", "auto")
+                    : "auto";
+                PopulateSoopMissionOptions(allTasks, selected);
+            }));
+            return;
+        }
         if (message.Platform == DropsPlatform.Bilibili)
         {
             if (message.Name == "error" && string.Equals(Text(message.Payload, "code"), "login_expired", StringComparison.OrdinalIgnoreCase))
