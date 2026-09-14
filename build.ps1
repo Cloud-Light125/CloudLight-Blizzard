@@ -5,6 +5,7 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+$releaseVersion = '2.1.4'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
@@ -47,7 +48,10 @@ try {
     if ($isccCommand -and $isccCommand.Source) { $isccCandidates.Add($isccCommand.Source) }
     $innoRoots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    foreach ($candidate in $innoRoots | ForEach-Object { Join-Path $_ 'Inno Setup 6\ISCC.exe' }) {
+    foreach ($candidate in $innoRoots | ForEach-Object {
+        Join-Path $_ 'Inno Setup 7\ISCC.exe'
+        Join-Path $_ 'Inno Setup 6\ISCC.exe'
+    }) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and
             -not $isccCandidates.Contains($candidate)) { $isccCandidates.Add($candidate) }
     }
@@ -66,7 +70,7 @@ try {
     Write-Host "Source state: $buildSourceState"
 
     if (-not $iscc) {
-        throw '未找到 Inno Setup 6（ISCC.exe）。请安装 Inno Setup 6，或将 ISCC.exe 加入 PATH 后重新运行 build.ps1。'
+        throw '未找到 Inno Setup 6/7（ISCC.exe）。请安装 Inno Setup，或将 ISCC.exe 加入 PATH 后重新运行 build.ps1。'
     }
 
     'bin', 'obj', 'publish', 'installer\out' | ForEach-Object {
@@ -134,14 +138,14 @@ try {
     $publishDir = (Resolve-Path (Join-Path $root 'publish')).Path
     & $iscc ("/DPublishDir=$publishDir") (Join-Path $root 'installer\app.iss') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 构建失败。' }
-    $setup = Get-Item (Join-Path $root 'installer\out\CloudLight-Blizzard-2.1.3-win-x64-Setup.exe') -ErrorAction SilentlyContinue
+    $setup = Get-Item (Join-Path $root "installer\out\CloudLight-Blizzard-$releaseVersion-win-x64-Setup.exe") -ErrorAction SilentlyContinue
     if (-not $setup) { throw 'Inno Setup 未生成安装包。' }
     if ($setup.Length -le 0) { throw '生成的安装包大小为 0。' }
     $setupProductVersion = ([string]$setup.VersionInfo.ProductVersion).Trim()
     $setupFileVersion = ([string]$setup.VersionInfo.FileVersion).Trim()
     $setupProductVersionRaw = ([string]$setup.VersionInfo.ProductVersionRaw).Trim()
     $setupFileVersionRaw = ([string]$setup.VersionInfo.FileVersionRaw).Trim()
-    if ($setupProductVersionRaw -ne '2.1.3.0' -or $setupFileVersionRaw -ne '2.1.3.0') {
+    if ($setupProductVersionRaw -ne "${releaseVersion}.0" -or $setupFileVersionRaw -ne "${releaseVersion}.0") {
         throw "安装包版本元数据不正确（ProductVersion=$setupProductVersion/$setupProductVersionRaw，FileVersion=$setupFileVersion/$setupFileVersionRaw）。"
     }
     Write-Host "Installer ProductVersion: $setupProductVersion (raw $setupProductVersionRaw)"
