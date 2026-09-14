@@ -154,7 +154,10 @@ if (Test-Path -LiteralPath (Join-Path $SoopCorePath "__init__.py")) {
     $soopArgs = @(
         "--add-data", "$resolvedSoop\*.py;core",
         "--hidden-import", "aiohttp",
-        "--hidden-import", "yarl"
+        "--hidden-import", "yarl",
+        # SOOP Core is loaded from bundled .py data at runtime, so PyInstaller
+        # cannot discover standard-library imports such as zoneinfo statically.
+        "--hidden-import", "zoneinfo"
     )
 }
 if ($Platforms -contains "soop") {

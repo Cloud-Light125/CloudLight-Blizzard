@@ -84,6 +84,24 @@ try {
         $openssl = [string](Get-CloudLightJsonProperty -Object $responseResult -Name 'openssl')
         Write-Host "Packaged $platform SSL self-test: PASS (Python $python; $openssl; frozen=$frozen)" -ForegroundColor Green
         Write-Host "  _ssl module: $sslModule"
+
+        if ($platform -eq "soop") {
+            $coreRequest = '{"id":"core-selftest","command":"load_state","payload":{}}'
+            $coreOutput = $coreRequest | & $worker --data-dir (Join-Path $platformRoot "core-data") --log-file (Join-Path $platformRoot "core-worker.log")
+            if ($LASTEXITCODE -ne 0) {
+                throw "Packaged SOOP Worker Core self-test failed to start (exit $LASTEXITCODE)."
+            }
+            $coreResponse = $coreOutput | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } |
+                Where-Object { $_ -and $_.PSObject.Properties['id'] -and $_.id -eq "core-selftest" } |
+                Select-Object -Last 1
+            $coreResult = Get-CloudLightJsonProperty -Object $coreResponse -Name 'result'
+            $coreAvailable = [bool](Get-CloudLightJsonProperty -Object $coreResult -Name 'coreAvailable')
+            if (-not $coreAvailable) {
+                $coreError = [string](Get-CloudLightJsonProperty -Object $coreResult -Name 'coreError')
+                throw "Packaged SOOP Worker cannot load SOOP Core. Output: $coreError"
+            }
+            Write-Host "Packaged soop Core import self-test: PASS" -ForegroundColor Green
+        }
     }
 }
 finally {
