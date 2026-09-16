@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import sys
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 SOOP_DIR = Path(__file__).resolve().parents[1]
@@ -17,6 +20,7 @@ for path in (str(DROPS_DIR), str(SOOP_DIR)):
         sys.path.insert(0, path)
 
 from worker import SOOP_TIMEZONE, SoopWorker, is_actionable_task, normalize_task_status
+from credentials import read_credentials, write_credentials
 
 
 class _FakeAuth:
@@ -683,6 +687,98 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertIn(("claim", ("reward", 2)), calls)
                 self.assertIn(("refresh", True), calls)
                 self.assertIn(("closed", True), calls)
+            finally:
+                self._close(worker)
+
+    @unittest.skipUnless(os.name == "nt", "SOOP credential persistence uses Windows CurrentUser DPAPI")
+    def test_soop_credentials_round_trip_with_dpapi_without_plaintext(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "credentials.dpapi"
+            write_credentials(path, "cloudlight12", "secret-password")
+
+            self.assertEqual(read_credentials(path), ("cloudlight12", "secret-password"))
+            encrypted = path.read_text(encoding="ascii")
+            self.assertNotIn("cloudlight12", encrypted)
+            self.assertNotIn("secret-password", encrypted)
+
+    @unittest.skipUnless(os.name == "nt", "SOOP credential persistence uses Windows CurrentUser DPAPI")
+    def test_login_persists_encrypted_credentials_for_future_reauthentication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                class Auth:
+                    async def login(self, userid, password, *, config):
+                        return {"BbsTicket": userid, "AuthTicket": "ticket"}
+
+                worker._core = {"auth": Auth()}
+                worker._app_config = lambda: None
+                result = worker.login({"userid": "cloudlight12", "password": "secret-password"})
+
+                self.assertTrue(result["credentialSaved"])
+                credential_path = worker._credentials_path("cloudlight12")
+                self.assertEqual(read_credentials(credential_path), ("cloudlight12", "secret-password"))
+                self.assertNotIn("secret-password", credential_path.read_text(encoding="ascii"))
+            finally:
+                self._close(worker)
+
+    def test_authentication_failure_detection_includes_soop_korean_response(self) -> None:
+        self.assertTrue(SoopWorker._is_authentication_error(
+            RuntimeError("Drops API 认证失败: 로그인 후 가능 합니다.")
+        ))
+        self.assertFalse(SoopWorker._is_authentication_error(ConnectionError("network unreachable")))
+
+    def test_expired_running_state_triggers_continuous_reauthentication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                state = self._state("cloudlight12", running=False)
+                state.status = "登录已失效，请重新添加账号"
+                worker.status = mock.Mock()
+                worker._handle_authentication_failure = mock.Mock(return_value=True)
+                with mock.patch("worker.event"):
+                    worker._state_callback(state)
+
+                worker._handle_authentication_failure.assert_called_once_with("cloudlight12", restart=True)
+            finally:
+                self._close(worker)
+
+    def test_reauthentication_retries_until_success_using_configured_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                worker.settings["reauth_retry_interval"] = 0
+                attempts = 0
+
+                def submit(coroutine, timeout=35.0):
+                    nonlocal attempts
+                    coroutine.close()
+                    attempts += 1
+                    if attempts == 1:
+                        raise RuntimeError("temporary login rejection")
+                    return None
+
+                worker._submit = submit
+                worker.status = mock.Mock()
+                with mock.patch("worker.read_credentials", return_value=("cloudlight12", "secret-password")), \
+                     mock.patch("worker.event"):
+                    worker._reauthentication_loop("cloudlight12", True, threading.Event())
+
+                self.assertEqual(attempts, 2)
+            finally:
+                self._close(worker)
+
+    def test_soop_reauthentication_interval_is_clamped_and_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                worker.save_settings({"settings": {"reauth_retry_interval": 12}})
+                self.assertEqual(worker.settings["reauth_retry_interval"], 30)
+                saved = json.loads(worker.settings_path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["reauth_retry_interval"], 30)
             finally:
                 self._close(worker)
 

@@ -44,7 +44,7 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 
 “掉宝”是单一一级导航，页面内切换 SOOP、YouTube 和 Twitch。三个平台的网络业务运行在独立无窗口 Worker 中，通过 UTF-8 JSON Lines 与 WPF 交换结构化状态；Worker 异常不会结束主程序，退出 CloudLight Blizzard 时会先请求 Worker 正常停止。
 
-- SOOP：多账号 Session 隔离、自动/手动/仅 owesports 选台、优先任务、固定/抽奖/随机任务、背包、自动领取和低流量轮询设置。
+- SOOP：多账号 Session 隔离、自动/手动/仅 owesports 选台、优先任务、固定/抽奖/随机任务、背包、自动领取、低流量轮询，以及基于 Windows DPAPI 保存凭据的 Session 失效持续自动重登。
 - YouTube：Chrome/Brave 独立 Profile、自动频道/手动 URL、Headless、静音、播放恢复、实际观看时间与历史。Chrome DevTools 的 `127.0.0.1` 连接始终直连。
 - Twitch：Device OAuth、cookies session、Campaign/Inventory/Channel、Priority/Exclude/PriorityMode、连接质量、通知、徽章表情、可用 Drop 检查和自动领取开关。
 

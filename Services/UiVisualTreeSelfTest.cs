@@ -361,6 +361,7 @@ public static class UiVisualTreeSelfTest
                 var soopPanel = FindNamed(dropsPage, "SoopPanel");
                 var youtubePanel = FindNamed(dropsPage, "YouTubePanel");
                 var twitchPanel = FindNamed(dropsPage, "TwitchPanel");
+                var soopReauthInterval = FindNamed(dropsPage, "SoopReauthInterval");
                 Assert(dropsHeader is not null && dropsNetworkSummary is Border networkSummary &&
                        networkSummary.ActualHeight > 0 && platformTabsBar is Grid tabsGrid &&
                        tabsGrid.ColumnDefinitions.Count == 4,
@@ -409,6 +410,8 @@ public static class UiVisualTreeSelfTest
                 Assert(bilibiliNetwork is Border &&
                        FindVisual(bilibiliNetwork, value => value is CheckBox) is null,
                     checks, "Bilibili 网络卡片不再重复显示代理开关");
+                Assert(soopReauthInterval is TextBox,
+                    checks, "SOOP 设置包含认证失效自动重登间隔");
                 Assert(bilibiliSettings is Border && bilibiliActivityList is ListBox &&
                        FindNamed(dropsPage, "BilibiliWatchModePicker") is ComboBox &&
                        FindNamed(dropsPage, "BilibiliSessionsPerRoomText") is TextBox &&

@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -29,10 +30,11 @@ from Shared.protocol import (
     read_json,
     run_worker,
 )
+from credentials import read_credentials, write_credentials
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "settings_version": 4,
+    "settings_version": 5,
     "auto_claim_enabled": False,
     "low_bandwidth_mode": True,
     "proxy_enabled": False,
@@ -45,6 +47,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "mission_poll_interval": 90,
     "inventory_poll_interval": 300,
     "channel_refresh_interval": 300,
+    "reauth_retry_interval": 300,
     "channel_mode": "smart",
     "manual_input": "",
     "preferred_bjid": "owesports",
@@ -230,6 +233,10 @@ class SoopWorker(WorkerBase):
         self._states: dict[str, Any] = {}
         self._state_changed = threading.Condition()
         self._auto_start_uid = ""
+        self._reauth_guard = threading.Lock()
+        self._reauth_cancel: dict[str, threading.Event] = {}
+        self._reauth_threads: dict[str, threading.Thread] = {}
+        self._reauth_last_attempt: dict[str, float] = {}
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="soop-asyncio", daemon=True)
         self._loop_thread.start()
@@ -352,6 +359,153 @@ class SoopWorker(WorkerBase):
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=timeout)
 
+    def _credentials_path(self, uid: str) -> Path:
+        return self.accounts_dir / uid / "credentials.dpapi"
+
+    def _has_saved_credentials(self, uid: str) -> bool:
+        return self._credentials_path(uid).is_file()
+
+    @staticmethod
+    def _is_authentication_error(exc: BaseException) -> bool:
+        current: BaseException | None = exc
+        visited: set[int] = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            name = current.__class__.__name__.casefold()
+            message = str(current).casefold()
+            if "authentication" in name or any(marker in message for marker in (
+                "drops api 认证失败", "로그인 후 가능", "登录已失效", "not logged in",
+            )):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    @staticmethod
+    def _is_auth_expired_state(state: Any) -> bool:
+        return "登录已失效" in str(getattr(state, "status", ""))
+
+    def _cancel_reauthentication(self, uid: str, *, wait: bool = False) -> bool:
+        thread: threading.Thread | None
+        with self._reauth_guard:
+            cancel = self._reauth_cancel.get(uid)
+            thread = self._reauth_threads.get(uid)
+            if cancel is not None:
+                cancel.set()
+        if wait and thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=160)
+        return thread is None or not thread.is_alive()
+
+    def _cancel_all_reauthentication(self) -> None:
+        with self._reauth_guard:
+            for cancel in self._reauth_cancel.values():
+                cancel.set()
+
+    def _allow_reauthentication(self, uid: str) -> None:
+        with self._reauth_guard:
+            current = self._reauth_threads.get(uid)
+            if current is None or not current.is_alive():
+                self._reauth_cancel.pop(uid, None)
+
+    def _publish_reauthentication_status(self, uid: str, status: str) -> None:
+        state = self._states.get(uid)
+        if state is not None:
+            state.running = False
+            state.status = status
+            event("account_status", self._state_to_dict(state))
+        self.status(status, uid)
+
+    async def _reauthenticate_once(
+        self,
+        uid: str,
+        password: str,
+        restart: bool,
+        cancel: threading.Event,
+    ) -> None:
+        manager = self._manager
+        if manager is not None:
+            await manager.stop_account_and_wait(uid)
+        if cancel.is_set() or self.shutdown_requested:
+            return
+        cookies = await self._core["auth"].login(uid, password, config=self._app_config())
+        if cancel.is_set() or self.shutdown_requested:
+            return
+        # The login endpoint returning cookies is not sufficient: validate the
+        # new Session against the Drops API before considering recovery done.
+        refreshed = await self._refresh_saved_account(cookies)
+        self._state_callback(refreshed)
+        if restart and not cancel.is_set() and not self.shutdown_requested:
+            if self._manager is None:
+                self._manager = self._core["multi"].MultiMinerManager(
+                    on_state=self._state_callback,
+                    channel_config=self._channel_config(),
+                    app_config=self._app_config(),
+                )
+            await self._manager.start_account(cookies)
+
+    def _schedule_reauthentication(self, uid: str, *, restart: bool) -> bool:
+        with self._reauth_guard:
+            current = self._reauth_threads.get(uid)
+            current_cancel = self._reauth_cancel.get(uid)
+            if current is not None and current.is_alive() and current_cancel is not None and not current_cancel.is_set():
+                return True
+            cancel = threading.Event()
+            self._reauth_cancel[uid] = cancel
+            thread = threading.Thread(
+                target=self._reauthentication_loop,
+                args=(uid, restart, cancel),
+                name=f"soop-reauth-{uid}",
+                daemon=True,
+            )
+            self._reauth_threads[uid] = thread
+            thread.start()
+        return True
+
+    def _reauthentication_loop(self, uid: str, restart: bool, cancel: threading.Event) -> None:
+        try:
+            credentials = read_credentials(self._credentials_path(uid))
+        except Exception as exc:
+            self.logger.warning("[%s] 无法读取已保存的 SOOP 登录凭据: %s", uid, exc)
+            self._publish_reauthentication_status(uid, "自动重新登录不可用，请重新添加账号")
+            return
+        if credentials is None or credentials[0] != uid:
+            self.logger.warning("[%s] SOOP Session 已失效，但没有可用的加密登录凭据。", uid)
+            self._publish_reauthentication_status(uid, "未保存登录密码，请重新添加账号")
+            return
+
+        _, password = credentials
+        attempt = 0
+        while not cancel.is_set() and not self.shutdown_requested:
+            interval = int(self.settings.get("reauth_retry_interval", 300))
+            last_attempt = self._reauth_last_attempt.get(uid, 0.0)
+            remaining = max(0.0, interval - (time.monotonic() - last_attempt))
+            if remaining and cancel.wait(remaining):
+                return
+            attempt += 1
+            self._reauth_last_attempt[uid] = time.monotonic()
+            self.logger.info("[%s] SOOP Session 已失效，正在进行第 %d 次自动重新登录。", uid, attempt)
+            self._publish_reauthentication_status(uid, "正在自动重新登录")
+            try:
+                self._submit(self._reauthenticate_once(uid, password, restart, cancel), timeout=150)
+                if cancel.is_set() or self.shutdown_requested:
+                    return
+                if restart:
+                    self.running = True
+                self.logger.info("[%s] SOOP 自动重新登录成功。", uid)
+                event("account_reauthenticated", {"userid": uid, "restarted": restart})
+                return
+            except Exception as exc:
+                if cancel.is_set() or self.shutdown_requested:
+                    return
+                self.logger.warning("[%s] SOOP 自动重新登录失败，将在 %d 秒后重试: %s", uid, interval, exc)
+                self._publish_reauthentication_status(uid, f"自动重新登录失败，{interval} 秒后重试")
+
+    def _handle_authentication_failure(self, uid: str, *, restart: bool) -> bool:
+        if not self._has_saved_credentials(uid):
+            self._publish_reauthentication_status(uid, "未保存登录密码，请重新添加账号")
+            return False
+        self._schedule_reauthentication(uid, restart=restart)
+        return True
+
     @staticmethod
     def _is_transient_network_error(exc: BaseException) -> bool:
         current: BaseException | None = exc
@@ -414,6 +568,8 @@ class SoopWorker(WorkerBase):
             self.status("正在刷新掉宝信息…", "正在读取直播间、任务与奖励背包")
         else:
             self.status("运行中" if active else "已停止", f"{active}/{len(self.get_accounts({}))} 个账号运行")
+        if self._is_auth_expired_state(state):
+            self._handle_authentication_failure(str(state.uid), restart=True)
 
     @staticmethod
     def _mission_is_completed(mission: Any, items: list[Any] | None = None) -> bool:
@@ -567,11 +723,11 @@ class SoopWorker(WorkerBase):
         return self._effective_settings()
 
     def _validate_settings(self) -> None:
-        self.settings["settings_version"] = 4
+        self.settings["settings_version"] = 5
         self.settings["primary_account_uid"] = str(self.settings.get("primary_account_uid", "")).strip()
         for name, minimum, maximum in (
             ("mission_poll_interval", 30, 600), ("inventory_poll_interval", 60, 1800),
-            ("channel_refresh_interval", 60, 1800),
+            ("channel_refresh_interval", 60, 1800), ("reauth_retry_interval", 30, 3600),
         ):
             self.settings[name] = max(minimum, min(maximum, int(self.settings.get(name, DEFAULT_SETTINGS[name]))))
         if self.settings.get("channel_mode") not in {"smart", "manual", "owesports"}:
@@ -581,6 +737,8 @@ class SoopWorker(WorkerBase):
         self._require_core()
         if self.running:
             return self.load_state({})
+        for uid in self._core["auth"].list_accounts():
+            self._allow_reauthentication(str(uid))
         self._manager = self._core["multi"].MultiMinerManager(
             on_state=self._state_callback, channel_config=self._channel_config(), app_config=self._app_config()
         )
@@ -590,6 +748,7 @@ class SoopWorker(WorkerBase):
         return self.load_state({})
 
     def stop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._cancel_all_reauthentication()
         if self._manager is not None:
             try:
                 self._submit(self._manager.shutdown(), timeout=20)
@@ -649,6 +808,8 @@ class SoopWorker(WorkerBase):
                     raise RuntimeError("SOOP 账号刷新未返回状态。")
                 self._state_callback(state)
             except Exception as exc:
+                if self._is_authentication_error(exc):
+                    self._handle_authentication_failure(uid, restart=is_running)
                 errors.append(f"{uid}: {exc}")
                 self.logger.warning("SOOP mission refresh failed uid=%s: %s", uid, exc)
 
@@ -714,8 +875,22 @@ class SoopWorker(WorkerBase):
         password = str(payload.get("password", ""))
         if not userid or not password:
             raise ValueError("账号和密码不能为空")
+        if not self._cancel_reauthentication(userid, wait=True):
+            raise RuntimeError("SOOP 自动重登仍在结束中，请稍后重试。")
         cookies = self._submit(self._core["auth"].login(userid, password, config=self._app_config()))
-        return {"userid": userid, "saved": bool(cookies)}
+        try:
+            write_credentials(self._credentials_path(userid), userid, password)
+        except Exception as exc:
+            # Do not leave an account presented as auto-recoverable when its
+            # password could not be persisted securely.
+            try:
+                self._core["auth"].remove_account(userid)
+            except Exception:
+                pass
+            raise RuntimeError("登录成功，但无法使用 Windows DPAPI 安全保存凭据。") from exc
+        self._allow_reauthentication(userid)
+        self._reauth_last_attempt.pop(userid, None)
+        return {"userid": userid, "saved": bool(cookies), "credentialSaved": True}
 
     def logout(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.delete_account(payload)
@@ -728,6 +903,8 @@ class SoopWorker(WorkerBase):
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
         if not uid:
             raise ValueError("账号不能为空")
+        if not self._cancel_reauthentication(uid, wait=True):
+            raise RuntimeError("SOOP 自动重登仍在结束中，请稍后再删除账号。")
         if self._manager is not None:
             try:
                 stopped = self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
@@ -794,6 +971,7 @@ class SoopWorker(WorkerBase):
         uid = str(self.settings.get("primary_account_uid", "")).strip()
         if not uid:
             return {**self.load_state({}), "autoStartCompleted": False, "missingPrimary": True}
+        self._allow_reauthentication(uid)
 
         self.status("正在恢复 SOOP 账号…", uid)
         cookies = self._core["auth"].load_cookies(uid)
@@ -827,6 +1005,9 @@ class SoopWorker(WorkerBase):
                 if state is not None and state.status == "挂机中" and state.running:
                     break
                 if state is not None and state.status in terminal:
+                    if state.status.startswith("登录已失效") and self._handle_authentication_failure(uid, restart=True):
+                        self._state_changed.wait(timeout=1.0)
+                        continue
                     failure = ("SOOP 自动登录失败" if state.status.startswith("登录已失效")
                                else f"SOOP 自动启动失败：{state.status}")
                     break
@@ -850,6 +1031,7 @@ class SoopWorker(WorkerBase):
     def start_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        self._allow_reauthentication(uid)
         retry_attempt = int(payload.get("retryAttempt", 0) or 0)
         if retry_attempt > 0:
             self.logger.debug("SOOP 正在进行第 %d 次网络恢复重试。", retry_attempt)
@@ -879,6 +1061,7 @@ class SoopWorker(WorkerBase):
 
     def stop_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        self._cancel_reauthentication(uid)
         if self._manager is not None:
             self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
         return {"userid": uid, "stopped": True}
@@ -1017,6 +1200,7 @@ class SoopWorker(WorkerBase):
     def shutdown(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self.shutdown_requested:
             return {"shutdown": True}
+        self._cancel_all_reauthentication()
         result = super().shutdown(payload)
         self._loop.call_soon_threadsafe(self._loop.stop)
         return result

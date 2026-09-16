@@ -277,6 +277,7 @@ public partial class DropsPage : UserControl
             SoopMissionInterval.Text = Int(settings, "mission_poll_interval", 90).ToString();
             SoopInventoryInterval.Text = Int(settings, "inventory_poll_interval", 300).ToString();
             SoopChannelInterval.Text = Int(settings, "channel_refresh_interval", 300).ToString();
+            SoopReauthInterval.Text = Int(settings, "reauth_retry_interval", 300).ToString();
             UpdateSoopChannelFields();
             return;
         }
@@ -680,6 +681,7 @@ public partial class DropsPage : UserControl
                 ["mission_poll_interval"] = ParseInt(SoopMissionInterval, 90),
                 ["inventory_poll_interval"] = ParseInt(SoopInventoryInterval, 300),
                 ["channel_refresh_interval"] = ParseInt(SoopChannelInterval, 300),
+                ["reauth_retry_interval"] = ParseInt(SoopReauthInterval, 300),
             }});
             await LoadPlatformAsync(DropsPlatform.Soop);
         }
