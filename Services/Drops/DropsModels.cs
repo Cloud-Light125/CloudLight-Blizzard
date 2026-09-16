@@ -18,8 +18,32 @@ public enum DropsConnectionState
     Stopped,
 }
 
-public sealed record DropsProxySettings(bool EnableProxy, string ProxyUrl, bool FallbackDirect,
-    bool BilibiliUseProxy = false);
+public sealed record DropsProxySettings(
+    bool EnableProxy,
+    string ProxyUrl,
+    bool FallbackDirect,
+    bool SoopUseProxy = true,
+    bool YouTubeUseProxy = true,
+    bool TwitchUseProxy = true,
+    bool BilibiliUseProxy = false)
+{
+    public bool IsSelected(DropsPlatform platform) => platform switch
+    {
+        DropsPlatform.Soop => SoopUseProxy,
+        DropsPlatform.YouTube => YouTubeUseProxy,
+        DropsPlatform.Twitch => TwitchUseProxy,
+        DropsPlatform.Bilibili => BilibiliUseProxy,
+        _ => false,
+    };
+
+    public bool IsEnabledFor(DropsPlatform platform) => EnableProxy && IsSelected(platform);
+
+    public DropsProxySettings ForWorker(DropsPlatform platform) => platform == DropsPlatform.Bilibili
+        // Bilibili's Worker needs both the global availability and its own
+        // selection so it can expose an accurate network-policy state.
+        ? this
+        : this with { EnableProxy = IsEnabledFor(platform) };
+}
 
 public sealed record DropsRuntimeDiagnosticSnapshot(
     string SoopStatus,

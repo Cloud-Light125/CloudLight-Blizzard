@@ -104,16 +104,14 @@ public sealed class NetworkDiagnosticService
             token => _httpClients.ProbeGetAsync(() => UpdateService.CreateLatestReleaseRequest(updateEndpoint),
                 "diagnostic-update", status => IsSuccess(status) || status == HttpStatusCode.NotFound, token),
             DefaultRoute(), cancellationToken);
+        var soopRoute = DropsRoute(_settings.SoopUseProxy);
         var soopTask = ProbeWithTimeoutAsync(
-            token => _httpClients.ProbeGetAsync(
-                () => new HttpRequestMessage(HttpMethod.Get, "https://www.sooplive.com/"),
-                "diagnostic-soop", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
-            DefaultRoute(), cancellationToken);
+            token => ProbeDropsEndpointAsync("https://www.sooplive.com/", "diagnostic-soop",
+                _settings.SoopUseProxy, token), soopRoute, cancellationToken);
+        var twitchRoute = DropsRoute(_settings.TwitchUseProxy);
         var twitchTask = ProbeWithTimeoutAsync(
-            token => _httpClients.ProbeGetAsync(
-                () => new HttpRequestMessage(HttpMethod.Get, "https://www.twitch.tv/"),
-                "diagnostic-twitch", status => IsSuccess(status) || (int)status is >= 300 and < 400, token),
-            DefaultRoute(), cancellationToken);
+            token => ProbeDropsEndpointAsync("https://www.twitch.tv/", "diagnostic-twitch",
+                _settings.TwitchUseProxy, token), twitchRoute, cancellationToken);
         var bilibiliRoute = BilibiliRoute();
         var bilibiliTask = ProbeWithTimeoutAsync(
             ProbeBilibiliAsync, bilibiliRoute, cancellationToken);
@@ -134,6 +132,7 @@ public sealed class NetworkDiagnosticService
             $"网络代理：{(_settings.EnableProxy ? "已启用" : "未启用")}",
             $"代理：{SafeProxyDisplay(_settings)}",
             $"直连回退：{(_settings.FallbackDirect ? "开启" : "关闭")}",
+            $"掉宝代理范围：SOOP={DropsRoute(_settings.SoopUseProxy)}；YouTube={DropsRoute(_settings.YouTubeUseProxy)}；Twitch={DropsRoute(_settings.TwitchUseProxy)}；哔哩哔哩={BilibiliRoute()}",
         };
         if (report is not null)
             lines.AddRange(report.ToCopyLines());
@@ -171,11 +170,36 @@ public sealed class NetworkDiagnosticService
     }
 
     private string DefaultRoute() => _settings.EnableProxy ? "Proxy" : "Direct";
+    private string DropsRoute(bool selected) => selected && _settings.EnableProxy &&
+        ProxyValidator.TryNormalize(_settings.ProxyUrl, out _, out _) ? "Proxy" : "Direct";
     private bool BilibiliGlobalProxyEnabled() => _settings.EnableProxy &&
         ProxyValidator.TryNormalize(_settings.ProxyUrl, out _, out _);
     private string BilibiliRoute() => _settings.BilibiliUseProxy && BilibiliGlobalProxyEnabled()
         ? "Proxy" : "Direct";
     private static bool IsSuccess(HttpStatusCode status) => (int)status is >= 200 and < 300;
+
+    private Task<CloudNetworkProbeResult> ProbeDropsEndpointAsync(string url, string service,
+        bool selected, CancellationToken cancellationToken)
+    {
+        if (DropsRoute(selected) == "Proxy")
+            return _httpClients.ProbeGetAsync(
+                () => new HttpRequestMessage(HttpMethod.Get, url), service,
+                status => IsSuccess(status) || (int)status is >= 300 and < 400, cancellationToken);
+        return ProbeDirectEndpointAsync(url, cancellationToken);
+    }
+
+    private async Task<CloudNetworkProbeResult> ProbeDirectEndpointAsync(string url,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        using var client = _directClientFactory();
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        var status = response.StatusCode;
+        var success = (int)status is >= 200 and < 400;
+        return new CloudNetworkProbeResult(success, "Direct", stopwatch.ElapsedMilliseconds,
+            (int)status, null, success ? "正常" : $"HTTP {(int)status}");
+    }
 
     private async Task<CloudNetworkProbeResult> ProbeBilibiliAsync(CancellationToken cancellationToken)
     {

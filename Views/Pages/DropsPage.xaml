@@ -375,7 +375,7 @@
                                 <TextBlock Text="{Binding NetworkProxyModeText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
                             </Border>
                         </WrapPanel>
-                        <UniformGrid Columns="3" Margin="0,8,0,0">
+                        <UniformGrid Columns="2" Margin="0,8,0,0">
                             <StackPanel>
                                 <TextBlock Text="代理地址" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
                                 <TextBlock Text="{Binding NetworkProxyUrlText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
@@ -385,12 +385,28 @@
                                 <TextBlock Text="失败策略" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
                                 <TextBlock Text="{Binding NetworkProxyFallbackText}" FontSize="11.5"/>
                             </StackPanel>
-                            <StackPanel Margin="14,0,0,0">
-                                <TextBlock Text="适用范围" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
-                                <TextBlock Text="SOOP · YouTube · Twitch" FontSize="11.5"/>
-                            </StackPanel>
                         </UniformGrid>
-                        <TextBlock Text="哔哩哔哩默认直连，可在其设置中单独选择全局代理；Chrome / Brave 调试连接始终直连。"
+                        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,9,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="掉宝代理范围" FontWeight="SemiBold" FontSize="11.5"/>
+                                    <TextBlock Text="{Binding NetworkProxyScopeText}" Foreground="{DynamicResource Text.Muted}"
+                                               FontSize="10.5" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <CheckBox x:Name="SoopUseProxyCheck" Content="SOOP" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="YouTubeUseProxyCheck" Content="YouTube" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="TwitchUseProxyCheck" Content="Twitch" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="BilibiliUseProxyCheck" Content="哔哩哔哩" Style="{StaticResource ThemeCheckBox}"
+                                              Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                </WrapPanel>
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="代理地址、总开关和失败策略仍在设置页管理；Chrome / Brave 调试连接始终直连。"
                                    Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                     <Button Grid.Column="1" Content="前往设置" Style="{StaticResource SecondaryButton}"
@@ -924,9 +940,8 @@
                                             Margin="12,0,0,0" Click="OnOpenProxySettings"/>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Text="网络" Style="{StaticResource SectionTitle}"/>
-                                        <CheckBox x:Name="BilibiliUseProxyCheck" Style="{StaticResource ThemeCheckBox}"
-                                                  Content="使用 CloudLight Blizzard 全局代理" Margin="12,0,0,0"
-                                                  IsChecked="{Binding BilibiliDetails.BilibiliUseProxy, Mode=TwoWay}"/>
+                                        <TextBlock Text="使用范围在页面顶部单独设置" Foreground="{DynamicResource Text.Muted}"
+                                                   FontSize="10.5" Margin="12,1,0,0"/>
                                     </StackPanel>
                                 </DockPanel>
                                 <WrapPanel Margin="0,5,0,0">

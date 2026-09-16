@@ -1674,12 +1674,25 @@ public static class FeatureSelfTest
         Assert(loaded.RegionStoragePath == @"D:\Region Data", "custom region storage persisted");
         Assert(loaded.SkippedUpdateVersion == "1.0.1", "skipped update version persists in settings.json");
         Assert(loaded.PreferenceFor(123456).Region == AccountRegionOverride.China, "account preference persisted");
+        Assert(loaded.SoopUseProxy && loaded.YouTubeUseProxy && loaded.TwitchUseProxy && !loaded.BilibiliUseProxy,
+            "legacy settings default to the previous Drops proxy behavior");
+        loaded.SoopUseProxy = false;
+        loaded.YouTubeUseProxy = true;
+        loaded.TwitchUseProxy = false;
+        loaded.BilibiliUseProxy = true;
+        loaded.SaveTo(settingsPath);
+        var proxyScopes = AppSettings.LoadFrom(settingsPath);
+        Assert(!proxyScopes.SoopUseProxy && proxyScopes.YouTubeUseProxy &&
+               !proxyScopes.TwitchUseProxy && proxyScopes.BilibiliUseProxy,
+            "four independent Drops proxy selections persist in settings.json");
         var legacyNavigationPath = Path.Combine(workspace, "legacy-navigation-settings.json");
         File.WriteAllText(legacyNavigationPath, "{\"LastMainSection\":\"overview\"}");
         var legacyNavigation = AppSettings.LoadFrom(legacyNavigationPath);
         Assert(legacyNavigation.LastMainSection == "accounts" &&
-               AppSettings.NormalizeMainSection("not-a-page") == "accounts",
-            "removed overview and unknown saved sections safely fall back to accounts");
+               AppSettings.NormalizeMainSection("not-a-page") == "accounts" &&
+               legacyNavigation.SoopUseProxy && legacyNavigation.YouTubeUseProxy &&
+               legacyNavigation.TwitchUseProxy && !legacyNavigation.BilibiliUseProxy,
+            "legacy settings keep prior Drops proxy defaults and removed navigation falls back safely");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
         report.AppendLine("TEST 9 settings/account list: PASS");
@@ -2277,12 +2290,22 @@ public static class FeatureSelfTest
             Assert(!dropsVm.BilibiliQuickStart.Steps[3].Satisfied &&
                    dropsVm.BilibiliQuickStart.Steps[3].StateText.Contains("未开始", StringComparison.Ordinal),
                 "Bilibili quick-start step 4 returns to not-started after Drops stops");
-            dropsVm.UpdateProxySettings(true, "http://127.0.0.1:7897", true, true);
+            var proxyPolicy = new DropsProxySettings(true, "http://127.0.0.1:7897", true,
+                SoopUseProxy: true, YouTubeUseProxy: false, TwitchUseProxy: true, BilibiliUseProxy: true);
+            dropsVm.UpdateProxySettings(proxyPolicy);
             Assert(bilibili.BilibiliUseProxy && bilibili.GlobalProxyEnabled &&
                    bilibili.NetworkMode == "PROXY" && bilibili.ProxyEndpointText == "127.0.0.1:7897" &&
-                   bilibili.NetworkPolicyText.Contains("全局代理", StringComparison.Ordinal),
+                   bilibili.NetworkPolicyText.Contains("全局代理", StringComparison.Ordinal) &&
+                   dropsVm.NetworkProxyScopeText == "SOOP · Twitch · 哔哩哔哩",
                 "Bilibili VM projects the explicit global proxy policy without exposing credentials");
-            dropsVm.UpdateProxySettings(false, "", false, false);
+            Assert(proxyPolicy.ForWorker(DropsPlatform.Soop).EnableProxy &&
+                   !proxyPolicy.ForWorker(DropsPlatform.YouTube).EnableProxy &&
+                   proxyPolicy.ForWorker(DropsPlatform.Twitch).EnableProxy &&
+                   proxyPolicy.ForWorker(DropsPlatform.Bilibili).EnableProxy &&
+                   proxyPolicy.ForWorker(DropsPlatform.Bilibili).BilibiliUseProxy,
+                "Drops Host derives an effective per-platform Worker proxy policy");
+            dropsVm.UpdateProxySettings(new DropsProxySettings(false, "", false,
+                SoopUseProxy: true, YouTubeUseProxy: false, TwitchUseProxy: true, BilibiliUseProxy: false));
             Assert(bilibili.ScanQrLoginCommand is not null && bilibili.CancelQrCommand is not null &&
                    bilibili.LogoutCommand is not null && bilibili.DiscoverCommand is not null &&
                    bilibili.AddRoomCommand is not null && bilibili.RemoveRoomCommand is not null &&

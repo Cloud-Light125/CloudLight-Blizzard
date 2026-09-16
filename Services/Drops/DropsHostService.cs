@@ -209,7 +209,11 @@ public sealed class DropsHostService : IAsyncDisposable
         foreach (var worker in workers)
         {
             if (worker.Process.HasExited) continue;
-            try { await RequestAsync(worker.Platform, "set_proxy", settings, cancellationToken).ConfigureAwait(false); }
+            try
+            {
+                await RequestAsync(worker.Platform, "set_proxy", settings.ForWorker(worker.Platform), cancellationToken)
+                    .ConfigureAwait(false);
+            }
             catch { }
         }
     }
@@ -259,7 +263,8 @@ public sealed class DropsHostService : IAsyncDisposable
         try
         {
             await RequestAsync(platform, "hello", new { protocol = 1 }, cancellationToken).ConfigureAwait(false);
-            await RequestAsync(platform, "set_proxy", _proxySettings, cancellationToken).ConfigureAwait(false);
+            await RequestAsync(platform, "set_proxy", _proxySettings.ForWorker(platform), cancellationToken)
+                .ConfigureAwait(false);
             worker.Lifecycle = WorkerLifecycle.Running;
             worker.Status = "就绪";
             PublishSnapshot(worker);

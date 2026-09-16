@@ -424,6 +424,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public string NetworkProxyUrlText { get => _networkProxyUrlText; private set => Set(ref _networkProxyUrlText, value); }
     private string _networkProxyFallbackText = "不允许直连回退";
     public string NetworkProxyFallbackText { get => _networkProxyFallbackText; private set => Set(ref _networkProxyFallbackText, value); }
+    private string _networkProxyScopeText = "SOOP · YouTube · Twitch";
+    public string NetworkProxyScopeText { get => _networkProxyScopeText; private set => Set(ref _networkProxyScopeText, value); }
 
     private DropsPlatform _selectedPlatform = DropsPlatform.Soop;
     public DropsPlatform SelectedPlatform
@@ -561,24 +563,43 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         UpdateBilibiliQuickStart();
     }
 
-    public void UpdateProxySettings(bool enabled, string proxyUrl, bool fallbackDirect,
-        bool bilibiliUseProxy = false)
+    public void UpdateProxySettings(DropsProxySettings settings)
     {
-        BilibiliDetails.UpdateNetworkSettings(bilibiliUseProxy, enabled, proxyUrl, fallbackDirect);
-        NetworkProxyModeText = enabled ? "已启用" : "未启用";
-        NetworkProxyUrlText = enabled
-            ? (string.IsNullOrWhiteSpace(proxyUrl) ? "未配置" : SafeProxyEndpoint(proxyUrl))
+        BilibiliDetails.UpdateNetworkSettings(settings.BilibiliUseProxy, settings.EnableProxy,
+            settings.ProxyUrl, settings.FallbackDirect);
+        NetworkProxyModeText = settings.EnableProxy ? "已启用" : "未启用";
+        NetworkProxyUrlText = settings.EnableProxy
+            ? (string.IsNullOrWhiteSpace(settings.ProxyUrl) ? "未配置" : SafeProxyEndpoint(settings.ProxyUrl))
             : "未使用";
-        NetworkProxyFallbackText = fallbackDirect ? "允许直连回退" : "不允许直连回退";
-        if (!enabled)
+        NetworkProxyFallbackText = settings.FallbackDirect ? "允许直连回退" : "不允许直连回退";
+        var selectedPlatforms = Enum.GetValues<DropsPlatform>()
+            .Where(settings.IsSelected)
+            .Select(PlatformName)
+            .ToArray();
+        NetworkProxyScopeText = selectedPlatforms.Length == 0
+            ? "未选择掉宝平台"
+            : string.Join(" · ", selectedPlatforms);
+        if (!settings.EnableProxy)
         {
-            NetworkProxyStatus = "网络与代理：当前直连";
+            NetworkProxyStatus = $"网络与代理：全局代理未启用 · 已保存 {selectedPlatforms.Length}/4 个掉宝平台偏好";
             return;
         }
-        var endpoint = string.IsNullOrWhiteSpace(proxyUrl) ? "尚未填写代理地址" : SafeProxyEndpoint(proxyUrl);
+        var endpoint = string.IsNullOrWhiteSpace(settings.ProxyUrl)
+            ? "尚未填写代理地址"
+            : SafeProxyEndpoint(settings.ProxyUrl);
         NetworkProxyStatus = $"网络与代理：已启用 · {endpoint}" +
-                             (fallbackDirect ? " · 代理失败时允许直连" : "");
+                             $" · 掉宝 {selectedPlatforms.Length}/4" +
+                             (settings.FallbackDirect ? " · 代理失败时允许直连" : "");
     }
+
+    private static string PlatformName(DropsPlatform platform) => platform switch
+    {
+        DropsPlatform.Soop => "SOOP",
+        DropsPlatform.YouTube => "YouTube",
+        DropsPlatform.Twitch => "Twitch",
+        DropsPlatform.Bilibili => "哔哩哔哩",
+        _ => platform.ToString(),
+    };
 
     private static string SafeProxyEndpoint(string proxyUrl)
     {

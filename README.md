@@ -37,7 +37,7 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 - 使用本地文件快速恢复守望先锋国服或国际服版本
 - 查询国际服公开生涯数据
 - 在统一“掉宝”页面管理 SOOP、YouTube 与 Twitch Worker
-- 共用全局 HTTP/HTTPS 代理、托盘生命周期、日志和 Documents 数据目录
+- 共用一套 HTTP/HTTPS 代理地址，可为四个掉宝平台分别选择是否使用，并统一托盘生命周期、日志和 Documents 数据目录
 - 支持深色模式、托盘运行和开机自动启动
 
 ## 掉宝与观赛整合

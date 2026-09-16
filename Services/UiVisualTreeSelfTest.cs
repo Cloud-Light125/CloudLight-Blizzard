@@ -339,11 +339,17 @@ public static class UiVisualTreeSelfTest
                 var bilibiliQrLogin = FindNamed(dropsPage, "BilibiliQrLoginButton");
                 var bilibiliQuickStart = FindNamed(dropsPage, "BilibiliQuickStartCard");
                 var bilibiliNetwork = FindNamed(dropsPage, "BilibiliNetworkCard");
-                var bilibiliUseProxy = FindNamed(dropsPage, "BilibiliUseProxyCheck");
                 var bilibiliSettings = FindNamed(dropsPage, "BilibiliSettingsCard");
                 var bilibiliActivityList = FindNamed(dropsPage, "BilibiliActivityList");
                 var dropsHeader = FindNamed(dropsPage, "DropsPageHeader");
                 var dropsNetworkSummary = FindNamed(dropsPage, "DropsNetworkSummary");
+                var proxyScopeChecks = new[]
+                {
+                    FindNamed(dropsPage, "SoopUseProxyCheck"),
+                    FindNamed(dropsPage, "YouTubeUseProxyCheck"),
+                    FindNamed(dropsPage, "TwitchUseProxyCheck"),
+                    FindNamed(dropsPage, "BilibiliUseProxyCheck"),
+                };
                 var platformTabsBar = FindNamed(dropsPage, "PlatformTabsBar");
                 var platformStatusDots = new[]
                 {
@@ -397,10 +403,12 @@ public static class UiVisualTreeSelfTest
                 Assert(bilibiliQuickStart is Expander &&
                        FindVisual(bilibiliQuickStart, value => value is ItemsControl) is not null,
                     checks, "Bilibili 页面包含复用 QuickStartStepTemplate 的快速开始卡片");
-                Assert(bilibiliNetwork is Border && bilibiliUseProxy is CheckBox bilibiliProxyCheck &&
-                       string.Equals(bilibiliProxyCheck.Content as string,
-                            "使用 CloudLight Blizzard 全局代理", StringComparison.Ordinal),
-                    checks, "Bilibili 网络卡片包含正式的全局代理选项");
+                Assert(dropsNetworkSummary is Border &&
+                       proxyScopeChecks.All(value => value is CheckBox { IsVisible: true }),
+                    checks, "顶部网络卡片包含 SOOP、YouTube、Twitch、哔哩哔哩四个独立代理选项");
+                Assert(bilibiliNetwork is Border &&
+                       FindVisual(bilibiliNetwork, value => value is CheckBox) is null,
+                    checks, "Bilibili 网络卡片不再重复显示代理开关");
                 Assert(bilibiliSettings is Border && bilibiliActivityList is ListBox &&
                        FindNamed(dropsPage, "BilibiliWatchModePicker") is ComboBox &&
                        FindNamed(dropsPage, "BilibiliSessionsPerRoomText") is TextBox &&

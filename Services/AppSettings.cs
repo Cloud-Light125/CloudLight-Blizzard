@@ -19,6 +19,9 @@ public sealed class AppSettings
     public bool EnableProxy { get; set; }
     public string ProxyUrl { get; set; } = "";
     public bool FallbackDirect { get; set; }
+    public bool SoopUseProxy { get; set; } = true;
+    public bool YouTubeUseProxy { get; set; } = true;
+    public bool TwitchUseProxy { get; set; } = true;
     public bool ShowAnnouncementBadge { get; set; } = true;
     public string CloudServiceBaseUrl { get; set; } = CloudServiceConfiguration.DefaultBaseUrl;
     public bool AutoStartSoop { get; set; }

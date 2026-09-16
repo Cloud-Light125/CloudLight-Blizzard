@@ -46,7 +46,7 @@ public partial class SettingsPage : UserControl
         AnnouncementBadgeBox.IsChecked = vm.Settings.ShowAnnouncementBadge;
         InitializeNotificationSettings(vm);
         FeedbackPanel.Initialize(vm.Settings, vm.FeedbackService);
-        ProxyNoticeText.Text = "公告、反馈和更新会在下一次请求时读取当前代理；Chrome / Brave 正在观看时需重新启动观看窗口后生效。";
+        ProxyNoticeText.Text = "公告、反馈和更新会在下一次请求时读取当前代理；四个掉宝平台的使用范围在掉宝页面设置。";
         DataPathText.Text = AppPaths.Current.Root;
         CacheText.Text = "打开设置页后统计";
         IsVisibleChanged += async (_, _) =>
@@ -162,7 +162,7 @@ public partial class SettingsPage : UserControl
         ProxyNoticeText.Text = EnableProxyBox.IsChecked == true &&
                                !ProxyValidator.TryNormalize(ProxyUrlBox.Text, out _, out var error)
             ? error
-            : "代理设置用于公告、反馈、软件更新和掉宝网络请求；本机 Chrome DevTools 始终直连。";
+            : "代理地址用于公告、反馈、软件更新和已选中的掉宝平台；掉宝平台使用范围在掉宝页面设置。";
     }
 
     private async void OnSaveProxy(object sender, RoutedEventArgs e)
@@ -180,8 +180,7 @@ public partial class SettingsPage : UserControl
         _vm.Settings.ProxyUrl = url;
         _vm.Settings.FallbackDirect = FallbackDirectBox.IsChecked == true;
         _vm.Settings.Save();
-        var settings = new DropsProxySettings(enabled, url, _vm.Settings.FallbackDirect,
-            _vm.Settings.BilibiliUseProxy);
+        var settings = MainViewModel.CreateDropsProxySettings(_vm.Settings);
         _vm.DropsHost.ConfigureProxy(settings);
         await _vm.DropsHost.ApplyProxyAsync(settings);
         ProxyNoticeText.Text = enabled

@@ -321,8 +321,7 @@ public sealed class MainViewModel : ObservableObject
         CloudHttpClients = new CloudHttpClientFactory(_settings);
         UpdateDownloader = new UpdateDownloadService(CloudHttpClients);
         FeedbackService = new FeedbackService(_settings, httpClients: CloudHttpClients);
-        DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect,
-            _settings.BilibiliUseProxy));
+        DropsHost.ConfigureProxy(CreateDropsProxySettings(_settings));
         DropsHost.EventReceived += (sender, message) =>
         {
             if (message.Name != "legacy_proxy" || _settings.EnableProxy || !string.IsNullOrWhiteSpace(_settings.ProxyUrl)) return;
@@ -332,8 +331,7 @@ public sealed class MainViewModel : ObservableObject
             _settings.ProxyUrl = url;
             _settings.FallbackDirect = message.Payload.TryGetProperty("fallbackDirect", out var fallback) && fallback.GetBoolean();
             _settings.Save();
-            DropsHost.ConfigureProxy(new DropsProxySettings(_settings.EnableProxy, _settings.ProxyUrl, _settings.FallbackDirect,
-                _settings.BilibiliUseProxy));
+            DropsHost.ConfigureProxy(CreateDropsProxySettings(_settings));
         };
         UpdateChecks = new UpdateCheckCoordinator(new UpdateService(_settings, CloudHttpClients), _settings);
         _paths = new BattleNetPaths();
@@ -350,6 +348,15 @@ public sealed class MainViewModel : ObservableObject
         _regionPageStatus.GamePathValid = OverwatchRegionManager.IsValidGameRoot(_settings.OverwatchGamePath);
         UpdateRegionGuide();
     }
+
+    internal static DropsProxySettings CreateDropsProxySettings(AppSettings settings) => new(
+        settings.EnableProxy,
+        settings.ProxyUrl,
+        settings.FallbackDirect,
+        SoopUseProxy: settings.SoopUseProxy,
+        YouTubeUseProxy: settings.YouTubeUseProxy,
+        TwitchUseProxy: settings.TwitchUseProxy,
+        BilibiliUseProxy: settings.BilibiliUseProxy);
 
     private void RebuildGroups()
     {

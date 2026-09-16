@@ -31,7 +31,9 @@ public partial class DropsPage : UserControl
     private CancellationTokenSource? _bilibiliQrPollingCts;
     private Task? _bilibiliQrPollingTask;
     private readonly DispatcherTimer _retryDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly SemaphoreSlim _proxySettingsGate = new(1, 1);
     private bool _logTailStarted;
+    private bool _applyingProxyScope;
 
     public DropsPage()
     {
@@ -73,8 +75,7 @@ public partial class DropsPage : UserControl
         _vm.BilibiliDetails.CommandFailed += (_, ex) => ShowError(ex, "哔哩哔哩操作失败");
         main.SetDropsDiagnosticSnapshotProvider(_vm.CreateDiagnosticSnapshot);
         DataContext = _vm;
-        _vm.UpdateProxySettings(main.Settings.EnableProxy, main.Settings.ProxyUrl, main.Settings.FallbackDirect,
-            main.Settings.BilibiliUseProxy);
+        ApplyProxySettingsToUi();
         main.DropsHost.EventReceived += OnWorkerEvent;
         SoopAutoStart.IsChecked = main.Settings.AutoStartSoop;
         TwitchAutoStart.IsChecked = main.Settings.AutoStartTwitch;
@@ -210,8 +211,7 @@ public partial class DropsPage : UserControl
     {
         if (_vm == null || _loading) return;
         if (_main != null)
-            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl, _main.Settings.FallbackDirect,
-                _main.Settings.BilibiliUseProxy);
+            ApplyProxySettingsToUi();
         _loading = true;
         try
         {
@@ -511,6 +511,52 @@ public partial class DropsPage : UserControl
     {
         if (Window.GetWindow(this) is MainWindow mainWindow)
             mainWindow.OpenProxySettings();
+    }
+
+    private DropsProxySettings CurrentProxySettings() => _main is null
+        ? new DropsProxySettings(false, "", false)
+        : MainViewModel.CreateDropsProxySettings(_main.Settings);
+
+    private void ApplyProxySettingsToUi()
+    {
+        if (_main == null || _vm == null) return;
+        var settings = CurrentProxySettings();
+        _applyingProxyScope = true;
+        try
+        {
+            SoopUseProxyCheck.IsChecked = settings.SoopUseProxy;
+            YouTubeUseProxyCheck.IsChecked = settings.YouTubeUseProxy;
+            TwitchUseProxyCheck.IsChecked = settings.TwitchUseProxy;
+            BilibiliUseProxyCheck.IsChecked = settings.BilibiliUseProxy;
+        }
+        finally { _applyingProxyScope = false; }
+        _vm.UpdateProxySettings(settings);
+    }
+
+    private async void OnDropsProxyScopeChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized || _applyingProxyScope || _main == null || _vm == null) return;
+        _main.Settings.SoopUseProxy = SoopUseProxyCheck.IsChecked == true;
+        _main.Settings.YouTubeUseProxy = YouTubeUseProxyCheck.IsChecked == true;
+        _main.Settings.TwitchUseProxy = TwitchUseProxyCheck.IsChecked == true;
+        _main.Settings.BilibiliUseProxy = BilibiliUseProxyCheck.IsChecked == true;
+        _main.Settings.Save();
+
+        var settings = CurrentProxySettings();
+        _main.DropsHost.ConfigureProxy(settings);
+        _vm.UpdateProxySettings(settings);
+        await _proxySettingsGate.WaitAsync();
+        try
+        {
+            // Re-read after entering the gate so rapid checkbox changes end
+            // with the latest persisted four-platform policy.
+            settings = CurrentProxySettings();
+            _main.DropsHost.ConfigureProxy(settings);
+            await _main.DropsHost.ApplyProxyAsync(settings);
+            _vm.UpdateProxySettings(settings);
+        }
+        catch (Exception ex) { ShowError(ex, "应用掉宝代理范围失败"); }
+        finally { _proxySettingsGate.Release(); }
     }
 
     private void OnToggleHelp(object sender, RoutedEventArgs e)
@@ -1346,12 +1392,10 @@ public partial class DropsPage : UserControl
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "save_settings", new { settings });
             ApplyBilibiliResult(result);
             SyncBilibiliSettingsToApp(mode, sessions, reconnect, interval, taskIds);
-            var proxySettings = new DropsProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl,
-                _main.Settings.FallbackDirect, _main.Settings.BilibiliUseProxy);
+            var proxySettings = MainViewModel.CreateDropsProxySettings(_main.Settings);
             _main.DropsHost.ConfigureProxy(proxySettings);
             await _main.DropsHost.ApplyProxyAsync(proxySettings);
-            _vm.UpdateProxySettings(_main.Settings.EnableProxy, _main.Settings.ProxyUrl,
-                _main.Settings.FallbackDirect, _main.Settings.BilibiliUseProxy);
+            _vm.UpdateProxySettings(proxySettings);
             details.MarkSettingsSaved();
             BilibiliNotifierUrlBox.Clear();
             return true;
