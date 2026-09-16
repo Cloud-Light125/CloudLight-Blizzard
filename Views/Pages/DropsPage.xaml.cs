@@ -691,6 +691,17 @@ public partial class DropsPage : UserControl
     private async void OnSoopAddAccount(object sender, RoutedEventArgs e)
     {
         if (_vm == null) return;
+        if (SoopAccountPolicy.RequiresMultiAccountConfirmation(_vm.Accounts.Count))
+        {
+            var confirmed = new SoopNoticeWindow(
+                "SOOP 多账号风险提示",
+                "当前已有 SOOP 账号。\n\n继续添加多个账号可能触发 SOOP 安全机制。\n\n如果账号出现限制，需要联系 SOOP 客服处理。\n\n是否继续添加？",
+                "继续添加")
+            {
+                Owner = Window.GetWindow(this),
+            }.ShowDialog() == true;
+            if (!confirmed) return;
+        }
         try
         {
             await _vm.RequestAsync(DropsPlatform.Soop, "add_account", new { userid = SoopUserId.Text.Trim(), password = SoopPassword.Password });
@@ -773,6 +784,11 @@ public partial class DropsPage : UserControl
             ShowInfo("无法确定该奖励所属的 SOOP 账号，请刷新背包后重试。", "领取奖励");
             return;
         }
+        if (SoopAccountPolicy.IsUnlinkedGameReward(row.Payload))
+        {
+            await ShowSoopAccountNotLinkedAsync();
+            return;
+        }
         if (MessageBox.Show($"确认领取奖励「{row.Primary}」？", "领取奖励",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
@@ -783,7 +799,13 @@ public partial class DropsPage : UserControl
         {
             var result = await _vm.RequestAsync(
                 DropsPlatform.Soop, "claim_reward", new { userid = uid, id = row.Id });
-            var message = Text(result, "status") switch
+            var resultStatus = Text(result, "status");
+            if (resultStatus == "account_not_linked")
+            {
+                await ShowSoopAccountNotLinkedAsync();
+                return;
+            }
+            var message = resultStatus switch
             {
                 "claimed" => "领取已确认。现在可以复制兑换码。",
                 "already_claimed" => "该奖励已经领取。",
@@ -802,6 +824,18 @@ public partial class DropsPage : UserControl
         {
             if (button != null) button.IsEnabled = true;
         }
+    }
+
+    private async Task ShowSoopAccountNotLinkedAsync()
+    {
+        var refresh = new SoopNoticeWindow(
+            "无法领取奖励",
+            "当前 SOOP 账号未绑定对应游戏账号。\n\n请先在 SOOP 完成游戏账号绑定。\n\n绑定完成后再领取奖励。",
+            "刷新绑定状态")
+        {
+            Owner = Window.GetWindow(this),
+        }.ShowDialog() == true;
+        if (refresh) await RefreshSoopAsync();
     }
 
     private async void OnCopySoopCode(object sender, RoutedEventArgs e)

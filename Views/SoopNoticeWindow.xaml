@@ -1,0 +1,26 @@
+<Window x:Class="CloudLightBlizzard.Views.SoopNoticeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SOOP 提示" Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource App.Background}" Foreground="{DynamicResource Text.Primary}">
+    <Border Padding="22">
+        <StackPanel>
+            <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}"
+                    BorderThickness="1" CornerRadius="8" Padding="14">
+                <StackPanel>
+                    <TextBlock x:Name="HeadingText" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource WarnTx}"/>
+                    <TextBlock x:Name="MessageText" Margin="0,9,0,0" TextWrapping="Wrap"
+                               LineHeight="22" Foreground="{DynamicResource Text.Secondary}"/>
+                </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                <Button Content="取消" Style="{StaticResource SecondaryButton}" Padding="16,0"
+                        IsCancel="True" Click="OnCancel"/>
+                <Button x:Name="ConfirmButton" Style="{StaticResource PrimaryButton}" Padding="16,0"
+                        Margin="8,0,0,0" IsDefault="True" Click="OnConfirm"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

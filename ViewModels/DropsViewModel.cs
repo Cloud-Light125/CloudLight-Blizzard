@@ -1933,7 +1933,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "accounts", Accounts, item => new DropsRow
         {
             Id = Text(item, "uid"), Primary = Text(item, "uid"),
-            Secondary = $"登录：已保存 · 直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
+            Secondary = $"游戏账号绑定状态：{Text(item, "gameAccountBindingStatus", "待刷新")} · 直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
             Status = (Bool(item, "primary") ? "主账号 · " : "") + (Bool(item, "running") ? "运行中" : "已停止"),
             Payload = item.Clone(),
         });

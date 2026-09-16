@@ -534,6 +534,17 @@
                 <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}"/>
+                        <Border x:Name="SoopMultiAccountWarningCard"
+                                Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}"
+                                BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="SOOP 多账号使用提示" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WarnTx}"/>
+                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" LineHeight="19"
+                                           Foreground="{DynamicResource Text.Secondary}"
+                                           Text="SOOP 可能对短时间内多个账号登录或同时运行多个账号进行安全检测。账号异常限制时，请联系 SOOP 客服处理。建议避免短时间批量添加大量账号。"/>
+                            </StackPanel>
+                        </Border>
                         <Grid Margin="0,14,0,0">
                             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,8,0"><TextBlock Text="SOOP 账号" Style="{StaticResource FieldLabel}"/><TextBox x:Name="SoopUserId" Style="{StaticResource HintTextBox}" Tag="请输入 SOOP 登录账号"/></StackPanel>

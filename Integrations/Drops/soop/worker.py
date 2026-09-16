@@ -619,11 +619,51 @@ class SoopWorker(WorkerBase):
 
     @staticmethod
     def _inventory_to_dict(item: Any) -> dict[str, Any]:
+        raw = getattr(item, "raw", {}) or {}
+        requires_game_account = str(raw.get("itemType") or "").strip() == "4"
+        game_account_linked = (
+            _api_bool(raw.get("acctConn"))
+            if requires_game_account and "acctConn" in raw
+            else None
+        )
         return {
             "id": item.item_code_idx, "name": item.item_name, "claimed": item.claimed,
             "expiresAt": item.exp_date, "receivedAt": item.receive_date,
             "redeemCode": item.redeem_code or "", "description": item.description or "",
+            "requiresGameAccount": requires_game_account,
+            "gameAccountLinked": game_account_linked,
         }
+
+    @staticmethod
+    def _game_account_linked_for_state(state: Any) -> bool | None:
+        """Return the account's explicit SOOP binding state, if known.
+
+        SOOP exposes ``acctConn`` on in-game inventory rows and activity rows.
+        An explicit unlinked row wins because at least one corresponding game
+        account still requires attention.
+        """
+        values: list[bool] = []
+        for item in getattr(state, "inventory", []):
+            raw = getattr(item, "raw", {}) or {}
+            if str(raw.get("itemType") or "").strip() == "4" and "acctConn" in raw:
+                values.append(_api_bool(raw.get("acctConn")))
+        for activity in getattr(state, "events", []):
+            raw = getattr(activity, "raw", {}) or {}
+            if "acctConn" in raw:
+                values.append(_api_bool(raw.get("acctConn")))
+        if any(value is False for value in values):
+            return False
+        if any(values):
+            return True
+        return None
+
+    @staticmethod
+    def _binding_status_text(linked: bool | None) -> str:
+        if linked is True:
+            return "✓ 已绑定"
+        if linked is False:
+            return "⚠ 未绑定"
+        return "待刷新"
 
     def _current_progress_for_state(self, state: Any) -> list[dict[str, Any]]:
         """Return the tiers that the Core says can progress on the current channel."""
@@ -661,9 +701,12 @@ class SoopWorker(WorkerBase):
     def _state_to_dict(self, state: Any) -> dict[str, Any]:
         tasks = self._tasks_for_state(state)
         all_tasks = self.get_tasks({})
+        game_account_linked = self._game_account_linked_for_state(state)
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
             "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
+            "gameAccountLinked": game_account_linked,
+            "gameAccountBindingStatus": self._binding_status_text(game_account_linked),
             "channelId": state.channel_id, "channelName": state.channel_nick, "broadcastNo": state.broad_no,
             "connectionHealthy": state.connection_healthy, "bridgeConnected": state.bridge_connected,
             "heartbeatStatus": state.heartbeat_status, "heartbeatLastSuccess": state.heartbeat_last_success,
@@ -952,6 +995,7 @@ class SoopWorker(WorkerBase):
             result.append(self._state_to_dict(state) if state else {
                 "uid": uid, "running": False, "status": "已保存",
                 "channelId": None, "channelName": None, "primary": uid == primary_uid,
+                "gameAccountLinked": None, "gameAccountBindingStatus": "待刷新",
             })
         return result
 
@@ -1157,30 +1201,48 @@ class SoopWorker(WorkerBase):
             raise ValueError("未找到要领取的 SOOP 奖励")
         if selected.get("claimed"):
             return {"id": item_id, "status": "already_claimed", "success": True}
+        if selected.get("requiresGameAccount") and selected.get("gameAccountLinked") is False:
+            self.logger.warning("[%s] claim skipped: account not linked", uid)
+            return {"id": item_id, "status": "account_not_linked", "success": False}
 
         cookies = self._core["auth"].load_cookies(uid)
         if not cookies:
             raise ValueError("SOOP 登录已失效，请重新添加账号")
 
-        async def claim_and_refresh() -> tuple[Any, list[Any] | None]:
+        async def claim_and_refresh() -> tuple[Any | None, list[Any] | None, bool]:
             context = self._core["network"].AccountNetworkContext(uid, cookies, self._app_config())
             session = await context.open()
             try:
                 client = self._core["drops"].DropsClient(session)
+                current = await client.get_inventory(with_codes=False)
+                current_item = next(
+                    (item for item in current if str(item.item_code_idx) == item_id),
+                    None,
+                )
+                if current_item is not None:
+                    raw = getattr(current_item, "raw", {}) or {}
+                    requires_game_account = str(raw.get("itemType") or "").strip() == "4"
+                    if (requires_game_account and "acctConn" in raw and
+                            not _api_bool(raw.get("acctConn"))):
+                        return None, current, True
                 result = await client.claim_and_verify(item_id, max_attempts=2)
                 try:
                     refreshed = await client.get_inventory(with_codes=True)
                 except Exception:
                     refreshed = None
-                return result, refreshed
+                return result, refreshed, False
             finally:
                 await context.close()
 
-        result, refreshed = self._submit(claim_and_refresh(), timeout=80)
+        result, refreshed, account_not_linked = self._submit(claim_and_refresh(), timeout=80)
         if refreshed is not None and uid in self._states:
             state = self._states[uid]
             state.inventory = list(refreshed)
             self._state_callback(state)
+        if account_not_linked:
+            self.logger.warning("[%s] claim skipped: account not linked", uid)
+            return {"id": item_id, "status": "account_not_linked", "success": False}
+        assert result is not None
         status = result.status.value
         self.logger.info("[%s] 手动领取结果：%s", uid, status)
         return {

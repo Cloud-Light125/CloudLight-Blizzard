@@ -667,6 +667,11 @@ class SoopWorkerContractTests(unittest.TestCase):
 
                     async def get_inventory(self, *, with_codes):
                         calls.append(("refresh", with_codes))
+                        if not with_codes:
+                            return [SimpleNamespace(
+                                item_code_idx="reward",
+                                raw={"itemType": "4", "acctConn": True},
+                            )]
                         return []
 
                 worker._core = {
@@ -677,6 +682,7 @@ class SoopWorkerContractTests(unittest.TestCase):
                 worker._app_config = lambda: "config"
                 worker.get_inventory = lambda payload: [{
                     "uid": "account", "id": "reward", "claimed": False,
+                    "requiresGameAccount": True, "gameAccountLinked": True,
                 }]
 
                 result = worker.claim_reward({"userid": "account", "id": "reward"})
@@ -687,6 +693,55 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertIn(("claim", ("reward", 2)), calls)
                 self.assertIn(("refresh", True), calls)
                 self.assertIn(("closed", True), calls)
+            finally:
+                self._close(worker)
+
+    def test_manual_claim_is_blocked_when_game_account_is_not_linked(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                worker._core = {"auth": SimpleNamespace(load_cookies=lambda uid: {"uid": uid})}
+                worker.get_inventory = lambda payload: [{
+                    "uid": "account", "id": "reward", "claimed": False,
+                    "requiresGameAccount": True, "gameAccountLinked": False,
+                }]
+
+                result = worker.claim_reward({"userid": "account", "id": "reward"})
+
+                self.assertEqual(result, {
+                    "id": "reward", "status": "account_not_linked", "success": False,
+                })
+                self.assertIn(
+                    "claim skipped: account not linked",
+                    (root / "soop.log").read_text(encoding="utf-8"),
+                )
+            finally:
+                self._close(worker)
+
+    def test_account_state_exposes_game_account_binding_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                linked_event = self._event("linked")
+                linked_event.acct_conn = True
+                linked_event.raw["acctConn"] = "Y"
+                linked_state = self._state("linked-account", events=[linked_event])
+                self.assertTrue(worker._state_to_dict(linked_state)["gameAccountLinked"])
+                self.assertEqual(
+                    worker._state_to_dict(linked_state)["gameAccountBindingStatus"],
+                    "✓ 已绑定",
+                )
+
+                unlinked_event = self._event("unlinked")
+                unlinked_event.raw["acctConn"] = "N"
+                unlinked_state = self._state("unlinked-account", events=[unlinked_event])
+                self.assertFalse(worker._state_to_dict(unlinked_state)["gameAccountLinked"])
+                self.assertEqual(
+                    worker._state_to_dict(unlinked_state)["gameAccountBindingStatus"],
+                    "⚠ 未绑定",
+                )
             finally:
                 self._close(worker)
 

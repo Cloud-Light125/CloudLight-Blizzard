@@ -360,6 +360,21 @@ public static class FeatureSelfTest
 
     private static void RunSoopTaskPolicyTest(StringBuilder report)
     {
+        Assert(!SoopAccountPolicy.RequiresMultiAccountConfirmation(0) &&
+               SoopAccountPolicy.RequiresMultiAccountConfirmation(1) &&
+               SoopAccountPolicy.RequiresMultiAccountConfirmation(2),
+            "SOOP add-account flow requires confirmation starting with the second account");
+
+        using var unlinkedReward = JsonDocument.Parse("""
+            {"requiresGameAccount":true,"gameAccountLinked":false}
+            """);
+        using var linkedReward = JsonDocument.Parse("""
+            {"requiresGameAccount":true,"gameAccountLinked":true}
+            """);
+        Assert(SoopAccountPolicy.IsUnlinkedGameReward(unlinkedReward.RootElement) &&
+               !SoopAccountPolicy.IsUnlinkedGameReward(linkedReward.RootElement),
+            "SOOP manual claim UI blocks only explicit unlinked game rewards");
+
         using var active = JsonDocument.Parse("""
             {"lifecycle":"active","active":false,"notYetOpen":true,"ended":false,"completed":false}
             """);
@@ -387,7 +402,7 @@ public static class FeatureSelfTest
         Assert(SoopTaskPolicy.Status(completed.RootElement) == "已完成" &&
                !SoopTaskPolicy.IsSelectable(completed.RootElement),
             "SOOP completion wins over an open activity window and is history-only");
-        report.AppendLine("SOOP normalized task policy: PASS");
+        report.AppendLine("SOOP account risk / claim eligibility / normalized task policy: PASS");
     }
 
     private static async Task RunPlatformLogTailSessionTest(string workspace, StringBuilder report)
