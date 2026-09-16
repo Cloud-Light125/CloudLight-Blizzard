@@ -6,11 +6,19 @@ import importlib
 import importlib.util
 import json
 import logging
+import math
 import os
+import re
 import sys
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python 3.8 compatibility for source-level contract tests
+    ZoneInfo = None  # type: ignore[assignment,misc]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from Shared.protocol import (
@@ -46,31 +54,165 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
+try:
+    if ZoneInfo is None:
+        raise KeyError("zoneinfo unavailable")
+    SOOP_TIMEZONE = ZoneInfo("Asia/Seoul")
+except KeyError:  # pragma: no cover - minimal Python images can omit the IANA database
+    # Korea has no daylight-saving transitions. Keep SOOP wall-clock
+    # semantics explicit even when the host does not provide tzdata.
+    SOOP_TIMEZONE = timezone(timedelta(hours=9), "Asia/Seoul")
+
+
+_START_TIME_FIELDS = ("startTime", "startDate", "beginTime", "openTime")
+_END_TIME_FIELDS = ("endTime", "endDate", "expireTime", "closeTime")
+_TIME_FIELDS = _START_TIME_FIELDS + _END_TIME_FIELDS
+
+
+def _soop_now(value: datetime | None = None) -> datetime:
+    if value is None:
+        return datetime.now(SOOP_TIMEZONE)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=SOOP_TIMEZONE)
+    return value.astimezone(SOOP_TIMEZONE)
+
+
+def _parse_soop_datetime(value: Any) -> datetime | None:
+    """Parse a SOOP timestamp without consulting the machine-local timezone."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return _soop_now(value)
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            return None
+        seconds = numeric / 1000 if abs(numeric) >= 100_000_000_000 else numeric
+        try:
+            return datetime.fromtimestamp(seconds, timezone.utc).astimezone(SOOP_TIMEZONE)
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    text = str(value).strip()
+    if not text or text.casefold() in {"none", "null"}:
+        return None
+    if re.fullmatch(r"[+-]?\d{9,17}(?:\.\d+)?", text):
+        return _parse_soop_datetime(float(text))
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        parsed = None
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%Y.%m.%d",
+        ):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+    return _soop_now(parsed) if parsed is not None else None
+
+
+def _is_date_only(value: Any) -> bool:
+    return bool(re.fullmatch(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}", str(value or "").strip()))
+
+
+def _task_time_value(task: dict[str, Any], names: tuple[str, ...]) -> Any:
+    raw = task.get("raw") if isinstance(task.get("raw"), dict) else {}
+    for owner in (task, raw):
+        for name in names:
+            value = owner.get(name)
+            if value is not None and str(value).strip() and str(value).strip().casefold() not in {"none", "null"}:
+                return value
+    return None
+
+
+def _api_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def normalize_task_status(
+    task: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return one canonical SOOP lifecycle for UI, selection, and execution guards.
+
+    SOOP's ``active``/``live``-style flags are not authoritative when a time
+    window is present. Naive API timestamps are Korean wall-clock values. The
+    raw flags are used only as a compatibility fallback when no usable time
+    boundary exists.
+    """
+    normalized = dict(task)
+    completed = _api_bool(task.get("completed"))
+    start_value = _task_time_value(task, _START_TIME_FIELDS)
+    end_value = _task_time_value(task, _END_TIME_FIELDS)
+    start_at = _parse_soop_datetime(start_value)
+    end_at = _parse_soop_datetime(end_value)
+    if end_at is not None and _is_date_only(end_value):
+        end_at += timedelta(days=1)
+    current = _soop_now(now)
+
+    if completed:
+        lifecycle = "completed"
+    elif end_at is not None and current >= end_at:
+        lifecycle = "ended"
+    elif start_at is not None and current < start_at:
+        lifecycle = "notYetOpen"
+    elif start_at is not None or end_at is not None:
+        lifecycle = "active"
+    elif _api_bool(task.get("ended")):
+        lifecycle = "ended"
+    elif _api_bool(task.get("active")):
+        lifecycle = "active"
+    elif _api_bool(task.get("notYetOpen")):
+        lifecycle = "notYetOpen"
+    else:
+        lifecycle = "unknown"
+
+    normalized.update({
+        "completed": lifecycle == "completed",
+        "ended": lifecycle == "ended",
+        "active": lifecycle == "active",
+        "notYetOpen": lifecycle == "notYetOpen",
+        "lifecycle": lifecycle,
+    })
+    return normalized
+
+
+def _source_time_fields(source: Any) -> dict[str, Any]:
+    raw = getattr(source, "raw", {}) or {}
+    values = {
+        "startDate": getattr(source, "start_date", ""),
+        "endDate": getattr(source, "end_date", ""),
+    }
+    if isinstance(raw, dict):
+        for name in _TIME_FIELDS:
+            value = raw.get(name)
+            if value is not None and str(value).strip():
+                values[name] = value
+    return values
+
+
 def is_actionable_task(task: dict[str, Any], *, allow_upcoming: bool = False) -> bool:
     """Shared Worker task policy for display selection and execution inputs."""
-    if bool(task.get("eventOnly")) or bool(task.get("ended")) or bool(task.get("completed")):
+    normalized = normalize_task_status(task)
+    if _api_bool(normalized.get("eventOnly")) or normalized["ended"] or normalized["completed"]:
         return False
-    if bool(task.get("active")):
+    if normalized["active"]:
         return True
-    return allow_upcoming and bool(task.get("notYetOpen"))
-
-
-def _task_lifecycle_label(
-    *,
-    active: bool,
-    ended: bool,
-    not_yet_open: bool,
-    completed: bool = False,
-) -> str:
-    if completed:
-        return "completed"
-    if active:
-        return "active"
-    if not_yet_open:
-        return "upcoming"
-    if ended:
-        return "ended"
-    return "unknown"
+    return allow_upcoming and normalized["notYetOpen"]
 
 
 class SoopWorker(WorkerBase):
@@ -286,15 +428,11 @@ class SoopWorker(WorkerBase):
         not_yet_open = bool(getattr(mission, "is_not_yet_open", False))
         items = list(getattr(mission, "items", []))
         completed = SoopWorker._mission_is_completed(mission, items)
-        return {
+        row = {
             "id": mission.drops_idx, "title": mission.title, "type": mission.type_label,
-            "startDate": mission.start_date, "endDate": mission.end_date,
             "categoryName": mission.category_name, "categoryNo": mission.category_no,
             "active": active, "ended": ended, "notYetOpen": not_yet_open,
             "completed": completed,
-            "lifecycle": _task_lifecycle_label(
-                active=active, ended=ended, not_yet_open=not_yet_open, completed=completed,
-            ),
             "source": "mission", "eventOnly": False,
             "items": [
                 {"name": item.item_name, "requiredMinutes": item.give_term, "viewMinutes": item.view_time,
@@ -302,6 +440,8 @@ class SoopWorker(WorkerBase):
                 for item in items
             ],
         }
+        row.update(_source_time_fields(mission))
+        return normalize_task_status(row)
 
     @staticmethod
     def _event_to_dict(activity: Any) -> dict[str, Any]:
@@ -309,19 +449,17 @@ class SoopWorker(WorkerBase):
         active = bool(getattr(activity, "is_event_active", False))
         ended = bool(getattr(activity, "is_truly_ended", not active))
         not_yet_open = bool(getattr(activity, "is_not_yet_open", False))
-        return {
+        row = {
             "id": activity.drops_idx, "title": activity.title, "type": activity.type_label,
-            "startDate": activity.start_date, "endDate": activity.end_date,
             "categoryName": str(raw.get("cateName") or raw.get("categoryName") or ""),
             "categoryNo": str(raw.get("cateNo") or raw.get("categoryNo") or ""),
             "active": active, "ended": ended, "notYetOpen": not_yet_open,
             "completed": False,
-            "lifecycle": _task_lifecycle_label(
-                active=active, ended=ended, not_yet_open=not_yet_open,
-            ),
             "source": "event", "eventOnly": True, "joined": bool(getattr(activity, "acct_conn", False)),
             "items": [],
         }
+        row.update(_source_time_fields(activity))
+        return normalize_task_status(row)
 
     @staticmethod
     def _inventory_to_dict(item: Any) -> dict[str, Any]:
@@ -526,7 +664,7 @@ class SoopWorker(WorkerBase):
         channels = state["channels"]
         mission_ids = {
             str(task.get("id", "")) for task in tasks
-            if task.get("id") and not bool(task.get("eventOnly"))
+            if task.get("id") and is_actionable_task(task, allow_upcoming=True)
         }
         event_ids = {str(item.get("id", "")) for item in state["events"] if item.get("id")}
         active_mission_ids = {
@@ -771,6 +909,10 @@ class SoopWorker(WorkerBase):
             existing["eventActive"] = activity_row["active"]
             existing["activityLifecycle"] = activity_row["lifecycle"]
             existing["source"] = "mission+event"
+            for name in _TIME_FIELDS:
+                if name in activity_row:
+                    existing[name] = activity_row[name]
+            existing.update(normalize_task_status(existing))
         # Keep fully completed missions in the display/history snapshot even
         # after the event window closes.  Other ended activities remain in the
         # Core state for diagnostics but are not current WPF tasks.

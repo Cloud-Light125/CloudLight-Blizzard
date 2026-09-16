@@ -68,10 +68,17 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test, "soop-policy", StringComparison.OrdinalIgnoreCase))
+            {
+                RunSoopTaskPolicyTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
             RunTwitchConnectionStateTest(report);
             RunDropsRecoveryStateTest(report);
+            RunSoopTaskPolicyTest(report);
             RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();
             RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
             RunRegionPreparationGuideTest(report);
@@ -349,6 +356,38 @@ public static class FeatureSelfTest
                 "Drops recovery event history stays bounded at the configured limit under repeated events");
         }
         report.AppendLine("SOOP network recovery / quick-start refresh state: PASS");
+    }
+
+    private static void RunSoopTaskPolicyTest(StringBuilder report)
+    {
+        using var active = JsonDocument.Parse("""
+            {"lifecycle":"active","active":false,"notYetOpen":true,"ended":false,"completed":false}
+            """);
+        Assert(SoopTaskPolicy.Status(active.RootElement) == "进行中" &&
+               SoopTaskPolicy.IsSelectable(active.RootElement),
+            "SOOP canonical active lifecycle drives display and selection instead of stale raw flags");
+
+        using var upcoming = JsonDocument.Parse("""
+            {"lifecycle":"notYetOpen","active":false,"notYetOpen":true,"ended":false,"completed":false}
+            """);
+        Assert(SoopTaskPolicy.Status(upcoming.RootElement) == "未开始" &&
+               SoopTaskPolicy.IsSelectable(upcoming.RootElement),
+            "SOOP upcoming lifecycle remains selectable");
+
+        using var ended = JsonDocument.Parse("""
+            {"lifecycle":"ended","active":true,"notYetOpen":false,"ended":true,"completed":false}
+            """);
+        Assert(SoopTaskPolicy.Status(ended.RootElement) == "已结束" &&
+               !SoopTaskPolicy.IsSelectable(ended.RootElement),
+            "SOOP ended lifecycle is never selectable");
+
+        using var completed = JsonDocument.Parse("""
+            {"lifecycle":"active","active":true,"notYetOpen":false,"ended":false,"completed":true}
+            """);
+        Assert(SoopTaskPolicy.Status(completed.RootElement) == "已完成" &&
+               !SoopTaskPolicy.IsSelectable(completed.RootElement),
+            "SOOP completion wins over an open activity window and is history-only");
+        report.AppendLine("SOOP normalized task policy: PASS");
     }
 
     private static async Task RunPlatformLogTailSessionTest(string workspace, StringBuilder report)

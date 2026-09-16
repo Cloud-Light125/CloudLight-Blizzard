@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +16,7 @@ for path in (str(DROPS_DIR), str(SOOP_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from worker import SoopWorker
+from worker import SOOP_TIMEZONE, SoopWorker, is_actionable_task, normalize_task_status
 
 
 class _FakeAuth:
@@ -156,6 +157,59 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertFalse(state["autoStartCompleted"])
             finally:
                 self._close(worker)
+
+    def test_lifecycle_after_start_is_active_even_when_raw_active_is_false(self) -> None:
+        now = datetime(2026, 9, 14, 10, 7, tzinfo=timezone(timedelta(hours=8)))
+        task = normalize_task_status({
+            "startTime": "2026-09-14 00:30:00",
+            "endTime": "2026-09-14 23:30:00",
+            "active": False,
+            "notYetOpen": True,
+        }, now=now)
+
+        self.assertEqual(task["lifecycle"], "active")
+        self.assertTrue(task["active"])
+        self.assertFalse(task["notYetOpen"])
+        self.assertFalse(task["ended"])
+
+    def test_lifecycle_before_start_is_not_yet_open_in_seoul(self) -> None:
+        now = datetime(2026, 9, 13, 23, 0, tzinfo=SOOP_TIMEZONE)
+        task = normalize_task_status({
+            "beginTime": "2026-09-14 00:30:00",
+            "closeTime": "2026-09-14 23:30:00",
+            "active": True,
+        }, now=now)
+
+        self.assertEqual(task["lifecycle"], "notYetOpen")
+        self.assertTrue(task["notYetOpen"])
+        self.assertFalse(task["active"])
+
+    def test_lifecycle_after_end_is_ended(self) -> None:
+        now = datetime(2026, 9, 15, 0, 0, tzinfo=SOOP_TIMEZONE)
+        task = normalize_task_status({
+            "openTime": "2026-09-14 00:30:00",
+            "expireTime": "2026-09-14 23:30:00",
+            "active": True,
+        }, now=now)
+
+        self.assertEqual(task["lifecycle"], "ended")
+        self.assertTrue(task["ended"])
+        self.assertFalse(task["active"])
+
+    def test_completed_lifecycle_wins_and_is_history_only(self) -> None:
+        now = datetime(2026, 9, 14, 12, 0, tzinfo=SOOP_TIMEZONE)
+        task = normalize_task_status({
+            "startDate": "2026-09-14 00:30:00",
+            "endDate": "2026-09-14 23:30:00",
+            "completed": True,
+            "eventOnly": False,
+        }, now=now)
+
+        self.assertEqual(task["lifecycle"], "completed")
+        self.assertTrue(task["completed"])
+        self.assertFalse(task["active"])
+        self.assertFalse(task["ended"])
+        self.assertFalse(is_actionable_task(task, allow_upcoming=True))
 
     def test_refresh_returns_structured_success_even_when_channels_are_empty(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
