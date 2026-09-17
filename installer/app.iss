@@ -1,5 +1,5 @@
 ﻿#define AppName "CloudLight Blizzard"
-#define AppVer  "2.1.9"
+#define AppVer  "2.1.10"
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"
@@ -10,7 +10,7 @@ AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
 AppName={#AppName}
 AppVersion={#AppVer}
 AppVerName={#AppName} {#AppVer}
-VersionInfoVersion=2.1.9.0
+VersionInfoVersion=2.1.10.0
 VersionInfoProductVersion={#AppVer}
 VersionInfoTextVersion={#AppVer}
 VersionInfoProductTextVersion={#AppVer}
@@ -31,8 +31,9 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-CloseApplications=yes
+CloseApplications=force
 CloseApplicationsFilter=CloudLight Blizzard.exe
+RestartApplications=no
 
 [Languages]
 Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
@@ -58,6 +59,7 @@ Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowa
 [Code]
 var
   PayloadVerifyRequested: Boolean;
+  SettingsPreserveTestRequested: Boolean;
   UserDataRoot: String;
   SettingsBackupRoot: String;
   SettingsBackupReady: Boolean;
@@ -94,7 +96,9 @@ var
   Stamp: String;
 begin
   UserDataRoot := ExpandConstant('{userdocs}\CloudLight\CloudLight Blizzard');
-  Stamp := GetDateTimeString('yyyymmdd-hhnnss', '', '');
+  { GetDateTimeString requires Char separators. Empty strings compile but fail
+    at runtime with "Type Mismatch" before any snapshot can be created. }
+  Stamp := GetDateTimeString('yyyymmdd-hhnnss', '-', ':');
   SettingsBackupRoot := AddBackslash(UserDataRoot) +
     'update-backups\preinstall-{#AppVer}-' + Stamp;
   Result := True;
@@ -206,13 +210,77 @@ begin
   end;
 end;
 
+function VerifySettingsPreservation: Boolean;
+var
+  TestRoot: String;
+  TestDataRoot: String;
+  TestBackupRoot: String;
+  TestSettingsFile: String;
+  RestoredContents: AnsiString;
+begin
+  Result := False;
+  TestRoot := ExpandConstant('{tmp}\CloudLight-Settings-Preserve-SelfTest');
+  TestDataRoot := AddBackslash(TestRoot) + 'data';
+  TestBackupRoot := AddBackslash(TestRoot) + 'backup-' +
+    GetDateTimeString('yyyymmdd-hhnnss', '-', ':');
+  TestSettingsFile := AddBackslash(TestDataRoot) + 'settings.json';
+
+  if not ForceDirectories(TestDataRoot) then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL create test directory');
+    Exit;
+  end;
+  if not SaveStringToFile(TestSettingsFile, '{"proxy":"before-update"}', False) then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL create source settings');
+    Exit;
+  end;
+
+  UserDataRoot := TestDataRoot;
+  SettingsBackupRoot := TestBackupRoot;
+  SettingsBackupReady := BackupSettingsFile('settings.json');
+  if not SettingsBackupReady then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL backup');
+    Exit;
+  end;
+  if not SaveStringToFile(TestSettingsFile, '{"proxy":"installer-default"}', False) then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL mutate source settings');
+    Exit;
+  end;
+  if not RestoreUserSettings then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL restore');
+    Exit;
+  end;
+  if not LoadStringFromFile(TestSettingsFile, RestoredContents) then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL read restored settings');
+    Exit;
+  end;
+  if RestoredContents <> '{"proxy":"before-update"}' then
+  begin
+    Log('SETTINGS_PRESERVE_TEST FAIL restored contents mismatch');
+    Exit;
+  end;
+
+  Log('SETTINGS_PRESERVE_TEST PASS');
+  Result := True;
+end;
+
 procedure InitializeWizard;
 begin
-  if not PayloadVerifyRequested then
-    Exit;
-
-  VerifyInstallerPayload;
-  Abort;
+  if PayloadVerifyRequested then
+  begin
+    VerifyInstallerPayload;
+    Abort;
+  end;
+  if SettingsPreserveTestRequested then
+  begin
+    VerifySettingsPreservation;
+    Abort;
+  end;
 end;
 
 function IsDesktopRuntimeInstalled: Boolean;
@@ -254,7 +322,8 @@ var
   ErrorCode: Integer;
 begin
   PayloadVerifyRequested := HasCommandLineParam('/PAYLOADVERIFY');
-  if PayloadVerifyRequested then
+  SettingsPreserveTestRequested := HasCommandLineParam('/SETTINGSPRESERVETEST');
+  if PayloadVerifyRequested or SettingsPreserveTestRequested then
   begin
     Result := True;
     Exit;
@@ -274,7 +343,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
-  if PayloadVerifyRequested then
+  if PayloadVerifyRequested or SettingsPreserveTestRequested then
     Exit;
   if not BackupUserSettings then
     Result := '无法在安装前安全备份 CloudLight Blizzard 设置。' + #13#10 +

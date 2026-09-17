@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$releaseVersion = '2.1.9'
+$releaseVersion = '2.1.10'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
@@ -78,21 +78,21 @@ try {
     }
 
     if (-not $SkipDropsWorkers) {
-        Write-Host '[1/8] Drops Workers' -ForegroundColor Cyan
+        Write-Host '[1/9] Drops Workers' -ForegroundColor Cyan
         & (Join-Path $root 'Integrations\Drops\build-workers.ps1') -Python $pythonInfo.Path
         if ($LASTEXITCODE -ne 0) { throw 'Drops Worker 构建失败。请检查上方 Python/SSL 环境摘要和 pip 错误。' }
     }
-    else { Write-Host '[1/8] Drops Workers skipped' -ForegroundColor Yellow }
+    else { Write-Host '[1/9] Drops Workers skipped' -ForegroundColor Yellow }
 
-    Write-Host '[2/8] dotnet restore' -ForegroundColor Cyan
+    Write-Host '[2/9] dotnet restore' -ForegroundColor Cyan
     & dotnet restore 'CloudLight Blizzard.csproj' -r win-x64 -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'dotnet restore 失败。请检查 .NET 8 SDK 和 NuGet 网络。' }
 
-    Write-Host '[3/8] dotnet build (Release)' -ForegroundColor Cyan
+    Write-Host '[3/9] dotnet build (Release)' -ForegroundColor Cyan
     & dotnet build 'CloudLight Blizzard.csproj' -c Release --no-restore -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'Release 构建失败。' }
 
-    Write-Host '[4/8] dotnet publish' -ForegroundColor Cyan
+    Write-Host '[4/9] dotnet publish' -ForegroundColor Cyan
     & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained false -o publish --no-restore -v minimal @msbuildProperties
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish 失败。' }
     $publishedExe = Join-Path $root 'publish\CloudLight Blizzard.exe'
@@ -105,7 +105,7 @@ try {
     }
     Remove-Item publish\*.pdb -ErrorAction SilentlyContinue
 
-    Write-Host '[5/8] publish selftest' -ForegroundColor Cyan
+    Write-Host '[5/9] publish selftest' -ForegroundColor Cyan
     $selftestRoot = Join-Path $root 'obj\publish-selftest'
     Remove-Item -LiteralPath $selftestRoot -Recurse -Force -ErrorAction SilentlyContinue
     # WinExe apphosts do not provide a stable synchronous console/process
@@ -121,7 +121,7 @@ try {
         throw '发布目录 FeatureSelfTest 未通过，请查看 obj\publish-selftest\feature-selftest.txt。'
     }
 
-    Write-Host '[6/8] WPF navigation integration selftest' -ForegroundColor Cyan
+    Write-Host '[6/9] WPF navigation integration selftest' -ForegroundColor Cyan
     $uiSelftestRoot = Join-Path $root 'obj\publish-ui-selftest'
     Remove-Item -LiteralPath $uiSelftestRoot -Recurse -Force -ErrorAction SilentlyContinue
     & dotnet $publishedDll '--ui-selftest' (Join-Path $uiSelftestRoot 'ui-navigation-selftest.txt')
@@ -134,7 +134,7 @@ try {
         throw '发布目录 WPF navigation integration selftest 未通过，请查看 obj\publish-ui-selftest\ui-navigation-selftest.txt。'
     }
 
-    Write-Host '[7/8] Inno Setup' -ForegroundColor Cyan
+    Write-Host '[7/9] Inno Setup' -ForegroundColor Cyan
     $installerScript = Get-Content -LiteralPath (Join-Path $root 'installer\app.iss') -Raw
     if ($installerScript -notmatch '(?m)^Filename:.*Flags:.*\brunasoriginaluser\b') {
         throw '安装脚本必须以原登录用户身份启动应用，避免更新后读取管理员账户的设置目录。'
@@ -142,6 +142,10 @@ try {
     if ($installerScript -notmatch 'BackupUserSettings' -or
         $installerScript -notmatch 'RestoreUserSettings') {
         throw '安装脚本必须在关闭旧程序前备份并在安装后恢复用户设置。'
+    }
+    if ($installerScript -notmatch '(?m)^CloseApplications=force$' -or
+        $installerScript -notmatch '(?m)^RestartApplications=no$') {
+        throw '安装脚本必须可靠关闭占用程序文件的旧进程，并禁止 Restart Manager 重复启动应用。'
     }
     $publishDir = (Resolve-Path (Join-Path $root 'publish')).Path
     & $iscc ("/DPublishDir=$publishDir") (Join-Path $root 'installer\app.iss') | Out-Null
@@ -158,7 +162,7 @@ try {
     }
     Write-Host "Installer ProductVersion: $setupProductVersion (raw $setupProductVersionRaw)"
     Write-Host "Installer FileVersion: $setupFileVersion (raw $setupFileVersionRaw)"
-    Write-Host '[8/8] Installer payload validation' -ForegroundColor Cyan
+    Write-Host '[8/9] Installer payload validation' -ForegroundColor Cyan
     $publishedDllHash = (Get-FileHash -LiteralPath $publishedDll -Algorithm SHA256).Hash.ToLowerInvariant()
     $payloadValidationRoot = Join-Path $root 'obj\installer-payload-selftest'
     Remove-Item -LiteralPath $payloadValidationRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -182,6 +186,23 @@ try {
         -not $payloadLogText.Contains($expectedPayloadLine) -or
         $payloadLogText.Contains('PAYLOAD_VERIFY FAIL')) {
         throw "Installer payload 与 publish EXE/DLL 不一致（exe=$publishedExeHash，dll=$publishedDllHash，exit=$($payloadProcess.ExitCode)）。"
+    }
+    Write-Host '[9/9] Installer settings preservation validation' -ForegroundColor Cyan
+    $settingsTestLog = Join-Path $payloadValidationRoot 'inno-settings-preserve.log'
+    $settingsTestArgs = @(
+        '/SETTINGSPRESERVETEST', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOCANCEL',
+        '/NOCLOSEAPPLICATIONS', '/NOICONS',
+        ('/DIR="' + $payloadInstallFallback + '"'), ('/LOG="' + $settingsTestLog + '"')
+    )
+    $settingsTestProcess = Start-Process -FilePath $setup.FullName -ArgumentList $settingsTestArgs -Wait -PassThru
+    if (-not (Test-Path -LiteralPath $settingsTestLog -PathType Leaf)) {
+        throw "Inno settings preservation validation 未生成日志（exit $($settingsTestProcess.ExitCode)）。"
+    }
+    $settingsTestLogText = Get-Content -LiteralPath $settingsTestLog -Raw
+    if (-not $settingsTestLogText.Contains('SETTINGS_PRESERVE_TEST PASS') -or
+        $settingsTestLogText.Contains('SETTINGS_PRESERVE_TEST FAIL') -or
+        $settingsTestLogText.Contains('Type Mismatch')) {
+        throw "Installer 设置保留自检失败（exit=$($settingsTestProcess.ExitCode)）。"
     }
     $sha = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Host "Publish: $publishedExe ($((Get-Item $publishedExe).Length) bytes)" -ForegroundColor Green
