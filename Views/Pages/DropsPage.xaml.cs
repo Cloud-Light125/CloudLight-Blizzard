@@ -784,9 +784,13 @@ public partial class DropsPage : UserControl
             ShowInfo("无法确定该奖励所属的 SOOP 账号，请刷新背包后重试。", "领取奖励");
             return;
         }
-        if (SoopAccountPolicy.IsUnlinkedGameReward(row.Payload))
+        if (SoopAccountPolicy.RequiresOfficialInventory(row.Payload))
         {
-            await ShowSoopAccountNotLinkedAsync();
+            ShowSoopBindingBlockedAndOpenInventory(
+                SoopAccountPolicy.IsUnlinkedGameReward(row.Payload)
+                    ? "当前奖励需要绑定关联游戏账号。请先完成绑定后在 SOOP 官方背包领取。"
+                    : "当前奖励的游戏账号绑定状态无法确认，请前往 SOOP 官方背包领取。"
+            );
             return;
         }
         if (MessageBox.Show($"确认领取奖励「{row.Primary}」？", "领取奖励",
@@ -802,7 +806,16 @@ public partial class DropsPage : UserControl
             var resultStatus = Text(result, "status");
             if (resultStatus == "account_not_linked")
             {
-                await ShowSoopAccountNotLinkedAsync();
+                ShowSoopBindingBlockedAndOpenInventory(
+                    "当前奖励需要绑定关联游戏账号。请先完成绑定后在 SOOP 官方背包领取。"
+                );
+                return;
+            }
+            if (resultStatus == "account_link_unknown")
+            {
+                ShowSoopBindingBlockedAndOpenInventory(
+                    "当前奖励的游戏账号绑定状态无法确认，请前往 SOOP 官方背包领取。"
+                );
                 return;
             }
             var message = resultStatus switch
@@ -826,16 +839,10 @@ public partial class DropsPage : UserControl
         }
     }
 
-    private async Task ShowSoopAccountNotLinkedAsync()
+    private void ShowSoopBindingBlockedAndOpenInventory(string message)
     {
-        var refresh = new SoopNoticeWindow(
-            "无法领取奖励",
-            "当前奖励需要绑定关联游戏账号。\n\n请先完成游戏账号绑定后再领取。",
-            "刷新绑定状态")
-        {
-            Owner = Window.GetWindow(this),
-        }.ShowDialog() == true;
-        if (refresh) await RefreshSoopAsync();
+        ShowInfo(message, "无法在软件中领取奖励");
+        OpenSoopInventory();
     }
 
     private async void OnCopySoopCode(object sender, RoutedEventArgs e)
@@ -869,6 +876,9 @@ public partial class DropsPage : UserControl
     }
 
     private void OnOpenSoopInventory(object sender, RoutedEventArgs e)
+        => OpenSoopInventory();
+
+    private void OpenSoopInventory()
     {
         try
         {

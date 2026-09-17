@@ -527,7 +527,8 @@
                                 </TextBlock>
                             </Grid>
                             <WrapPanel>
-                                <Button Content="领取选中奖励" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
+                                <Button Content="{Binding SelectedItem.SoopClaimButtonText, ElementName=SoopInventoryList, TargetNullValue=领取选中奖励, FallbackValue=领取选中奖励}"
+                                        Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
                                 <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode"/>
                             </WrapPanel>
                         </StackPanel>

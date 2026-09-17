@@ -128,7 +128,6 @@ class SoopWorkerContractTests(unittest.TestCase):
             is_event_active=active,
             is_truly_ended=not active,
             is_not_yet_open=False,
-            acct_conn=False,
             raw={"cateName": "Overwatch"},
         )
 
@@ -639,9 +638,10 @@ class SoopWorkerContractTests(unittest.TestCase):
                     "id": "account:campaign-3", "account": "account", "channel": "OW Esports",
                     "campaign": "OWWC GROUP STAGE DAY 3", "reward": "1 Esports Loot Box 3-1",
                     "currentMinutes": 106, "requiredMinutes": 120, "percent": 88,
-                    "requiresGameAccount": True, "gameAccountLinked": True,
                     "gameAccountRequirement": "required",
+                    "gameAccountLinkState": "linked",
                     "gameAccountBindingStatus": "已绑定",
+                    "gameNo": "", "accountLinkPath": "",
                 }])
             finally:
                 self._close(worker)
@@ -691,8 +691,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                 worker._app_config = lambda: "config"
                 worker.get_inventory = lambda payload: [{
                     "uid": "account", "id": "reward", "claimed": False,
-                    "requiresGameAccount": True, "gameAccountRequirement": "required",
-                    "gameAccountLinked": True,
+                    "gameAccountRequirement": "required",
+                    "gameAccountLinkState": "linked",
                 }]
 
                 result = worker.claim_reward({"userid": "account", "id": "reward"})
@@ -714,8 +714,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                 worker._core = {"auth": SimpleNamespace(load_cookies=lambda uid: {"uid": uid})}
                 worker.get_inventory = lambda payload: [{
                     "uid": "account", "id": "reward", "claimed": False,
-                    "requiresGameAccount": True, "gameAccountRequirement": "required",
-                    "gameAccountLinked": False,
+                    "gameAccountRequirement": "required",
+                    "gameAccountLinkState": "unlinked",
                 }]
 
                 result = worker.claim_reward({"userid": "account", "id": "reward"})
@@ -724,9 +724,97 @@ class SoopWorkerContractTests(unittest.TestCase):
                     "id": "reward", "status": "account_not_linked", "success": False,
                 })
                 self.assertIn(
-                    "claim skipped: account not linked",
+                    "奖励需要游戏账号绑定，当前账号未绑定，跳过领取",
                     (root / "soop.log").read_text(encoding="utf-8"),
                 )
+            finally:
+                self._close(worker)
+
+    def test_manual_claim_is_blocked_when_required_link_state_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                claim_called = False
+
+                class FakeContext:
+                    def __init__(self, uid, cookies, config) -> None:
+                        pass
+
+                    async def open(self):
+                        return "session"
+
+                    async def close(self) -> None:
+                        pass
+
+                class FakeDropsClient:
+                    def __init__(self, session) -> None:
+                        pass
+
+                    async def get_inventory(self, *, with_codes):
+                        return [SimpleNamespace(
+                            item_code_idx="reward",
+                            raw={"itemType": "4"},
+                        )]
+
+                    async def claim_and_verify(self, item_id, *, max_attempts):
+                        nonlocal claim_called
+                        claim_called = True
+                        raise AssertionError("claim API must not be called")
+
+                worker._core = {
+                    "auth": SimpleNamespace(load_cookies=lambda uid: {"uid": uid}),
+                    "network": SimpleNamespace(AccountNetworkContext=FakeContext),
+                    "drops": SimpleNamespace(DropsClient=FakeDropsClient),
+                }
+                worker._app_config = lambda: None
+                worker.get_inventory = lambda payload: [{
+                    "uid": "account", "id": "reward", "claimed": False,
+                    "gameAccountRequirement": "required",
+                    "gameAccountLinkState": "unknown",
+                }]
+
+                result = worker.claim_reward({"userid": "account", "id": "reward"})
+
+                self.assertEqual(result, {
+                    "id": "reward", "status": "account_link_unknown", "success": False,
+                })
+                self.assertFalse(claim_called)
+                self.assertIn(
+                    "奖励需要游戏账号绑定，当前无法确认绑定状态，跳过领取",
+                    (root / "soop.log").read_text(encoding="utf-8"),
+                )
+            finally:
+                self._close(worker)
+
+    def test_two_accounts_keep_game_binding_state_isolated_for_same_game(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "soop.log")
+            try:
+                linked = self._event("same-campaign")
+                linked.raw.update({
+                    "ingameGiveYn": "Y", "acctConn": "Y", "gameNo": "42",
+                })
+                unlinked = self._event("same-campaign")
+                unlinked.raw.update({
+                    "ingameGiveYn": "Y", "acctConn": "N", "gameNo": "42",
+                })
+                worker._states = {
+                    "account-a": self._state(
+                        "account-a", [self._mission("same-campaign", ingame_give=True)], [linked]
+                    ),
+                    "account-b": self._state(
+                        "account-b", [self._mission("same-campaign", ingame_give=True)], [unlinked]
+                    ),
+                }
+
+                rows = worker.get_tasks({})
+                by_uid = {row["uid"]: row for row in rows}
+                self.assertEqual(by_uid["account-a"]["gameNo"], "42")
+                self.assertEqual(by_uid["account-a"]["gameAccountLinkState"], "linked")
+                self.assertEqual(by_uid["account-b"]["gameNo"], "42")
+                self.assertEqual(by_uid["account-b"]["gameAccountLinkState"], "unlinked")
             finally:
                 self._close(worker)
 
@@ -736,13 +824,12 @@ class SoopWorkerContractTests(unittest.TestCase):
             worker = SoopWorker(root / "data", root / "soop.log")
             try:
                 linked_event = self._event("linked")
-                linked_event.acct_conn = True
                 linked_event.raw.update({"acctConn": "Y", "ingameGiveYn": "Y"})
                 linked_mission = self._mission("linked", ingame_give=True)
                 linked_state = self._state("linked-account", [linked_mission], [linked_event])
                 linked_snapshot = worker._state_to_dict(linked_state)
-                self.assertNotIn("gameAccountLinked", linked_snapshot)
-                self.assertTrue(linked_snapshot["tasks"][0]["gameAccountLinked"])
+                self.assertNotIn("gameAccountLinkState", linked_snapshot)
+                self.assertEqual(linked_snapshot["tasks"][0]["gameAccountLinkState"], "linked")
                 self.assertEqual(linked_snapshot["tasks"][0]["gameAccountRequirement"], "required")
                 self.assertEqual(linked_snapshot["tasks"][0]["gameAccountBindingStatus"], "已绑定")
 
@@ -763,15 +850,16 @@ class SoopWorkerContractTests(unittest.TestCase):
                 )
                 self.assertEqual(unlinked_snapshot["inventory"][0]["gameAccountBindingStatus"], "未绑定")
 
-                # acctConn is sufficient evidence that this activity supports
-                # binding even when older payloads omit ingameGiveYn.
+                # acctConn is account state only and cannot establish the
+                # activity requirement when ingameGiveYn is absent.
                 inferred_event = self._event("inferred")
                 inferred_event.raw["acctConn"] = "N"
                 inferred_snapshot = worker._state_to_dict(
                     self._state("inferred-account", [self._mission("inferred")], [inferred_event])
                 )
-                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountRequirement"], "required")
-                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountBindingStatus"], "未绑定")
+                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountRequirement"], "unknown")
+                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountLinkState"], "unknown")
+                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountBindingStatus"], "无法确认")
 
                 unsupported_event = self._event("unsupported")
                 unsupported_event.raw.update({"ingameGiveYn": "N", "acctConn": "N"})
@@ -787,15 +875,15 @@ class SoopWorkerContractTests(unittest.TestCase):
                 )
                 unsupported_state.inventory = [unsupported_reward]
                 unsupported_snapshot = worker._state_to_dict(unsupported_state)
-                self.assertEqual(unsupported_snapshot["tasks"][0]["gameAccountRequirement"], "not_supported")
+                self.assertEqual(unsupported_snapshot["tasks"][0]["gameAccountRequirement"], "unsupported")
                 self.assertEqual(unsupported_snapshot["tasks"][0]["gameAccountBindingStatus"], "不支持绑定")
-                self.assertEqual(unsupported_snapshot["inventory"][0]["gameAccountRequirement"], "not_supported")
+                self.assertEqual(unsupported_snapshot["inventory"][0]["gameAccountRequirement"], "unsupported")
 
                 historical_snapshot = worker._state_to_dict(
                     self._state("historical-account", [self._mission("historical")], [])
                 )
                 self.assertEqual(historical_snapshot["tasks"][0]["gameAccountRequirement"], "unknown")
-                self.assertEqual(historical_snapshot["tasks"][0]["gameAccountBindingStatus"], "状态待确认")
+                self.assertEqual(historical_snapshot["tasks"][0]["gameAccountBindingStatus"], "无法确认")
             finally:
                 self._close(worker)
 

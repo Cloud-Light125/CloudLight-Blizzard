@@ -366,28 +366,68 @@ public static class FeatureSelfTest
             "SOOP add-account flow requires confirmation starting with the second account");
 
         using var unlinkedReward = JsonDocument.Parse("""
-            {"requiresGameAccount":true,"gameAccountRequirement":"required","gameAccountLinked":false}
+            {"gameAccountRequirement":"required","gameAccountLinkState":"unlinked"}
             """);
         using var linkedReward = JsonDocument.Parse("""
-            {"requiresGameAccount":true,"gameAccountRequirement":"required","gameAccountLinked":true}
+            {"gameAccountRequirement":"required","gameAccountLinkState":"linked"}
             """);
         Assert(SoopAccountPolicy.IsUnlinkedGameReward(unlinkedReward.RootElement) &&
-               !SoopAccountPolicy.IsUnlinkedGameReward(linkedReward.RootElement),
-            "SOOP manual claim UI blocks only explicit unlinked game rewards");
+               !SoopAccountPolicy.IsUnlinkedGameReward(linkedReward.RootElement) &&
+               !SoopAccountPolicy.CanClaimInApp(unlinkedReward.RootElement) &&
+               SoopAccountPolicy.CanClaimInApp(linkedReward.RootElement),
+            "SOOP manual claim UI allows only eligible game rewards");
         using var noBindingReward = JsonDocument.Parse("""
-            {"requiresGameAccount":false,"gameAccountRequirement":"not_supported","gameAccountLinked":false}
+            {"gameAccountRequirement":"unsupported","gameAccountLinkState":"unknown"}
             """);
-        using var historicalReward = JsonDocument.Parse("""
-            {"requiresGameAccount":false,"gameAccountLinked":false}
+        using var unknownReward = JsonDocument.Parse("""
+            {"gameAccountRequirement":"required","gameAccountLinkState":"unknown"}
             """);
         Assert(SoopAccountPolicy.GameAccountBindingText(unlinkedReward.RootElement) == "游戏账号：未绑定" &&
                SoopAccountPolicy.GameAccountBindingText(linkedReward.RootElement) == "游戏账号：已绑定" &&
                SoopAccountPolicy.GameAccountBindingText(noBindingReward.RootElement) == "游戏账号：不支持绑定" &&
-               SoopAccountPolicy.GameAccountBindingText(historicalReward.RootElement) == "游戏账号：状态待确认" &&
+               SoopAccountPolicy.GameAccountBindingText(unknownReward.RootElement) == "游戏账号：无法确认" &&
                SoopAccountPolicy.GameAccountClaimRequirementText(unlinkedReward.RootElement) == "领取条件：需要游戏账号绑定" &&
                SoopAccountPolicy.GameAccountClaimRequirementText(noBindingReward.RootElement) == "领取条件：无需游戏账号绑定" &&
-               !SoopAccountPolicy.IsUnlinkedGameReward(noBindingReward.RootElement),
+               !SoopAccountPolicy.IsUnlinkedGameReward(noBindingReward.RootElement) &&
+               SoopAccountPolicy.CanClaimInApp(noBindingReward.RootElement) &&
+               SoopAccountPolicy.RequiresOfficialInventory(unknownReward.RootElement),
             "SOOP task and reward rows expose binding state per game-specific item");
+
+        var host = new DropsHostService();
+        using (var vm = new DropsViewModel(host))
+        using (var initial = JsonDocument.Parse("""
+            {"running":true,"settings":{},"accounts":[],"tasks":[],"currentProgress":[],
+             "inventory":[
+               {"uid":"account-a","id":"reward-a","name":"A","claimed":false,
+                "gameAccountRequirement":"required","gameAccountLinkState":"unlinked"},
+               {"uid":"account-b","id":"reward-b","name":"B","claimed":false,
+                "gameAccountRequirement":"required","gameAccountLinkState":"linked"}
+             ]}
+            """))
+        using (var accountUpdate = JsonDocument.Parse("""
+            {"uid":"account-a","running":true,"status":"挂机中","tasks":[],"currentProgress":[],
+             "inventory":[
+               {"uid":"account-a","id":"reward-a","name":"A","claimed":false,
+                "gameAccountRequirement":"required","gameAccountLinkState":"linked"}
+             ]}
+            """))
+        {
+            vm.ApplyState(DropsPlatform.Soop, initial.RootElement);
+            var collectionChanges = 0;
+            vm.Inventory.CollectionChanged += (_, _) => collectionChanges++;
+            vm.ApplySoopAccountStatus(accountUpdate.RootElement);
+
+            var accountA = vm.Inventory.Single(row =>
+                row.Payload.GetProperty("uid").GetString() == "account-a");
+            var accountB = vm.Inventory.Single(row =>
+                row.Payload.GetProperty("uid").GetString() == "account-b");
+            Assert(vm.Inventory.Count == 2 && collectionChanges >= 2 &&
+                   accountA.Secondary.Contains("游戏账号：已绑定", StringComparison.Ordinal) &&
+                   accountA.SoopClaimButtonText == "领取选中奖励" &&
+                   accountB.Secondary.Contains("游戏账号：已绑定", StringComparison.Ordinal) &&
+                   accountB.SoopClaimButtonText == "领取选中奖励",
+                "SOOP account_status replaces only the matching UID inventory and restores claim action");
+        }
 
         using var active = JsonDocument.Parse("""
             {"lifecycle":"active","active":false,"notYetOpen":true,"ended":false,"completed":false}

@@ -15,6 +15,9 @@ public sealed class DropsRow : ObservableObject
     public bool Enabled { get; init; }
     public double Progress { get; init; }
     public JsonElement Payload { get; init; }
+    public string SoopClaimButtonText => SoopAccountPolicy.RequiresOfficialInventory(Payload)
+        ? "打开背包"
+        : "领取选中奖励";
 
     public bool Completed { get; init; }
     public bool Claimed { get; init; }
@@ -53,7 +56,7 @@ public sealed class SoopProgressRow
     public string Channel { get; init; } = "";
     public string Campaign { get; init; } = "";
     public string Reward { get; init; } = "";
-    public string GameAccountBindingText { get; init; } = "游戏账号：待刷新";
+    public string GameAccountBindingText { get; init; } = "游戏账号：无法确认";
     public int CurrentMinutes { get; init; }
     public int RequiredMinutes { get; init; }
     public double Percent { get; init; }
@@ -1909,6 +1912,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             AddSoopTaskRows(state);
         }
 
+        AddSoopInventoryRows(state, uid);
+
         AddSoopProgressRows(state, replaceAccount: true);
         if (state.TryGetProperty("running", out var running) && running.ValueKind is JsonValueKind.True or JsonValueKind.False)
             Soop.Running = running.GetBoolean();
@@ -1939,15 +1944,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Payload = item.Clone(),
         });
         AddSoopTaskRows(state);
-        AddRows(state, "inventory", Inventory, item => new DropsRow
-        {
-            Id = Text(item, "id"), Primary = Text(item, "name"),
-            Secondary = JoinDetails(
-                Text(item, "description"),
-                SoopAccountPolicy.GameAccountClaimRequirementText(item),
-                SoopAccountPolicy.GameAccountBindingText(item)),
-            Status = Bool(item, "claimed") ? "已领取" : "未领取", Payload = item.Clone(),
-        });
+        AddSoopInventoryRows(state);
         AddSoopProgressRows(state, replaceAccount: false);
         var activeAccounts = Accounts.Count(row => Bool(row.Payload, "running"));
         var availableTasks = SoopSelectableTasks.Where(row => Bool(row.Payload, "active"))
@@ -2014,6 +2011,32 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 CurrentMinutes = (int)Number(item, "currentMinutes"),
                 RequiredMinutes = (int)Number(item, "requiredMinutes"),
                 Percent = Number(item, "percent"),
+            });
+        }
+    }
+
+    private void AddSoopInventoryRows(JsonElement owner, string? replaceAccount = null)
+    {
+        if (!owner.TryGetProperty("inventory", out var rows) || rows.ValueKind != JsonValueKind.Array)
+            return;
+        if (replaceAccount is not null)
+        {
+            for (var index = Inventory.Count - 1; index >= 0; index--)
+                if (string.Equals(Text(Inventory[index].Payload, "uid"), replaceAccount,
+                        StringComparison.Ordinal))
+                    Inventory.RemoveAt(index);
+        }
+        foreach (var item in rows.EnumerateArray())
+        {
+            Inventory.Add(new DropsRow
+            {
+                Id = Text(item, "id"), Primary = Text(item, "name"),
+                Secondary = JoinDetails(
+                    Text(item, "description"),
+                    SoopAccountPolicy.GameAccountClaimRequirementText(item),
+                    SoopAccountPolicy.GameAccountBindingText(item)),
+                Status = Bool(item, "claimed") ? "已领取" : "未领取",
+                Payload = item.Clone(),
             });
         }
     }
