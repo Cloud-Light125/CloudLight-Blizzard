@@ -1,5 +1,5 @@
 ﻿#define AppName "CloudLight Blizzard"
-#define AppVer  "2.1.8"
+#define AppVer  "2.1.9"
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"
@@ -10,7 +10,7 @@ AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
 AppName={#AppName}
 AppVersion={#AppVer}
 AppVerName={#AppName} {#AppVer}
-VersionInfoVersion=2.1.8.0
+VersionInfoVersion=2.1.9.0
 VersionInfoProductVersion={#AppVer}
 VersionInfoTextVersion={#AppVer}
 VersionInfoProductTextVersion={#AppVer}
@@ -41,7 +41,7 @@ Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式:"
 
 [Files]
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs; AfterInstall: RestoreUserSettingsBeforeLaunch
 ; Keep a temporary, non-installed copy so build.ps1 can verify the compressed
 ; installer payload without installing the application or touching shortcuts.
 Source: "{#PublishDir}\CloudLight Blizzard.exe"; Flags: dontcopy
@@ -58,6 +58,111 @@ Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowa
 [Code]
 var
   PayloadVerifyRequested: Boolean;
+  UserDataRoot: String;
+  SettingsBackupRoot: String;
+  SettingsBackupReady: Boolean;
+  SettingsRestoreAttempted: Boolean;
+
+function BackupSettingsFile(const RelativePath: String): Boolean;
+var
+  SourceFile: String;
+  BackupFile: String;
+begin
+  Result := True;
+  SourceFile := AddBackslash(UserDataRoot) + RelativePath;
+  if not FileExists(SourceFile) then
+    Exit;
+
+  BackupFile := AddBackslash(SettingsBackupRoot) + RelativePath;
+  if not ForceDirectories(ExtractFileDir(BackupFile)) then
+  begin
+    Log('SETTINGS_BACKUP FAIL create directory: ' + ExtractFileDir(BackupFile));
+    Result := False;
+    Exit;
+  end;
+  if not CopyFile(SourceFile, BackupFile, False) then
+  begin
+    Log('SETTINGS_BACKUP FAIL copy: ' + SourceFile);
+    Result := False;
+    Exit;
+  end;
+  Log('SETTINGS_BACKUP PASS: ' + RelativePath);
+end;
+
+function BackupUserSettings: Boolean;
+var
+  Stamp: String;
+begin
+  UserDataRoot := ExpandConstant('{userdocs}\CloudLight\CloudLight Blizzard');
+  Stamp := GetDateTimeString('yyyymmdd-hhnnss', '', '');
+  SettingsBackupRoot := AddBackslash(UserDataRoot) +
+    'update-backups\preinstall-{#AppVer}-' + Stamp;
+  Result := True;
+  if not BackupSettingsFile('settings.json') then Result := False;
+  if not BackupSettingsFile('drops\soop\settings.json') then Result := False;
+  if not BackupSettingsFile('drops\twitch\settings.json') then Result := False;
+  if not BackupSettingsFile('drops\youtube\config.json') then Result := False;
+  if not BackupSettingsFile('drops\bilibili\settings.json') then Result := False;
+  SettingsBackupReady := Result;
+  if Result then
+    Log('SETTINGS_BACKUP COMPLETE: ' + SettingsBackupRoot)
+  else
+    Log('SETTINGS_BACKUP INCOMPLETE');
+end;
+
+function RestoreSettingsFile(const RelativePath: String): Boolean;
+var
+  SourceFile: String;
+  DestinationFile: String;
+begin
+  Result := True;
+  SourceFile := AddBackslash(SettingsBackupRoot) + RelativePath;
+  if not FileExists(SourceFile) then
+    Exit;
+
+  DestinationFile := AddBackslash(UserDataRoot) + RelativePath;
+  if not ForceDirectories(ExtractFileDir(DestinationFile)) then
+  begin
+    Log('SETTINGS_RESTORE FAIL create directory: ' + ExtractFileDir(DestinationFile));
+    Result := False;
+    Exit;
+  end;
+  if not CopyFile(SourceFile, DestinationFile, False) then
+  begin
+    Log('SETTINGS_RESTORE FAIL copy: ' + DestinationFile);
+    Result := False;
+    Exit;
+  end;
+  Log('SETTINGS_RESTORE PASS: ' + RelativePath);
+end;
+
+function RestoreUserSettings: Boolean;
+begin
+  if not SettingsBackupReady then
+  begin
+    Result := True;
+    Exit;
+  end;
+  Result := True;
+  if not RestoreSettingsFile('settings.json') then Result := False;
+  if not RestoreSettingsFile('drops\soop\settings.json') then Result := False;
+  if not RestoreSettingsFile('drops\twitch\settings.json') then Result := False;
+  if not RestoreSettingsFile('drops\youtube\config.json') then Result := False;
+  if not RestoreSettingsFile('drops\bilibili\settings.json') then Result := False;
+  if Result then
+    Log('SETTINGS_RESTORE COMPLETE: ' + SettingsBackupRoot)
+  else
+    Log('SETTINGS_RESTORE INCOMPLETE; recovery snapshot retained at: ' + SettingsBackupRoot);
+end;
+
+procedure RestoreUserSettingsBeforeLaunch;
+begin
+  if SettingsRestoreAttempted then
+    Exit;
+  SettingsRestoreAttempted := True;
+  if not RestoreUserSettings then
+    RaiseException('无法恢复安装前设置。恢复快照位于：' + SettingsBackupRoot);
+end;
 
 function HasCommandLineParam(const Name: String): Boolean;
 var
@@ -164,6 +269,16 @@ begin
       ShellExec('', 'https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe',
         '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
   end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if PayloadVerifyRequested then
+    Exit;
+  if not BackupUserSettings then
+    Result := '无法在安装前安全备份 CloudLight Blizzard 设置。' + #13#10 +
+      '为避免设置丢失，本次安装已取消。';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
