@@ -64,7 +64,6 @@ public partial class SettingsPage : UserControl
     {
         if (_vm == null) return;
         CurrentVersionText.Text = _vm.UpdateChecks.CurrentVersion;
-        SelectTag(UpdateChannelPicker, _vm.Settings.UpdateChannel.ToString());
         var skipped = UpdateService.NormalizeReleaseVersion(_vm.Settings.SkippedUpdateVersion);
         SkippedUpdatePanel.Visibility = string.IsNullOrWhiteSpace(skipped)
             ? Visibility.Collapsed : Visibility.Visible;
@@ -138,14 +137,6 @@ public partial class SettingsPage : UserControl
         _vm.Settings.Save();
     }
 
-    private void OnUpdateChannelChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_loading || _vm == null || UpdateChannelPicker.SelectedItem is not ComboBoxItem item) return;
-        if (!Enum.TryParse<UpdateChannel>(item.Tag?.ToString(), out var channel)) return;
-        _vm.Settings.UpdateChannel = channel;
-        _vm.Settings.Save();
-        RefreshUpdateInfo();
-    }
     private void OnThemeChanged(object sender, RoutedEventArgs e) { if (_loading || _vm == null) return; _vm.Settings.DarkMode = DarkModeBox.IsChecked == true; _vm.Settings.Save(); ThemeManager.Apply(_vm.Settings.DarkMode); }
     private void Save()
     {

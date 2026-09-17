@@ -108,14 +108,6 @@
                     <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
                     <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。"
                                Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                        <TextBlock Text="更新通道" VerticalAlignment="Center" Margin="0,0,10,0" />
-                        <ComboBox x:Name="UpdateChannelPicker" Width="140" Style="{StaticResource ThemeComboBox}"
-                                  SelectionChanged="OnUpdateChannelChanged">
-                            <ComboBoxItem Content="稳定版" Tag="Stable" />
-                            <ComboBoxItem Content="测试版" Tag="Beta" />
-                        </ComboBox>
-                    </StackPanel>
                     <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left"
                             Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
                     <StackPanel x:Name="UpdateAvailablePanel" Margin="0,15,0,0" Visibility="Collapsed">

@@ -95,6 +95,7 @@ class SoopWorkerContractTests(unittest.TestCase):
         active: bool = True,
         completed: bool = False,
         not_yet_open: bool = False,
+        ingame_give: bool = False,
     ) -> SimpleNamespace:
         item = SimpleNamespace(
             item_name=f"reward-{idx}", give_term=60, view_time=60 if completed else 1,
@@ -108,6 +109,7 @@ class SoopWorkerContractTests(unittest.TestCase):
             end_date="",
             category_name="",
             category_no="",
+            ingame_give=ingame_give,
             is_event_active=active,
             is_truly_ended=not active and not not_yet_open,
             is_not_yet_open=not_yet_open,
@@ -609,9 +611,12 @@ class SoopWorkerContractTests(unittest.TestCase):
                     drops_idx="campaign-3", title="OWWC GROUP STAGE DAY 3",
                     type_label="固定型", start_date="", end_date="",
                     category_name="Overwatch 2", category_no="123",
+                    ingame_give=True,
                     is_event_active=True, items=[current_item],
                     active_item=lambda: current_item,
                 )
+                event = self._event("campaign-3")
+                event.raw.update({"ingameGiveYn": "Y", "acctConn": "Y"})
                 worker._manager = SimpleNamespace(
                     get_miner=lambda uid: SimpleNamespace(_current=current_channel)
                 )
@@ -625,7 +630,7 @@ class SoopWorkerContractTests(unittest.TestCase):
                     connection_healthy=True, bridge_connected=True,
                     heartbeat_status="ok", heartbeat_last_success="now",
                     network_uploaded=0, network_downloaded=0, network_last_minute_bps=0,
-                    missions=[mission], inventory=[], available_channels=[],
+                    missions=[mission], events=[event], inventory=[], available_channels=[],
                 )
 
                 progress = worker._state_to_dict(state)["currentProgress"]
@@ -633,6 +638,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                     "id": "account:campaign-3", "account": "account", "channel": "OW Esports",
                     "campaign": "OWWC GROUP STAGE DAY 3", "reward": "1 Esports Loot Box 3-1",
                     "currentMinutes": 106, "requiredMinutes": 120, "percent": 88,
+                    "requiresGameAccount": True, "gameAccountLinked": True,
+                    "gameAccountBindingStatus": "✓ 已绑定",
                 }])
             finally:
                 self._close(worker)
@@ -719,29 +726,37 @@ class SoopWorkerContractTests(unittest.TestCase):
             finally:
                 self._close(worker)
 
-    def test_account_state_exposes_game_account_binding_status(self) -> None:
+    def test_task_and_reward_state_exposes_game_specific_binding_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             worker = SoopWorker(root / "data", root / "soop.log")
             try:
                 linked_event = self._event("linked")
                 linked_event.acct_conn = True
-                linked_event.raw["acctConn"] = "Y"
-                linked_state = self._state("linked-account", events=[linked_event])
-                self.assertTrue(worker._state_to_dict(linked_state)["gameAccountLinked"])
-                self.assertEqual(
-                    worker._state_to_dict(linked_state)["gameAccountBindingStatus"],
-                    "✓ 已绑定",
-                )
+                linked_event.raw.update({"acctConn": "Y", "ingameGiveYn": "Y"})
+                linked_mission = self._mission("linked", ingame_give=True)
+                linked_state = self._state("linked-account", [linked_mission], [linked_event])
+                linked_snapshot = worker._state_to_dict(linked_state)
+                self.assertNotIn("gameAccountLinked", linked_snapshot)
+                self.assertTrue(linked_snapshot["tasks"][0]["gameAccountLinked"])
+                self.assertEqual(linked_snapshot["tasks"][0]["gameAccountBindingStatus"], "✓ 已绑定")
 
                 unlinked_event = self._event("unlinked")
-                unlinked_event.raw["acctConn"] = "N"
-                unlinked_state = self._state("unlinked-account", events=[unlinked_event])
-                self.assertFalse(worker._state_to_dict(unlinked_state)["gameAccountLinked"])
+                unlinked_event.raw.update({"acctConn": "N", "ingameGiveYn": "Y"})
+                unlinked_mission = self._mission("unlinked", ingame_give=True)
+                reward = SimpleNamespace(
+                    item_code_idx="reward", item_name="Reward", claimed=False,
+                    exp_date=None, receive_date=None, redeem_code=None, description=None,
+                    raw={"itemType": "4", "acctConn": "N"},
+                )
+                unlinked_state = self._state("unlinked-account", [unlinked_mission], [unlinked_event])
+                unlinked_state.inventory = [reward]
+                unlinked_snapshot = worker._state_to_dict(unlinked_state)
                 self.assertEqual(
-                    worker._state_to_dict(unlinked_state)["gameAccountBindingStatus"],
+                    unlinked_snapshot["tasks"][0]["gameAccountBindingStatus"],
                     "⚠ 未绑定",
                 )
+                self.assertEqual(unlinked_snapshot["inventory"][0]["gameAccountBindingStatus"], "⚠ 未绑定")
             finally:
                 self._close(worker)
 

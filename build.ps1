@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$releaseVersion = '2.1.6'
+$releaseVersion = '2.1.7'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
@@ -135,6 +135,10 @@ try {
     }
 
     Write-Host '[7/8] Inno Setup' -ForegroundColor Cyan
+    $installerScript = Get-Content -LiteralPath (Join-Path $root 'installer\app.iss') -Raw
+    if ($installerScript -notmatch '(?m)^Filename:.*Flags:.*\brunasoriginaluser\b') {
+        throw '安装脚本必须以原登录用户身份启动应用，避免更新后读取管理员账户的设置目录。'
+    }
     $publishDir = (Resolve-Path (Join-Path $root 'publish')).Path
     & $iscc ("/DPublishDir=$publishDir") (Join-Path $root 'installer\app.iss') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 构建失败。' }

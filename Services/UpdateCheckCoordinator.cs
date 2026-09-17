@@ -65,7 +65,7 @@ public sealed class UpdateCheckCoordinator
     /// path so observing update health remains read-only.
     /// </summary>
     public Task<UpdateCheckResult> CheckReadOnlyAsync(CancellationToken cancellationToken = default) =>
-        _service.CheckAsync(_settings.UpdateChannel, cancellationToken);
+        _service.CheckAsync(UpdateChannel.Stable, cancellationToken);
 
     public async Task<UpdateCheckOutcome> CheckAfterDelayAsync(
         TimeSpan delay, CancellationToken cancellationToken = default)
@@ -120,7 +120,7 @@ public sealed class UpdateCheckCoordinator
             skippedVersion: _settings.SkippedUpdateVersion);
         try
         {
-            var result = await _service.CheckAsync(_settings.UpdateChannel, cancellationToken);
+            var result = await _service.CheckAsync(UpdateChannel.Stable, cancellationToken);
             LastResult = result;
             LastCheckAt = DateTimeOffset.Now;
             LastFailure = result.Status == UpdateCheckResultStatus.Failed ? result.ErrorMessage : null;

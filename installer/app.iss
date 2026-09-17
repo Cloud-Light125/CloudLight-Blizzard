@@ -1,5 +1,5 @@
 ﻿#define AppName "CloudLight Blizzard"
-#define AppVer  "2.1.6"
+#define AppVer  "2.1.7"
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"
@@ -10,7 +10,7 @@ AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
 AppName={#AppName}
 AppVersion={#AppVer}
 AppVerName={#AppName} {#AppVer}
-VersionInfoVersion=2.1.6.0
+VersionInfoVersion=2.1.7.0
 VersionInfoProductVersion={#AppVer}
 VersionInfoTextVersion={#AppVer}
 VersionInfoProductTextVersion={#AppVer}
@@ -52,7 +52,8 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: 
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon; AppUserModelID: "CloudLight.CloudLightBlizzard"
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent
+; Setup is elevated, but application settings belong to the original signed-in user.
+Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 var

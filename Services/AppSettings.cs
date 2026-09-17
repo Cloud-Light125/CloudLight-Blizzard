@@ -53,7 +53,6 @@ public sealed class AppSettings
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }
     public DateTimeOffset? RemindAfter { get; set; }
-    public UpdateChannel UpdateChannel { get; set; } = UpdateChannel.Stable;
     public DateTimeOffset? LastUpdateCheckAt { get; set; }
     public string? LastUpdateFailure { get; set; }
     public string? LastSuccessfulUpdateFrom { get; set; }

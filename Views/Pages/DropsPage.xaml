@@ -226,6 +226,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -241,7 +242,9 @@
                 <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextTrimming="CharacterEllipsis">
                     <Run Text="账号："/><Run Text="{Binding Account, Mode=OneWay}"/><Run Text="　直播间："/><Run Text="{Binding Channel, Mode=OneWay}"/>
                 </TextBlock>
-                <ProgressBar Grid.Row="3" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
+                <TextBlock Grid.Row="3" Text="{Binding GameAccountBindingText}" Margin="0,4,0,0"
+                           Foreground="{DynamicResource Text.Secondary}" FontSize="11"/>
+                <ProgressBar Grid.Row="4" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
                              Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0"/>
             </Grid>
         </DataTemplate>

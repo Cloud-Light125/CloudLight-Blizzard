@@ -53,6 +53,7 @@ public sealed class SoopProgressRow
     public string Channel { get; init; } = "";
     public string Campaign { get; init; } = "";
     public string Reward { get; init; } = "";
+    public string GameAccountBindingText { get; init; } = "游戏账号：待刷新";
     public int CurrentMinutes { get; init; }
     public int RequiredMinutes { get; init; }
     public double Percent { get; init; }
@@ -1933,14 +1934,15 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "accounts", Accounts, item => new DropsRow
         {
             Id = Text(item, "uid"), Primary = Text(item, "uid"),
-            Secondary = $"游戏账号绑定状态：{Text(item, "gameAccountBindingStatus", "待刷新")} · 直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
+            Secondary = $"直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
             Status = (Bool(item, "primary") ? "主账号 · " : "") + (Bool(item, "running") ? "运行中" : "已停止"),
             Payload = item.Clone(),
         });
         AddSoopTaskRows(state);
         AddRows(state, "inventory", Inventory, item => new DropsRow
         {
-            Id = Text(item, "id"), Primary = Text(item, "name"), Secondary = Text(item, "description"),
+            Id = Text(item, "id"), Primary = Text(item, "name"),
+            Secondary = JoinDetails(Text(item, "description"), SoopAccountPolicy.GameAccountBindingText(item)),
             Status = Bool(item, "claimed") ? "已领取" : "未领取", Payload = item.Clone(),
         });
         AddSoopProgressRows(state, replaceAccount: false);
@@ -1973,7 +1975,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             var row = new DropsRow
             {
                 Id = Text(item, "id"), Primary = Text(item, "title"),
-                Secondary = $"{Text(item, "type")} · {Text(item, "categoryName")}",
+                Secondary = JoinDetails(
+                    $"{Text(item, "type")} · {Text(item, "categoryName")}".Trim(' ', '·'),
+                    SoopAccountPolicy.GameAccountBindingText(item)),
                 Status = SoopTaskPolicy.Status(item),
                 Completed = Bool(item, "completed"),
                 Payload = item.Clone(),
@@ -2003,12 +2007,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 Channel = Text(item, "channel", "尚未进入直播间"),
                 Campaign = Text(item, "campaign"),
                 Reward = Text(item, "reward"),
+                GameAccountBindingText = SoopAccountPolicy.GameAccountBindingText(item),
                 CurrentMinutes = (int)Number(item, "currentMinutes"),
                 RequiredMinutes = (int)Number(item, "requiredMinutes"),
                 Percent = Number(item, "percent"),
             });
         }
     }
+
+    private static string JoinDetails(params string[] parts) =>
+        string.Join(" · ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
 
     private void ApplyYouTube(JsonElement state, DropsPlatformViewModel vm)
     {

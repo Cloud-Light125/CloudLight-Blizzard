@@ -374,6 +374,13 @@ public static class FeatureSelfTest
         Assert(SoopAccountPolicy.IsUnlinkedGameReward(unlinkedReward.RootElement) &&
                !SoopAccountPolicy.IsUnlinkedGameReward(linkedReward.RootElement),
             "SOOP manual claim UI blocks only explicit unlinked game rewards");
+        using var noBindingReward = JsonDocument.Parse("""
+            {"requiresGameAccount":false,"gameAccountLinked":false}
+            """);
+        Assert(SoopAccountPolicy.GameAccountBindingText(unlinkedReward.RootElement) == "游戏账号：⚠ 未绑定" &&
+               SoopAccountPolicy.GameAccountBindingText(linkedReward.RootElement) == "游戏账号：✓ 已绑定" &&
+               SoopAccountPolicy.GameAccountBindingText(noBindingReward.RootElement) == "游戏账号：无需绑定",
+            "SOOP task and reward rows expose binding state per game-specific item");
 
         using var active = JsonDocument.Parse("""
             {"lifecycle":"active","active":false,"notYetOpen":true,"ended":false,"completed":false}
@@ -522,7 +529,7 @@ public static class FeatureSelfTest
                 "successful update result is reused without another HTTP request");
         }
 
-        HttpRequestMessage? betaRequest = null;
+        HttpRequestMessage? prereleaseRequest = null;
         var betaJson = """
             {
               "version": "1.0.2-beta.1",
@@ -542,19 +549,17 @@ public static class FeatureSelfTest
             """;
         using (var client = new HttpClient(new StubHttpHandler(request =>
                {
-                   betaRequest = request;
+                   prereleaseRequest = request;
                    return JsonResponse(betaJson);
                })))
         using (var service = new UpdateService(client, "1.0.0"))
         {
-            var beta = await service.CheckAsync(UpdateChannel.Beta);
-            Assert(beta.Status == UpdateCheckResultStatus.Success && beta.HasUpdate &&
-                   beta.LatestVersion == "1.0.2-beta.1" &&
-                   beta.InstallerName == "CloudLight-Blizzard-1.0.2-beta.1-win-x64-Setup.exe" &&
-                   UpdateService.IsValidSha256Digest(beta.InstallerDigest),
-                "beta channel accepts prerelease releases and selects the matching installer");
-            Assert(betaRequest?.RequestUri?.Query == "?channel=beta",
-                "beta update checks pass channel=beta to the Worker");
+            var prerelease = await service.CheckAsync();
+            Assert(prerelease.FailureKind == UpdateFailureKind.InvalidResponse &&
+                   prerelease.Channel == UpdateChannel.Stable,
+                "legacy beta preference is forced onto the stable channel and prereleases are rejected");
+            Assert(string.IsNullOrEmpty(prereleaseRequest?.RequestUri?.Query),
+                "software update no longer requests the beta channel");
         }
 
         var invalidJson = releaseJson.Replace("\"version\": \"1.0.1\"", "\"version\": \"preview\"")
@@ -1708,6 +1713,13 @@ public static class FeatureSelfTest
                legacyNavigation.SoopUseProxy && legacyNavigation.YouTubeUseProxy &&
                legacyNavigation.TwitchUseProxy && !legacyNavigation.BilibiliUseProxy,
             "legacy settings keep prior Drops proxy defaults and removed navigation falls back safely");
+        var legacyBetaPath = Path.Combine(workspace, "legacy-beta-settings.json");
+        File.WriteAllText(legacyBetaPath,
+            "{\"EnableProxy\":true,\"ProxyUrl\":\"http://127.0.0.1:7897\",\"CloseToTray\":false,\"UpdateChannel\":\"Beta\"}");
+        var legacyBeta = AppSettings.LoadFrom(legacyBetaPath);
+        Assert(legacyBeta.EnableProxy && legacyBeta.ProxyUrl == "http://127.0.0.1:7897" &&
+               !legacyBeta.CloseToTray,
+            "removing beta updates preserves proxy and general settings from older files");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
         report.AppendLine("TEST 9 settings/account list: PASS");
@@ -2370,7 +2382,6 @@ public static class FeatureSelfTest
             {
                 LastUpdateCheckAt = DateTimeOffset.UtcNow.AddHours(-2),
                 LastUpdateFailure = "previous failure",
-                UpdateChannel = UpdateChannel.Stable,
             };
             var readOnlyAt = readOnlySettings.LastUpdateCheckAt;
             var readOnlyFailure = readOnlySettings.LastUpdateFailure;

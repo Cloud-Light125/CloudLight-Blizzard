@@ -60,7 +60,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
         : this(httpClient)
     {
         CurrentVersion = NormalizeVersion(currentVersion)
-            ?? throw new ArgumentException("测试版本格式无效。", nameof(currentVersion));
+            ?? throw new ArgumentException("版本格式无效。", nameof(currentVersion));
     }
 
     public string CurrentVersion { get; }
@@ -71,6 +71,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
     public Task<UpdateCheckResult> CheckAsync(UpdateChannel channel,
         CancellationToken cancellationToken = default)
     {
+        channel = UpdateChannel.Stable;
         lock (_cacheGate)
         {
             if (_activeRequest is { IsCompleted: false }) return _activeRequest;
@@ -144,8 +145,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
                 return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效数据，请稍后再试。",
                     "Missing or invalid stable version", channel: channel);
 
-            if (channel == UpdateChannel.Stable &&
-                (release.Prerelease || IsPrereleaseIdentifier(release.Tag ?? release.Version)))
+            if (release.Prerelease || IsPrereleaseIdentifier(release.Tag ?? release.Version))
                  return Failed(UpdateFailureKind.InvalidResponse, "正式更新通道返回了测试版本，请稍后再试。",
                      "Stable channel received a prerelease release", channel: channel);
 
@@ -158,13 +158,7 @@ public sealed class UpdateService : IUpdateService, IDisposable
 
             var installerName = $"CloudLight-Blizzard-{latestText}-win-x64-Setup.exe";
             var installerAsset = release.Assets?
-                .FirstOrDefault(asset => string.Equals(asset.Name, installerName, StringComparison.OrdinalIgnoreCase))
-                ?? (channel == UpdateChannel.Beta
-                    ? release.Assets?.FirstOrDefault(asset =>
-                        asset.Name is not null &&
-                        asset.Name.StartsWith($"CloudLight-Blizzard-{latestText}", StringComparison.OrdinalIgnoreCase) &&
-                        asset.Name.EndsWith("-win-x64-Setup.exe", StringComparison.OrdinalIgnoreCase))
-                    : null);
+                .FirstOrDefault(asset => string.Equals(asset.Name, installerName, StringComparison.OrdinalIgnoreCase));
             var installerUrl = installerAsset?.DownloadUrl;
 
             return new UpdateCheckResult
@@ -319,8 +313,6 @@ public sealed class UpdateService : IUpdateService, IDisposable
         UpdateChannel channel = UpdateChannel.Stable)
     {
         var target = endpoint ?? new Uri(LatestReleaseApiUrl);
-        if (channel == UpdateChannel.Beta && string.IsNullOrEmpty(target.Query))
-            target = new UriBuilder(target) { Query = "channel=beta" }.Uri;
         var request = new HttpRequestMessage(HttpMethod.Get, target);
         request.Headers.UserAgent.ParseAdd("CloudLight-Blizzard");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

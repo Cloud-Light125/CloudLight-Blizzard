@@ -582,7 +582,7 @@ public sealed class DiagnosticService
         var result = _vm.UpdateChecks.LastResult;
         return DiagnosticSanitizer.Sanitize(JsonSerializer.Serialize(new
         {
-            channel = _vm.Settings.UpdateChannel.ToString(),
+            channel = UpdateChannel.Stable.ToString(),
             currentVersion = _vm.UpdateChecks.CurrentVersion,
             lastCheck = _vm.UpdateChecks.LastCheckAt,
             lastFailure = _vm.UpdateChecks.LastFailure,

@@ -6,7 +6,6 @@ namespace CloudLightBlizzard.Models;
 public enum UpdateChannel
 {
     Stable,
-    Beta,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
