@@ -30,10 +30,12 @@ public sealed class UpdateInstallerLaunchCoordinator
 
     public bool TryLaunchAndRequestShutdown(
         string installerPath,
+        Func<bool> persistSettings,
         Action installerStarted,
         Action requestShutdown,
         out string error)
     {
+        ArgumentNullException.ThrowIfNull(persistSettings);
         ArgumentNullException.ThrowIfNull(installerStarted);
         ArgumentNullException.ThrowIfNull(requestShutdown);
 
@@ -47,6 +49,13 @@ public sealed class UpdateInstallerLaunchCoordinator
         {
             Interlocked.Exchange(ref _launchRequested, 0);
             error = "已下载的安装程序不存在，请重新下载。";
+            return false;
+        }
+
+        if (!persistSettings())
+        {
+            Interlocked.Exchange(ref _launchRequested, 0);
+            error = "无法安全保存当前设置，已取消启动安装程序。";
             return false;
         }
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using CloudLightBlizzard.Models;
 using CloudLightBlizzard.Services.OverwatchRegion;
@@ -11,6 +12,9 @@ namespace CloudLightBlizzard.Services;
 /// </summary>
 public sealed class AppSettings
 {
+    private static readonly object PersistenceGate = new();
+    private bool _persistenceBlocked;
+
     public string? ClientExe { get; set; }
     public bool CloseToTray { get; set; } = true;
     public bool CloseChoiceMade { get; set; }
@@ -78,10 +82,12 @@ public sealed class AppSettings
     public static AppSettings Load()
     {
         var existing = File.Exists(FilePath) ? LoadFrom(FilePath, rewrite: false) : null;
+        if (existing?._persistenceBlocked == true) return existing;
         var migration = existing?.MigrationCompleted == true
             ? new MigrationResult(false, false, false, Array.Empty<string>())
             : AppPaths.Current.MigrateLegacyData();
         var settings = LoadFrom(FilePath, rewrite: false);
+        if (settings._persistenceBlocked) return settings;
         if (!settings.MigrationCompleted || migration.Migrated)
         {
             settings.MigrationCompleted = true;
@@ -100,29 +106,41 @@ public sealed class AppSettings
 
     public static AppSettings LoadFrom(string path, bool rewrite = false)
     {
-        AppSettings s;
-        try
+        lock (PersistenceGate)
         {
-            s = (File.Exists(path)
-                    ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonOptions)
-                    : null)
-                ?? new AppSettings();
-        }
-        catch
-        {
-            s = new AppSettings();
-        }
+            path = Path.GetFullPath(path);
+            var backupPath = BackupPath(path);
+            var primaryExists = File.Exists(path);
+            var loadedFromBackup = false;
+            AppSettings s;
+            if (TryDeserialize(path, out var primary, out var primaryError))
+            {
+                s = primary!;
+                EnsureBackup(path);
+            }
+            else if (TryDeserialize(backupPath, out var backup, out var backupError))
+            {
+                s = backup!;
+                loadedFromBackup = true;
+                WritePersistenceLog(path, "主设置读取失败，已从备份恢复。", primaryError);
+            }
+            else
+            {
+                s = new AppSettings { _persistenceBlocked = primaryExists };
+                if (primaryExists)
+                    WritePersistenceLog(path, "主设置与备份均无法读取，已阻止默认值覆盖原文件。",
+                        primaryError ?? backupError);
+            }
 
-        s.HiddenAccountIds ??= new();
-        s.ExpiredAccountIds ??= new();
-        s.AccountPreferences ??= new();
-        s.ProxyUrl ??= "";
-        s.CloudServiceBaseUrl = CloudServiceConfiguration.NormalizeBaseUrl(s.CloudServiceBaseUrl);
-        s.LastMainSection = NormalizeMainSection(s.LastMainSection);
+            Normalize(s);
 
-        // 重写时会丢弃旧版本不再识别的字段。
-        if (rewrite) s.SaveTo(path);
-        return s;
+            if (loadedFromBackup)
+                RestorePrimaryFromBackup(path, backupPath, s);
+            // 重写时会丢弃旧版本不再识别的字段。
+            else if (rewrite && !s._persistenceBlocked)
+                s.SaveToCore(path);
+            return s;
+        }
     }
 
     internal static string NormalizeMainSection(string? section) => section switch
@@ -133,21 +151,19 @@ public sealed class AppSettings
         _ => "accounts",
     };
 
-    public void Save()
-    {
-        SaveTo(FilePath);
-    }
+    public bool Save() => SaveTo(FilePath);
 
-    public void SaveTo(string path)
+    public bool SaveTo(string path)
     {
-        try
+        lock (PersistenceGate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temp = path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(this, JsonOptions));
-            File.Move(temp, path, overwrite: true);
+            if (_persistenceBlocked)
+            {
+                WritePersistenceLog(path, "设置保存已阻止：启动时未能安全读取现有设置。", null);
+                return false;
+            }
+            return SaveToCore(Path.GetFullPath(path));
         }
-        catch { }
     }
 
     public AccountPreference PreferenceFor(long accountId)
@@ -164,4 +180,135 @@ public sealed class AppSettings
         PropertyNameCaseInsensitive = true,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
+
+    private bool SaveToCore(string path)
+    {
+        string? temp = null;
+        try
+        {
+            Normalize(this);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            temp = $"{path}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(this, JsonOptions));
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       4096, FileOptions.WriteThrough))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
+            if (File.Exists(path))
+            {
+                try
+                {
+                    File.Replace(temp, path, BackupPath(path), ignoreMetadataErrors: true);
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    ReplaceWithFallback(temp, path);
+                }
+                catch (IOException)
+                {
+                    ReplaceWithFallback(temp, path);
+                }
+            }
+            else
+            {
+                File.Move(temp, path);
+                EnsureBackup(path);
+            }
+            temp = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            WritePersistenceLog(path, "设置写入失败，原设置文件保持不变。", ex);
+            return false;
+        }
+        finally
+        {
+            if (temp is not null)
+                try { File.Delete(temp); } catch { }
+        }
+    }
+
+    private static void ReplaceWithFallback(string temp, string path)
+    {
+        File.Copy(path, BackupPath(path), overwrite: true);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    private static bool TryDeserialize(string path, out AppSettings? settings, out Exception? error)
+    {
+        settings = null;
+        error = null;
+        if (!File.Exists(path)) return false;
+        try
+        {
+            settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), JsonOptions);
+            return settings is not null;
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+            return false;
+        }
+    }
+
+    private static void RestorePrimaryFromBackup(string path, string backupPath, AppSettings settings)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                var quarantine = $"{path}.corrupt-{DateTimeOffset.Now:yyyyMMddHHmmssfff}";
+                File.Move(path, quarantine);
+            }
+            if (!settings.SaveToCore(path))
+                WritePersistenceLog(path, "备份已载入内存，但主设置文件恢复失败。", null);
+            else if (!File.Exists(backupPath))
+                File.Copy(path, backupPath, overwrite: false);
+        }
+        catch (Exception ex)
+        {
+            WritePersistenceLog(path, "备份已载入内存，但主设置文件恢复失败。", ex);
+        }
+    }
+
+    private static void Normalize(AppSettings settings)
+    {
+        settings.HiddenAccountIds ??= new();
+        settings.ExpiredAccountIds ??= new();
+        settings.AccountPreferences ??= new();
+        settings.ProxyUrl ??= "";
+        settings.CloudServiceBaseUrl = CloudServiceConfiguration.NormalizeBaseUrl(settings.CloudServiceBaseUrl);
+        settings.LastMainSection = NormalizeMainSection(settings.LastMainSection);
+    }
+
+    private static string BackupPath(string path) => path + ".bak";
+
+    private static void EnsureBackup(string path)
+    {
+        var backup = BackupPath(path);
+        if (File.Exists(path) && !File.Exists(backup))
+        {
+            try { File.Copy(path, backup, overwrite: false); }
+            catch (Exception ex) { WritePersistenceLog(path, "无法创建设置备份。", ex); }
+        }
+    }
+
+    private static void WritePersistenceLog(string settingsPath, string message, Exception? error)
+    {
+        try
+        {
+            var root = Path.GetDirectoryName(Path.GetFullPath(settingsPath))!;
+            var logs = Path.Combine(root, "logs");
+            Directory.CreateDirectory(logs);
+            File.AppendAllText(Path.Combine(logs, "settings.log"),
+                $"[{DateTimeOffset.Now:O}] {message}" +
+                (error is null ? "" : $" {error.GetType().Name}: {error.Message}") + Environment.NewLine,
+                Encoding.UTF8);
+        }
+        catch { }
+    }
 }

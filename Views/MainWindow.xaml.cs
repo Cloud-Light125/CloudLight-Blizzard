@@ -54,9 +54,9 @@ public partial class MainWindow : Window
     public AnnouncementService AnnouncementState => _announcementService;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null,
-        IInstallerLauncher? installerLauncher = null)
+        IInstallerLauncher? installerLauncher = null, AppSettings? settings = null)
     {
-        _vm = new MainViewModel(logSession);
+        _vm = new MainViewModel(logSession, settings);
         _installerLaunchCoordinator = new UpdateInstallerLaunchCoordinator(
             installerLauncher ?? new ProcessInstallerLauncher());
         _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
@@ -415,6 +415,7 @@ public partial class MainWindow : Window
         _vm.UpdateDownloader.MarkLaunchingInstaller();
         var started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(
             installerPath,
+            PersistSettingsBeforeUpdate,
             () =>
             {
                 _installerStarted = true;
@@ -438,6 +439,17 @@ public partial class MainWindow : Window
         }
 
         return true;
+    }
+
+    private bool PersistSettingsBeforeUpdate()
+    {
+        if (WindowState != WindowState.Maximized)
+        {
+            if (ActualWidth >= MinWidth) _vm.Settings.WindowWidth = ActualWidth;
+            if (ActualHeight >= MinHeight) _vm.Settings.WindowHeight = ActualHeight;
+        }
+        _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized;
+        return _vm.Settings.Save();
     }
 
     private void SelectSavedSection()

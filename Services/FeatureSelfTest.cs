@@ -366,20 +366,27 @@ public static class FeatureSelfTest
             "SOOP add-account flow requires confirmation starting with the second account");
 
         using var unlinkedReward = JsonDocument.Parse("""
-            {"requiresGameAccount":true,"gameAccountLinked":false}
+            {"requiresGameAccount":true,"gameAccountRequirement":"required","gameAccountLinked":false}
             """);
         using var linkedReward = JsonDocument.Parse("""
-            {"requiresGameAccount":true,"gameAccountLinked":true}
+            {"requiresGameAccount":true,"gameAccountRequirement":"required","gameAccountLinked":true}
             """);
         Assert(SoopAccountPolicy.IsUnlinkedGameReward(unlinkedReward.RootElement) &&
                !SoopAccountPolicy.IsUnlinkedGameReward(linkedReward.RootElement),
             "SOOP manual claim UI blocks only explicit unlinked game rewards");
         using var noBindingReward = JsonDocument.Parse("""
+            {"requiresGameAccount":false,"gameAccountRequirement":"not_supported","gameAccountLinked":false}
+            """);
+        using var historicalReward = JsonDocument.Parse("""
             {"requiresGameAccount":false,"gameAccountLinked":false}
             """);
-        Assert(SoopAccountPolicy.GameAccountBindingText(unlinkedReward.RootElement) == "游戏账号：⚠ 未绑定" &&
-               SoopAccountPolicy.GameAccountBindingText(linkedReward.RootElement) == "游戏账号：✓ 已绑定" &&
-               SoopAccountPolicy.GameAccountBindingText(noBindingReward.RootElement) == "游戏账号：无需绑定",
+        Assert(SoopAccountPolicy.GameAccountBindingText(unlinkedReward.RootElement) == "游戏账号：未绑定" &&
+               SoopAccountPolicy.GameAccountBindingText(linkedReward.RootElement) == "游戏账号：已绑定" &&
+               SoopAccountPolicy.GameAccountBindingText(noBindingReward.RootElement) == "游戏账号：不支持绑定" &&
+               SoopAccountPolicy.GameAccountBindingText(historicalReward.RootElement) == "游戏账号：状态待确认" &&
+               SoopAccountPolicy.GameAccountClaimRequirementText(unlinkedReward.RootElement) == "领取条件：需要游戏账号绑定" &&
+               SoopAccountPolicy.GameAccountClaimRequirementText(noBindingReward.RootElement) == "领取条件：无需游戏账号绑定" &&
+               !SoopAccountPolicy.IsUnlinkedGameReward(noBindingReward.RootElement),
             "SOOP task and reward rows expose binding state per game-specific item");
 
         using var active = JsonDocument.Parse("""
@@ -650,6 +657,11 @@ public static class FeatureSelfTest
                     downloaded,
                     () =>
                     {
+                        lifecycle.Add("settings saved");
+                        return true;
+                    },
+                    () =>
+                    {
                         launchToken.ThrowIfCancellationRequested();
                         tokenUsableAtLaunch = true;
                         lifecycle.Add("installer started");
@@ -658,13 +670,14 @@ public static class FeatureSelfTest
                     out _),
                 "successful installer launch requests shutdown");
             Assert(lifecycle.SequenceEqual(new[]
-                    { "download complete", "Process.Start", "installer started", "shutdown" }),
-                "shutdown is requested only after Process.Start succeeds");
+                    { "download complete", "settings saved", "Process.Start", "installer started", "shutdown" }),
+                "settings reach disk before Process.Start and shutdown is requested only after launch succeeds");
             Assert(tokenUsableAtLaunch, "installer launch does not require a disposed update CTS");
 
             var duplicateCallbackCount = 0;
             Assert(!launchCoordinator.TryLaunchAndRequestShutdown(
                     downloaded,
+                    () => true,
                     () => duplicateCallbackCount++,
                     () => { },
                     out var alreadyStartedError) &&
@@ -677,7 +690,7 @@ public static class FeatureSelfTest
 
         await RunUpdateCancellationLifecycleTest(workspace);
         RunInstallerLaunchFailureTest(workspace);
-        report.AppendLine("TEST 4A online update installer lifecycle: PASS (streams closed/verification/launch ordering/CTS cancellation/launch failure)");
+        report.AppendLine("TEST 4A online update installer lifecycle: PASS (settings persisted before launch/streams closed/verification/launch ordering/CTS cancellation/launch failure)");
 
         using (var client = new HttpClient(new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                {
@@ -817,10 +830,23 @@ public static class FeatureSelfTest
         var coordinator = new UpdateInstallerLaunchCoordinator(
             new DelegateInstallerLauncher(_ => throw new InvalidOperationException("simulated launcher failure")));
         Assert(!coordinator.TryLaunchAndRequestShutdown(
-                installerPath, () => { }, () => shutdownRequested = true, out var error),
+                installerPath, () => true, () => { }, () => shutdownRequested = true, out var error),
             "installer launch failure is reported");
         Assert(error.Contains("simulated launcher failure", StringComparison.Ordinal) && !shutdownRequested,
             "installer launch failure never requests app shutdown");
+
+        var launchAttempted = false;
+        var persistenceCoordinator = new UpdateInstallerLaunchCoordinator(
+            new DelegateInstallerLauncher(_ =>
+            {
+                launchAttempted = true;
+                return new Process();
+            }));
+        Assert(!persistenceCoordinator.TryLaunchAndRequestShutdown(
+                installerPath, () => false, () => { }, () => shutdownRequested = true,
+                out var persistenceError) &&
+               persistenceError.Contains("保存当前设置", StringComparison.Ordinal) && !launchAttempted,
+            "failed settings persistence blocks installer launch before Process.Start");
     }
 
     private static void RunRegionPreparationGuideTest(StringBuilder report)
@@ -1720,9 +1746,35 @@ public static class FeatureSelfTest
         Assert(legacyBeta.EnableProxy && legacyBeta.ProxyUrl == "http://127.0.0.1:7897" &&
                !legacyBeta.CloseToTray,
             "removing beta updates preserves proxy and general settings from older files");
+
+        var durablePath = Path.Combine(workspace, "durable-settings.json");
+        var durable = new AppSettings
+        {
+            EnableProxy = true,
+            ProxyUrl = "http://127.0.0.1:7897",
+            FallbackDirect = true,
+            CloseToTray = false,
+        };
+        Assert(durable.SaveTo(durablePath), "initial durable settings save succeeds");
+        durable.StartMinimized = true;
+        Assert(durable.SaveTo(durablePath) && File.Exists(durablePath + ".bak"),
+            "subsequent durable settings save rotates the previous valid file to backup");
+        File.WriteAllText(durablePath, "{broken-json");
+        var recovered = AppSettings.LoadFrom(durablePath);
+        Assert(recovered.EnableProxy && recovered.ProxyUrl == "http://127.0.0.1:7897" &&
+               recovered.FallbackDirect && !recovered.CloseToTray &&
+               JsonDocument.Parse(File.ReadAllText(durablePath)).RootElement.ValueKind == JsonValueKind.Object,
+            "corrupt primary settings recover proxy and general settings from the last valid backup");
+
+        var blockedPath = Path.Combine(workspace, "unrecoverable-settings.json");
+        File.WriteAllText(blockedPath, "{broken-without-backup");
+        var blocked = AppSettings.LoadFrom(blockedPath);
+        blocked.EnableProxy = true;
+        Assert(!blocked.SaveTo(blockedPath) && File.ReadAllText(blockedPath) == "{broken-without-backup",
+            "unreadable settings without a backup are never overwritten by defaults");
         var current = new AccountRow { AccountId = 123456, BattleTag = "CloudLight#1234", IsActive = true, HasProfile = true };
         Assert(MainViewModel.SelectSavedAccounts(new[] { current }).Single() == current, "active saved account remains listed");
-        report.AppendLine("TEST 9 settings/account list: PASS");
+        report.AppendLine("TEST 9 settings/account list: PASS (durable atomic save/backup recovery/no default overwrite)");
     }
 
     private static void RunAppPathsMigrationTest(string workspace, StringBuilder report)
@@ -2370,7 +2422,10 @@ public static class FeatureSelfTest
         }
         dropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-        var main = new MainViewModel();
+        var injectedMainSettings = new AppSettings();
+        var main = new MainViewModel(settings: injectedMainSettings);
+        Assert(ReferenceEquals(main.Settings, injectedMainSettings),
+            "startup passes one settings instance through the application and main view model");
         string? secretLog = null;
         string? zip = null;
         try

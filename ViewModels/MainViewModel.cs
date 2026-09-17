@@ -314,10 +314,10 @@ public sealed class MainViewModel : ObservableObject
             $"{CheckKindName(item.Kind)}\n{item.RelativePath}\n" +
             $"原大小：{FormatBytes(item.OriginalSize)} · 当前大小：{FormatBytes(item.CurrentSize)}\n{item.Reason}"));
 
-    public MainViewModel(PlatformLogSession? dropsLogSession = null)
+    public MainViewModel(PlatformLogSession? dropsLogSession = null, AppSettings? settings = null)
     {
         DropsLogSession = dropsLogSession ?? new PlatformLogSession(AppPaths.Current.LogsDir);
-        _settings = AppSettings.Load();
+        _settings = settings ?? AppSettings.Load();
         CloudHttpClients = new CloudHttpClientFactory(_settings);
         UpdateDownloader = new UpdateDownloadService(CloudHttpClients);
         FeedbackService = new FeedbackService(_settings, httpClients: CloudHttpClients);

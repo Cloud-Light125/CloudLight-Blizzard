@@ -134,7 +134,7 @@ public partial class App : Application
 
         base.OnStartup(e);
         var startHidden = global::CloudLightBlizzard.MainWindow.ShouldStartHidden(e.Args, settings.StartMinimized);
-        var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession);
+        var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession, settings: settings);
         MainWindow = mainWindow;
         if (!startHidden) mainWindow.Show();
     }

@@ -145,6 +145,34 @@ def _api_bool(value: Any) -> bool:
     return bool(value)
 
 
+def _activity_game_account_requirement(raw: dict[str, Any], fallback: bool | None = None) -> bool | None:
+    """Return required / explicitly unsupported / unknown for an activity.
+
+    Older SOOP payloads can omit ``ingameGiveYn`` while still returning the
+    per-account ``acctConn`` eligibility field. Treating an omitted field as
+    ``False`` incorrectly labels an unlinked account as requiring no binding.
+    """
+    if "ingameGiveYn" in raw:
+        value = str(raw.get("ingameGiveYn") or "").strip().casefold()
+        if value in {"y", "yes", "true", "1", "on"}:
+            return True
+        if value in {"n", "no", "false", "0", "off"}:
+            return False
+    if fallback is True:
+        return True
+    if "acctConn" in raw:
+        return True
+    return fallback
+
+
+def _inventory_game_account_requirement(raw: dict[str, Any]) -> bool | None:
+    if "itemType" in raw and str(raw.get("itemType") or "").strip():
+        return str(raw.get("itemType") or "").strip() == "4"
+    if "acctConn" in raw:
+        return True
+    return None
+
+
 def normalize_task_status(
     task: dict[str, Any],
     *,
@@ -584,7 +612,10 @@ class SoopWorker(WorkerBase):
         not_yet_open = bool(getattr(mission, "is_not_yet_open", False))
         items = list(getattr(mission, "items", []))
         completed = SoopWorker._mission_is_completed(mission, items)
-        requires_game_account = bool(getattr(mission, "ingame_give", False))
+        raw = getattr(mission, "raw", {}) or {}
+        requires_game_account = _activity_game_account_requirement(
+            raw, True if bool(getattr(mission, "ingame_give", False)) else None
+        )
         row = {
             "id": mission.drops_idx, "title": mission.title, "type": mission.type_label,
             "categoryName": mission.category_name, "categoryNo": mission.category_no,
@@ -592,6 +623,7 @@ class SoopWorker(WorkerBase):
             "completed": completed,
             "source": "mission", "eventOnly": False,
             "requiresGameAccount": requires_game_account,
+            "gameAccountRequirement": SoopWorker._requirement_name(requires_game_account),
             "gameAccountLinked": None,
             "gameAccountBindingStatus": SoopWorker._binding_status_text(
                 requires_game_account, None
@@ -611,7 +643,7 @@ class SoopWorker(WorkerBase):
         active = bool(getattr(activity, "is_event_active", False))
         ended = bool(getattr(activity, "is_truly_ended", not active))
         not_yet_open = bool(getattr(activity, "is_not_yet_open", False))
-        requires_game_account = str(raw.get("ingameGiveYn") or "").strip().upper() == "Y"
+        requires_game_account = _activity_game_account_requirement(raw)
         game_account_linked = (
             _api_bool(raw.get("acctConn"))
             if requires_game_account and "acctConn" in raw
@@ -625,6 +657,7 @@ class SoopWorker(WorkerBase):
             "completed": False,
             "source": "event", "eventOnly": True, "joined": bool(getattr(activity, "acct_conn", False)),
             "requiresGameAccount": requires_game_account,
+            "gameAccountRequirement": SoopWorker._requirement_name(requires_game_account),
             "gameAccountLinked": game_account_linked,
             "gameAccountBindingStatus": SoopWorker._binding_status_text(
                 requires_game_account, game_account_linked
@@ -637,7 +670,7 @@ class SoopWorker(WorkerBase):
     @staticmethod
     def _inventory_to_dict(item: Any) -> dict[str, Any]:
         raw = getattr(item, "raw", {}) or {}
-        requires_game_account = str(raw.get("itemType") or "").strip() == "4"
+        requires_game_account = _inventory_game_account_requirement(raw)
         game_account_linked = (
             _api_bool(raw.get("acctConn"))
             if requires_game_account and "acctConn" in raw
@@ -648,6 +681,7 @@ class SoopWorker(WorkerBase):
             "expiresAt": item.exp_date, "receivedAt": item.receive_date,
             "redeemCode": item.redeem_code or "", "description": item.description or "",
             "requiresGameAccount": requires_game_account,
+            "gameAccountRequirement": SoopWorker._requirement_name(requires_game_account),
             "gameAccountLinked": game_account_linked,
             "gameAccountBindingStatus": SoopWorker._binding_status_text(
                 requires_game_account, game_account_linked
@@ -655,13 +689,23 @@ class SoopWorker(WorkerBase):
         }
 
     @staticmethod
-    def _binding_status_text(requires_game_account: bool, linked: bool | None) -> str:
-        if not requires_game_account:
-            return "无需绑定"
+    def _requirement_name(requires_game_account: bool | None) -> str:
+        if requires_game_account is True:
+            return "required"
+        if requires_game_account is False:
+            return "not_supported"
+        return "unknown"
+
+    @staticmethod
+    def _binding_status_text(requires_game_account: bool | None, linked: bool | None) -> str:
+        if requires_game_account is False:
+            return "不支持绑定"
+        if requires_game_account is None:
+            return "状态待确认"
         if linked is True:
-            return "✓ 已绑定"
+            return "已绑定"
         if linked is False:
-            return "⚠ 未绑定"
+            return "未绑定"
         return "待刷新"
 
     def _current_progress_for_state(self, state: Any) -> list[dict[str, Any]]:
@@ -685,12 +729,17 @@ class SoopWorker(WorkerBase):
             item = mission.active_item()
             if item is None:
                 continue
-            requires_game_account = bool(getattr(mission, "ingame_give", False))
+            mission_raw = getattr(mission, "raw", {}) or {}
+            requires_game_account = _activity_game_account_requirement(
+                mission_raw, True if bool(getattr(mission, "ingame_give", False)) else None
+            )
             activity = next((
                 value for value in getattr(state, "events", [])
                 if str(getattr(value, "drops_idx", "")) == str(mission.drops_idx)
             ), None)
             activity_raw = getattr(activity, "raw", {}) or {}
+            if requires_game_account is None:
+                requires_game_account = _activity_game_account_requirement(activity_raw)
             game_account_linked = (
                 _api_bool(activity_raw.get("acctConn"))
                 if requires_game_account and "acctConn" in activity_raw
@@ -706,6 +755,7 @@ class SoopWorker(WorkerBase):
                 "requiredMinutes": item.give_term,
                 "percent": max(0, min(100, int(item.percent))),
                 "requiresGameAccount": requires_game_account,
+                "gameAccountRequirement": self._requirement_name(requires_game_account),
                 "gameAccountLinked": game_account_linked,
                 "gameAccountBindingStatus": self._binding_status_text(
                     requires_game_account, game_account_linked
@@ -1147,9 +1197,9 @@ class SoopWorker(WorkerBase):
             existing["eventActive"] = activity_row["active"]
             existing["activityLifecycle"] = activity_row["lifecycle"]
             existing["source"] = "mission+event"
-            requires_game_account = bool(existing.get("requiresGameAccount")) or bool(
-                activity_row.get("requiresGameAccount")
-            )
+            requires_game_account = existing.get("requiresGameAccount")
+            if requires_game_account is None:
+                requires_game_account = activity_row.get("requiresGameAccount")
             activity_raw = getattr(activity, "raw", {}) or {}
             game_account_linked = (
                 _api_bool(activity_raw.get("acctConn"))
@@ -1157,6 +1207,7 @@ class SoopWorker(WorkerBase):
                 else None
             )
             existing["requiresGameAccount"] = requires_game_account
+            existing["gameAccountRequirement"] = self._requirement_name(requires_game_account)
             existing["gameAccountLinked"] = game_account_linked
             existing["gameAccountBindingStatus"] = self._binding_status_text(
                 requires_game_account, game_account_linked
@@ -1226,7 +1277,11 @@ class SoopWorker(WorkerBase):
             raise ValueError("未找到要领取的 SOOP 奖励")
         if selected.get("claimed"):
             return {"id": item_id, "status": "already_claimed", "success": True}
-        if selected.get("requiresGameAccount") and selected.get("gameAccountLinked") is False:
+        selected_requires = (
+            selected.get("gameAccountRequirement") == "required" or
+            ("gameAccountRequirement" not in selected and selected.get("requiresGameAccount") is True)
+        )
+        if selected_requires and selected.get("gameAccountLinked") is False:
             self.logger.warning("[%s] claim skipped: account not linked", uid)
             return {"id": item_id, "status": "account_not_linked", "success": False}
 
@@ -1246,7 +1301,7 @@ class SoopWorker(WorkerBase):
                 )
                 if current_item is not None:
                     raw = getattr(current_item, "raw", {}) or {}
-                    requires_game_account = str(raw.get("itemType") or "").strip() == "4"
+                    requires_game_account = _inventory_game_account_requirement(raw)
                     if (requires_game_account and "acctConn" in raw and
                             not _api_bool(raw.get("acctConn"))):
                         return None, current, True

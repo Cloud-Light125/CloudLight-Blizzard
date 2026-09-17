@@ -1942,7 +1942,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "inventory", Inventory, item => new DropsRow
         {
             Id = Text(item, "id"), Primary = Text(item, "name"),
-            Secondary = JoinDetails(Text(item, "description"), SoopAccountPolicy.GameAccountBindingText(item)),
+            Secondary = JoinDetails(
+                Text(item, "description"),
+                SoopAccountPolicy.GameAccountClaimRequirementText(item),
+                SoopAccountPolicy.GameAccountBindingText(item)),
             Status = Bool(item, "claimed") ? "已领取" : "未领取", Payload = item.Clone(),
         });
         AddSoopProgressRows(state, replaceAccount: false);

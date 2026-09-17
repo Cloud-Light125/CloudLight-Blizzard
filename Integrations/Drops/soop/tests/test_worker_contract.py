@@ -110,6 +110,7 @@ class SoopWorkerContractTests(unittest.TestCase):
             category_name="",
             category_no="",
             ingame_give=ingame_give,
+            raw={"ingameGiveYn": "Y"} if ingame_give else {},
             is_event_active=active,
             is_truly_ended=not active and not not_yet_open,
             is_not_yet_open=not_yet_open,
@@ -639,7 +640,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                     "campaign": "OWWC GROUP STAGE DAY 3", "reward": "1 Esports Loot Box 3-1",
                     "currentMinutes": 106, "requiredMinutes": 120, "percent": 88,
                     "requiresGameAccount": True, "gameAccountLinked": True,
-                    "gameAccountBindingStatus": "✓ 已绑定",
+                    "gameAccountRequirement": "required",
+                    "gameAccountBindingStatus": "已绑定",
                 }])
             finally:
                 self._close(worker)
@@ -689,7 +691,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                 worker._app_config = lambda: "config"
                 worker.get_inventory = lambda payload: [{
                     "uid": "account", "id": "reward", "claimed": False,
-                    "requiresGameAccount": True, "gameAccountLinked": True,
+                    "requiresGameAccount": True, "gameAccountRequirement": "required",
+                    "gameAccountLinked": True,
                 }]
 
                 result = worker.claim_reward({"userid": "account", "id": "reward"})
@@ -711,7 +714,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                 worker._core = {"auth": SimpleNamespace(load_cookies=lambda uid: {"uid": uid})}
                 worker.get_inventory = lambda payload: [{
                     "uid": "account", "id": "reward", "claimed": False,
-                    "requiresGameAccount": True, "gameAccountLinked": False,
+                    "requiresGameAccount": True, "gameAccountRequirement": "required",
+                    "gameAccountLinked": False,
                 }]
 
                 result = worker.claim_reward({"userid": "account", "id": "reward"})
@@ -739,7 +743,8 @@ class SoopWorkerContractTests(unittest.TestCase):
                 linked_snapshot = worker._state_to_dict(linked_state)
                 self.assertNotIn("gameAccountLinked", linked_snapshot)
                 self.assertTrue(linked_snapshot["tasks"][0]["gameAccountLinked"])
-                self.assertEqual(linked_snapshot["tasks"][0]["gameAccountBindingStatus"], "✓ 已绑定")
+                self.assertEqual(linked_snapshot["tasks"][0]["gameAccountRequirement"], "required")
+                self.assertEqual(linked_snapshot["tasks"][0]["gameAccountBindingStatus"], "已绑定")
 
                 unlinked_event = self._event("unlinked")
                 unlinked_event.raw.update({"acctConn": "N", "ingameGiveYn": "Y"})
@@ -754,9 +759,43 @@ class SoopWorkerContractTests(unittest.TestCase):
                 unlinked_snapshot = worker._state_to_dict(unlinked_state)
                 self.assertEqual(
                     unlinked_snapshot["tasks"][0]["gameAccountBindingStatus"],
-                    "⚠ 未绑定",
+                    "未绑定",
                 )
-                self.assertEqual(unlinked_snapshot["inventory"][0]["gameAccountBindingStatus"], "⚠ 未绑定")
+                self.assertEqual(unlinked_snapshot["inventory"][0]["gameAccountBindingStatus"], "未绑定")
+
+                # acctConn is sufficient evidence that this activity supports
+                # binding even when older payloads omit ingameGiveYn.
+                inferred_event = self._event("inferred")
+                inferred_event.raw["acctConn"] = "N"
+                inferred_snapshot = worker._state_to_dict(
+                    self._state("inferred-account", [self._mission("inferred")], [inferred_event])
+                )
+                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountRequirement"], "required")
+                self.assertEqual(inferred_snapshot["tasks"][0]["gameAccountBindingStatus"], "未绑定")
+
+                unsupported_event = self._event("unsupported")
+                unsupported_event.raw.update({"ingameGiveYn": "N", "acctConn": "N"})
+                unsupported_mission = self._mission("unsupported")
+                unsupported_mission.raw["ingameGiveYn"] = "N"
+                unsupported_reward = SimpleNamespace(
+                    item_code_idx="unsupported-reward", item_name="Reward", claimed=False,
+                    exp_date=None, receive_date=None, redeem_code=None, description=None,
+                    raw={"itemType": "1", "acctConn": "N"},
+                )
+                unsupported_state = self._state(
+                    "unsupported-account", [unsupported_mission], [unsupported_event]
+                )
+                unsupported_state.inventory = [unsupported_reward]
+                unsupported_snapshot = worker._state_to_dict(unsupported_state)
+                self.assertEqual(unsupported_snapshot["tasks"][0]["gameAccountRequirement"], "not_supported")
+                self.assertEqual(unsupported_snapshot["tasks"][0]["gameAccountBindingStatus"], "不支持绑定")
+                self.assertEqual(unsupported_snapshot["inventory"][0]["gameAccountRequirement"], "not_supported")
+
+                historical_snapshot = worker._state_to_dict(
+                    self._state("historical-account", [self._mission("historical")], [])
+                )
+                self.assertEqual(historical_snapshot["tasks"][0]["gameAccountRequirement"], "unknown")
+                self.assertEqual(historical_snapshot["tasks"][0]["gameAccountBindingStatus"], "状态待确认")
             finally:
                 self._close(worker)
 

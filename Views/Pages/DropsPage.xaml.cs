@@ -830,7 +830,7 @@ public partial class DropsPage : UserControl
     {
         var refresh = new SoopNoticeWindow(
             "无法领取奖励",
-            "当前 SOOP 账号未绑定对应游戏账号。\n\n请先在 SOOP 完成游戏账号绑定。\n\n绑定完成后再领取奖励。",
+            "当前奖励需要绑定关联游戏账号。\n\n请先完成游戏账号绑定后再领取。",
             "刷新绑定状态")
         {
             Owner = Window.GetWindow(this),
