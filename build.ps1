@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$releaseVersion = '2.1.7'
+$releaseVersion = '2.1.8'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
