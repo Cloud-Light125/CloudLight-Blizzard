@@ -65,6 +65,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("TwitchDrops")
 gql_logger = logging.getLogger("TwitchDrops.gql")
+GQL_TRANSIENT_MAX_ATTEMPTS: Final = 5
 
 
 class SkipExtraJsonDecoder(json.JSONDecoder):
@@ -1477,6 +1478,7 @@ class Twitch:
         backoff = ExponentialBackoff(maximum=60)
         # Use a flag to retry the request a single time, if a specific set of errors is encountered
         single_retry: bool = True
+        transient_attempts: int = 0
         for delay in backoff:
             async with self._qgl_limiter:
                 auth_state = await self.get_auth()
@@ -1494,6 +1496,7 @@ class Twitch:
             else:
                 response_list = [response_json]
             force_retry: bool = False
+            transient_errors: list[JsonType] | None = None
             for response_json in response_list:
                 # GQL error handling
                 if "errors" in response_json:
@@ -1508,7 +1511,7 @@ class Twitch:
                             ):
                                 logger.error(
                                     f"Retrying a {error_dict['message']} for "
-                                    f"{response_json['extensions']['operationName']}"
+                                    f"{response_json.get('extensions', {}).get('operationName', 'unknown')}"
                                 )
                                 single_retry = False
                                 if delay < 5:
@@ -1516,6 +1519,15 @@ class Twitch:
                                     delay = 5
                                 force_retry = True
                                 break
+                            elif error_dict["message"] == "PersistedQueryNotFound":
+                                operation_name = response_json.get("extensions", {}).get(
+                                    "operationName", "unknown"
+                                )
+                                logger.error(
+                                    "Twitch GQL persisted query 已失效，可能需要更新 Twitch core：%s",
+                                    operation_name,
+                                )
+                                raise GQLException(response_json["errors"])
                             elif error_dict["message"] == "server error":
                                 # nullify the key the error path points to
                                 data_dict: JsonType = response_json["data"]
@@ -1527,10 +1539,12 @@ class Twitch:
                             elif (
                                 error_dict["message"] in (
                                     "service timeout",
+                                    "request cancelled",
                                     "service unavailable",
                                     "context deadline exceeded",
                                 )
                             ):
+                                transient_errors = response_json["errors"]
                                 force_retry = True
                                 break
                     else:
@@ -1544,6 +1558,18 @@ class Twitch:
                     break
             else:
                 return orig_response
+            if transient_errors is not None:
+                transient_attempts += 1
+                if transient_attempts >= GQL_TRANSIENT_MAX_ATTEMPTS:
+                    operation_name = response_json.get("extensions", {}).get(
+                        "operationName", "unknown"
+                    )
+                    logger.error(
+                        "Twitch GQL 临时错误在 %d 次尝试后仍未恢复：%s",
+                        transient_attempts,
+                        operation_name,
+                    )
+                    raise GQLException(transient_errors)
             await asyncio.sleep(delay)
         raise RuntimeError("Retry loop was broken")
 

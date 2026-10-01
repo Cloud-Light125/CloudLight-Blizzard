@@ -63,6 +63,7 @@ class TwitchWorker(WorkerBase):
             "auto_start": self.auto_start,
             "network_check": self.network_check,
             "clear_auth": self.clear_auth,
+            "compatibility_check": self.compatibility_check,
         })
         self._migrate_legacy_proxy()
 
@@ -130,6 +131,18 @@ class TwitchWorker(WorkerBase):
         self.require_runtime()
         if not self._core:
             raise RuntimeError(self._core_error or "Twitch 业务核心不可用")
+
+    def compatibility_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return non-sensitive vendored-core compatibility provenance."""
+        self._require_core()
+        constants = self._core["constants"]
+        queries = constants.GQL_QUERIES
+        return {
+            "upstreamCommit": "22d0c6134f9291d1e904012c465504a22bd3f97c",
+            "inventorySha256": queries["Inventory"]["extensions"]["persistedQuery"]["sha256Hash"],
+            "campaignsSha256": queries["Campaigns"]["extensions"]["persistedQuery"]["sha256Hash"],
+            "webUserAgent": constants.ClientType.WEB.USER_AGENT,
+        }
 
     def _migrate_legacy_proxy(self) -> None:
         if self._settings is not None and self._settings.proxy:

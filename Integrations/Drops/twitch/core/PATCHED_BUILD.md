@@ -7,6 +7,27 @@ This repository contains the complete patched source based on
 [DevilXD/TwitchDropsMiner](https://github.com/DevilXD/TwitchDropsMiner) `16.dev`,
 together with the corresponding Windows release.
 
+## CloudLight vendored baseline / CloudLight 内置基线
+
+CloudLight Blizzard 的 headless Worker 最初集成
+`yundan125/TwitchDropsMiner-NoAutoClaim` 提交
+`3071a8a43488da9dbf06a6e9ca0e4057a5ad47cf`。该补丁源码以
+`DevilXD/TwitchDropsMiner` 提交
+`3aec843bbb91a7d00f7bd7784e92bd97e3ee8a5f` 为基础。
+
+Twitch API/GQL 兼容数据已定向同步至 upstream 提交
+`22d0c6134f9291d1e904012c465504a22bd3f97c`（2026-09-26）：
+
+- `a3fda85`：Inventory 与 Campaigns persisted-query hash；
+- `0e4bc43`：Campaigns persisted-query hash 后续更新；
+- `825bde3`：将 `request cancelled` 归类为可重试 GQL 临时错误；
+- `d21c0d2`：Web、Mobile Web 与 Smartbox User-Agent 更新至 Chrome 153。
+
+CloudLight 额外限制 GQL 临时错误的最大尝试次数，并为
+`PersistedQueryNotFound` 提供明确诊断；不会猜测或自动替换 hash。
+upstream 的 Tk GUI、Linux AppIndicator 与启动入口改动不属于 headless Worker，
+未被引入。NoAutoClaim、JSONL 协议、代理、Session、日志和退出流程补丁继续保留。
+
 ## 补丁行为 / Patch behavior
 
 补丁在设置界面加入“自动领取掉宝”开关，默认开启并持久化到原有设置文件。

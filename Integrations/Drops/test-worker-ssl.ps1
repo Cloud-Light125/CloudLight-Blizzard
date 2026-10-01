@@ -85,6 +85,31 @@ try {
         Write-Host "Packaged $platform SSL self-test: PASS (Python $python; $openssl; frozen=$frozen)" -ForegroundColor Green
         Write-Host "  _ssl module: $sslModule"
 
+        if ($platform -eq "twitch") {
+            $compatRequest = '{"id":"compat-selftest","command":"compatibility_check","payload":{}}'
+            $compatOutput = $compatRequest | & $worker --data-dir (Join-Path $platformRoot "compat-data") --log-file (Join-Path $platformRoot "compat-worker.log")
+            if ($LASTEXITCODE -ne 0) {
+                throw "Packaged Twitch Worker compatibility self-test failed to start (exit $LASTEXITCODE)."
+            }
+            $compatResponse = $compatOutput | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } |
+                Where-Object { $_ -and $_.PSObject.Properties['id'] -and $_.id -eq "compat-selftest" } |
+                Select-Object -Last 1
+            $compatResult = Get-CloudLightJsonProperty -Object $compatResponse -Name 'result'
+            $upstreamCommit = [string](Get-CloudLightJsonProperty -Object $compatResult -Name 'upstreamCommit')
+            $inventoryHash = [string](Get-CloudLightJsonProperty -Object $compatResult -Name 'inventorySha256')
+            $campaignsHash = [string](Get-CloudLightJsonProperty -Object $compatResult -Name 'campaignsSha256')
+            $webUserAgent = [string](Get-CloudLightJsonProperty -Object $compatResult -Name 'webUserAgent')
+            if (-not [bool](Get-CloudLightJsonProperty -Object $compatResponse -Name 'ok') -or
+                $upstreamCommit -ne '22d0c6134f9291d1e904012c465504a22bd3f97c' -or
+                $inventoryHash -ne '8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404' -or
+                $campaignsHash -ne 'c16bb890cc8ce7647a96ee69cd313d423a378a3dedadf630a1017cde18975feb' -or
+                $webUserAgent -notmatch 'Chrome/153') {
+                $diagnostic = ($compatOutput | ForEach-Object { [string]$_ }) -join " | "
+                throw "Packaged Twitch Worker contains stale GQL/Client compatibility data. Output: $diagnostic"
+            }
+            Write-Host "Packaged twitch GQL/Client compatibility self-test: PASS" -ForegroundColor Green
+        }
+
         if ($platform -eq "soop") {
             $coreRequest = '{"id":"core-selftest","command":"load_state","payload":{}}'
             $coreOutput = $coreRequest | & $worker --data-dir (Join-Path $platformRoot "core-data") --log-file (Join-Path $platformRoot "core-worker.log")
