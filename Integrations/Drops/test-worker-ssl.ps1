@@ -119,11 +119,14 @@ try {
                 $upstreamCommit -ne '22d0c6134f9291d1e904012c465504a22bd3f97c' -or
                 $inventoryHash -ne '8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404' -or
                 $campaignsHash -ne 'c16bb890cc8ce7647a96ee69cd313d423a378a3dedadf630a1017cde18975feb' -or
-                $webUserAgent -notmatch 'Chrome/153') {
+                $webUserAgent -notmatch 'Chrome/153' -or
+                (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchPathUpstreamCommit') -ne 'f693b0ca41301ac2282f3978713479efebe0490e' -or
+                (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchTransport') -ne 'playlist' -or
+                (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchIntervalSeconds') -ne 20) {
                 $diagnostic = ($compatOutput | ForEach-Object { [string]$_ }) -join " | "
-                throw "Packaged Twitch Worker contains stale GQL/Client compatibility data. Output: $diagnostic"
+                throw "Packaged Twitch Worker contains stale GQL/Client/watch-path compatibility data. Output: $diagnostic"
             }
-            Write-Host "Packaged twitch GQL/Client compatibility self-test: PASS" -ForegroundColor Green
+            Write-Host "Packaged twitch GQL/Client/playlist-watch compatibility self-test: PASS" -ForegroundColor Green
         }
 
         if ($platform -eq "soop") {

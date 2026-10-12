@@ -280,6 +280,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         ? time.ToLocalTime().ToString("HH:mm:ss") : "尚未确认";
     private string _twitchCurrentProgressText = "当前没有有效观看任务";
     public string TwitchCurrentProgressText { get => _twitchCurrentProgressText; private set => Set(ref _twitchCurrentProgressText, value); }
+    private string _twitchWatchRequestText = "观看请求尚未确认；以官方奖励进度为准。";
+    public string TwitchWatchRequestText { get => _twitchWatchRequestText; private set => Set(ref _twitchWatchRequestText, value); }
     private double _twitchCurrentProgress;
     public double TwitchCurrentProgress { get => _twitchCurrentProgress; private set => Set(ref _twitchCurrentProgress, value); }
     private string _twitchDataSourceText = "尚未成功读取活动与背包";
@@ -1560,6 +1562,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void BeginTwitchStart(bool automatic)
     {
+        TwitchWatchRequestText = "正在建立观看连接；以官方奖励进度为准。";
         CancelTwitchRetry();
         _twitchLastFailureKind = TwitchConnectionFailureKind.None;
         _twitchConnectionIntent = true;
@@ -1585,6 +1588,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void StopTwitchByUser()
     {
+        TwitchWatchRequestText = "观看已停止。";
         _twitchUserStopped = true;
         _twitchConnectionIntent = false;
         _twitchManualIntent = false;
@@ -2432,7 +2436,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "sessions", Accounts, item => new DropsRow
         {
             Id = Text(item, "profile"), Primary = Text(item, "profile"), Secondary = Text(item, "url"),
-            Status = Bool(item, "running") && streamAvailable ? "正在观看" : "可用", Payload = item.Clone(),
+            Status = Bool(item, "playing") && streamAvailable ? "已确认播放" : Bool(item, "running") ? "浏览器已启动，播放待确认" : "未运行", Payload = item.Clone(),
         });
         if (state.TryGetProperty("config", out var config))
         {
@@ -2440,7 +2444,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             {
                 Id = item.GetString() ?? "", Primary = item.GetString() ?? "", Secondary = "独立浏览器登录资料",
                 Status = sessions.Any(session => Text(session, "profile") == item.GetString() && Bool(session, "running"))
-                    ? (streamAvailable ? "正在观看" : "可用") : "未验证登录", Payload = item.Clone(),
+                    ? (sessions.Any(session => Text(session, "profile") == item.GetString() && Bool(session, "playing")) ? "已确认播放" : "浏览器已启动，播放待确认") : "未验证登录", Payload = item.Clone(),
             }, distinct: true);
             AddRows(config, "channels", Channels, item => new DropsRow
             {
@@ -2463,11 +2467,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 Status = FormatSeconds(Number(item, "watch_seconds")), Payload = item.Clone(),
             });
         var enabledChannels = Channels.Count(row => row.Enabled);
-        vm.Status = vm.Running ? (Tasks.Count > 0 ? "正在观看" : "正在检查频道") : "未运行";
+        vm.Status = vm.Running ? (sessions.Any(session => Bool(session, "playing")) ? "正在观看" : Tasks.Count > 0 ? "等待播放确认" : "正在检查频道") : "未运行";
         if (Tasks.Count > 0)
         {
             var seconds = History.Where(row => row.Id == Tasks[0].Id).Sum(row => Number(row.Payload, "watch_seconds"));
-            vm.Summary = seconds > 0 ? $"{_youtubeCurrentLabel} · 已观看 {FormatSeconds(seconds)}" : $"{_youtubeCurrentLabel} · 刚刚开始观看";
+            vm.Summary = seconds > 0 ? $"{_youtubeCurrentLabel} · 本地历史 {FormatSeconds(seconds)}" : $"{_youtubeCurrentLabel} · 已发现直播，等待确认播放";
         }
         else
             vm.Summary = vm.Running
@@ -2476,8 +2480,22 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         UpdateYouTubeQuickStart(state, enabledChannels);
     }
 
+    private void ApplyTwitchWatchRequest(JsonElement watch)
+    {
+        if (watch.ValueKind != JsonValueKind.Object) return;
+        var failure = watch.TryGetProperty("failure", out var diagnostic) && diagnostic.ValueKind == JsonValueKind.Object ? diagnostic : JsonSerializer.SerializeToElement(new { });
+        var phase = Text(failure, "stage") switch { "playback_token" => "播放凭证", "master_playlist" => "直播品质列表",
+            "media_playlist" => "直播分片列表", "media_segment" => "直播分片连接", _ => "观看连接" };
+        TwitchWatchRequestText = Text(watch, "lastResult") == "accepted"
+            ? "最近一次直播分片请求已接受；是否累计请以官方奖励进度为准。"
+            : Number(watch, "attempts") > 0 ? $"观看请求未成功：{phase}{(Number(failure, "httpStatus") > 0 ? $" HTTP {Number(failure, "httpStatus"):0}" : "暂不可用")}。当前保留官方确认进度，可尝试重新连接。"
+            : "观看请求尚未确认；以官方奖励进度为准。";
+    }
+
     private void ApplyTwitch(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (!vm.Running) TwitchWatchRequestText = "观看已停止。";
+        else if (state.TryGetProperty("watchRequests", out var watch)) ApplyTwitchWatchRequest(watch);
         if (state.TryGetProperty("currentChannel", out var watchChannel))
         {
             _twitchWatchUrl = watchChannel.ValueKind == JsonValueKind.Object ? Text(watchChannel, "url") : "";
@@ -2966,8 +2984,31 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             }
             if (snapshot.Platform == DropsPlatform.Soop)
             {
+                Soop.ConnectionState = DropsConnectionState.WaitingRetry;
+                Soop.Summary = "共享后台已中断，仅恢复仍希望运行的账号；已停止账号保持停止。";
+                ReportMessage(DropsPlatform.Soop, Soop.Summary, "警告");
                 string[] accounts;
                 lock (_soopRetrySync) accounts = _soopAccountIntents.ToArray();
+                var rows = _rows[DropsPlatform.Soop].Accounts;
+                for (var index = 0; index < rows.Count; index++)
+                {
+                    var row = rows[index];
+                    var fields = row.Payload.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone());
+                    fields["running"] = JsonSerializer.SerializeToElement(false);
+                    rows[index] = new DropsRow { Id = row.Id, Primary = row.Primary, Secondary = row.Secondary,
+                        Status = accounts.Contains(row.Id) ? "中断，等待恢复" : "已停止", Payload = JsonSerializer.SerializeToElement(fields) };
+                }
+                for (var index = 0; index < SoopCurrentProgress.Count; index++)
+                {
+                    var progress = SoopCurrentProgress[index];
+                    SoopCurrentProgress[index] = new SoopProgressRow { Id = progress.Id, Account = progress.Account,
+                        Channel = progress.Channel, Campaign = progress.Campaign, Reward = progress.Reward,
+                        GameAccountBindingText = progress.GameAccountBindingText, CurrentMinutes = progress.CurrentMinutes,
+                        RequiredMinutes = progress.RequiredMinutes, Percent = progress.Percent, Diagnostic = progress.Diagnostic,
+                        LastConfirmedAt = progress.LastConfirmedAt,
+                        SyncState = "观看已中断，当前进度为最近官方查询值", WatchPathText = "观看连接已中断，等待账号恢复" };
+                }
+                Raise(nameof(SoopWatchStatusText));
                 foreach (var uid in accounts) SetSoopFailure("SOOP 网络连接中断：后台服务异常退出", uid: uid);
             }
         }
@@ -2990,15 +3031,26 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
         if (message.Platform == DropsPlatform.Twitch && (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping) &&
-            (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" ||
+            (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" or "watch_request" ||
              message.Name == "status" && Bool(message.Payload, "running"))) return;
         if (message.Name is "state" or "account_status" or "auth_state" or "auth_required" or "login_status" or "error" or "status" or
-            "connection_status" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward")
+            "connection_status" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward" or "stream" or "watch_time" or "playback" or "watch_request")
             if (!AcceptState(message.Platform, message.Payload)) return;
         var previousProjection = _projectionPlatform;
         _projectionPlatform = message.Platform;
         try
         {
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "watch_request")
+            ApplyTwitchWatchRequest(message.Payload);
+        if (message.Platform == DropsPlatform.Soop && message.Name == "account_operation_timeout")
+        {
+            if (message.Payload.TryGetProperty("_workerGeneration", out var failedGeneration) &&
+                failedGeneration.TryGetInt64(out var generation) && !_host.IsCurrentGeneration(DropsPlatform.Soop, generation)) return;
+            var uid = Text(message.Payload, "uid");
+            if (Text(message.Payload, "command") is "start_account" or "stop_account")
+                StopSoopByUser(uid);
+            ReportMessage(DropsPlatform.Soop, Text(message.Payload, "message"), "警告");
+        }
         if (message.Name == "state" && message.Payload.ValueKind == JsonValueKind.Object)
             ApplyState(message.Platform, message.Payload);
         if (message.Name is "error" or "warning" or "notice")
@@ -3143,20 +3195,46 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                                IsTwitchRetryableFailure(kind, errorMessage), scheduleRetry: true);
             }
         }
-        if (message.Platform == DropsPlatform.YouTube && message.Name == "stream")
+        if (message.Platform == DropsPlatform.YouTube && message.Name == "playback" && YouTube.Running)
+        {
+            var profile = Text(message.Payload, "profile");
+            var rows = _rows[DropsPlatform.YouTube].Accounts;
+            var row = rows.FirstOrDefault(item => item.Id == profile);
+            if (row is not null)
+            {
+                var fields = row.Payload.ValueKind == JsonValueKind.Object
+                    ? row.Payload.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone()) : new Dictionary<string, JsonElement>();
+                fields["playing"] = JsonSerializer.SerializeToElement(Bool(message.Payload, "playing"));
+                fields["running"] = JsonSerializer.SerializeToElement(true);
+                rows[rows.IndexOf(row)] = new DropsRow { Id = row.Id, Primary = row.Primary, Secondary = row.Secondary,
+                    Status = Bool(message.Payload, "playing") ? "已确认播放" : "浏览器已启动，播放待确认", Payload = JsonSerializer.SerializeToElement(fields) };
+            }
+            YouTube.Status = rows.Any(item => item.Payload.ValueKind == JsonValueKind.Object && Bool(item.Payload, "playing")) ? "正在观看" : "等待播放确认";
+        }
+        if (message.Platform == DropsPlatform.YouTube && message.Name == "stream" && YouTube.Running)
         {
             _lastYouTubeSuccessfulAt = DateTimeOffset.Now;
             RefreshTemporalStatus(DateTimeOffset.Now);
             _youtubeCurrentLabel = Text(message.Payload, "channel", Text(message.Payload, "title", "YouTube"));
-            YouTube.Status = "正在观看";
-            YouTube.Summary = $"{_youtubeCurrentLabel} · 刚刚开始观看";
+            if (YouTube.Running) YouTube.Status = "等待播放确认";
+            YouTube.Summary = $"{_youtubeCurrentLabel} · 已发现直播，等待确认播放";
         }
-        if (message.Platform == DropsPlatform.YouTube && message.Name == "watch_time")
+        if (message.Platform == DropsPlatform.YouTube && message.Name == "watch_time" && YouTube.Running)
         {
             _lastYouTubeSuccessfulAt = DateTimeOffset.Now;
             RefreshTemporalStatus(DateTimeOffset.Now);
-            YouTube.Status = "正在观看";
-            YouTube.Summary = $"{_youtubeCurrentLabel} · 已观看 {FormatSeconds(Number(message.Payload, "seconds"))}";
+            YouTube.Summary = $"{_youtubeCurrentLabel} · 本地历史 {FormatSeconds(Number(message.Payload, "seconds"))}";
+            if (message.Payload.TryGetProperty("record", out var record) && record.ValueKind == JsonValueKind.Object)
+            {
+                var history = _rows[DropsPlatform.YouTube].History;
+                var existing = history.FirstOrDefault(row => row.Id == Text(record, "videoId") &&
+                    Text(row.Payload, "date") == Text(record, "date") && Text(row.Payload, "profile") == Text(record, "profile"));
+                var updated = new DropsRow { Id = Text(record, "videoId"), Primary = Text(record, "title"),
+                    Secondary = $"{Text(record, "date")} · {Text(record, "profile")}",
+                    Status = FormatSeconds(Number(record, "watch_seconds")), Payload = record.Clone() };
+                if (existing is null) history.Insert(0, updated);
+                else history[history.IndexOf(existing)] = updated;
+            }
         }
         RefreshRecoveryProjection(message.Platform, DateTimeOffset.Now);
         }

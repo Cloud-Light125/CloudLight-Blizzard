@@ -145,6 +145,9 @@ class TwitchWorker(WorkerBase):
         queries = constants.GQL_QUERIES
         return {
             "upstreamCommit": "22d0c6134f9291d1e904012c465504a22bd3f97c",
+            "watchPathUpstreamCommit": "f693b0ca41301ac2282f3978713479efebe0490e",
+            "watchTransport": "playlist",
+            "watchIntervalSeconds": constants.WATCH_INTERVAL.total_seconds(),
             "inventorySha256": queries["Inventory"]["extensions"]["persistedQuery"]["sha256Hash"],
             "campaignsSha256": queries["Campaigns"]["extensions"]["persistedQuery"]["sha256Hash"],
             "webUserAgent": constants.ClientType.WEB.USER_AGENT,
@@ -434,6 +437,7 @@ class TwitchWorker(WorkerBase):
             "lastInventorySyncAt": str(getattr(self._client, "_cloudlight_inventory_updated_at", self._inventory_sync_at)),
             "availableGames": available_games, "games": available_games,
             "websockets": self._websocket_state(), "languages": self.get_languages({}),
+            "watchRequests": dict(getattr(self._client, "_cloudlight_watch_requests", {})),
             "coreAvailable": bool(self._core), "coreError": self._core_error,
             "authState": auth_state, "authRequired": auth_required,
             "loginError": self._login_error,

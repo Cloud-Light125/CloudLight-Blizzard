@@ -10,7 +10,7 @@ public static partial class SensitiveDataRedactor
     [GeneratedRegex("(?i)(bearer\\s+)[A-Za-z0-9._~+\\-/=]+")]
     private static partial Regex BearerPattern();
 
-    [GeneratedRegex("(?i)([?&](?:access_token|refresh_token|oauth_token|device_code|code|token|auth|ticket|session|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\\s]+")]
+    [GeneratedRegex("(?i)([?&](?:access_token|refresh_token|oauth_token|device_code|code|token|sig|signature|auth|ticket|session|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\\s]+")]
     private static partial Regex SecretQueryPattern();
 
     [GeneratedRegex("(?i)(https?://)[^/\\s:@]+:[^@/\\s]+@")]

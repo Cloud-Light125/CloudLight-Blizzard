@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import TimeoutError as FutureTimeoutError
+from concurrent.futures import CancelledError as FutureCancelledError, TimeoutError as FutureTimeoutError
 import dataclasses
 import importlib
 import importlib.util
@@ -516,13 +516,28 @@ class SoopWorker(WorkerBase):
         return config.AppConfig.from_dict(self._effective_settings())
 
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
-        future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        finished = threading.Event()
+        async def tracked():
+            try:
+                return await coroutine
+            finally:
+                finished.set()
+        future = asyncio.run_coroutine_threadsafe(tracked(), self._loop)
         try:
             return self.wait_future(future, timeout)
-        except FutureTimeoutError:
+        except (FutureTimeoutError, FutureCancelledError):
             # A timed-out refresh/stop must not keep the account coroutine
             # alive in the worker loop and create a second session on retry.
             future.cancel()
+            # Cancelling a concurrent Future acknowledges the request before
+            # the asyncio task has completed its network cleanup. Keep the
+            # shared process only after that cleanup actually finishes.
+            command = getattr(self, "_active_command", "")
+            if not finished.wait(2) or command in {"start_account", "stop_account"}:
+                payload = getattr(self, "_active_payload", {})
+                event("worker_unhealthy", {"command": command,
+                    "uid": str(payload.get("uid", payload.get("userid", ""))),
+                    "message": "SOOP 操作超时或取消后无法确认会话已清理，需要重建共享后台。"})
             raise
 
     def _credentials_path(self, uid: str) -> Path:
@@ -1940,7 +1955,7 @@ class SoopWorker(WorkerBase):
         for uid in accounts:
             is_running = uid in running_uids
             if self._read_interrupted:
-                errors.append("刷新已被停止操作取消，保留此前成功数据。")
+                errors.append("刷新已因停止或请求超时取消，保留此前成功数据。")
                 break
             try:
                 is_running = is_running or (
@@ -1969,7 +1984,7 @@ class SoopWorker(WorkerBase):
             except Exception as exc:
                 if self._is_authentication_error(exc):
                     self._handle_authentication_failure(uid, restart=is_running)
-                error = "刷新已被停止操作取消，保留此前成功数据。" if self._read_interrupted else str(exc)
+                error = "刷新已因停止或请求超时取消，保留此前成功数据。" if self._read_interrupted else str(exc)
                 self._record_refresh_diagnostic(uid, status="failed", error=error)
                 cached_state = self._state_snapshot().get(uid)
                 if cached_state is not None:

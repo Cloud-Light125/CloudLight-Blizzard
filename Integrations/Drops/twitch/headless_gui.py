@@ -113,6 +113,18 @@ class ConnectionStatus:
         event("connection_status", {"phase": phase, "detail": detail})
 
 
+class WatchRequestStatus:
+    def __init__(self) -> None:
+        self._last: tuple[Any, Any, dict[str, Any]] | None = None
+
+    def update(self, payload: dict[str, Any]) -> None:
+        key = (payload.get("channelId"), payload.get("lastResult"), dict(payload.get("failure") or {}))
+        if key == self._last:
+            return
+        self._last = key
+        event("watch_request", dict(payload))
+
+
 class HeadlessSettingsFacade:
     def __init__(self, twitch: Any = None) -> None:
         self._twitch = twitch
@@ -278,6 +290,7 @@ class GUIManager:
         self.progress = _Progress()
         self.websockets = WebsocketStatus()
         self.connection = ConnectionStatus(twitch)
+        self.watch_requests = WatchRequestStatus()
         self.channels = ChannelList()
         self.inv = _Inventory()
         self.login = LoginForm(twitch)

@@ -38,6 +38,50 @@ class _NotLiveYoutubeDL:
 
 
 class YouTubeWorkerContractTests(unittest.TestCase):
+    def test_history_requires_advancing_playback_and_stops_with_user(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = YouTubeWorker(root / "data", root / "youtube.log")
+            session = youtube_worker.BrowserSession("主账号", types.SimpleNamespace(poll=lambda: None), 1, "https://www.youtube.com/watch?v=live")
+            stream = {"videoId":"live", "url":session.url}
+            worker.running = True
+            worker.current_stream = stream
+            worker.sessions[session.profile] = session
+            state = {"playing":True,"paused":False,"ended":False,"readyState":4,"currentTime":10,"url":session.url}
+            try:
+                with patch.object(worker, '_video_state', side_effect=lambda *_: dict(state)), \
+                     patch.object(youtube_worker.time, 'monotonic', side_effect=[0,5,10,15,20,25,30,35]):
+                    worker._sample_playback(session, stream)  # first observation proves no elapsed time
+                    worker._sample_playback(session, stream)  # stalled video must not count
+                    self.assertEqual(worker._history_snapshot()['todayTotal'], 0)
+                    state['currentTime'] = 15
+                    worker._sample_playback(session, stream)
+                    self.assertEqual(worker._history_snapshot()['todayTotal'], 5)
+                    state['paused'] = True; state['playing'] = False
+                    worker._sample_playback(session, stream)
+                    state['paused'] = False; state['playing'] = True; state['currentTime'] = 20
+                    worker._sample_playback(session, stream)  # resumed first sample
+                    state['currentTime'] = 25; state['adPlaying'] = True
+                    worker._sample_playback(session, stream)
+                    state['currentTime'] = 30; state['adPlaying'] = False
+                    worker._sample_playback(session, stream)
+                    worker._stop.set(); worker.running = False; state['currentTime'] = 35
+                    worker._sample_playback(session, stream)
+                    self.assertEqual(worker._history_snapshot()['todayTotal'], 5)
+                self._close(worker)
+                worker._stop.clear(); worker.running = True
+                with patch.object(worker, '_detect_stream', return_value=stream), \
+                     patch.object(worker, '_sample_until_next_check', side_effect=RuntimeError('controlled playback failure')), \
+                     patch.object(worker, '_close_all_browsers') as close_browsers:
+                    worker._watch_loop()
+                    self.assertFalse(worker.running)
+                    self.assertTrue(worker._stop.is_set())
+                    close_browsers.assert_called_once()
+                restored = YouTubeWorker(root / "data", root / "restart.log")
+                try: self.assertEqual(restored.get_history({})['todayTotal'], 5)
+                finally: self._close(restored)
+            finally: self._close(worker)
+
     def test_logout_during_browser_launch_cannot_recreate_stopped_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

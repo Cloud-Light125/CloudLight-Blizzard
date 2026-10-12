@@ -122,7 +122,13 @@ class Stream:
         playback_token_response: JsonType = await self.channel._twitch.gql_request(
             GQL_QUERIES["PlaybackAccessToken"].with_variables({"login": self.channel._login})
         )
-        token_data: JsonType = playback_token_response["data"]["streamPlaybackAccessToken"]
+        response_data = playback_token_response.get("data") if isinstance(playback_token_response, dict) else None
+        token_data = response_data.get("streamPlaybackAccessToken") if isinstance(response_data, dict) else None
+        if (not isinstance(token_data, dict) or
+                not isinstance(token_data.get("value"), str) or not token_data["value"] or
+                not isinstance(token_data.get("signature"), str) or not token_data["signature"]):
+            self.channel._twitch._cloudlight_watch_failure = {"stage": "playback_token", "reason": "missing_playback_token"}
+            return None
         token_value = token_data["value"]
         token_signature = token_data["signature"]
         # using the token, query Twitch for a list of all available stream qualities
@@ -135,6 +141,9 @@ class Stream:
                     f"{self.channel._login}.m3u8?sig={token_signature}&token={token_value}"
                 ),
             ) as qualities_response:
+                if qualities_response.status >= 400:
+                    self.channel._twitch._cloudlight_watch_failure = {"stage": "master_playlist", "httpStatus": qualities_response.status}
+                    return None
                 available_qualities = await qualities_response.text()
             # try to decode the suspected JSON
             try:
@@ -144,17 +153,18 @@ class Stream:
                 pass
             else:
                 # JSON was decoded - if there's an error, log it and report failure
-                if isinstance(available_json, list):
-                    available_json = available_json[0]
-                if "error" in available_json:
-                    logger.error(f"Stream URL get error: \"{available_json['error']}\"")
-                    self.channel.set_offline()
+                self.channel._twitch._cloudlight_watch_failure = {"stage": "master_playlist", "responseType": type(available_json).__name__}
                 return None
             # pick the last URL from the list, usually with the lowest quality stream
-            self._stream_url = cast(URLType, URL(available_qualities.strip().split("\n")[-1]))
+            stream_urls = [line.strip() for line in available_qualities.splitlines() if line.strip().startswith("https://")]
+            if not stream_urls:
+                self.channel._twitch._cloudlight_watch_failure = {"stage": "master_playlist", "reason": "empty_playlist"}
+                return None
+            self._stream_url = cast(URLType, URL(stream_urls[-1]))
         except (aiohttp.InvalidURL, ValueError):
-            self.channel._twitch.print(available_qualities)
-            raise
+            # HLS responses and signed URLs can contain playback credentials.
+            self.channel._twitch._cloudlight_watch_failure = {"stage": "master_playlist", "reason": "invalid_playlist"}
+            return None
         return self._stream_url
 
 
@@ -432,17 +442,17 @@ class Channel:
         if needs_display:
             self.display()
 
-    # NOTE: This is currently unused.
     async def _send_watch_playlist(self) -> bool:
         """
         This performs a HEAD request on the stream's current playlist,
         to simulate watching the stream.
         Optimally, send every ~20 seconds to advance drops.
         """
-        if self._stream is None:
+        stream = self._stream
+        if stream is None:
             return False
         # get the stream url
-        stream_url = await self._stream.get_stream_url()
+        stream_url = await stream.get_stream_url()
         if stream_url is None:
             return False
         # fetch a list of chunks available to download for the stream
@@ -453,6 +463,9 @@ class Channel:
         ) as chunks_response:
             if chunks_response.status >= 400:
                 # if the stream goes OFFLINE, trying to get a list of chunks returns a 404
+                self._twitch._cloudlight_watch_failure = {"stage": "media_playlist", "httpStatus": chunks_response.status}
+                if chunks_response.status in {401, 403, 404}:
+                    stream._stream_url = None
                 return False
             available_chunks: str = await chunks_response.text()
         # the response may contain some invalid JSON with duplicate double quotes
@@ -467,25 +480,33 @@ class Channel:
             pass
         else:
             # JSON was decoded - if there's an error, log it and report failure
+            self._twitch._cloudlight_watch_failure = {"stage": "media_playlist", "responseType": type(available_json).__name__}
             if isinstance(available_json, list):
-                available_json = available_json[0]
-            if "error" in available_json:
-                logger.error(f"Send watch error: \"{available_json['error']}\"")
+                available_json = available_json[0] if available_json else {}
+            if isinstance(available_json, dict) and "error" in available_json:
+                logger.error("Twitch watch playlist returned a JSON error response")
             return False
-        # the list contains ~10-13 chunks of the stream at 2s intervals,
-        # pick the last chunk URL available. Ensure it's not the end-of-stream tag,
-        # otherwise use the 2nd to last line.
-        chunks_list: list[str] = available_chunks.strip().split("\n")
-        selected_chunk: str = chunks_list[-1]
-        if selected_chunk == "#EXT-X-ENDLIST":
-            selected_chunk = chunks_list[-2]
-        stream_chunk_url: URLType = URLType(selected_chunk)
-        # sending a HEAD request is enough to advance the drops,
-        # without downloading the actual stream data
-        async with self._twitch.request("HEAD", stream_chunk_url) as head_response:
-            return head_response.status == 200
+        # Match the upstream playlist watch path: request each available
+        # segment, without downloading media. Spade 204 only accepts telemetry.
+        chunks_list = [URLType(line.strip()) for line in available_chunks.splitlines()
+                       if line.strip().startswith("https://")]
+        if not chunks_list:
+            self._twitch._cloudlight_watch_failure = {"stage": "media_playlist", "reason": "empty_playlist"}
+            return False
+        for stream_chunk_url in chunks_list:
+            async with self._twitch.request("HEAD", stream_chunk_url) as head_response:
+                if head_response.status != 200:
+                    self._twitch._cloudlight_watch_failure = {"stage": "media_segment", "httpStatus": head_response.status}
+                    return False
+        return True
 
     async def send_watch(self) -> bool:
+        try:
+            return await self._send_watch_playlist()
+        except RequestException:
+            return False
+
+    async def _send_watch_spade(self) -> bool:
         if self._stream is None:
             return False
         if self._spade_url is None:

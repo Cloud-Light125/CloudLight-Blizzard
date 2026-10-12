@@ -19,6 +19,8 @@ internal static class DropsReliabilitySelfTest
         Window window, string outputPath, ICollection<string> checks)
     {
         void Check(bool ok, string message) => checks.Add((ok ? "PASS " : "FAIL ") + message);
+        Check(!SensitiveDataRedactor.Redact("https://fixture.invalid/?sig=fixture-signature&signature=fixture-signature")
+            .Contains("fixture-signature", StringComparison.Ordinal), "播放 URL 签名在 Host 日志中脱敏");
         var applyEvent = typeof(DropsViewModel).GetMethod("OnEventReceived", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var applySnapshot = typeof(DropsViewModel).GetMethod("OnSnapshotChanged", BindingFlags.Instance | BindingFlags.NonPublic)!;
         applySnapshot.Invoke(vm, new object?[] { null, new WorkerSnapshot(DropsPlatform.Soop, WorkerLifecycle.Running,
@@ -147,6 +149,24 @@ internal static class DropsReliabilitySelfTest
         }));
         Check(vm.SoopCurrentProgress.Single().CurrentMinutes == 12 && vm.SoopCurrentProgress.Single().SyncState.Contains("待确认"),
             "SOOP 心跳 unknown 仍呈现服务端确认数值，观看状态独立提醒");
+        vm.ApplyState(DropsPlatform.Soop, State(new { running = true, refreshCompleted = true }));
+        var refreshSent = false;
+        host.ConfigureRequestOverrideForSelfTest((_, command, _, _) =>
+        {
+            if (command != "refresh") return Task.FromResult(State(new { }));
+            refreshSent = true;
+            return Task.FromException<JsonElement>(new IOException("模拟只读刷新失败"));
+        });
+        var refreshSoop = typeof(DropsPage).GetMethod("RefreshSoopAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var loadingGuard = typeof(DropsPage).GetField("_loading", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        loadingGuard.SetValue(page, false); // The outer UI fixture holds this guard during navigation.
+        vm.CompleteSoopRefresh();
+        var failedRefresh = (Task)refreshSoop.Invoke(page, new object[] { false })!;
+        Drain();
+        loadingGuard.SetValue(page, true);
+        Check(refreshSent && failedRefresh.IsCompletedSuccessfully && vm.Soop.Running && vm.SoopCurrentProgress.Single().CurrentMinutes == 12 &&
+            vm.Soop.Notice.Contains("保留此前成功数据"), "SOOP 页面只读刷新失败保留运行状态和官方快照，不将全部账号误报停止");
+        host.ConfigureRequestOverrideForSelfTest((_, _, _, _) => Task.FromResult(State(new { })));
         vm.ApplyState(DropsPlatform.Soop, State(new { progressHistory = new[] { new {
             uid = "test-soop", taskId = "mission", cycle = "cycle", stageId = "stable-item:60",
             officialMinutes = 0, historicalHighWaterMinutes = 10, source = "cache",
@@ -171,6 +191,29 @@ internal static class DropsReliabilitySelfTest
         } }));
         Check(vm.TwitchCurrentProgressText.Contains("本地临时估算") && Math.Abs(vm.TwitchCurrentProgress - 100.0 / 6) < .01,
             "Twitch 进度条只使用远端分钟数，额外估算独立说明");
+        vm.BeginTwitchStart(false);
+        vm.ApplyState(DropsPlatform.Twitch, State(new { running = true, authState = "running",
+            accounts = new[] { new { userId = "fixture", loggedIn = true } },
+            watchRequests = new { attempts = 3, lastResult = "failed", failure = new { stage = "media_segment", httpStatus = 403 } } }));
+        Check(vm.TwitchWatchRequestText.Contains("HTTP 403") && Math.Abs(vm.TwitchCurrentProgress - 100.0 / 6) < .01,
+            "Twitch 观看连接失败显示具体阶段/HTTP，保留官方奖励进度");
+        vm.ApplyState(DropsPlatform.Twitch, State(new { watchRequests = new { attempts = 4, lastResult = "accepted" } }));
+        Check(vm.TwitchWatchRequestText.Contains("以官方奖励进度为准") && !vm.TwitchWatchRequestText.Contains("HTTP 403"),
+            "Twitch 观看请求恢复清除旧连接故障，不将分片接受等同官方进度增长");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch, "watch_request", State(new {
+            attempts = 5, lastResult = "failed", failure = new { stage = "media_segment", httpStatus = 403 } })) });
+        Drain();
+        Check(vm.TwitchWatchRequestText.Contains("HTTP 403") && Math.Abs(vm.TwitchCurrentProgress - 100.0 / 6) < .01,
+            "Twitch 分片失败事件直接更新诊断，无需等待奖励变化或手动刷新");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch, "watch_request", State(new {
+            attempts = 6, lastResult = "accepted" })) });
+        Drain();
+        Check(!vm.TwitchWatchRequestText.Contains("HTTP 403"), "Twitch 分片恢复事件立即清理旧请求错误");
+        vm.StopTwitchByUser();
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch, "watch_request", State(new {
+            attempts = 7, lastResult = "accepted" })) });
+        Drain();
+        Check(vm.TwitchWatchRequestText == "观看已停止。", "手动停止后迟到分片事件不能恢复观看诊断");
         var populate = typeof(DropsPage).GetMethod("PopulateSettings", BindingFlags.Instance | BindingFlags.NonPublic)!;
         if (page.FindName("SoopPreferredChannel") is TextBox preferred && page.FindName("SoopSaveSettingsButton") is Button save)
         {
@@ -194,6 +237,27 @@ internal static class DropsReliabilitySelfTest
                 "真实保存按钮发送 save_settings，成功后接受服务器设置并提示应用结果");
         }
         host.ConfigureRequestOverrideForSelfTest((_, _, _, _) => Task.FromResult(State(new { })));
+        vm.SelectPlatform(DropsPlatform.YouTube);
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = true,
+            stream = new { videoId = "fixture-live", title = "测试直播" },
+            sessions = new[] { new { profile = "fixture", running = true, playing = false, playbackState = "buffering" } } }));
+        Check(vm.YouTube.Status == "等待播放确认" && vm.Accounts[0].Status.Contains("播放待确认"),
+            "YouTube 浏览器存在且发现直播仍须等待实际播放，不能误报正在观看");
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = true,
+            stream = new { videoId = "fixture-live", title = "测试直播" },
+            sessions = new[] { new { profile = "fixture", running = true, playing = true, playbackState = "playing" } } }));
+        Check(vm.YouTube.Status == "正在观看" && vm.Accounts[0].Status == "已确认播放", "YouTube 已确认播放事件正确投影到账号与页面状态");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "playback", State(new {
+            profile = "fixture", playing = false, playbackState = "buffering" })) });
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "watch_time", State(new { seconds = 15,
+            record = new { date = "2026-10-12", profile = "fixture", videoId = "fixture-live", title = "测试直播", watch_seconds = 15 } })) });
+        Drain();
+        Check(vm.YouTube.Status == "等待播放确认" && vm.Accounts[0].Status.Contains("播放待确认") && vm.History.Single().Status == "00:00:15",
+            "YouTube 后台播放变化和本地历史自动投影，无需手动刷新（模拟事件）");
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = false, stream = (object?)null, sessions = Array.Empty<object>() }));
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "watch_time", State(new { seconds = 5 })) });
+        Drain();
+        Check(vm.YouTube.Status == "未运行", "YouTube 停止后的迟到本地计时事件不能恢复观看提示");
         vm.SelectPlatform(DropsPlatform.Twitch);
         vm.ReportMessage(DropsPlatform.Twitch, "测试：接口暂时不可用，保留上次确认进度。", "警告");
         Drain();

@@ -1021,7 +1021,21 @@ class Twitch:
                 self.stop_watching()
                 continue
             # logger.log(CALL, f"Sending watch payload to: {channel.name}")
+            self._cloudlight_watch_failure = {}
             succeeded: bool = await channel.send_watch()
+            previous_watch = getattr(self, "_cloudlight_watch_requests", {})
+            self._cloudlight_watch_requests = {
+                "transport": "playlist", "channelId": str(channel.id),
+                "attempts": previous_watch.get("attempts", 0) + 1,
+                "accepted": previous_watch.get("accepted", 0) + int(succeeded),
+                "lastAttemptAt": datetime.now(timezone.utc).isoformat(),
+                "lastAcceptedAt": datetime.now(timezone.utc).isoformat() if succeeded else previous_watch.get("lastAcceptedAt", ""),
+                "lastResult": "accepted" if succeeded else "failed",
+                "failure": dict(self._cloudlight_watch_failure) if not succeeded else {},
+            }
+            watch_reporter = getattr(self.gui, "watch_requests", None)
+            if watch_reporter is not None:
+                watch_reporter.update(self._cloudlight_watch_requests)
             last_sent: float = time()
             if not succeeded:
                 logger.log(CALL, f"Watch requested failed for channel: {channel.name}")
@@ -1491,7 +1505,7 @@ class Twitch:
                 if backoff.steps > 1:
                     # just so that quick retries that sometimes happen, aren't shown
                     self.print(
-                        _("error", "no_connection").format(seconds=round(delay), url=str(url))
+                        _("error", "no_connection").format(seconds=round(delay), url=f"https://{URL(url).host}/")
                     )
             finally:
                 if response is not None:

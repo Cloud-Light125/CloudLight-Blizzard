@@ -720,7 +720,8 @@ public static class UiVisualTreeSelfTest
                 catch (Exception ex) { checks.Add("FAIL UI 测试恢复 settings.json：" + ex.Message); }
             }
             checks.Insert(0, "UI navigation integration selftest: " +
-                (checks.All(item => item.StartsWith("PASS", StringComparison.Ordinal)) ? "PASS" : "FAIL"));
+                (checks.Any(item => item.StartsWith("FAIL", StringComparison.Ordinal)) ? "FAIL" :
+                 checks.Any(item => item.StartsWith("BLOCKED", StringComparison.Ordinal)) ? "BLOCKED" : "PASS"));
             try
             {
                 var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
@@ -730,7 +731,8 @@ public static class UiVisualTreeSelfTest
             catch { }
         }
 
-        return checks.Any(item => item.StartsWith("FAIL", StringComparison.Ordinal)) ? 1 : 0;
+        return checks.Any(item => item.StartsWith("FAIL", StringComparison.Ordinal)) ? 1 :
+               checks.Any(item => item.StartsWith("BLOCKED", StringComparison.Ordinal)) ? 2 : 0;
     }
 
     private static void Assert(bool condition, ICollection<string> checks, string description) =>

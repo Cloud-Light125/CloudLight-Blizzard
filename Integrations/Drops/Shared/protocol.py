@@ -29,7 +29,7 @@ _SECRET = re.compile(
     r'''(?i)(["']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|device[_ -]?code|password|passwd|cookie|set-cookie|SESSDATA|bili_jct|DedeUserID(?:__ckMd5)?|buvid3|buvid4|b_nut|sid|LIVE_BUVID|csrf(?:_token)?)["']?\s*[:=]\s*["']?)([^"'\s,;}\]]+)'''
 )
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+")
-_SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\s]+")
+_SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|sig|signature|auth|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\s]+")
 _URL_CREDENTIALS = re.compile(r"(?i)(https?://)[^/\s:@]+:[^@/\s]+@")
 
 
@@ -231,6 +231,8 @@ class WorkerBase:
         self.shutdown_requested = False
         self._control_lock = threading.Lock()
         self._active_command = ""
+        self._active_request_id = ""
+        self._active_payload: dict[str, Any] = {}
         self._dispatch_thread = None
         self._active_read_future = None
         self._read_interrupted = False
@@ -496,6 +498,8 @@ class WorkerBase:
             raise ValueError(f"未知命令: {command}")
         with self._control_lock:
             self._active_command = command
+            self._active_request_id = request_id
+            self._active_payload = payload
             self._dispatch_thread = threading.get_ident()
             if command in {"stop", "stop_account", "shutdown"}:
                 self._controls_pending = max(0, self._controls_pending - 1)
@@ -505,6 +509,8 @@ class WorkerBase:
         finally:
             with self._control_lock:
                 self._active_command = ""
+                self._active_request_id = ""
+                self._active_payload = {}
                 self._dispatch_thread = None
                 self._active_read_future = None
         return {"id": request_id, "ok": True, "result": result if result is not None else {}}
@@ -551,6 +557,19 @@ class WorkerBase:
                 try:
                     request = parse_protocol_request(line)
                     command = request.get("command")
+                    if command == "cancel_read" and str(request.get("id", "")) and isinstance(request.get("payload"), dict):
+                        # Reader-side, targeted cancellation never touches claims,
+                        # starts/stops, or a newer request with another identity.
+                        with self._control_lock:
+                            matched = (self._active_command == "refresh" and
+                                       self._active_request_id == request['payload'].get('requestId'))
+                            future = self._active_read_future if matched else None
+                            if matched:
+                                self._read_interrupted = True
+                        if future is not None:
+                            future.cancel()
+                        emit({'id': str(request['id']), 'ok': True, 'result': {'cancelled': matched}})
+                        continue
                     if (command in {"stop", "stop_account", "shutdown"}
                             and command in self.commands and str(request.get("id", ""))
                             and (request.get("payload") is None or isinstance(request.get("payload"), dict))):

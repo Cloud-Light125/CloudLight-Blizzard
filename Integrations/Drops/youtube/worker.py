@@ -120,6 +120,8 @@ class BrowserSession:
         self.process = process
         self.port = port
         self.url = url
+        self.playback: dict[str, Any] = {}
+        self.playback_sample: tuple[float, float, str, bool] | None = None
 
     def alive(self) -> bool:
         return self.process.poll() is None
@@ -200,7 +202,10 @@ class YouTubeWorker(WorkerBase):
         captured_at = time.monotonic_ns()
         with self._lock:
             sessions = [
-                {"profile": profile, "running": session.alive(), "url": session.url, "debugPort": session.port}
+                {"profile": profile, "running": session.alive(), "url": session.url, "debugPort": session.port,
+                 "playbackState": session.playback.get("state", "unconfirmed"),
+                 "playing": session.alive() and session.playback.get("state") == "playing" and
+                    time.monotonic() - session.playback.get("checkedAt", 0) <= 15}
                 for profile, session in self.sessions.items()
             ]
         try:
@@ -210,7 +215,8 @@ class YouTubeWorker(WorkerBase):
         return {
             "_snapshotStarted": captured_at,
             "running": self.running,
-            "status": ("正在观看" if self.current_stream and self.running and any(s["running"] for s in sessions)
+            "status": ("正在观看（已确认播放）" if self.current_stream and self.running and any(s["playing"] for s in sessions)
+                       else "等待播放确认" if self.current_stream and self.running and any(s["running"] for s in sessions)
                        else "等待观看账号" if self.current_stream and self.running
                        else "正在检测" if self.running else "已停止"),
             "stream": self.current_stream,
@@ -469,7 +475,7 @@ class YouTubeWorker(WorkerBase):
                         self.logger.info("开始观看：%s", stream.get("title", "YouTube 直播"))
                         self._last_reported_stream_key = stream_key
                     self.last_browser_status = "浏览器运行中"
-                    self.status("正在观看", f"{stream.get('channel', '')} · {len(self.sessions)} 个观看账号")
+                    self.status("等待播放确认", f"{stream.get('channel', '')} · 浏览器已启动")
                     event("stream", stream)
                     self._sample_until_next_check(stream)
                 else:
@@ -494,6 +500,7 @@ class YouTubeWorker(WorkerBase):
                 return
             self.logger.exception("YouTube 观看服务运行异常")
             self.running = False
+            self._stop.set()
             message = "YouTube 检测失败，请检查网络或浏览器设置"
             self.status("运行异常", message)
             event("error", {"message": message})
@@ -631,13 +638,45 @@ class YouTubeWorker(WorkerBase):
                 session = self._ensure_session(profile, stream["url"])
                 if session is None:
                     continue
-                state = self._video_state(session, stream.get("videoId", ""))
-                if state and state.get("playing"):
-                    self._record_watch(profile, stream, 5.0)
-                elif state and state.get("paused"):
+                state = self._sample_playback(session, stream)
+                if state and state.get("paused") and not state.get("ended"):
                     self._resume_video(session)
-                    event("playback_recovered", {"profile": profile, "url": stream["url"]})
+                    # play() is a request, not confirmation that playback resumed.
+                    event("playback_resume_requested", {"profile": profile, "url": stream["url"]})
+            snapshot = self._state()
+            self.last_browser_status = "已确认播放，本地时长累计中" if any(s["playing"] for s in snapshot["sessions"]) else "浏览器已启动，播放未确认或已暂停"
+            self.status(snapshot["status"], self.last_browser_status)
             self._stop.wait(5)
+
+    def _sample_playback(self, session: BrowserSession, stream: dict[str, Any]) -> dict[str, Any] | None:
+        state = self._video_state(session, stream.get("videoId", ""))
+        now = time.monotonic()
+        previous = session.playback_sample
+        seconds = 0.0
+        if state and isinstance(state.get("currentTime"), (int, float)):
+            media = float(state["currentTime"])
+            url = str(state.get("url", ""))
+            playing = bool(state.get("playing")) and not bool(state.get("adPlaying"))
+            if previous and previous[2] == url and previous[3] and playing:
+                elapsed, advanced = now - previous[0], media - previous[1]
+                if 0 < elapsed <= 15 and advanced > 0.05:
+                    seconds = min(elapsed, advanced)
+            session.playback_sample = (now, media, url, playing)
+            status = "playing" if seconds > 0 else "ended" if state.get("ended") else "paused" if state.get("paused") else "buffering"
+        else:
+            session.playback_sample = None
+            status = "unavailable"
+        previous_status = session.playback.get("state")
+        session.playback = {"state": status, "checkedAt": now}
+        with self._lock:
+            if (previous_status != status and self.running and not self._stop.is_set()
+                    and self.sessions.get(session.profile) is session):
+                event("playback", {"profile": session.profile, "playing": status == "playing",
+                                   "playbackState": status, "url": stream["url"]})
+        if seconds > 0:
+            self._record_watch(session.profile, stream, seconds)
+        self.last_browser_status = "已确认播放，本地时长累计中" if status == "playing" else "浏览器已启动，播放未确认或已暂停"
+        return state
 
     def _browser_binary(self) -> Path:
         configured = str(self.config.get("browser_path", "")).strip()
@@ -743,7 +782,7 @@ class YouTubeWorker(WorkerBase):
         tabs = [tab for tab in self._tabs(session) if "youtube.com" in str(tab.get("url", ""))]
         if not tabs:
             return None
-        expression = "(()=>{const v=document.querySelector('video');return v?{paused:v.paused,ended:v.ended,currentTime:v.currentTime,readyState:v.readyState,url:location.href}:null})()"
+        expression = "(()=>{const v=document.querySelector('video');return v?{paused:v.paused,ended:v.ended,currentTime:v.currentTime,readyState:v.readyState,adPlaying:!!document.querySelector('.ad-showing'),url:location.href}:null})()"
         result = self._evaluate(tabs[0].get("webSocketDebuggerUrl", ""), expression)
         if not isinstance(result, dict):
             return None
@@ -777,6 +816,12 @@ class YouTubeWorker(WorkerBase):
             return None
 
     def _record_watch(self, profile: str, stream: dict[str, Any], seconds: float) -> None:
+        with self._lock:
+            if self._stop.is_set() or not self.running or profile in self._disabled_profiles:
+                return
+            self._record_watch_locked(profile, stream, seconds)
+
+    def _record_watch_locked(self, profile: str, stream: dict[str, Any], seconds: float) -> None:
         now = datetime.now().astimezone()
         date = now.date().isoformat()
         key = stream.get("videoId") or video_id(stream["url"]) or stream["url"]
@@ -788,7 +833,8 @@ class YouTubeWorker(WorkerBase):
         row["watch_seconds"] = float(row.get("watch_seconds", 0.0)) + seconds
         row["last_watched_at"] = now.isoformat(timespec="seconds")
         atomic_write_json(self.history_path, self.history)
-        event("watch_time", {"profile": profile, "seconds": row["watch_seconds"], "todayTotal": self._history_snapshot()["todayTotal"]})
+        event("watch_time", {"profile": profile, "seconds": row["watch_seconds"], "todayTotal": self._history_snapshot()["todayTotal"],
+                             "record": {"date": date, "profile": profile, "videoId": key, **row}})
 
     def _history_snapshot(self) -> dict[str, Any]:
         today = datetime.now().astimezone().date()

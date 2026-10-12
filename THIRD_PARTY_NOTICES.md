@@ -9,6 +9,7 @@ CloudLight Blizzard is licensed separately under GNU GPLv3. The following notice
 - Integrated NoAutoClaim source commit: `3071a8a43488da9dbf06a6e9ca0e4057a5ad47cf`
 - NoAutoClaim upstream base: `3aec843bbb91a7d00f7bd7784e92bd97e3ee8a5f`
 - Twitch API/GQL compatibility synchronized through upstream commit: `22d0c6134f9291d1e904012c465504a22bd3f97c`
+- Twitch playlist watch behavior synchronized selectively from upstream commit: `f693b0ca41301ac2282f3978713479efebe0490e` (all playlist segments, 20-second interval); CloudLight OAuth and NoAutoClaim customizations retained.
 - Original author: DevilXD
 - License: MIT License
 

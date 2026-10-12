@@ -31,6 +31,18 @@ public static class FeatureSelfTest
         var report = new StringBuilder();
         try
         {
+            if (string.Equals(test, "twitch-long", StringComparison.OrdinalIgnoreCase))
+            {
+                TwitchLongSmoke.RunAsync(outputRoot, report).GetAwaiter().GetResult();
+                report.AppendLine("RUN COMPLETED: inspect real progress evidence");
+                return;
+            }
+            if (string.Equals(test, "soop-timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                SoopTimeoutSelfTest.RunAsync(outputRoot, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             if (string.Equals(test, "drops-log", StringComparison.OrdinalIgnoreCase))
             {
                 RunPlatformLogTailSessionTest(workspace, report).GetAwaiter().GetResult();

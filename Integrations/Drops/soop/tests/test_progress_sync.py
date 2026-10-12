@@ -411,7 +411,10 @@ class ProgressSyncTests(unittest.TestCase):
                         self.cancelled = True
 
                 future = _Future()
-                with mock.patch("worker.asyncio.run_coroutine_threadsafe", return_value=future):
+                def reject_submission(coroutine, loop):
+                    coroutine.close()
+                    return future
+                with mock.patch("worker.asyncio.run_coroutine_threadsafe", side_effect=reject_submission):
                     with self.assertRaises(FutureTimeoutError):
                         worker._submit(object(), timeout=0.01)
                 self.assertTrue(future.cancelled)

@@ -729,6 +729,7 @@
                         <TextBlock Text="{Binding TwitchChannelText}" TextWrapping="Wrap" Margin="0,7,0,0"/>
                         <TextBlock Text="{Binding TwitchDataSourceText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding TwitchCurrentProgressText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding TwitchWatchRequestText}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}"/>
                         <ProgressBar Minimum="0" Maximum="100" Value="{Binding TwitchCurrentProgress, Mode=OneWay}" Style="{StaticResource ThemeProgressBar}" Margin="0,9,0,0" Height="6"/>
                     </StackPanel>
                 </Border>

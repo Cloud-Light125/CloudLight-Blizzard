@@ -43,6 +43,10 @@ public sealed class DropsHostService : IAsyncDisposable
     private DropsProxySettings _proxySettings = new(false, "", false);
     private Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? _requestOverrideForSelfTest;
     private Func<DropsPlatform, ProcessStartInfo>? _startInfoOverrideForSelfTest;
+    private Func<DropsPlatform, string, TimeSpan?>? _timeoutOverrideForSelfTest;
+    internal Action<Exception>? ProtocolErrorForSelfTest { get; set; }
+    internal void ConfigureTimeoutForSelfTest(Func<DropsPlatform, string, TimeSpan?> handler) =>
+        _timeoutOverrideForSelfTest = handler;
 
     public event EventHandler<WorkerEvent>? EventReceived;
     public event EventHandler<WorkerSnapshot>? SnapshotChanged;
@@ -112,9 +116,10 @@ public sealed class DropsHostService : IAsyncDisposable
         {
         cancellationToken.ThrowIfCancellationRequested();
         var requestPayload = JsonSerializer.SerializeToElement(payload ?? new { }, JsonOptions);
+        JsonElement accountUid = default;
         var accountScoped = platform == DropsPlatform.Soop && (command is "refresh" or "start_account" or "stop_account") &&
             requestPayload.ValueKind == JsonValueKind.Object &&
-            (requestPayload.TryGetProperty("uid", out var accountUid) || requestPayload.TryGetProperty("userid", out accountUid)) &&
+            (requestPayload.TryGetProperty("uid", out accountUid) || requestPayload.TryGetProperty("userid", out accountUid)) &&
             accountUid.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(accountUid.GetString());
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -125,7 +130,7 @@ public sealed class DropsHostService : IAsyncDisposable
         // deadline and Worker lifetime still bound in-flight operations.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             accountScoped ? CancellationToken.None : cancellationToken, worker.Lifetime.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(command switch
+        timeout.CancelAfter(_timeoutOverrideForSelfTest?.Invoke(platform, command) ?? TimeSpan.FromSeconds(command switch
         {
             "refresh" when platform == DropsPlatform.Twitch => 90,
             "refresh" when platform == DropsPlatform.Soop => 180,
@@ -141,7 +146,6 @@ public sealed class DropsHostService : IAsyncDisposable
             "stop" or "shutdown" => 40,
             _ => 30,
         }));
-        using var registration = timeout.Token.Register(() => completion.TrySetCanceled(timeout.Token));
         var sent = false;
         try
         {
@@ -158,7 +162,7 @@ public sealed class DropsHostService : IAsyncDisposable
                 await worker.Input.FlushAsync(timeout.Token).ConfigureAwait(false);
             }
             finally { worker.WriteGate.Release(); }
-            var result = await completion.Task.ConfigureAwait(false);
+            var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
             if (command is "start" or "auto_start")
             {
                 worker.BusinessRunning = result.ValueKind == JsonValueKind.Object &&
@@ -172,22 +176,58 @@ public sealed class DropsHostService : IAsyncDisposable
         }
         catch (OperationCanceledException) when (!worker.Lifetime.IsCancellationRequested)
         {
-            // JSONL has no remote cancellation command. Once written, cancelling
-            // only the wait would leave that business operation alive.
+            if (sent && accountScoped && command == "refresh" &&
+                await CancelReadAsync(worker, id, completion.Task).ConfigureAwait(false))
+            {
+                PublishUserLog(platform, "warning", $"账号 {accountUid.GetString()} 刷新超时，已取消旧查询并保留此前成功数据；其他账号继续观看。");
+                throw new TimeoutException("SOOP 单账号刷新超时，已取消旧查询；当前显示上次成功数据，请重试刷新。");
+            }
+            // Mutating operations have no safe remote cancellation. Once
+            // written, abandoning only the wait leaves that operation alive.
             if (sent && command is not ("hello" or "load_state" or "get_logs"))
             {
-                MarkCrashed(worker, $"{command} 操作超时，已终止旧后台以避免迟到状态覆盖。");
                 worker.Lifecycle = WorkerLifecycle.Stopping;
                 worker.Lifetime.Cancel();
                 TryTerminate(worker);
                 await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                if (accountScoped)
+                    EventReceived?.Invoke(this, new WorkerEvent(platform, "account_operation_timeout",
+                        JsonSerializer.SerializeToElement(new { uid = accountUid.GetString(), command, _workerGeneration = worker.Generation,
+                            message = "单账号操作超时，共享后台已回收；其他希望运行的账号将自动恢复。" })));
+                MarkCrashed(worker, $"{command} 操作超时，已终止旧后台以避免迟到状态覆盖。");
             }
             cancellationToken.ThrowIfCancellationRequested();
             throw new TimeoutException($"{platform} {command} 操作超时，请重试连接；领取结果请重新刷新确认。");
         }
-        finally { worker.Pending.TryRemove(id, out _); }
+        finally
+        {
+            worker.Pending.TryRemove(id, out _);
+            _ = completion.Task.ContinueWith(task => { _ = task.Exception; }, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
         }
         finally { if (!control) worker.CommandGate.Release(); }
+    }
+
+    private async Task<bool> CancelReadAsync(WorkerConnection worker, string requestId, Task<JsonElement> original)
+    {
+        using var cleanup = CancellationTokenSource.CreateLinkedTokenSource(worker.Lifetime.Token);
+        cleanup.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            await worker.WriteGate.WaitAsync(cleanup.Token).ConfigureAwait(false);
+            try
+            {
+                var envelope = JsonSerializer.Serialize(new { id = Guid.NewGuid().ToString("N"), command = "cancel_read", payload = new { requestId } });
+                await worker.Input.WriteLineAsync(envelope.AsMemory(), cleanup.Token).ConfigureAwait(false);
+                await worker.Input.FlushAsync(cleanup.Token).ConfigureAwait(false);
+            }
+            finally { worker.WriteGate.Release(); }
+            try { await original.WaitAsync(cleanup.Token).ConfigureAwait(false); }
+            catch (InvalidOperationException) { /* completed with a structured cancellation failure */ }
+            return !worker.Lifetime.IsCancellationRequested && !worker.Process.HasExited;
+        }
+        catch (Exception) { return false; }
     }
 
     public Task<JsonElement> StartAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
@@ -582,11 +622,23 @@ public sealed class DropsHostService : IAsyncDisposable
             var payload = root.TryGetProperty("payload", out var eventPayload)
                 ? StampState(eventPayload, root, worker)
                 : JsonSerializer.SerializeToElement(new { });
+            if (worker.Platform == DropsPlatform.Soop && eventName == "worker_unhealthy")
+            {
+                // An internal timeout can precede the Host deadline. Apply the
+                // failed UID intent before scheduling shared-process recovery.
+                EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "account_operation_timeout", payload));
+                worker.Lifecycle = WorkerLifecycle.Stopping;
+                worker.Lifetime.Cancel();
+                TryTerminate(worker);
+                MarkCrashed(worker, "SOOP 会话清理无法确认，共享后台已回收，正在恢复仍希望运行的账号。");
+                return;
+            }
             if (eventName == "status") UpdateStatus(worker, payload);
             EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, eventName, payload));
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            ProtocolErrorForSelfTest?.Invoke(ex);
             worker.LastError = "后台服务返回了无效数据。";
             PublishSnapshot(worker);
         }
@@ -671,7 +723,13 @@ public sealed class DropsHostService : IAsyncDisposable
         value.Contains("No module named '_ssl'", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("SSL is not supported", StringComparison.OrdinalIgnoreCase);
 
-    public async ValueTask DisposeAsync()
+    private Task? _disposeTask;
+    public ValueTask DisposeAsync()
+    {
+        lock (_sync) return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
     {
         lock (_sync) _disposing = true;
         _connectionLifetime.Cancel();

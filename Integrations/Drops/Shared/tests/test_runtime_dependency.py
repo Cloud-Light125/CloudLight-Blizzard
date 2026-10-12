@@ -77,6 +77,22 @@ raise SystemExit(Worker().run())
                 self.assertFalse(responses['refresh']['ok'])
                 self.assertEqual(responses['stop_account']['result']['accounts'], {'A':True,'B':False})
                 self.assertEqual(responses['stop_account']['result']['minutes'], 10)
+                send('refresh')
+                while mailbox.get(timeout=5).get('event') != 'refresh_waiting':
+                    pass
+                send('cancel_read', {'requestId':'stale-request'})
+                while True:
+                    stale = mailbox.get(timeout=5)
+                    if stale.get('id') == 'cancel_read':
+                        self.assertFalse(stale['result']['cancelled'])
+                        break
+                send('cancel_read', {'requestId':'refresh'})
+                completed = {}
+                while not {'cancel_read','refresh'} <= completed.keys():
+                    item = mailbox.get(timeout=5)
+                    if 'id' in item: completed[item['id']] = item
+                self.assertTrue(completed['cancel_read']['result']['cancelled'])
+                self.assertFalse(completed['refresh']['ok'])
                 send('shutdown'); process.stdin.close(); process.wait(timeout=5)
                 self.assertEqual(process.returncode, 0)
             finally:

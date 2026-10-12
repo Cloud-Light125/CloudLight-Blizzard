@@ -22,16 +22,67 @@ from exceptions import OAuthException
 
 class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_smartbox_watch_page_and_background_failure_are_not_silent(self):
-        from channel import Channel
+        from channel import Channel, Stream
         from exceptions import MinerException
-        client = SimpleNamespace(_client_type=constants.ClientType.SMARTBOX)
+        reporter = headless_gui.WatchRequestStatus()
+        with patch.object(headless_gui, "event") as reported:
+            reporter.update({"channelId": "fixture", "lastResult": "accepted", "attempts": 1})
+            reporter.update({"channelId": "fixture", "lastResult": "accepted", "attempts": 2})
+            reporter.update({"channelId": "fixture", "lastResult": "failed", "failure": {"stage": "media_segment", "httpStatus": 403}})
+            reporter.update({"channelId": "fixture", "lastResult": "accepted", "attempts": 4})
+            self.assertEqual(reported.call_count, 3)
+            self.assertTrue(all(call.args[0] == "watch_request" for call in reported.call_args_list))
+        client = SimpleNamespace(_client_type=constants.ClientType.SMARTBOX,
+                                 settings=SimpleNamespace(available_drops_check=True))
         channel = object.__new__(Channel)
         channel._twitch = client
         channel._login = "fixture-channel"
+        client.gql_request = AsyncMock()
+        for invalid_token in (None, [], {}, {"data": None}, {"data": []},
+                              {"data": {"streamPlaybackAccessToken": {"value": 1, "signature": "fixture"}}}):
+            client.gql_request.return_value = invalid_token
+            stream = Stream(channel, id=1, game=None, viewers=1, title="fixture")
+            self.assertIsNone(await stream.get_stream_url())
+            self.assertEqual(client._cloudlight_watch_failure["stage"], "playback_token")
         self.assertEqual(str(channel.url), "https://www.twitch.tv/fixture-channel")
         self.assertIs(client._client_type, constants.ClientType.SMARTBOX)
         client._client_type = constants.ClientType.ANDROID_APP
         self.assertEqual(str(channel.url), str(constants.ClientType.ANDROID_APP.CLIENT_URL) + "/fixture-channel")
+        channel._stream = SimpleNamespace(get_stream_url=AsyncMock(return_value="https://fixture.invalid/live.m3u8"))
+        playlist = "#EXTM3U\nhttps://fixture.invalid/segment-1.ts\nhttps://fixture.invalid/segment-2.ts\n#EXT-X-ENDLIST"
+        calls = []
+        head_status = 200
+        @asynccontextmanager
+        async def watch_request(method, url, **kwargs):
+            calls.append((method, str(url)))
+            yield SimpleNamespace(status=200 if method == "GET" else head_status, text=AsyncMock(return_value=playlist))
+        client.request = watch_request
+        with patch.object(Channel, "_send_watch_spade", new=AsyncMock()) as spade:
+            self.assertTrue(await channel.send_watch())
+            self.assertEqual([call[0] for call in calls], ["GET", "HEAD", "HEAD"])
+            spade.assert_not_awaited()
+        for invalid in ("[]", "{}", "", "#EXTM3U\n#EXT-X-ENDLIST"):
+            playlist = invalid
+            self.assertFalse(await channel.send_watch())
+        playlist = "#EXTM3U\nhttps://fixture.invalid/segment-1.ts"
+        head_status = 403
+        self.assertFalse(await channel.send_watch())
+        old_stream = channel._stream
+        @asynccontextmanager
+        async def offline_request(*args, **kwargs):
+            channel._stream = None
+            yield SimpleNamespace(status=403)
+        client.request = offline_request
+        self.assertFalse(await channel.send_watch())
+        self.assertIsNone(old_stream._stream_url)
+        channel._stream = old_stream
+        @asynccontextmanager
+        async def cancelled_request(*args, **kwargs):
+            raise asyncio.CancelledError()
+            yield
+        client.request = cancelled_request
+        with self.assertRaises(asyncio.CancelledError):
+            await channel.send_watch()
         core = object.__new__(twitch.Twitch)
         core.settings = SimpleNamespace(dump=False)
         core._run = AsyncMock()
@@ -228,6 +279,8 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(result["progress"], 10 / 60)
 
     async def test_timeout_releases_response_and_next_attempt_can_run(self):
+        from Shared.protocol import redact
+        self.assertNotIn("fixture-signature", redact("https://fixture.invalid/?sig=fixture-signature&signature=fixture-signature"))
         class Backoff:
             steps = 0
             def __init__(self, **kw): pass
@@ -237,7 +290,8 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 return 0
         client = object.__new__(twitch.Twitch)
         client.settings = SimpleNamespace(proxy=None)
-        client.print = lambda *a: None
+        from unittest.mock import Mock
+        client.print = Mock()
         client.gui = SimpleNamespace(close_requested=False, coro_unless_closed=AsyncMock(side_effect=lambda coro: coro),
                                      wait_until_closed=AsyncMock(), connection=SimpleNamespace(update=lambda *a: None))
         async def unless(coro): return await coro
@@ -246,9 +300,11 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
         client.get_session = AsyncMock(return_value=session)
         with patch.object(twitch, "ExponentialBackoff", Backoff):
             with self.assertRaises(TimeoutError):
-                async with client.request("GET", "https://id.twitch.tv/oauth2/validate"):
+                async with client.request("GET", "https://id.twitch.tv/oauth2/validate?sig=fixture-signature&token=fixture-playback-token"):
                     self.fail("timeout cannot succeed")
         self.assertEqual(session.request.await_count, 3)
+        self.assertNotIn("fixture-signature", str(client.print.call_args_list))
+        self.assertNotIn("fixture-playback-token", str(client.print.call_args_list))
         response = SimpleNamespace(status=200, read=AsyncMock(), release=lambda: None)
         session.request = AsyncMock(return_value=response)
         async with client.request("GET", "https://id.twitch.tv/oauth2/validate") as result:

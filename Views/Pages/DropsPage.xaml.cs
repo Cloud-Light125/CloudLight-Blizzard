@@ -656,7 +656,9 @@ public partial class DropsPage : UserControl
         catch (Exception ex)
         {
             _vm.FailSoopRefresh();
-            _vm.SetSoopFailure(ex.Message);
+            // A failed read does not mean every account's watch session failed.
+            // Host crash notifications handle actual shared-process recovery.
+            _vm.ReportMessage(DropsPlatform.Soop, $"刷新失败，保留此前成功数据：{ex.Message}", "警告");
             if (showError) ShowError(ex, "刷新 SOOP 掉宝信息失败");
         }
         finally { await FinishLoadingAsync(); }
