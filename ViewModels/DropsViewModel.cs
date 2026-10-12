@@ -286,13 +286,24 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public string TwitchDataSourceText { get => _twitchDataSourceText; private set => Set(ref _twitchDataSourceText, value); }
     public void ReportMessage(DropsPlatform platform, string message, string level = "提示")
     {
+        message = SensitiveDataRedactor.Redact(message);
+        if (_dismissedNotices.TryGetValue(platform, out var dismissed) && dismissed == message) return;
+        if (string.IsNullOrEmpty(message)) _dismissedNotices.Remove(platform);
         var target = For(platform);
-        target.Notice = SensitiveDataRedactor.Redact(message);
+        target.Notice = message;
         target.NoticeLevel = level;
+    }
+    private readonly Dictionary<DropsPlatform, string> _dismissedNotices = new();
+    public void DismissMessage(DropsPlatform platform)
+    {
+        var target = For(platform);
+        _dismissedNotices[platform] = target.Notice;
+        target.Notice = "";
     }
     private readonly Dictionary<DropsPlatform, (long Generation, long Sequence, long StateTime)> _stateVersions = new();
     private bool AcceptState(DropsPlatform platform, JsonElement state)
     {
+        if (!_host.IsCurrentEvent(platform, state)) return false;
         if (!state.TryGetProperty("_workerGeneration", out var generation) || !generation.TryGetInt64(out var gen)) return true;
         var seq = state.TryGetProperty("_workerSequence", out var sequence) && sequence.TryGetInt64(out var number) ? number : 0;
         var stateTime = state.TryGetProperty("_stateTime", out var captured) && captured.TryGetInt64(out var ticks) ? ticks : 0;
@@ -331,6 +342,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     internal const int RecoveryEventLimit = 10;
     private readonly object _recoveryEventsSync = new();
     public ObservableCollection<SoopProgressRow> SoopCurrentProgress { get; } = new();
+    public ObservableCollection<DropsRow> SoopProgressHistory { get; } = new();
+    private readonly HashSet<string> _seenSoopRollbacks = new(StringComparer.Ordinal);
     public ObservableCollection<string> TwitchAvailableGames { get; } = new();
     public ObservableCollection<string> TwitchPriorityChoices { get; } = new();
     public ObservableCollection<string> TwitchExcludeChoices { get; } = new();
@@ -416,8 +429,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     }
     public bool CanTwitchLogin => !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !_twitchLoggedIn;
     public string TwitchLoginButtonText => IsClearingTwitchLogin ? "正在清除…"
-        : IsTwitchLoginInProgress ? "正在连接…"
         : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开授权页面"
+        : IsTwitchLoginInProgress ? _twitchConnectionStage == TwitchConnectionStage.RequestingAuthorization
+            ? "正在获取授权码…" : _twitchAuthState == "checking" && Twitch.Status.Contains("确认")
+            ? "正在确认授权…" : "正在连接…"
         : _twitchAuthState is "needs_login" or "failed" ? "重试授权" : "登录 Twitch";
     public Visibility TwitchRetryVisibility => TwitchRetryNowVisibility == Visibility.Visible
         ? Visibility.Collapsed : _twitchConnectionStage is
@@ -1309,10 +1324,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                         }
                         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                         catch { }
+                        token.ThrowIfCancellationRequested();
                         await _host.RequestAsync(DropsPlatform.Soop, "start_account",
                             new { userid = _soopRecoveryUid, retryAttempt = attempt }, token).ConfigureAwait(false);
+                        token.ThrowIfCancellationRequested();
                         var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh",
-                            cancellationToken: token).ConfigureAwait(false);
+                            new { userid = _soopRecoveryUid }, token).ConfigureAwait(false);
                         if (!Bool(state, "refreshCompleted"))
                             throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
                     }
@@ -1322,6 +1339,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
                 catch (Exception ex)
                 {
+                    if (token.IsCancellationRequested) break;
                     var kind = ClassifySoopFailure(ex.Message);
                     if (kind != SoopFailureKind.TransientNetwork)
                     {
@@ -1425,7 +1443,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 try
                 {
                     await _host.RequestAsync(DropsPlatform.Soop, "stop_account", new { uid }, token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
                     await _host.RequestAsync(DropsPlatform.Soop, "start_account", new { uid, retryAttempt = attempt }, token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
                     var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh", new { uid }, token).ConfigureAwait(false);
                     token.ThrowIfCancellationRequested();
                     if (!Bool(state, "refreshCompleted")) throw new IOException(Text(state, "refreshError", "SOOP 刷新失败"));
@@ -1440,6 +1460,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
                 catch (Exception ex)
                 {
+                    if (token.IsCancellationRequested) return;
                     var kind = ClassifySoopFailure(ex.Message);
                     Dispatch(() => ReportMessage(DropsPlatform.Soop, $"账号 {uid}：{FriendlySoopFailure(kind, ex.Message)}", "警告"));
                     if (kind != SoopFailureKind.TransientNetwork) return;
@@ -2253,6 +2274,30 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             _soopRefreshPending = false;
             _soopRetryBlocked = false;
             _soopHasRefreshed = true;
+            if (Soop.NoticeLevel is "错误" or "警告" &&
+                (!state.TryGetProperty("refreshDiagnostics", out var diagnostics) ||
+                 diagnostics.ValueKind != JsonValueKind.Array ||
+                 !diagnostics.EnumerateArray().Any(item => Text(item, "status") == "failed")))
+                ReportMessage(DropsPlatform.Soop, "");
+        }
+        if (state.TryGetProperty("progressHistory", out var history) && history.ValueKind == JsonValueKind.Array)
+        {
+            SoopProgressHistory.Clear();
+            foreach (var item in history.EnumerateArray())
+            {
+                var identity = $"{Text(item, "uid")}:{Text(item, "taskId")}:{Text(item, "cycle")}:{Text(item, "stageId")}:{Number(item, "giveTerm")}";
+                var rollbackAt = Text(item, "rollbackAt");
+                SoopProgressHistory.Add(new DropsRow
+                {
+                    Id = identity, Primary = $"{Text(item, "uid")} · 任务 {Text(item, "taskId")} · 奖励阶段 {Text(item, "stageId")}",
+                    Secondary = $"最近记录 {Number(item, "officialMinutes"):0} 分钟 · 历史高水位 {Number(item, "historicalHighWaterMinutes"):0} 分钟 · 查询 {Text(item, "queriedAt")}",
+                    Status = Text(item, "source") == "cache" ? "历史缓存，等待本次远端查询" : "官方查询记录",
+                    Payload = item.Clone(),
+                });
+                if (!string.IsNullOrEmpty(rollbackAt) && _seenSoopRollbacks.Add(identity + ":" + rollbackAt))
+                    ReportMessage(DropsPlatform.Soop,
+                        $"账号 {Text(item, "uid")} 的任务 {Text(item, "taskId")} 曾出现官方进度回退：{Number(item, "beforeMinutes"):0} → {Number(item, "afterMinutes"):0} 分钟；历史高水位 {Number(item, "historicalHighWaterMinutes"):0} 分钟。当前进度以最新官方查询为准。", "警告");
+            }
         }
         _soopSettingsReady = state.TryGetProperty("settings", out var soopSettings) &&
                              soopSettings.ValueKind == JsonValueKind.Object;
@@ -2452,7 +2497,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (state.TryGetProperty("currentDrop", out var drop))
         {
             TwitchCurrentProgressText = drop.ValueKind == JsonValueKind.Object
-                ? $"{Text(drop, "campaign")} · {Text(drop, "name")}\nCore 同步进度：{Number(drop, "currentMinutes"):0} / {Number(drop, "requiredMinutes"):0} 分钟；服务端同步可能存在延迟。"
+                ? $"{Text(drop, "campaign")} · {Text(drop, "name")}\n远端同步进度：{Number(drop, "currentMinutes"):0} / {Number(drop, "requiredMinutes"):0} 分钟"
+                    + (Number(drop, "estimatedExtraMinutes") > 0
+                        ? $"；另有 {Number(drop, "estimatedExtraMinutes"):0} 分钟本地临时估算，等待远端确认。" : "。")
                 : "当前没有有效观看任务";
             TwitchCurrentProgress = drop.ValueKind == JsonValueKind.Object ? Number(drop, "progress") * 100 : 0;
         }
@@ -2879,8 +2926,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
     }
 
+    private readonly Dictionary<DropsPlatform, (long Generation, long Revision)> _snapshotVersions = new();
     private void OnSnapshotChanged(object? sender, WorkerSnapshot snapshot) => Dispatch(() =>
     {
+        if (!_host.IsCurrentGeneration(snapshot.Platform, snapshot.Generation)) return;
+        if (snapshot.Generation > 0)
+        {
+            if (_snapshotVersions.TryGetValue(snapshot.Platform, out var prior) &&
+                (snapshot.Generation < prior.Generation || snapshot.Generation == prior.Generation && snapshot.Revision < prior.Revision)) return;
+            _snapshotVersions[snapshot.Platform] = (snapshot.Generation, snapshot.Revision);
+        }
         var vm = For(snapshot.Platform);
         var previousState = vm.ConnectionState;
         vm.WorkerLifecycle = snapshot.Lifecycle;

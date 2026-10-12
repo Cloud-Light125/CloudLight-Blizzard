@@ -5,6 +5,7 @@ import logging
 import sys
 import tempfile
 import types
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -37,6 +38,41 @@ class _NotLiveYoutubeDL:
 
 
 class YouTubeWorkerContractTests(unittest.TestCase):
+    def test_logout_during_browser_launch_cannot_recreate_stopped_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = YouTubeWorker(root / "data", root / "youtube.log")
+            entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+            worker._stop.clear()
+            process = types.SimpleNamespace(pid=12345, poll=lambda: None)
+            errors = []
+            def popen(*args, **kwargs):
+                entered.set()
+                if not release.wait(3): raise TimeoutError("test launch gate")
+                return process
+            def launch():
+                try: worker._ensure_session("主账号", "https://www.youtube.com/")
+                except Exception as exc: errors.append(exc)
+            try:
+                with patch.object(worker, '_browser_binary', return_value=Path(__file__)), \
+                     patch.object(youtube_worker.subprocess, 'Popen', side_effect=popen), \
+                     patch.object(worker, '_close_session', side_effect=lambda session: closed.set() if session else None):
+                    opening = threading.Thread(target=launch)
+                    opening.start(); self.assertTrue(entered.wait(2))
+                    stopping = threading.Thread(target=lambda: worker.logout({'profile':'主账号'}))
+                    stopping.start(); release.set()
+                    opening.join(3); stopping.join(3)
+                    self.assertFalse(opening.is_alive() or stopping.is_alive())
+                    self.assertEqual(errors, [])
+                    self.assertTrue(closed.is_set())
+                    self.assertNotIn('主账号', worker.sessions)
+                    self.assertIsNone(worker._ensure_session('主账号', 'https://www.youtube.com/'))
+                    worker.running = True
+                    worker.current_stream = {'url':'https://www.youtube.com/'}
+                    self.assertEqual(worker._state()['status'], '等待观看账号')
+            finally:
+                release.set()
+                self._close(worker)
     @staticmethod
     def _close(worker: YouTubeWorker) -> None:
         for handler in list(worker.logger.handlers):

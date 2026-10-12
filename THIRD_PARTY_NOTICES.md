@@ -25,6 +25,17 @@ Copyright (c) 2024 DevilXD
 
 Attribution records provenance only; it does not grant or imply redistribution rights. CloudLight Blizzard does not relicense this third-party source as GPLv3 or claim it as original CloudLight Blizzard code. The adapter is kept separate and release builds must not automatically bundle unlicensed upstream source without confirmed permission or a valid clean-room implementation.
 
+The Drops build now records the actual external Core path, Git commit, worktree
+state, runtime source SHA256, required capabilities and tool versions in
+`build-manifest.json`. The validated local-use baseline is commit
+`6050b8a35690b091996a1efedad4655b1b094cac`; this record does not constitute permission.
+`build.ps1` and ordinary `dotnet publish` default to Distribution and block a
+bundled SOOP Core. An explicitly selected Local build is for local use only.
+`-OmitUnlicensedSoopCore` builds the adapter without this Core in a separate
+artifacts directory; that adapter reports SOOP unavailable and cannot load
+an external Core into a frozen distribution. The feature remains in the UI.
+Full SOOP binary redistribution requires confirmation from the rights holders.
+
 ## CloudLight Overwatch YouTube Watcher
 
 - Source: <https://github.com/yundan125/CloudLight-Overwatch-YouTube-Watcher>
@@ -60,7 +71,8 @@ kept under `Integrations/Drops/bilibili/licenses/` and are published under
 
 The YouTube Worker currently pins Requests 2.34.2, yt-dlp 2026.7.4 and
 websocket-client 1.9.0. SOOP and Twitch use the version ranges declared in
-their requirements files. Each component remains subject to its own published
+their requirements files, with the validated build versions additionally fixed
+in `Integrations/Drops/build-constraints.txt`. Each component remains subject to its own published
 license. CustomTkinter, PySide6 and the original Tkinter GUI are not required
 by the new Worker UI architecture.
 

@@ -33,13 +33,16 @@ async def read_oauth(response, stage: str) -> dict:
         raw = data.get("error") or data.get("message") or data.get("error_description")
         normalized = str(raw or "").strip().lower().replace(" ", "_")
         code = normalized if normalized in _ERROR_MESSAGES else ""
-    logger.info("Twitch OAuth stage=%s HTTP=%s shape=%s fields=%s error=%s",
+    log = logger.debug if code == "authorization_pending" else logger.info
+    log("Twitch OAuth stage=%s HTTP=%s shape=%s fields=%s error=%s",
                 stage, response.status, type(data).__name__,
                 sorted(data) if isinstance(data, dict) else [], code or "unspecified")
     if response.status == 429:
         raise OAuthException("oauth_rate_limited", "Twitch 授权服务器限流（HTTP 429），稍后自动重试。", retryable=True)
     if response.status >= 500:
         raise OAuthException("oauth_server_error", f"Twitch 授权服务器暂时故障（HTTP {response.status}），稍后自动重试。", retryable=True)
+    if stage == "validate" and response.status == 401:
+        raise OAuthException("invalid_token", _ERROR_MESSAGES["invalid_token"])
     if stage == "token" and code in {"authorization_pending", "slow_down"} and response.status == 400:
         return {"error": code}
     if response.status != 200 or code:

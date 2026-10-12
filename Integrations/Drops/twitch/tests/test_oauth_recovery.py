@@ -21,6 +21,26 @@ from exceptions import OAuthException
 
 
 class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_smartbox_watch_page_and_background_failure_are_not_silent(self):
+        from channel import Channel
+        from exceptions import MinerException
+        client = SimpleNamespace(_client_type=constants.ClientType.SMARTBOX)
+        channel = object.__new__(Channel)
+        channel._twitch = client
+        channel._login = "fixture-channel"
+        self.assertEqual(str(channel.url), "https://www.twitch.tv/fixture-channel")
+        self.assertIs(client._client_type, constants.ClientType.SMARTBOX)
+        client._client_type = constants.ClientType.ANDROID_APP
+        self.assertEqual(str(channel.url), str(constants.ClientType.ANDROID_APP.CLIENT_URL) + "/fixture-channel")
+        core = object.__new__(twitch.Twitch)
+        core.settings = SimpleNamespace(dump=False)
+        core._run = AsyncMock()
+        core._watching_task = asyncio.get_running_loop().create_future()
+        core._watching_task.set_exception(MinerException("watch fixture failed"))
+        core._mnt_task = None
+        with self.assertRaisesRegex(MinerException, "watch fixture failed"):
+            await core.run()
+
     async def test_cached_inventory_is_preserved_until_success_and_scoped_to_identity(self):
         from worker import TwitchWorker
         worker = object.__new__(TwitchWorker)
@@ -127,6 +147,85 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
             auth._oauth_login.assert_awaited_once()
         await identity_check(True, [401, 200])
         await identity_check(False, [401])
+        # A fresh grant must match its requested Smartbox client; only restored
+        # legacy sessions may select their validated Android/Web client.
+        for saved_client in (None, constants.ClientType.SMARTBOX,
+                             constants.ClientType.WEB, constants.ClientType.ANDROID_APP):
+            with tempfile.TemporaryDirectory() as temporary:
+                cookie_path = Path(temporary) / "cookies.jar"
+                jar = aiohttp.CookieJar()
+                if saved_client:
+                    jar.update_cookies({"auth-token": "fixture-token"}, saved_client.CLIENT_URL)
+                    jar.save(cookie_path)
+                identity = saved_client or constants.ClientType.SMARTBOX
+                @asynccontextmanager
+                async def request(*args, **kw):
+                    yield SimpleNamespace(status=200, json=AsyncMock(return_value={
+                        "user_id": "2", "client_id": identity.CLIENT_ID}))
+                client = SimpleNamespace(_client_type=constants.ClientType.SMARTBOX, request=request,
+                    get_session=AsyncMock(return_value=SimpleNamespace(cookie_jar=jar)),
+                    gui=SimpleNamespace(login=SimpleNamespace(phase=Mock(), update=Mock()),
+                        help=SimpleNamespace(_invalidate_button=SimpleNamespace(config=Mock()))))
+                auth = twitch._AuthState(client)
+                auth.device_id = "fixture-device"
+                auth._oauth_login = AsyncMock(return_value="fixture-token")
+                with patch.object(twitch, "COOKIES_PATH", cookie_path):
+                    await auth.validate()
+                    self.assertEqual(auth.user_id, 2)
+                    self.assertEqual(auth.headers(gql=True)["Client-Id"], identity.CLIENT_ID)
+                    auth.clear()
+                    await auth.validate()  # restore the jar saved by the first login
+                    self.assertEqual(auth.user_id, 2)
+                self.assertTrue(cookie_path.is_file())
+        # A rejected new grant must never be adopted as a legacy session.
+        with tempfile.TemporaryDirectory() as temporary:
+            jar = aiohttp.CookieJar()
+            client.get_session = AsyncMock(return_value=SimpleNamespace(cookie_jar=jar))
+            client._client_type = constants.ClientType.SMARTBOX
+            identity = constants.ClientType.WEB
+            auth = twitch._AuthState(client)
+            auth.device_id = "fixture-device"
+            auth._oauth_login = AsyncMock(return_value="fixture-token")
+            with patch.object(twitch, "COOKIES_PATH", Path(temporary) / "cookies.jar"):
+                with self.assertRaises(OAuthException) as rejected:
+                    await auth.validate()
+                self.assertEqual(rejected.exception.code, "invalid_client")
+                self.assertFalse(auth._logged_in.is_set())
+                self.assertFalse(hasattr(auth, "access_token"))
+
+        responses = [429, 503, 200]
+        @asynccontextmanager
+        async def temporary_request(*a, **kw):
+            yield SimpleNamespace(status=responses.pop(0), json=AsyncMock(return_value={"access_token": "fixture-token"}))
+        client.request = temporary_request
+        async def unless(coro): return await coro
+        client.gui.coro_unless_closed = unless
+        with patch.object(twitch.asyncio, "sleep", new=AsyncMock()) as sleep:
+            result = await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+            self.assertEqual(result["access_token"], "fixture-token")
+            self.assertEqual([c.args[0] for c in sleep.call_args_list], [5, 10])
+        responses[:] = [429, 429, 429]
+        with patch.object(twitch.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(OAuthException):
+                await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+        responses[:] = [429]
+        async def cancel(coro):
+            coro.close()
+            raise asyncio.CancelledError()
+        client.gui.coro_unless_closed = cancel
+        with self.assertRaises(asyncio.CancelledError):
+            await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+
+        from worker import TwitchWorker
+        worker = object.__new__(TwitchWorker)
+        drop = SimpleNamespace(id="new-phase", name="reward", campaign=SimpleNamespace(name="campaign"),
+                               real_current_minutes=10, extra_current_minutes=2, required_minutes=60)
+        worker._client = SimpleNamespace(gui=SimpleNamespace(progress=SimpleNamespace(drop=drop)))
+        worker.running = True
+        result = worker._current_drop()
+        self.assertEqual(result["currentMinutes"], 10)
+        self.assertEqual(result["estimatedExtraMinutes"], 2)
+        self.assertAlmostEqual(result["progress"], 10 / 60)
 
     async def test_timeout_releases_response_and_next_attempt_can_run(self):
         class Backoff:

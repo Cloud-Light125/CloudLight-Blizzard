@@ -175,7 +175,7 @@ public static class FeatureSelfTest
             vm.BeginTwitchLogin();
             Assert(vm.TwitchConnectionStage == TwitchConnectionStage.Connecting,
                 "Twitch login immediately enters connecting stage");
-            Assert(!vm.CanTwitchLogin && vm.TwitchLoginButtonText == "正在登录…",
+            Assert(!vm.CanTwitchLogin && vm.TwitchLoginButtonText == "正在连接…",
                 "Twitch login button immediately shows progress and blocks duplicates");
 
             vm.SetTwitchTemporaryNetworkFailure("simulated network failure");
@@ -198,7 +198,7 @@ public static class FeatureSelfTest
             Assert(retryCalls == 0, "Twitch auth-required cancels network retry");
             Assert(vm.TwitchConnectionStage == TwitchConnectionStage.WaitingAuthorization,
                 "Twitch auth-required remains waiting for the current device code");
-            Assert(vm.CanTwitchLogin && vm.TwitchLoginButtonText == "打开登录页面",
+            Assert(vm.CanTwitchLogin && vm.TwitchLoginButtonText == "打开授权页面",
                 "Twitch auth-required lets the login button reopen the real device authorization URL");
         }
 

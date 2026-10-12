@@ -2,6 +2,7 @@
     [Parameter(Mandatory = $true)]
     [string]$Root,
     [string]$TestRoot,
+    [switch]$SoopAdapterOnly,
     [ValidateSet("youtube", "soop", "twitch", "bilibili")]
     [string[]]$Platforms = @("youtube", "twitch", "soop", "bilibili")
 )
@@ -84,6 +85,21 @@ try {
         $openssl = [string](Get-CloudLightJsonProperty -Object $responseResult -Name 'openssl')
         Write-Host "Packaged $platform SSL self-test: PASS (Python $python; $openssl; frozen=$frozen)" -ForegroundColor Green
         Write-Host "  _ssl module: $sslModule"
+        $provenanceRequest = '{"id":"provenance-selftest","command":"provenance_check","payload":{}}'
+        $provenanceOutput = $provenanceRequest | & $worker --data-dir (Join-Path $platformRoot 'provenance-data') --log-file (Join-Path $platformRoot 'provenance.log')
+        if ($LASTEXITCODE -ne 0) { throw "$platform provenance check failed." }
+        $provenanceResponse = $provenanceOutput | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } |
+            Where-Object { $_ -and $_.PSObject.Properties['id'] -and $_.id -eq 'provenance-selftest' } | Select-Object -Last 1
+        if (-not $provenanceResponse.ok -or $provenanceResponse.result.protocol -ne 1 -or -not $provenanceResponse.result.frozen -or -not $provenanceResponse.result.commit) {
+            throw "$platform embedded build manifest missing or invalid."
+        }
+        $manifest = Get-Content (Join-Path $resolvedRoot 'build-manifest.json') -Raw | ConvertFrom-Json
+        if ($provenanceResponse.result.adapterSha256 -ne $manifest.adapterSources.sha256 -or
+            $provenanceResponse.result.commit -ne $manifest.commit) { throw "$platform Worker belongs to another source build." }
+        if ($platform -eq 'soop' -and -not $SoopAdapterOnly -and -not $provenanceResponse.result.core.matches) {
+            throw 'Bundled SOOP source digest does not match its build manifest.'
+        }
+        Write-Host "Packaged $platform provenance: PASS (commit=$($provenanceResponse.result.commit); purpose=$($provenanceResponse.result.purpose))"
 
         if ($platform -eq "twitch") {
             $compatRequest = '{"id":"compat-selftest","command":"compatibility_check","payload":{}}'
@@ -121,6 +137,13 @@ try {
                 Select-Object -Last 1
             $coreResult = Get-CloudLightJsonProperty -Object $coreResponse -Name 'result'
             $coreAvailable = [bool](Get-CloudLightJsonProperty -Object $coreResult -Name 'coreAvailable')
+            if ($SoopAdapterOnly) {
+                if ($coreAvailable -or (Get-CloudLightJsonProperty -Object $provenanceResponse.result -Name 'core')) {
+                    throw 'Distribution adapter unexpectedly bundled SOOP Core.'
+                }
+                Write-Host 'Packaged SOOP adapter-only self-test: PASS (Core not bundled; capability unavailable is explicit)'
+                continue
+            }
             if (-not $coreAvailable) {
                 $coreError = [string](Get-CloudLightJsonProperty -Object $coreResult -Name 'coreError')
                 throw "Packaged SOOP Worker cannot load SOOP Core. Output: $coreError"

@@ -139,7 +139,7 @@ class HeadlessGuiContractTests(unittest.TestCase):
                 worker.refresh = refresh
                 worker.load_state = lambda payload: {"authState": "logged_in", "running": True}
                 state = worker.auto_start({})
-                self.assertEqual(refresh_calls, [True])
+                self.assertEqual(refresh_calls, [])
                 self.assertTrue(state["autoStartCompleted"])
                 self.assertFalse(state["requiresLogin"])
                 self.assertTrue(state["running"])
@@ -233,7 +233,9 @@ class HeadlessGuiContractTests(unittest.TestCase):
             def __init__(self, required: int, remaining: int) -> None:
                 self.total_required_minutes = required
                 self.total_remaining_minutes = remaining
+                self.real_current_minutes = required - remaining
                 self.required_minutes = required
+                self.id = str(required)
                 self.is_claimed = remaining == 0
                 self.watch_requirement_completed = remaining == 0
 
@@ -306,7 +308,7 @@ class HeadlessGuiContractTests(unittest.TestCase):
                 facade = headless_gui.HeadlessSettingsFacade()
                 worker._client = SimpleNamespace(
                     gui=SimpleNamespace(settings=facade),
-                    _state=worker._core["State"].IDLE,
+                    _state=worker._core["State"].CHANNELS_FETCH,
                     _state_change=threading.Event(),
                 )
                 worker.running = True
@@ -322,6 +324,18 @@ class HeadlessGuiContractTests(unittest.TestCase):
                 self.assertGreaterEqual(time.monotonic() - started, 0.04)
                 self.assertEqual(state["campaigns"], ["fresh"])
                 self.assertTrue(state["refreshCompleted"])
+                core = object.__new__(worker._core["twitch"].Twitch)
+                core._state = worker._core["State"].CHANNELS_FETCH
+                core._state_change = asyncio.Event()
+                core._inventory_refresh_requested = False
+                core.request_inventory_refresh()
+                core.change_state(worker._core["State"].CHANNEL_SWITCH)
+                self.assertTrue(core._inventory_refresh_requested)
+                self.assertTrue(core._state_change.is_set())
+                core._inventory_refresh_requested = False
+                core.change_state(worker._core["State"].EXIT)
+                core.request_inventory_refresh()
+                self.assertFalse(core._inventory_refresh_requested)
             finally:
                 worker._loop.call_soon_threadsafe(worker._loop.stop)
                 worker._loop_thread.join(timeout=5)
@@ -334,8 +348,10 @@ class HeadlessGuiContractTests(unittest.TestCase):
         class Drop:
             def __init__(self, required: int, current: int) -> None:
                 self.required_minutes = required
+                self.id = str(required)
                 self.total_required_minutes = required
                 self.total_remaining_minutes = max(0, required - current)
+                self.real_current_minutes = min(required, current)
                 self.is_claimed = False
                 self.watch_requirement_completed = current >= required
 
@@ -372,7 +388,7 @@ class HeadlessGuiContractTests(unittest.TestCase):
 
         def drop(drop_id: str, *, completed: bool, claimed: bool, can_claim: bool):
             return SimpleNamespace(
-                id=drop_id, name=drop_id, current_minutes=300, required_minutes=60,
+                id=drop_id, name=drop_id, current_minutes=300, real_current_minutes=50, extra_current_minutes=250, required_minutes=60,
                 progress=1.0, watch_requirement_completed=completed,
                 is_claimed=claimed, can_claim=can_claim,
                 starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1),
@@ -392,6 +408,9 @@ class HeadlessGuiContractTests(unittest.TestCase):
             try:
                 worker._client = SimpleNamespace(inventory=[campaign])
                 rows = {row["id"]: row for row in worker.get_inventory({})}
+                self.assertEqual(rows["claimable"]["currentMinutes"], 50)
+                self.assertEqual(rows["claimable"]["estimatedExtraMinutes"], 250)
+                self.assertAlmostEqual(rows["claimable"]["progress"], 50 / 60)
                 self.assertEqual(
                     (rows["claimable"]["completed"], rows["claimable"]["claimed"], rows["claimable"]["canClaim"]),
                     (True, False, True),
@@ -414,7 +433,7 @@ class HeadlessGuiContractTests(unittest.TestCase):
         refresh_calls: list[bool] = []
         drop = SimpleNamespace(
             id="drop-id", name="Busan Sunset Namecard",
-            current_minutes=60, required_minutes=60, progress=1.0,
+            current_minutes=60, real_current_minutes=60, extra_current_minutes=0, required_minutes=60, progress=1.0,
             watch_requirement_completed=True, is_claimed=False, can_claim=True,
             starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1),
         )

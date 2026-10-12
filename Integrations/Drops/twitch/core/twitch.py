@@ -142,10 +142,8 @@ class _AuthState:
             "scopes": "",  # no scopes needed
         }
         self._twitch.gui.connection.update("requesting_authorization")
-        async with self._twitch.request(
-            "POST", "https://id.twitch.tv/oauth2/device", headers=headers, data=payload
-        ) as response:
-            response_json = await read_oauth(response, "device")
+        response_json = await self._oauth_request("device", "POST",
+            "https://id.twitch.tv/oauth2/device", headers=headers, data=payload)
         validate_device(response_json)
         device_code = response_json["device_code"]
         interval = response_json["interval"]
@@ -160,11 +158,9 @@ class _AuthState:
         try:
             while datetime.now(timezone.utc) < expires_at:
                 await self._twitch.gui.coro_unless_closed(asyncio.sleep(interval))
-                async with self._twitch.request(
-                    "POST", "https://id.twitch.tv/oauth2/token", headers=headers,
-                    data=token_payload, invalidate_after=expires_at,
-                ) as response:
-                    response_json = await read_oauth(response, "token")
+                response_json = await self._oauth_request("token", "POST",
+                    "https://id.twitch.tv/oauth2/token", headers=headers,
+                    data=token_payload, invalidate_after=expires_at)
                 if response_json.get("error") == "authorization_pending":
                     continue
                 if response_json.get("error") == "slow_down":
@@ -180,6 +176,19 @@ class _AuthState:
         except RequestInvalid:
             pass
         raise OAuthException("expired_token", "Twitch 授权码已过期，请点击重试授权。")
+
+    async def _oauth_request(self, stage: str, method: str, url: str, **kwargs) -> dict:
+        # Preserve the current grant on temporary OAuth errors, but never turn
+        # a refused grant into an unbounded retry or a second device-code flow.
+        for attempt in range(3):
+            try:
+                async with self._twitch.request(method, url, **kwargs) as response:
+                    return await read_oauth(response, stage)
+            except OAuthException as exc:
+                if not exc.retryable or attempt == 2:
+                    raise
+                await self._twitch.gui.coro_unless_closed(asyncio.sleep(5 * (attempt + 1)))
+        raise AssertionError("unreachable")
 
     async def _login(self) -> str:
         logger.info("Twitch 授权流程已开始")
@@ -388,12 +397,12 @@ class _AuthState:
                             phase("restoring_session")
                         self.access_token = cookie["auth-token"].value
                     # validate the auth token, by obtaining user_id
-                    async with self._twitch.request(
-                        "GET",
-                        "https://id.twitch.tv/oauth2/validate",
-                        headers={"Authorization": f"OAuth {self.access_token}"}
-                    ) as response:
-                        if response.status == 401:
+                    try:
+                        validate_response = await self._oauth_request("validate", "GET",
+                            "https://id.twitch.tv/oauth2/validate",
+                            headers={"Authorization": f"OAuth {self.access_token}"})
+                    except OAuthException as exc:
+                        if exc.code == "invalid_token":
                             # the access token we have is invalid - clear the cookie and reauth
                             logger.debug("Restored Twitch session is invalid")
                             assert client_info.CLIENT_URL.host is not None
@@ -402,10 +411,10 @@ class _AuthState:
                             if new_authorization:
                                 raise OAuthException("invalid_token", "Twitch 新授权未通过账号验证，请手动重新授权。")
                             continue
-                        validate_response = await read_oauth(response, "validate")
-                        if not isinstance(validate_response.get("user_id"), str) or not validate_response["user_id"].isdigit() or int(validate_response["user_id"]) <= 0 or not validate_response.get("client_id"):
-                            raise OAuthException("oauth_invalid_identity", "Twitch 未返回有效账号信息，请重新授权。")
-                        break
+                        raise
+                    if not isinstance(validate_response.get("user_id"), str) or not validate_response["user_id"].isdigit() or int(validate_response["user_id"]) <= 0 or not isinstance(validate_response.get("client_id"), str) or not validate_response["client_id"]:
+                        raise OAuthException("oauth_invalid_identity", "Twitch 未返回有效账号信息，请重新授权。")
+                    break
                 else:
                     raise OAuthException("invalid_token", "Twitch 登录信息未通过验证，请重新授权。")
                 # ensure the cookie's client ID matches the currently selected client
@@ -413,14 +422,18 @@ class _AuthState:
                     break
                 compatible = next((info for info in (ClientType.ANDROID_APP, ClientType.WEB)
                                    if info.CLIENT_ID == validate_response["client_id"]), None)
-                if compatible is not None:
+                if compatible is not None and not new_authorization:
                     self._twitch._client_type = client_info = compatible
                     break
-                # otherwise, we need to delete the entire cookie file and clear the jar
+                if new_authorization:
+                    self._delattrs("access_token", "user_id")
+                    raise OAuthException("invalid_client", "Twitch 新授权 Token 的 Client ID 不匹配，已停止登录，请重新授权。")
+                # Unsupported identity is not evidence that the saved credential
+                # itself is corrupt. Preserve it for explicit user action.
                 logger.debug("Twitch cookie client ID mismatch")
                 jar.clear()
                 self._delattrs("access_token", "user_id")
-                COOKIES_PATH.unlink(missing_ok=True)
+                raise OAuthException("invalid_client", "已保存的 Twitch Session 属于不支持的 Client ID，请手动重新登录。")
             else:
                 raise OAuthException("invalid_client", "Twitch Token 所属客户端与当前客户端不匹配，请重新授权。")
             self.user_id = int(validate_response["user_id"])
@@ -442,6 +455,7 @@ class Twitch:
         # State management
         self._state: State = State.IDLE
         self._state_change = asyncio.Event()
+        self._inventory_refresh_requested = False
         self.wanted_games: list[Game] = []
         self.inventory: list[DropsCampaign] = []
         self._cloudlight_inventory_loaded = False
@@ -556,6 +570,13 @@ class Twitch:
         # perfect for GUI usage
         return partial(self.change_state, state)
 
+    def request_inventory_refresh(self) -> None:
+        # A normal channel transition can overwrite a requested state while
+        # awaiting its HTTP result. Keep the intent until the next loop turn.
+        if self._state is not State.EXIT:
+            self._inventory_refresh_requested = True
+            self._state_change.set()
+
     def close(self):
         """
         Called when the application is requested to close by the user,
@@ -655,6 +676,14 @@ class Twitch:
         while True:
             try:
                 await self._run()
+                # A critical background task closes the main state machine on
+                # failure. Surface its actual exception to the Worker instead
+                # of reporting an apparently successful stop.
+                for task in (self._watching_task, self._mnt_task):
+                    if task is not None and task.done() and not task.cancelled():
+                        failure = task.exception()
+                        if failure is not None:
+                            raise failure
                 break
             except ReloadRequest:
                 await self.shutdown()
@@ -690,6 +719,9 @@ class Twitch:
         channels: Final[OrderedDict[int, Channel]] = self.channels
         self.change_state(State.INVENTORY_FETCH)
         while True:
+            if self._inventory_refresh_requested and self._state is not State.EXIT:
+                self._inventory_refresh_requested = False
+                self._state = State.INVENTORY_FETCH
             if self._state is State.IDLE:
                 connection = getattr(self.gui, "connection", None)
                 if connection is not None:

@@ -29,6 +29,9 @@
        托盘那一个文件里手动全限定即可。 -->
   <PropertyGroup>
     <BuildCommit Condition="'$(BuildCommit)' == ''">unknown</BuildCommit>
+    <DropsBuildPurpose Condition="'$(DropsBuildPurpose)' == ''">Distribution</DropsBuildPurpose>
+    <DropsArtifactsRoot Condition="'$(DropsArtifactsRoot)' == ''">artifacts\drops</DropsArtifactsRoot>
+    <SoopAdapterOnly Condition="'$(SoopAdapterOnly)' == ''">false</SoopAdapterOnly>
     <BuildTimestamp Condition="'$(BuildTimestamp)' == ''">unknown</BuildTimestamp>
     <BilibiliUiSchema Condition="'$(BilibiliUiSchema)' == ''">2</BilibiliUiSchema>
   </PropertyGroup>
@@ -71,11 +74,20 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="artifacts\drops\**\*" Condition="Exists('artifacts\drops')">
+    <Content Include="$(DropsArtifactsRoot)\**\*" Condition="Exists('$(DropsArtifactsRoot)')">
       <Link>_internal\drops\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="CheckSoopDistributionPermission" BeforeTargets="Publish"
+          Condition="'$(DropsBuildPurpose)' == 'Distribution' And '$(SoopAdapterOnly)' != 'true' And Exists('$(DropsArtifactsRoot)\soop\soop-worker.exe')">
+    <Error Text="SOOP Core redistribution permission is unconfirmed. Distribution publish cannot bundle this Core. Use Local only for local-use candidates." />
+  </Target>
+  <Target Name="ValidateDistributionWorkerContents" BeforeTargets="Publish"
+          Condition="'$(DropsBuildPurpose)' == 'Distribution' And '$(SoopAdapterOnly)' == 'true'">
+    <Exec Command="powershell -NoProfile -File &quot;$(MSBuildProjectDirectory)\Integrations\Drops\test-worker-ssl.ps1&quot; -Root &quot;$(DropsArtifactsRoot)&quot; -SoopAdapterOnly" />
+  </Target>
 
 </Project>

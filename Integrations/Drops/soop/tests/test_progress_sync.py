@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import asyncio
 import logging
 import sys
 import tempfile
@@ -19,20 +21,30 @@ for path in (str(DROPS_DIR), str(SOOP_DIR)):
 from worker import SoopWorker
 
 
-def _mission(idx: str, minutes: int, *, allowed_channel: str = "room") -> SimpleNamespace:
+def _mission(
+    idx: str,
+    minutes: int,
+    *,
+    allowed_channel: str = "room",
+    item_id: str = "",
+    give_term: int = 60,
+    start_date: str = "",
+    end_date: str = "",
+) -> SimpleNamespace:
     item = SimpleNamespace(
         item_name=f"reward-{idx}",
-        give_term=60,
+        give_term=give_term,
         view_time=minutes,
         percent=min(100, minutes),
         mission_success=False,
+        raw={"itemCodeIdx": item_id} if item_id else {},
     )
     return SimpleNamespace(
         drops_idx=idx,
         title=f"Mission {idx}",
         type_label="固定型",
-        start_date="",
-        end_date="",
+        start_date=start_date,
+        end_date=end_date,
         category_name="",
         category_no="",
         raw={},
@@ -68,6 +80,41 @@ def _state(uid: str, mission: SimpleNamespace, *, channel: str = "room") -> Simp
 
 
 class ProgressSyncTests(unittest.TestCase):
+    def test_stop_during_reauthentication_start_cleans_late_miner_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = SoopWorker(root / "data", root / "worker.log")
+            async def scenario():
+                entered, release = asyncio.Event(), asyncio.Event()
+                active = {"beta"}
+                async def start(cookies):
+                    entered.set()
+                    await release.wait()
+                    active.add("alpha")
+                async def stop(uid):
+                    active.discard(uid)
+                manager = SimpleNamespace(start_account=start, stop_account_and_wait=stop)
+                worker._manager = manager
+                worker._core = {"auth": SimpleNamespace(login=mock.AsyncMock(return_value={"uid": "alpha"}))}
+                worker._app_config = lambda: None
+                worker._refresh_saved_account = mock.AsyncMock(return_value=SimpleNamespace(uid="alpha"))
+                worker._state_callback = lambda _: None
+                cancel = __import__("threading").Event()
+                recovery = asyncio.create_task(worker._reauthenticate_once("alpha", "fixture", True, cancel))
+                await entered.wait()
+                cancel.set()
+                stopping = asyncio.create_task(worker._stop_account_session(manager, "alpha"))
+                await asyncio.sleep(0)
+                self.assertFalse(stopping.done())
+                release.set()
+                await asyncio.wait_for(asyncio.gather(recovery, stopping), 2)
+                self.assertEqual(active, {"beta"})
+                await worker._start_account_session(manager, {"uid":"alpha"}, "alpha")
+                self.assertEqual(active, {"alpha", "beta"})
+            try:
+                asyncio.run(scenario())
+            finally:
+                self._close(worker)
     def test_proxy_restart_preserves_running_account_subset(self) -> None:
         worker = object.__new__(SoopWorker)
         worker._manager = SimpleNamespace(running_uids=["alpha"])
@@ -123,11 +170,169 @@ class ProgressSyncTests(unittest.TestCase):
                 self.assertIn("最新确认 viewTime=0", progress[0]["progressDiagnostic"])
                 self.assertIn("高水位=10", progress[0]["progressDiagnostic"])
                 self.assertTrue(progress[0]["lastConfirmedAt"])
+                details = worker._progress_details(
+                    "alpha", second.missions[0], second.missions[0].items[0], 0, second
+                )
+                rollback_at = details["rollbackAt"]
+                before_minutes = details["beforeMinutes"]
+                after_minutes = details["afterMinutes"]
+                queried_at = details["queriedAt"]
+                worker._observe_state_progress(second)
+                repeated = worker._progress_details(
+                    "alpha", second.missions[0], second.missions[0].items[0], 0, second
+                )
+                self.assertEqual(repeated["rollbackAt"], rollback_at)
+                self.assertEqual(repeated["beforeMinutes"], before_minutes)
+                self.assertEqual(repeated["afterMinutes"], after_minutes)
+                self.assertEqual(repeated["queriedAt"], queried_at)
                 second.missions[0].items[0].item_name = "new reward stage"
                 worker._observe_state_progress(second)
                 changed = worker._current_progress_for_state(second)[0]
-                self.assertNotEqual(changed["progressState"], "rollback")
-                self.assertEqual(changed["historicalHighWaterMinutes"], 0)
+                self.assertEqual(changed["progressState"], "rollback")
+                self.assertEqual(changed["historicalHighWaterMinutes"], 10)
+            finally:
+                self._close(worker)
+
+    def test_progress_history_survives_restart_without_promoting_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+            first_worker = SoopWorker(data_dir, Path(temporary) / "first.log")
+            try:
+                first = _state("alpha", _mission("same", 10, item_id="api-stage-1"))
+                self._configure_channels(first_worker, {"alpha": first})
+                first_worker._states["alpha"] = first
+                first_worker._observe_state_progress(first)
+                first_worker._record_refresh_diagnostic("alpha", status="success")
+                store = json.loads(first_worker._progress_store_path.read_text(encoding="utf-8"))
+                self.assertEqual(store["records"][0]["stageId"], "api-stage-1")
+                self.assertNotIn("reward-same", json.dumps(store, ensure_ascii=False))
+            finally:
+                self._close(first_worker)
+
+            second_worker = SoopWorker(data_dir, Path(temporary) / "second.log")
+            try:
+                second = _state("alpha", _mission("same", 0, item_id="api-stage-1"))
+                second.missions[0].items[0].item_name = "renamed reward"
+                self._configure_channels(second_worker, {"alpha": second})
+                second_worker._states["alpha"] = second
+                second_worker._observe_state_progress(second)
+
+                cached = second_worker._progress_details(
+                    "alpha", second.missions[0], second.missions[0].items[0], 0, second
+                )
+                self.assertEqual(cached["currentMinutes"], 0)
+                self.assertEqual(cached["confirmedMinutes"], 0)
+                self.assertEqual(cached["historicalHighWaterMinutes"], 10)
+                self.assertEqual(cached["progressSource"], "cache")
+                self.assertEqual(cached["progressState"], "unavailable")
+
+                second_worker._record_refresh_diagnostic("alpha", status="success")
+                refreshed = second_worker._progress_details(
+                    "alpha", second.missions[0], second.missions[0].items[0], 0, second
+                )
+                self.assertEqual(refreshed["currentMinutes"], 0)
+                self.assertEqual(refreshed["historicalHighWaterMinutes"], 10)
+                self.assertEqual(refreshed["progressSource"], "remote")
+                self.assertEqual(refreshed["progressState"], "rollback")
+            finally:
+                self._close(second_worker)
+
+            history_worker = SoopWorker(data_dir, Path(temporary) / "history.log")
+            try:
+                history = history_worker.load_state({})["progressHistory"]
+                self.assertEqual(len(history), 1)
+                self.assertEqual(history[0]["uid"], "alpha")
+                self.assertEqual(history[0]["taskId"], "same")
+                self.assertEqual(history[0]["stageId"], "api-stage-1")
+                self.assertEqual(history[0]["officialMinutes"], 0)
+                self.assertEqual(history[0]["historicalHighWaterMinutes"], 10)
+                self.assertEqual(history[0]["source"], "cache")
+            finally:
+                self._close(history_worker)
+
+    def test_progress_identity_keeps_cycle_and_reward_terms_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            worker = SoopWorker(Path(temporary) / "data", Path(temporary) / "soop.log")
+            try:
+                mission = _mission(
+                    "multi", 10, item_id="same-code",
+                    start_date="2026-10-01", end_date="2026-10-10",
+                )
+                state = _state("alpha", mission)
+                worker._observe_state_progress(state)
+
+                mission.end_date = "2026-10-31"
+                mission.items[0].item_name = "renamed stage"
+                mission.items[0].view_time = 0
+                worker._observe_state_progress(state)
+                same_term = [
+                    (key, observation)
+                    for key, observation in worker._progress_observations.items()
+                    if key[1] == "multi"
+                ]
+                self.assertEqual(len(same_term), 1)
+                self.assertEqual(same_term[0][1].historical_high_water_minutes, 10)
+
+                second_item = SimpleNamespace(
+                    item_name="another stage",
+                    give_term=120,
+                    view_time=3,
+                    percent=3,
+                    mission_success=False,
+                    raw={"itemCodeIdx": "same-code"},
+                )
+                mission.items.append(second_item)
+                worker._observe_state_progress(state)
+                terms = {
+                    key[-1]
+                    for key in worker._progress_observations
+                    if key[1] == "multi"
+                }
+                self.assertEqual(terms, {60, 120})
+            finally:
+                self._close(worker)
+
+    def test_refresh_does_not_promote_absent_historical_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            worker = SoopWorker(Path(temporary) / "data", Path(temporary) / "soop.log")
+            try:
+                mission = _mission("old", 10, item_id="old-stage")
+                state = _state("alpha", mission)
+                worker._states["alpha"] = state
+                worker._observe_state_progress(state)
+                worker._record_refresh_diagnostic("alpha", status="success", state=state)
+                key = next(iter(worker._progress_observations))
+                self.assertEqual(worker._progress_observations[key].source, "remote")
+
+                mission.items = []
+                worker._record_refresh_diagnostic("alpha", status="success", state=state)
+                self.assertEqual(worker._progress_observations[key].source, "cache")
+            finally:
+                self._close(worker)
+
+    def test_corrupt_history_degrades_and_account_delete_cleans_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+            data_dir.mkdir(parents=True)
+            store_path = data_dir / "progress_diagnostics.json"
+            store_path.write_text("{broken", encoding="utf-8")
+            worker = SoopWorker(data_dir, Path(temporary) / "soop.log")
+            try:
+                self.assertEqual(worker._progress_observations, {})
+                state = _state("alpha", _mission("same", 10, item_id="api-stage-1"))
+                worker._states["alpha"] = state
+                worker._observe_state_progress(state)
+                worker._record_refresh_diagnostic("alpha", status="success")
+
+                accounts = ["alpha"]
+                worker._core = {"auth": SimpleNamespace(
+                    list_accounts=lambda: list(accounts),
+                    remove_account=lambda uid: accounts.remove(uid) or True,
+                )}
+                worker.delete_account({"userid": "alpha"})
+                persisted = json.loads(store_path.read_text(encoding="utf-8"))
+                self.assertEqual(persisted["records"], [])
+                self.assertNotIn("alpha", persisted["refreshDiagnostics"])
             finally:
                 self._close(worker)
 
@@ -191,6 +396,9 @@ class ProgressSyncTests(unittest.TestCase):
                 self.assertEqual(result["refreshStatus"], "failed")
                 self.assertEqual(result["tasks"][0]["items"][0]["viewMinutes"], 10)
                 self.assertEqual(result["refreshDiagnostics"][0]["status"], "failed")
+                worker._record_refresh_diagnostic("alpha", status="failed", error="access_token=private-test-token")
+                worker._persist_progress_diagnostics(force=True)
+                self.assertNotIn("private-test-token", worker._progress_store_path.read_text(encoding="utf-8"))
 
                 class _Future:
                     def __init__(self):

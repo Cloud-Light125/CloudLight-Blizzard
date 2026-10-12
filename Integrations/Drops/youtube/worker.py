@@ -142,6 +142,7 @@ class YouTubeWorker(WorkerBase):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
+        self._disabled_profiles: set[str] = set()
         self.current_stream: dict[str, Any] | None = None
         self.started_at: datetime | None = None
         self.last_browser_status = "未启动"
@@ -209,7 +210,9 @@ class YouTubeWorker(WorkerBase):
         return {
             "_snapshotStarted": captured_at,
             "running": self.running,
-            "status": "正在观看" if self.current_stream and self.running else ("正在检测" if self.running else "已停止"),
+            "status": ("正在观看" if self.current_stream and self.running and any(s["running"] for s in sessions)
+                       else "等待观看账号" if self.current_stream and self.running
+                       else "正在检测" if self.running else "已停止"),
             "stream": self.current_stream,
             "browserStatus": self.last_browser_status,
             "detectedBrowserPath": detected_browser_path,
@@ -251,6 +254,8 @@ class YouTubeWorker(WorkerBase):
         self.require_runtime()
         self._validate_runtime_dependencies()
         self.config = self._load_config()
+        with self._lock:
+            self._disabled_profiles.difference_update(self.config["profiles"])
         if self.config["mode"] == "manual":
             normalize_url(self.config.get("manual_url", ""))
         self.running = True
@@ -308,6 +313,8 @@ class YouTubeWorker(WorkerBase):
 
     def logout(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = normalize_profile(payload.get("profile", ""))
+        with self._lock:
+            self._disabled_profiles.add(name)
         self._close_profile(name)
         return {"profile": name, "message": "已关闭该观看账号的浏览器；登录数据仍保留。"}
 
@@ -356,6 +363,8 @@ class YouTubeWorker(WorkerBase):
 
     def delete_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = normalize_profile(payload.get("name", ""))
+        with self._lock:
+            self._disabled_profiles.add(name)
         self._close_profile(name)
         if name in self.config["profiles"]:
             self.config["profiles"].remove(name)
@@ -368,6 +377,8 @@ class YouTubeWorker(WorkerBase):
 
     def open_login(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = normalize_profile(payload.get("profile") or self.config["profiles"][0])
+        with self._lock:
+            self._disabled_profiles.discard(name)
         session = self._launch(name, "https://www.youtube.com/", login=True)
         self.logger.info("浏览器登录窗口已打开")
         return {"profile": name, "pid": session.process.pid, "profilePath": str(self.profiles_dir / name)}
@@ -413,12 +424,15 @@ class YouTubeWorker(WorkerBase):
         return self._history_snapshot()
 
     def clear_history(self, payload: dict[str, Any]) -> dict[str, Any]:
-        self.history = {"records": {}}
-        atomic_write_json(self.history_path, self.history)
+        with self._lock:
+            self.history = {"records": {}}
+            atomic_write_json(self.history_path, self.history)
         return self._history_snapshot()
 
     def on_proxy_changed(self) -> None:
-        if self.running and any(session.alive() for session in self.sessions.values()):
+        with self._lock:
+            watching = self.running and any(session.alive() for session in self.sessions.values())
+        if watching:
             event("notice", {"message": "代理设置将在下次重新启动观看窗口后生效。"})
 
     def _watch_loop(self) -> None:
@@ -436,8 +450,20 @@ class YouTubeWorker(WorkerBase):
                     for profile in list(self.config["profiles"]):
                         if self._stop.is_set():
                             break
+                        with self._lock:
+                            if profile in self._disabled_profiles:
+                                continue
                         self._ensure_session(profile, stream["url"])
                     stream_key = str(stream.get("videoId") or stream.get("url", ""))
+                    with self._lock:
+                        watching = sum(session.alive() for session in self.sessions.values())
+                    if self._stop.is_set():
+                        break
+                    if not watching:
+                        self.last_browser_status = "观看账号已停止"
+                        self.status("等待观看账号", "已发现直播，所有观看账号当前已停止")
+                        self._stop.wait(self.config["check_interval"])
+                        continue
                     if stream_key != self._last_reported_stream_key:
                         self.logger.info("发现直播：%s", stream.get("channel") or stream.get("title", "YouTube"))
                         self.logger.info("开始观看：%s", stream.get("title", "YouTube 直播"))
@@ -603,6 +629,8 @@ class YouTubeWorker(WorkerBase):
         while not self._stop.is_set() and time.monotonic() < deadline:
             for profile in list(self.config["profiles"]):
                 session = self._ensure_session(profile, stream["url"])
+                if session is None:
+                    continue
                 state = self._video_state(session, stream.get("videoId", ""))
                 if state and state.get("playing"):
                     self._record_watch(profile, stream, 5.0)
@@ -635,6 +663,12 @@ class YouTubeWorker(WorkerBase):
         raise FileNotFoundError("未找到 Chrome / Brave，请在设置中指定浏览器路径。")
 
     def _launch(self, profile: str, url: str, login: bool = False) -> BrowserSession:
+        with self._lock:
+            if profile in self._disabled_profiles:
+                raise RuntimeError("该观看账号已停止")
+            return self._launch_locked(profile, url, login)
+
+    def _launch_locked(self, profile: str, url: str, login: bool = False) -> BrowserSession:
         if not login and self._stop.is_set():
             raise RuntimeError("YouTube 观看已停止")
         self._close_profile(profile)
@@ -658,15 +692,10 @@ class YouTubeWorker(WorkerBase):
         args.append(url)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process = subprocess.Popen(args, creationflags=flags)
-        if not login and self._stop.is_set():
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=3)
-            raise RuntimeError("YouTube 观看已停止")
         session = BrowserSession(profile, process, port, url)
+        if not login and self._stop.is_set():
+            self._close_session(session)
+            raise RuntimeError("YouTube 观看已停止")
         with self._lock:
             self.sessions[profile] = session
         self.last_browser_status = f"{profile} 已启动"
@@ -675,6 +704,12 @@ class YouTubeWorker(WorkerBase):
 
     def _ensure_session(self, profile: str, url: str) -> BrowserSession:
         with self._lock:
+            return self._ensure_session_locked(profile, url)
+
+    def _ensure_session_locked(self, profile: str, url: str) -> BrowserSession | None:
+        with self._lock:
+            if profile in self._disabled_profiles:
+                return None
             session = self.sessions.get(profile)
         if session and session.alive():
             if session.url != url:
@@ -780,16 +815,30 @@ class YouTubeWorker(WorkerBase):
     def _close_profile(self, profile: str) -> None:
         with self._lock:
             session = self.sessions.pop(profile, None)
+        self._close_session(session)
+
+    def _close_session(self, session: BrowserSession | None) -> None:
         if not session or not session.alive():
             return
         try:
-            session.process.terminate()
+            # Chromium has several children. Closing only the parent PID can
+            # orphan renderers; first ask this isolated profile's browser to exit.
+            import websocket
+            version = self._direct_session().get(f"http://127.0.0.1:{session.port}/json/version", timeout=2).json()
+            with websocket.create_connection(version["webSocketDebuggerUrl"], timeout=2,
+                                             http_proxy_host=None, http_no_proxy=["127.0.0.1", "localhost"]) as ws:
+                ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
             session.process.wait(timeout=5)
         except Exception:
             try:
-                session.process.kill()
+                if os.name == "nt" and session.process.poll() is None:
+                    subprocess.run(["taskkill", "/PID", str(session.process.pid), "/T", "/F"],
+                                   capture_output=True, timeout=5, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                elif session.process.poll() is None:
+                    session.process.kill()
+                session.process.wait(timeout=3)
             except Exception:
-                pass
+                self.logger.warning("YouTube 浏览器清理未完成；请关闭该观看账号的浏览器窗口。")
 
     def _close_all_browsers(self) -> None:
         with self._lock:

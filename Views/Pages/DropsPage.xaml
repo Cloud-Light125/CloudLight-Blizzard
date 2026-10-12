@@ -438,6 +438,7 @@
                             <WrapPanel Margin="0,7,0,0">
                                 <Button Content="重试连接 / 刷新" Style="{StaticResource SecondaryButton}" Padding="10,0" Click="OnActiveRetry"/>
                                 <Button Content="查看日志" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnShowDropsLog"/>
+                                <Button x:Name="DropsDismissNoticeButton" Content="关闭提醒" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnDismissNotice"/>
                             </WrapPanel>
                         </StackPanel>
                     </Border>
@@ -513,6 +514,12 @@
                     </Border>
                 </Grid>
 
+                <Expander Header="进度历史与回退诊断" Margin="0,14,0,0">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="这些记录用于排查同步与回退，不代表当前任务进度。重启后先显示历史缓存；最新进度以官方查询为准。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding SoopProgressHistory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/>
+                    </StackPanel>
+                </Expander>
                 <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}"/>
@@ -564,7 +571,7 @@
                             <StackPanel Grid.Column="3" Margin="8,0,0,0"><TextBlock Text="失效重登间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="SoopReauthInterval" Style="{StaticResource HintTextBox}" Tag="300"/></DockPanel></StackPanel>
                         </Grid>
                         <TextBlock Text="SOOP 认证失效后，将使用 Windows DPAPI 加密保存的账号密码持续重登，直到成功或手动停止账号。" Style="{StaticResource FieldHint}" Margin="0,7,0,0"/>
-                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnSaveSoop"/><Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/><ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/></WrapPanel>
+                        <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource SecondaryButton}" Padding="14,0" x:Name="SoopSaveSettingsButton" Click="OnSaveSoop"/><Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/><ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/></WrapPanel>
                     </StackPanel>
                 </Border>
             <Border Style="{StaticResource SurfaceCard}">
@@ -649,7 +656,7 @@
                     </Grid>
                     <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="YouTubeHeadless" Style="{StaticResource ThemeCheckBox}" Content="无头模式" Margin="0,0,18,0"/><CheckBox x:Name="YouTubeMute" Style="{StaticResource ThemeCheckBox}" Content="静音播放"/></WrapPanel>
                     <StackPanel Margin="0,14,0,0" Width="300" HorizontalAlignment="Left"><TextBlock Text="直播检查间隔" Style="{StaticResource FieldLabel}"/><DockPanel><TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBox x:Name="YouTubeInterval" Style="{StaticResource HintTextBox}" Tag="300"/></DockPanel><TextBlock Text="每隔多久检查一次频道是否开播。" Style="{StaticResource FieldHint}"/></StackPanel>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveYouTube"/>
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" x:Name="YouTubeSaveSettingsButton" Click="OnSaveYouTube"/>
                 </StackPanel></Border>
 
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
@@ -702,13 +709,14 @@
                             <TextBlock Text="Twitch 授权" Style="{StaticResource SectionTitle}"/>
                             <TextBlock Text="请在 Twitch 官方页面完成授权。" Style="{StaticResource FieldHint}"/>
                             <TextBlock Text="授权码" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                            <TextBlock Text="{Binding TwitchAuthorizationCode}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
+                            <TextBox x:Name="TwitchAuthorizationCodeBox" Text="{Binding TwitchAuthorizationCode, Mode=OneWay}" IsReadOnly="True"
+                                     FontSize="22" FontWeight="SemiBold" BorderThickness="0" Background="Transparent" Padding="0"
+                                     Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
                             <TextBlock Text="{Binding TwitchAuthorizationExpiryText}" Margin="0,6,0,0" Foreground="{DynamicResource Text.Secondary}"/>
                             <WrapPanel Margin="0,12,0,0">
                                 <Button Content="打开 Twitch 授权页面" Style="{StaticResource PrimaryButton}"
                                         Padding="14,0" Click="OnOpenTwitchAuthorization"/>
-                                <Button Content="复制授权码" Style="{StaticResource SecondaryButton}"
+                                <Button x:Name="TwitchCopyCodeButton" Content="复制授权码" Style="{StaticResource SecondaryButton}"
                                         Padding="14,0" Margin="8,0,0,0" Click="OnCopyTwitchAuthorizationCode"/>
                                 <TextBlock Text="正在等待授权……" Foreground="{DynamicResource Text.Secondary}"
                                            VerticalAlignment="Center" Margin="12,0,0,0"/>
@@ -1100,7 +1108,7 @@
                     </Grid>
                     <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed"/>
                     <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveTwitch"/>
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" x:Name="TwitchSaveSettingsButton" Click="OnSaveTwitch"/>
                 </StackPanel></Border>
 
             <Expander x:Name="DropsDiagnosticsExpander" Header="网络、代理与诊断" Margin="0,14,0,0"

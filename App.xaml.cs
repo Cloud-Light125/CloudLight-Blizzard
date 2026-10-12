@@ -22,6 +22,17 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        string? dropsAcceptanceRoot = null;
+        if (e.Args.Length >= 2 && e.Args[0] == "--drops-acceptance")
+        {
+            dropsAcceptanceRoot = Path.GetFullPath(e.Args[1]).TrimEnd(Path.DirectorySeparatorChar);
+            var originalRoot = AppPaths.Current.Root.TrimEnd(Path.DirectorySeparatorChar);
+            if (dropsAcceptanceRoot.Equals(originalRoot, StringComparison.OrdinalIgnoreCase) ||
+                originalRoot.StartsWith(dropsAcceptanceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                dropsAcceptanceRoot.StartsWith(originalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Drops 验收必须使用与原账号数据分离的目录。");
+            AppPaths.UseSelfTestRoot(dropsAcceptanceRoot);
+        }
         if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-live-selftest")
         {
             IsHeadlessSelfTest = true;
@@ -41,6 +52,7 @@ public partial class App : Application
         if (e.Args.Length >= 2 && e.Args[0] == "--feature-selftest")
         {
             IsHeadlessSelfTest = true;
+            AppPaths.UseSelfTestRoot(Path.Combine(Path.GetFullPath(e.Args[1]), "app-data"));
             Task.Run(() => FeatureSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2))).GetAwaiter().GetResult();
             Shutdown(0);
             return;
@@ -107,7 +119,9 @@ public partial class App : Application
         }
 
         // 单实例:已经有一个在跑,就唤起它的窗口然后本进程退出(避免托盘出现两个图标)。
-        _singleInstance = new Mutex(true, MutexName, out bool isNew);
+        var instanceName = dropsAcceptanceRoot is null ? MutexName : MutexName + ".DropsAcceptance." +
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(dropsAcceptanceRoot)))[..16];
+        _singleInstance = new Mutex(true, instanceName, out bool isNew);
         if (!isNew)
         {
             try { EventWaitHandle.OpenExisting(ShowEventName).Set(); } catch { /* 对面可能还没建好句柄 */ }
@@ -135,6 +149,7 @@ public partial class App : Application
         base.OnStartup(e);
         var startHidden = global::CloudLightBlizzard.MainWindow.ShouldStartHidden(e.Args, settings.StartMinimized);
         var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession, settings: settings);
+        if (dropsAcceptanceRoot is not null) mainWindow.Title += " · Drops 本地验收";
         MainWindow = mainWindow;
         if (!startHidden) mainWindow.Show();
     }

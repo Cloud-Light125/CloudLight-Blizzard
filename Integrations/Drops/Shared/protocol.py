@@ -5,6 +5,7 @@ import importlib
 import json
 import logging
 import logging.handlers
+import queue
 import os
 import re
 import sys
@@ -228,6 +229,12 @@ class WorkerBase:
         self.logger = configure_logging(self.log_file)
         self.running = False
         self.shutdown_requested = False
+        self._control_lock = threading.Lock()
+        self._active_command = ""
+        self._dispatch_thread = None
+        self._active_read_future = None
+        self._read_interrupted = False
+        self._controls_pending = 0
         self.runtime_error: RuntimeDependencyError | None = None
         self._reported_runtime_errors: set[str] = set()
         self.proxy = {"enableProxy": False, "proxyUrl": "", "fallbackDirect": False}
@@ -246,6 +253,7 @@ class WorkerBase:
             "get_logs": self.get_logs,
             "set_proxy": self.set_proxy,
             "ssl_check": self.ssl_check,
+            "provenance_check": self.provenance_check,
             "network_check": self.network_check,
             "shutdown": self.shutdown,
         }
@@ -317,6 +325,24 @@ class WorkerBase:
             self.runtime_error = exc
             self._report_runtime_error(exc)
             raise
+
+    def provenance_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        root = Path(getattr(sys, "_MEIPASS", ""))
+        manifest = read_json(root / "build-manifest.json", {}) if getattr(sys, "frozen", False) else {}
+        result = {"frozen": bool(getattr(sys, "frozen", False)),
+                  "commit": manifest.get("commit"), "dirty": manifest.get("dirty"),
+                  "adapterSha256": manifest.get("adapterSources", {}).get("sha256"),
+                  "purpose": manifest.get("purpose"), "protocol": PROTOCOL_VERSION}
+        if self.platform == "soop" and manifest.get("soopCore"):
+            from Shared.build_provenance import sources
+            actual = sources(root / "core")
+            expected = manifest["soopCore"]
+            result["core"] = {"commit": expected["commit"], "dirty": expected["dirty"],
+                              "sha256": actual["sha256"], "expectedSha256": expected["sha256"],
+                              "matches": actual["sha256"] == expected["sha256"],
+                              "capabilities": expected["capabilities"], "capabilityVersion": expected["capabilityVersion"],
+                              "redistributionAuthorized": expected["redistributionAuthorized"]}
+        return result
 
     def status(self, status: str, summary: str = "") -> None:
         event("status", {"status": status, "summary": summary, "running": self.running})
@@ -458,7 +484,9 @@ class WorkerBase:
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         request_id = str(request.get("id", ""))
         command = str(request.get("command", ""))
-        payload = request.get("payload") or {}
+        payload = request.get("payload")
+        if payload is None:
+            payload = {}
         if not request_id:
             raise ValueError("请求缺少 id")
         if not isinstance(payload, dict):
@@ -466,15 +494,76 @@ class WorkerBase:
         handler = self.commands.get(command)
         if handler is None:
             raise ValueError(f"未知命令: {command}")
-        result = handler(payload)
+        with self._control_lock:
+            self._active_command = command
+            self._dispatch_thread = threading.get_ident()
+            if command in {"stop", "stop_account", "shutdown"}:
+                self._controls_pending = max(0, self._controls_pending - 1)
+            self._read_interrupted = command == "refresh" and self._controls_pending > 0
+        try:
+            result = handler(payload)
+        finally:
+            with self._control_lock:
+                self._active_command = ""
+                self._dispatch_thread = None
+                self._active_read_future = None
         return {"id": request_id, "ok": True, "result": result if result is not None else {}}
+
+    def wait_future(self, future: Any, timeout: float) -> Any:
+        if not hasattr(self, "_control_lock"):
+            return future.result(timeout=timeout)
+        tracked = False
+        with self._control_lock:
+            if self._active_command == "refresh" and self._dispatch_thread == threading.get_ident():
+                self._active_read_future = future
+                tracked = True
+                if self._read_interrupted:
+                    future.cancel()
+        try:
+            return future.result(timeout=timeout)
+        finally:
+            if tracked:
+                with self._control_lock:
+                    if self._active_read_future is future:
+                        self._active_read_future = None
+
+    def _interrupt_refresh_for_control(self) -> None:
+        with self._control_lock:
+            self._controls_pending += 1
+            if self._active_command != "refresh":
+                return
+            self._read_interrupted = True
+            future = self._active_read_future
+        if future is not None:
+            future.cancel()
 
     def run(self) -> int:
         if self.runtime_error is not None:
             self.status("后台组件异常", self.runtime_error.public_message)
         else:
             self.status("就绪")
-        for line in sys.stdin:
+        # Keep reading control commands during a blocking read-only refresh.
+        # Business handlers still execute on one thread, in order. Only the
+        # active refresh coroutine is cancelled; claim operations are untouched.
+        inbox = queue.Queue()
+        def read_input():
+            for line in sys.stdin:
+                try:
+                    request = parse_protocol_request(line)
+                    command = request.get("command")
+                    if (command in {"stop", "stop_account", "shutdown"}
+                            and command in self.commands and str(request.get("id", ""))
+                            and (request.get("payload") is None or isinstance(request.get("payload"), dict))):
+                        self._interrupt_refresh_for_control()
+                except (ValueError, TypeError):
+                    pass
+                inbox.put(line)
+            inbox.put(None)
+        threading.Thread(target=read_input, daemon=True, name="drops-control-input").start()
+        while True:
+            line = inbox.get()
+            if line is None:
+                break
             request_id = ""
             try:
                 request = parse_protocol_request(line)

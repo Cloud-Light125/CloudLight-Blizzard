@@ -20,6 +20,24 @@ internal static class DropsReliabilitySelfTest
     {
         void Check(bool ok, string message) => checks.Add((ok ? "PASS " : "FAIL ") + message);
         var applyEvent = typeof(DropsViewModel).GetMethod("OnEventReceived", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var applySnapshot = typeof(DropsViewModel).GetMethod("OnSnapshotChanged", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        applySnapshot.Invoke(vm, new object?[] { null, new WorkerSnapshot(DropsPlatform.Soop, WorkerLifecycle.Running,
+            "new", "", DateTimeOffset.Now, null, null, 9, 2) });
+        applySnapshot.Invoke(vm, new object?[] { null, new WorkerSnapshot(DropsPlatform.Soop, WorkerLifecycle.Crashed,
+            "old", "", DateTimeOffset.Now, null, "late failure", 9, 1) });
+        Drain();
+        Check(vm.Soop.WorkerLifecycle == WorkerLifecycle.Running, "同代 Worker 的迟到 Host 健康快照不能覆盖较新快照");
+        var clipboardCopy = Task.Run(() => ClipboardService.CopyTextAsync("CloudLight-Drops-Clipboard-Test"));
+        var clipboardDeadline = DateTimeOffset.Now.AddSeconds(15);
+        while (!clipboardCopy.IsCompleted && DateTimeOffset.Now < clipboardDeadline) Drain();
+        if (clipboardCopy.IsCompletedSuccessfully && !clipboardCopy.Result && ClipboardService.LastFailureCode == unchecked((int)0x800401D0))
+            checks.Add($"BLOCKED 真实剪贴板写入/读回：被 {ClipboardService.BusyProcessName ?? "其它程序（已释放所有者窗口）"} 占用，HRESULT=0x{ClipboardService.LastFailureCode:X8}；需解除占用后验收");
+        else
+        {
+            Check(clipboardCopy.IsCompletedSuccessfully && clipboardCopy.Result, $"真实剪贴板后台 STA 写入操作完成（非模拟；状态 {clipboardCopy.Status}，HRESULT=0x{ClipboardService.LastFailureCode:X8}）");
+            Check(clipboardCopy.IsCompletedSuccessfully && clipboardCopy.Result && Clipboard.GetText(TextDataFormat.UnicodeText) == "CloudLight-Drops-Clipboard-Test",
+                "真实 Win32 剪贴板写入后可读回相同内容（后台调用，非模拟）");
+        }
         JsonElement State(object value) => JsonSerializer.SerializeToElement(value);
         vm.SelectPlatform(DropsPlatform.Soop);
         vm.ApplyState(DropsPlatform.Soop, State(new
@@ -49,6 +67,19 @@ internal static class DropsReliabilitySelfTest
         vm.SetTwitchAuthorization("https://www.twitch.tv/activate", "TEST", automatic: true);
         Check(vm.TwitchAuthorizationUrl.Length == 0 && vm.TwitchAuthorizationCode.Length == 0 && vm.CanTwitchLogin,
             "自动恢复结束后不复用无人轮询的设备码，手动登录重新取得授权");
+        vm.SetTwitchAuthorization("https://www.twitch.tv/activate", "TEST", automatic: false);
+        vm.SelectPlatform(DropsPlatform.Twitch);
+        if (page.FindName("TwitchCopyCodeButton") is Button copyCode)
+        {
+            copyCode.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var deadline = DateTimeOffset.Now.AddSeconds(15);
+            while (!copyCode.IsEnabled && DateTimeOffset.Now < deadline) Drain();
+            Check(copyCode.IsEnabled, "真实复制按钮操作结束后恢复可用");
+            if (ClipboardService.LastFailureCode == 0)
+                Check(Clipboard.GetText(TextDataFormat.UnicodeText) == "TEST", "真实复制按钮 → ClipboardService → 系统剪贴板读回（模拟授权码）");
+            else
+                Check(vm.Twitch.Notice.Contains("未复制") || vm.Twitch.Notice.Contains("暂不可用"), "系统剪贴板被占用时复制按钮明确告知失败，提供选中文字备用入口");
+        }
         applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch, "error",
             State(new { category = "oauth", code = "expired_token", message = "授权已过期，请重试授权", retryable = false })) });
         Drain();
@@ -98,6 +129,8 @@ internal static class DropsReliabilitySelfTest
         }
         else Check(false, "当前平台主要操作按钮存在");
         host.ConfigureRequestOverrideForSelfTest((_, _, _, _) => Task.FromResult(State(new { })));
+        if (page.FindName("SoopTab") is RadioButton soopTab) { soopTab.IsChecked = false; soopTab.IsChecked = true; }
+        Drain();
         vm.SelectPlatform(DropsPlatform.Soop);
         vm.ApplySoopAccountStatus(State(new
         {
@@ -114,6 +147,53 @@ internal static class DropsReliabilitySelfTest
         }));
         Check(vm.SoopCurrentProgress.Single().CurrentMinutes == 12 && vm.SoopCurrentProgress.Single().SyncState.Contains("待确认"),
             "SOOP 心跳 unknown 仍呈现服务端确认数值，观看状态独立提醒");
+        vm.ApplyState(DropsPlatform.Soop, State(new { progressHistory = new[] { new {
+            uid = "test-soop", taskId = "mission", cycle = "cycle", stageId = "stable-item:60",
+            officialMinutes = 0, historicalHighWaterMinutes = 10, source = "cache",
+            queriedAt = "2026-10-12T00:00:00Z", rollbackAt = "2026-10-12T00:00:00Z",
+            beforeMinutes = 10, afterMinutes = 0,
+        } } }));
+        Check(vm.SoopProgressHistory.Single().Status.Contains("缓存") && vm.Soop.Notice.Contains("10 → 0"),
+            "重启历史独立展示缓存与真实回退证据，不冒充当前进度");
+        if (page.FindName("DropsDismissNoticeButton") is Button dismiss)
+        {
+            var originalNotice = vm.Soop.Notice;
+            dismiss.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Drain();
+            vm.ReportMessage(DropsPlatform.Soop, originalNotice, "警告");
+            Check(vm.Soop.NoticeVisibility == Visibility.Collapsed, "真实关闭提醒按钮生效，同一问题重复回调不重新显示");
+            vm.ApplyState(DropsPlatform.Soop, State(new { refreshCompleted = true, refreshDiagnostics = Array.Empty<object>() }));
+            vm.ReportMessage(DropsPlatform.Soop, "新的网络故障", "警告");
+            Check(vm.Soop.Notice == "新的网络故障", "成功刷新后新的故障仍可提醒");
+        }
+        vm.ApplyState(DropsPlatform.Twitch, State(new { currentDrop = new {
+            name = "reward", campaign = "campaign", currentMinutes = 10, requiredMinutes = 60,
+            estimatedExtraMinutes = 2, progress = 1.0 / 6,
+        } }));
+        Check(vm.TwitchCurrentProgressText.Contains("本地临时估算") && Math.Abs(vm.TwitchCurrentProgress - 100.0 / 6) < .01,
+            "Twitch 进度条只使用远端分钟数，额外估算独立说明");
+        var populate = typeof(DropsPage).GetMethod("PopulateSettings", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        if (page.FindName("SoopPreferredChannel") is TextBox preferred && page.FindName("SoopSaveSettingsButton") is Button save)
+        {
+            populate.Invoke(page, new object[] { DropsPlatform.Soop, State(new { settings = new { preferred_bjid = "server-value" } }) });
+            preferred.Text = "unsaved-choice";
+            populate.Invoke(page, new object[] { DropsPlatform.Soop, State(new { settings = new { preferred_bjid = "background-value" } }) });
+            Check(preferred.Text == "unsaved-choice", "SOOP 后台状态不覆盖正在编辑的设置");
+            host.ConfigureRequestOverrideForSelfTest((_, command, _, _) => command == "save_settings"
+                ? Task.FromException<JsonElement>(new IOException("模拟保存失败")) : Task.FromResult(State(new { })));
+            save.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Drain();
+            Check(preferred.Text == "unsaved-choice" && save.IsEnabled, "真实保存按钮失败后保留草稿并恢复可用");
+            var saved = false;
+            host.ConfigureRequestOverrideForSelfTest((_, command, _, _) =>
+            {
+                if (command == "save_settings") saved = true;
+                return Task.FromResult(State(new { settings = new { preferred_bjid = "unsaved-choice" } }));
+            });
+            save.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); Drain();
+            populate.Invoke(page, new object[] { DropsPlatform.Soop, State(new { settings = new { preferred_bjid = "applied-value" } }) });
+            Check(saved && preferred.Text == "applied-value" && vm.Soop.Notice.Contains("已保存"),
+                "真实保存按钮发送 save_settings，成功后接受服务器设置并提示应用结果");
+        }
+        host.ConfigureRequestOverrideForSelfTest((_, _, _, _) => Task.FromResult(State(new { })));
         vm.SelectPlatform(DropsPlatform.Twitch);
         vm.ReportMessage(DropsPlatform.Twitch, "测试：接口暂时不可用，保留上次确认进度。", "警告");
         Drain();
@@ -187,13 +267,101 @@ internal static class DropsReliabilitySelfTest
                 var restarted = await host.RequestAsync(platform, "load_state", cancellationToken: timeout.Token);
                 checks.Add((restarted.GetProperty("_workerGeneration").GetInt64() > state.GetProperty("_workerGeneration").GetInt64()
                     ? "PASS " : "FAIL ") + "真实 Worker 崩溃后重建进程并使用新 generation（无账号）");
+                await host.ApplyProxyAsync(new DropsProxySettings(true, "http://127.0.0.1:9", false), timeout.Token);
+                await host.StartAsync(platform, timeout.Token);
+                await Task.Delay(250, timeout.Token);
+                var refresh = host.RequestAsync(platform, "refresh", cancellationToken: timeout.Token);
+                await Task.Delay(150, timeout.Token);
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var stopped = await host.StopAsync(platform, timeout.Token);
+                try { await refresh; } catch { /* cancelled read-only refresh */ }
+                checks.Add((clock.Elapsed < TimeSpan.FromSeconds(6) && !stopped.GetProperty("running").GetBoolean()
+                    ? "PASS " : "FAIL ") + "真实 Host 停止绕过刷新队列，Worker 取消只读刷新并退出观看（隔离、不可用测试代理）");
+                await host.StartAsync(platform, timeout.Token);
+                await Task.Delay(250, timeout.Token);
+                using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+                try { await host.RequestAsync(platform, "refresh", cancellationToken: cancel.Token); }
+                catch (OperationCanceledException) { }
+                catch (IOException) { }
+                var afterCancel = await host.RequestAsync(platform, "load_state", cancellationToken: timeout.Token);
+                checks.Add((afterCancel.GetProperty("_workerGeneration").GetInt64() > restarted.GetProperty("_workerGeneration").GetInt64()
+                    ? "PASS " : "FAIL ") + "已发送请求取消后回收旧 Worker，新请求使用新 generation，无迟到业务遗留");
+                host.ConfigureProxy(new DropsProxySettings(false, "", false));
             }
             await host.StopAsync(platform, timeout.Token);
         }
+        checks.Add(await RunScopedSoopCancellationSmokeAsync());
         return checks;
     }
 
-    private static void Drain() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+    private static async Task<string> RunScopedSoopCancellationSmokeAsync()
+    {
+        var repo = new DirectoryInfo(AppContext.BaseDirectory);
+        while (repo is not null && !File.Exists(Path.Combine(repo.FullName, ".worker-build-venv", "Scripts", "python.exe")))
+            repo = repo.Parent;
+        if (repo is null) return "BLOCKED SOOP 单账号取消传输回归需要本地 Worker 构建环境";
+        var root = Path.Combine(AppPaths.Current.Root, "scoped-soop-fixture");
+        Directory.CreateDirectory(root);
+        var script = Path.Combine(root, "fixture.py");
+        File.WriteAllText(script, """
+import sys
+from pathlib import Path
+from concurrent.futures import Future
+sys.path.insert(0, sys.argv[1])
+from Shared.protocol import WorkerBase, event
+class Worker(WorkerBase):
+    platform = 'soop'
+    needs_https = False
+    def __init__(self):
+        super().__init__(Path(sys.argv[2]), Path(sys.argv[2])/'worker.log')
+        self.accounts = {'A': True, 'B': True}
+        self.commands['stop_account'] = self.stop_account
+    def load_state(self, payload):
+        return {'running': any(self.accounts.values()), 'accounts': self.accounts}
+    def refresh(self, payload):
+        event('refresh_waiting', {})
+        self.wait_future(Future(), 20)
+    def stop_account(self, payload):
+        self.accounts[payload['uid']] = False
+        return self.load_state({})
+raise SystemExit(Worker().run())
+""");
+        await using var host = new DropsHostService();
+        host.ConfigureStartInfoForSelfTest(_ =>
+        {
+            var info = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(repo.FullName, ".worker-build-venv", "Scripts", "python.exe"),
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            };
+            foreach (var argument in new[] { script, Path.Combine(repo.FullName, "Integrations", "Drops"), root })
+                info.ArgumentList.Add(argument);
+            return info;
+        });
+        var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.EventReceived += (_, e) => { if (e.Name == "refresh_waiting") waiting.TrySetResult(); };
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var before = await host.RequestAsync(DropsPlatform.Soop, "load_state", cancellationToken: budget.Token);
+        using var retry = new CancellationTokenSource();
+        var refresh = host.RequestAsync(DropsPlatform.Soop, "refresh", new { uid = "B" }, retry.Token);
+        await waiting.Task.WaitAsync(budget.Token);
+        retry.Cancel();
+        var stopped = await host.RequestAsync(DropsPlatform.Soop, "stop_account", new { uid = "B" }, budget.Token);
+        try { await refresh; } catch (InvalidOperationException) { } catch (OperationCanceledException) { }
+        var after = await host.RequestAsync(DropsPlatform.Soop, "load_state", cancellationToken: budget.Token);
+        var accounts = stopped.GetProperty("accounts");
+        return (accounts.GetProperty("A").GetBoolean() && !accounts.GetProperty("B").GetBoolean() &&
+                before.GetProperty("_workerGeneration").GetInt64() == after.GetProperty("_workerGeneration").GetInt64()
+            ? "PASS " : "FAIL ") + "真实 Host/JSONL 取消 B 恢复并停止 B 时保留 A 与原 Worker generation（账号业务模拟）";
+    }
+
+    private static void Drain()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)

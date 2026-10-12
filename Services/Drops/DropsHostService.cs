@@ -26,6 +26,7 @@ public sealed class DropsHostService : IAsyncDisposable
         public string? LastError { get; set; }
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.Now;
         public long Generation { get; } = Interlocked.Increment(ref _nextGeneration);
+        public long SnapshotRevision;
         public bool BusinessRunning { get; set; }
         public bool RuntimeErrorReported { get; set; }
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -37,12 +38,29 @@ public sealed class DropsHostService : IAsyncDisposable
     private readonly object _sync = new();
     private readonly Dictionary<DropsPlatform, SemaphoreSlim> _connectionGates = Enum.GetValues<DropsPlatform>()
         .ToDictionary(platform => platform, _ => new SemaphoreSlim(1, 1));
-    private bool _disposing;
+    private volatile bool _disposing;
+    private readonly CancellationTokenSource _connectionLifetime = new();
     private DropsProxySettings _proxySettings = new(false, "", false);
     private Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? _requestOverrideForSelfTest;
+    private Func<DropsPlatform, ProcessStartInfo>? _startInfoOverrideForSelfTest;
 
     public event EventHandler<WorkerEvent>? EventReceived;
     public event EventHandler<WorkerSnapshot>? SnapshotChanged;
+    public bool IsCurrentEvent(DropsPlatform platform, JsonElement payload)
+    {
+        if (!payload.TryGetProperty("_workerGeneration", out var value) || !value.TryGetInt64(out var generation)) return true;
+        lock (_sync)
+            return !_disposing && (_workers.TryGetValue(platform, out var worker)
+                ? worker.Generation == generation && !worker.Lifetime.IsCancellationRequested
+                : !_retiredWorkers.Any(retired => retired.Platform == platform));
+    }
+    public bool IsCurrentGeneration(DropsPlatform platform, long generation)
+    {
+        if (generation == 0) return true;
+        lock (_sync)
+            return _workers.TryGetValue(platform, out var worker) ? worker.Generation == generation :
+                !_retiredWorkers.Any(retired => retired.Platform == platform);
+    }
 
     public void PublishUserLog(DropsPlatform platform, string level, string message) =>
         EventReceived?.Invoke(this, new WorkerEvent(platform, "log",
@@ -70,7 +88,7 @@ public sealed class DropsHostService : IAsyncDisposable
     public async Task<JsonElement> RequestAsync(DropsPlatform platform, string command, object? payload = null,
         CancellationToken cancellationToken = default)
     {
-        if (_disposing && command is not ("stop" or "shutdown")) throw new ObjectDisposedException(nameof(DropsHostService));
+        if (_disposing) throw new ObjectDisposedException(nameof(DropsHostService));
         var requestOverride = _requestOverrideForSelfTest;
         if (requestOverride is not null)
             return await requestOverride(platform, command, payload, cancellationToken).ConfigureAwait(false);
@@ -82,18 +100,31 @@ public sealed class DropsHostService : IAsyncDisposable
     private async Task<JsonElement> SendAsync(WorkerConnection worker, string command, object? payload,
         CancellationToken cancellationToken)
     {
+        if (_disposing && command != "shutdown") throw new ObjectDisposedException(nameof(DropsHostService));
         var platform = worker.Platform;
         if (worker.Process.HasExited) throw new IOException($"{platform} 后台在握手前已退出。");
         if (command is not ("hello" or "set_proxy" or "shutdown"))
             await worker.Ready.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
         using var commandLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, worker.Lifetime.Token);
-        await worker.CommandGate.WaitAsync(commandLifetime.Token).ConfigureAwait(false);
+        var control = command is "stop" or "stop_account" or "shutdown";
+        if (!control) await worker.CommandGate.WaitAsync(commandLifetime.Token).ConfigureAwait(false);
         try
         {
+        cancellationToken.ThrowIfCancellationRequested();
+        var requestPayload = JsonSerializer.SerializeToElement(payload ?? new { }, JsonOptions);
+        var accountScoped = platform == DropsPlatform.Soop && (command is "refresh" or "start_account" or "stop_account") &&
+            requestPayload.ValueKind == JsonValueKind.Object &&
+            (requestPayload.TryGetProperty("uid", out var accountUid) || requestPayload.TryGetProperty("userid", out accountUid)) &&
+            accountUid.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(accountUid.GetString());
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!worker.Pending.TryAdd(id, completion)) throw new InvalidOperationException("无法发送后台请求。");
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // A UID retry token cancels queued work. Once sent, that account's
+        // explicit stop command is responsible for cancellation; retiring the
+        // shared SOOP process would also stop every other account. The request
+        // deadline and Worker lifetime still bound in-flight operations.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            accountScoped ? CancellationToken.None : cancellationToken, worker.Lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(command switch
         {
             "refresh" when platform == DropsPlatform.Twitch => 90,
@@ -111,12 +142,18 @@ public sealed class DropsHostService : IAsyncDisposable
             _ => 30,
         }));
         using var registration = timeout.Token.Register(() => completion.TrySetCanceled(timeout.Token));
+        var sent = false;
         try
         {
-            var envelope = JsonSerializer.Serialize(new { id, command, payload = payload ?? new { } }, JsonOptions);
-            await worker.WriteGate.WaitAsync(timeout.Token).ConfigureAwait(false);
+            var envelope = JsonSerializer.Serialize(new { id, command, payload = requestPayload }, JsonOptions);
+            using var writeLifetime = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+            await worker.WriteGate.WaitAsync(writeLifetime.Token).ConfigureAwait(false);
             try
             {
+                timeout.Token.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_disposing && command != "shutdown") throw new ObjectDisposedException(nameof(DropsHostService));
+                sent = true; // a cancelled write may still have delivered bytes
                 await worker.Input.WriteLineAsync(envelope.AsMemory(), timeout.Token).ConfigureAwait(false);
                 await worker.Input.FlushAsync(timeout.Token).ConfigureAwait(false);
             }
@@ -133,19 +170,24 @@ public sealed class DropsHostService : IAsyncDisposable
             PublishSnapshot(worker);
             return result;
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !worker.Lifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (!worker.Lifetime.IsCancellationRequested)
         {
-            if (command is "refresh" or "auto_start" or "start_account" or "claim_drop" or "claim_reward")
+            // JSONL has no remote cancellation command. Once written, cancelling
+            // only the wait would leave that business operation alive.
+            if (sent && command is not ("hello" or "load_state" or "get_logs"))
             {
                 MarkCrashed(worker, $"{command} 操作超时，已终止旧后台以避免迟到状态覆盖。");
+                worker.Lifecycle = WorkerLifecycle.Stopping;
+                worker.Lifetime.Cancel();
                 TryTerminate(worker);
                 await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             }
+            cancellationToken.ThrowIfCancellationRequested();
             throw new TimeoutException($"{platform} {command} 操作超时，请重试连接；领取结果请重新刷新确认。");
         }
         finally { worker.Pending.TryRemove(id, out _); }
         }
-        finally { worker.CommandGate.Release(); }
+        finally { if (!control) worker.CommandGate.Release(); }
     }
 
     public Task<JsonElement> StartAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
@@ -153,6 +195,7 @@ public sealed class DropsHostService : IAsyncDisposable
 
     public async Task<JsonElement> StopAsync(DropsPlatform platform, CancellationToken cancellationToken = default)
     {
+        if (_disposing) return JsonSerializer.SerializeToElement(new { running = false, status = "正在退出" });
         if (_requestOverrideForSelfTest is null)
         {
             lock (_sync)
@@ -290,16 +333,25 @@ public sealed class DropsHostService : IAsyncDisposable
         Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? handler) =>
         _requestOverrideForSelfTest = handler;
 
+    internal void ConfigureStartInfoForSelfTest(Func<DropsPlatform, ProcessStartInfo> handler) =>
+        _startInfoOverrideForSelfTest = handler;
+
     private async Task<WorkerConnection> EnsureConnectedAsync(DropsPlatform platform, CancellationToken cancellationToken)
     {
+        using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _connectionLifetime.Token);
+        cancellationToken = connection.Token;
         lock (_sync)
+        {
+            if (_disposing) throw new ObjectDisposedException(nameof(DropsHostService));
             if (_workers.TryGetValue(platform, out var ready) && !ready.Process.HasExited) return ready;
+        }
         var gate = _connectionGates[platform];
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
         lock (_sync)
         {
+            if (_disposing) throw new ObjectDisposedException(nameof(DropsHostService));
             if (_workers.TryGetValue(platform, out var connected) && !connected.Process.HasExited)
                 return connected;
             if (_workers.TryGetValue(platform, out var exited))
@@ -309,7 +361,7 @@ public sealed class DropsHostService : IAsyncDisposable
             }
         }
 
-        var startInfo = BuildStartInfo(platform);
+        var startInfo = _startInfoOverrideForSelfTest?.Invoke(platform) ?? BuildStartInfo(platform);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start()) throw new InvalidOperationException($"无法启动 {platform} 后台服务。");
         var lifetime = new CancellationTokenSource();
@@ -324,13 +376,23 @@ public sealed class DropsHostService : IAsyncDisposable
         };
         worker.Input.AutoFlush = true;
         process.Exited += (_, _) => OnExited(worker);
-        lock (_sync) _workers[platform] = worker;
+        lock (_sync)
+        {
+            if (_disposing)
+            {
+                lifetime.Cancel();
+                TryTerminate(worker);
+                _retiredWorkers.Add(worker);
+                throw new ObjectDisposedException(nameof(DropsHostService));
+            }
+            _workers[platform] = worker;
+        }
         worker.OutputLoop = ReadOutputAsync(worker);
         worker.ErrorLoop = ReadErrorsAsync(worker);
         PublishSnapshot(worker);
         if (platform == DropsPlatform.Twitch)
             EventReceived?.Invoke(this, new WorkerEvent(platform, "connection_status",
-                JsonSerializer.SerializeToElement(new { phase = "worker_starting" })));
+                JsonSerializer.SerializeToElement(new { phase = "worker_starting", _workerGeneration = worker.Generation })));
 
         try
         {
@@ -476,6 +538,7 @@ public sealed class DropsHostService : IAsyncDisposable
                                 message,
                                 retryable = false,
                                 firstOccurrence = true,
+                                _workerGeneration = worker.Generation,
                             })));
                         PublishSnapshot(worker);
                     }
@@ -484,7 +547,7 @@ public sealed class DropsHostService : IAsyncDisposable
                 if (worker.RuntimeErrorReported) continue;
                 worker.LastError = safe;
                 EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "log",
-                    JsonSerializer.SerializeToElement(new { level = "error", message = safe })));
+                    JsonSerializer.SerializeToElement(new { level = "error", message = safe, _workerGeneration = worker.Generation })));
             }
         }
         catch (OperationCanceledException) { }
@@ -493,6 +556,7 @@ public sealed class DropsHostService : IAsyncDisposable
 
     private void HandleMessage(WorkerConnection worker, string line)
     {
+        if (worker.Lifetime.IsCancellationRequested) return;
         lock (_sync)
             if (!_workers.TryGetValue(worker.Platform, out var current) || !ReferenceEquals(current, worker)) return;
         try
@@ -582,7 +646,8 @@ public sealed class DropsHostService : IAsyncDisposable
         lock (_sync)
             if (!_workers.TryGetValue(worker.Platform, out var current) || !ReferenceEquals(current, worker)) return;
         SnapshotChanged?.Invoke(this, new WorkerSnapshot(worker.Platform, worker.Lifecycle, worker.Status,
-            worker.Summary, worker.StartedAt, worker.Process.HasExited ? null : worker.Process.Id, worker.LastError));
+            worker.Summary, worker.StartedAt, worker.Process.HasExited ? null : worker.Process.Id, worker.LastError,
+            worker.Generation, Interlocked.Increment(ref worker.SnapshotRevision)));
     }
 
     private WorkerSnapshot GetSnapshotLocked(DropsPlatform platform)
@@ -590,7 +655,7 @@ public sealed class DropsHostService : IAsyncDisposable
         if (!_workers.TryGetValue(platform, out var worker))
             return new(platform, WorkerLifecycle.Stopped, "未运行", "", null, null, null);
         return new(platform, worker.Lifecycle, worker.Status, worker.Summary, worker.StartedAt,
-            worker.Process.HasExited ? null : worker.Process.Id, worker.LastError);
+            worker.Process.HasExited ? null : worker.Process.Id, worker.LastError, worker.Generation, worker.SnapshotRevision);
     }
 
     private static void TryTerminate(WorkerConnection worker)
@@ -608,7 +673,15 @@ public sealed class DropsHostService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _disposing = true;
+        lock (_sync) _disposing = true;
+        _connectionLifetime.Cancel();
+        // A process can be between Start() and registration. Drain creation
+        // gates before capturing workers so that process is also retired.
+        foreach (var gate in _connectionGates.Values)
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            gate.Release();
+        }
         WorkerConnection[] workers;
         lock (_sync) workers = _workers.Values.Concat(_retiredWorkers).ToArray();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
@@ -616,7 +689,7 @@ public sealed class DropsHostService : IAsyncDisposable
         {
             if (worker.Process.HasExited) continue;
             worker.Lifecycle = WorkerLifecycle.Stopping;
-            try { await RequestAsync(worker.Platform, "shutdown", cancellationToken: timeout.Token).ConfigureAwait(false); } catch { }
+            try { await SendAsync(worker, "shutdown", null, timeout.Token).ConfigureAwait(false); } catch { }
         }
         foreach (var worker in workers)
         {
@@ -628,9 +701,17 @@ public sealed class DropsHostService : IAsyncDisposable
             }
             catch { }
             worker.Lifetime.Cancel();
-            worker.Lifetime.Dispose();
-            worker.WriteGate.Dispose();
-            worker.CommandGate.Dispose();
+            var drainDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (!worker.Pending.IsEmpty && DateTimeOffset.UtcNow < drainDeadline)
+                await Task.Delay(10).ConfigureAwait(false);
+            // Active requests release these gates in finally. Wait for that
+            // unwind before disposal rather than racing Release() with Dispose().
+            if (await worker.CommandGate.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false))
+            {
+                worker.WriteGate.Dispose();
+                worker.CommandGate.Dispose();
+                worker.Lifetime.Dispose();
+            }
             worker.Process.Dispose();
         }
         lock (_sync)
@@ -638,5 +719,6 @@ public sealed class DropsHostService : IAsyncDisposable
             _workers.Clear();
             _retiredWorkers.Clear();
         }
+        _connectionLifetime.Dispose();
     }
 }

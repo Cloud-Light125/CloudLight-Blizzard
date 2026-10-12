@@ -14,7 +14,7 @@ from yarl import URL
 
 from utils import Game, json_minify, isonow
 from exceptions import MinerException, RequestException
-from constants import CALL, GQL_QUERIES, ONLINE_DELAY, URLType, GQLQuery
+from constants import CALL, GQL_QUERIES, ONLINE_DELAY, URLType, GQLQuery, ClientType
 
 if TYPE_CHECKING:
     from twitch import Twitch
@@ -235,7 +235,11 @@ class Channel:
 
     @property
     def url(self) -> URLType:
-        return URLType(f"{self._twitch._client_type.CLIENT_URL}/{self._login}")
+        client = self._twitch._client_type
+        # Device-grant identity stays Smartbox for OAuth/GQL. Its TV landing
+        # page is not a streamer HTML page and has no Spade configuration.
+        base = ClientType.WEB.CLIENT_URL if client is ClientType.SMARTBOX else client.CLIENT_URL
+        return URLType(f"{base}/{self._login}")
 
     @property
     def iid(self) -> str:

@@ -1,6 +1,11 @@
 ﻿param(
     [string]$Python = "",
     [string]$SoopCorePath = "",
+    [ValidateSet("Local", "Distribution")]
+    [string]$BuildPurpose = "Local",
+    [switch]$AllowSoopCoreChanges,
+    [switch]$SoopAdapterOnly,
+    [string]$ArtifactsRoot = "",
     [ValidateSet("youtube", "soop", "twitch", "bilibili")]
     [string[]]$Platforms = @("youtube", "twitch", "soop", "bilibili")
 )
@@ -11,8 +16,11 @@ $env:PYTHONUTF8 = "1"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $dropsRoot = $PSScriptRoot
 $venv = Join-Path $repoRoot ".worker-build-venv"
-$artifacts = Join-Path $repoRoot "artifacts\drops"
+$artifacts = if ($ArtifactsRoot) { [System.IO.Path]::GetFullPath($ArtifactsRoot) } else { Join-Path $repoRoot "artifacts\drops" }
 $tuna = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+if ($BuildPurpose -eq 'Distribution' -and $Platforms -contains 'soop' -and -not $SoopAdapterOnly) {
+    throw 'SOOP Core 再分发许可尚未确认。对外构建禁止捆绑；本地自用请明确使用 -BuildPurpose Local。'
+}
 $pythonFinder = Join-Path $repoRoot 'build-support\Find-Python.ps1'
 if (-not (Test-Path -LiteralPath $pythonFinder)) {
     throw '找不到构建环境发现器 build-support\Find-Python.ps1。请确认仓库完整。'
@@ -55,20 +63,44 @@ $venvRuntime = Test-CloudLightPythonRuntime -Path $venvPython
 if (-not $venvRuntime) { throw '新建的 .worker-build-venv 无法加载 Python SSL 运行库。请重新安装带 SSL 的 Python/Conda。' }
 
 $buildPython = $venvPython
-& $buildPython -m pip install -i $tuna --upgrade pip pyinstaller pefile
+$constraints = Join-Path $dropsRoot 'build-constraints.txt'
+& $buildPython -m pip install -i $tuna -c $constraints pip pyinstaller pefile
 if ($LASTEXITCODE -ne 0) { throw '安装 Drops Worker 构建工具失败。请检查 Python、SSL 和清华 PyPI 镜像。' }
-& $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "youtube\requirements.txt")
+& $buildPython -m pip install -i $tuna -c $constraints -r (Join-Path $dropsRoot "youtube\requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw '安装 YouTube Worker 依赖失败。' }
-& $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "soop\requirements.txt")
+& $buildPython -m pip install -i $tuna -c $constraints -r (Join-Path $dropsRoot "soop\requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw '安装 SOOP Worker 依赖失败。' }
-& $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "twitch\requirements.txt")
+& $buildPython -m pip install -i $tuna -c $constraints -r (Join-Path $dropsRoot "twitch\requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw '安装 Twitch Worker 依赖失败。' }
 if ($Platforms -contains "bilibili") {
-    & $buildPython -m pip install -i $tuna -r (Join-Path $dropsRoot "bilibili\requirements.txt")
+    & $buildPython -m pip install -i $tuna -c $constraints -r (Join-Path $dropsRoot "bilibili\requirements.txt")
     if ($LASTEXITCODE -ne 0) { throw '安装 Bilibili Worker 依赖失败。' }
 }
 
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+$provenanceArgs = @('--repo', $repoRoot, '--purpose', $BuildPurpose)
+if ($Platforms -contains 'soop' -and -not $SoopAdapterOnly) {
+    if ([string]::IsNullOrWhiteSpace($SoopCorePath)) {
+        $SoopCorePath = Join-Path (Split-Path $repoRoot -Parent) 'cloudlight soop drops miner'
+    }
+    $SoopCorePath = (Resolve-Path -LiteralPath $SoopCorePath).Path
+    $provenanceArgs += @('--core', $SoopCorePath)
+}
+$provenanceScript = Join-Path $dropsRoot 'Shared\build_provenance.py'
+$provenanceFile = Join-Path $artifacts 'build-manifest.json'
+& $buildPython $provenanceScript @provenanceArgs --output $provenanceFile
+if ($LASTEXITCODE -ne 0) { throw 'Core 来源/能力检查失败，未开始打包。' }
+$sourceManifest = Get-Content -LiteralPath $provenanceFile -Raw | ConvertFrom-Json
+if ($Platforms -contains 'soop' -and -not $SoopAdapterOnly) {
+    Write-Host "SOOP Core: $SoopCorePath; commit=$($sourceManifest.soopCore.commit); dirty=$($sourceManifest.soopCore.dirty); sha256=$($sourceManifest.soopCore.sha256)"
+    $baseline = Get-Content (Join-Path $dropsRoot 'soop\core-baseline.json') -Raw | ConvertFrom-Json
+    if ($sourceManifest.soopCore.sha256 -ne $baseline.sha256 -and -not $AllowSoopCoreChanges) {
+        throw 'SOOP Core 内容与已验证摘要不同。请先审查来源；本地兼容性验证可显式使用 -AllowSoopCoreChanges，正式交付需重新固定基线。'
+    }
+    if ($sourceManifest.soopCore.commit -ne '6050b8a35690b091996a1efedad4655b1b094cac' -or $sourceManifest.soopCore.dirty) {
+        Write-Warning 'SOOP Core 与已验证 Git 基线不同；已执行能力检查，必须重新进行本地运行验收。'
+    }
+}
 
 function Build-Worker {
     param([string]$Platform, [string[]]$ExtraArgs = @())
@@ -80,7 +112,7 @@ function Build-Worker {
         "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
         "--name", "$Platform-worker", "--distpath", $dist,
         "--workpath", $work, "--specpath", $work,
-        "--paths", $dropsRoot, $source
+        "--paths", $dropsRoot, "--add-data", "$provenanceFile;.", $source
     ) + $ExtraArgs
     & $buildPython @arguments
     if ($LASTEXITCODE -ne 0) { throw "$Platform Worker build failed." }
@@ -149,7 +181,7 @@ $soopArgs = @()
 if ([string]::IsNullOrWhiteSpace($SoopCorePath)) {
     $SoopCorePath = Join-Path (Split-Path $repoRoot -Parent) "cloudlight soop drops miner"
 }
-if (Test-Path -LiteralPath (Join-Path $SoopCorePath "__init__.py")) {
+if (-not $SoopAdapterOnly -and (Test-Path -LiteralPath (Join-Path $SoopCorePath "__init__.py"))) {
     $resolvedSoop = (Resolve-Path -LiteralPath $SoopCorePath).Path
     $soopArgs = @(
         "--add-data", "$resolvedSoop\*.py;core",
@@ -198,6 +230,16 @@ foreach ($platform in $Platforms) {
     Write-Host "$platform Worker archive SSL contents: PASS"
 }
 
-& (Join-Path $dropsRoot "test-worker-ssl.ps1") -Root $artifacts -Platforms $Platforms
+& (Join-Path $dropsRoot "test-worker-ssl.ps1") -Root $artifacts -Platforms $Platforms -SoopAdapterOnly:$SoopAdapterOnly
+
+& $buildPython $provenanceScript @provenanceArgs --artifacts $artifacts --output $provenanceFile
+if ($LASTEXITCODE -ne 0) { throw '构建清单生成失败。' }
+$finalManifest = Get-Content -LiteralPath $provenanceFile -Raw | ConvertFrom-Json
+if ($sourceManifest.adapterSources.sha256 -ne $finalManifest.adapterSources.sha256) {
+    throw 'Drops 适配器源码在打包期间发生变化，拒绝交付混合版本 Worker。请停止编辑后重新构建。'
+}
+if ($Platforms -contains 'soop' -and -not $SoopAdapterOnly -and $sourceManifest.soopCore.sha256 -ne $finalManifest.soopCore.sha256) {
+    throw 'SOOP Core 在构建过程中发生变化，拒绝交付不一致的 Worker。'
+}
 
 Get-ChildItem -LiteralPath $artifacts -Recurse -File | Select-Object FullName,Length

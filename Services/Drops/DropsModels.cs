@@ -80,7 +80,9 @@ public sealed record WorkerSnapshot(
     string Summary,
     DateTimeOffset? StartedAt,
     int? ProcessId,
-    string? LastError);
+    string? LastError,
+    long Generation = 0,
+    long Revision = 0);
 
 public sealed record DropsRecoveryEvent(DateTimeOffset Timestamp, DropsPlatform Platform,
     string Title, string Detail, DropsConnectionState State)

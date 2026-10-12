@@ -35,10 +35,19 @@ public partial class DropsPage : UserControl
     private bool _logTailStarted;
     private bool _applyingProxyScope;
     private (DropsPlatform Platform, bool PopulateSettings)? _pendingPlatformLoad;
+    private readonly HashSet<DropsPlatform> _settingsDrafts = new();
+    private bool _populatingSettings;
 
     public DropsPage()
     {
         InitializeComponent();
+        TrackSettingsDrafts(DropsPlatform.Soop, "SoopChannelMode", "SoopManualChannel", "SoopPriorityMission",
+            "SoopPreferredChannel", "SoopAutoClaim", "SoopLowBandwidth", "SoopHangWithoutMissions",
+            "SoopMissionInterval", "SoopInventoryInterval", "SoopChannelInterval", "SoopReauthInterval");
+        TrackSettingsDrafts(DropsPlatform.YouTube, "YouTubeBrowser", "YouTubeBrowserPath", "YouTubeHeadless",
+            "YouTubeMute", "YouTubeMode", "YouTubeManualUrl", "YouTubeInterval");
+        TrackSettingsDrafts(DropsPlatform.Twitch, "TwitchLanguage", "TwitchPriorityMode", "TwitchConnectionQuality",
+            "TwitchTrayNotifications", "TwitchBadgesEmotes", "TwitchAvailableDrops", "TwitchAutoClaim");
         _retryDisplayTimer.Tick += (_, _) => _vm?.RefreshTemporalStatus(DateTimeOffset.Now);
         IsVisibleChanged += async (_, _) =>
         {
@@ -50,12 +59,27 @@ public partial class DropsPage : UserControl
         };
     }
 
+    private void TrackSettingsDrafts(DropsPlatform platform, params string[] names)
+    {
+        void Changed() { if (!_populatingSettings) _settingsDrafts.Add(platform); }
+        foreach (var name in names)
+            switch (FindName(name))
+            {
+                case TextBox text: text.TextChanged += (_, _) => Changed(); break;
+                case ComboBox combo: combo.SelectionChanged += (_, _) => Changed(); break;
+                case CheckBox check:
+                    check.Checked += (_, _) => Changed(); check.Unchecked += (_, _) => Changed(); break;
+            }
+    }
+
     public void Initialize(MainViewModel main)
     {
         _main = main;
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
+        _vm.TwitchPriorityGames.CollectionChanged += (_, _) => { if (!_populatingSettings) _settingsDrafts.Add(DropsPlatform.Twitch); };
+        _vm.TwitchExcludedGames.CollectionChanged += (_, _) => { if (!_populatingSettings) _settingsDrafts.Add(DropsPlatform.Twitch); };
         _vm.BilibiliDetails.ConfigureCommands(new(
             ScanQrLogin: StartBilibiliQrLoginAsync,
             CancelQr: CancelBilibiliQrAsync,
@@ -278,6 +302,10 @@ public partial class DropsPage : UserControl
 
     private void PopulateSettings(DropsPlatform platform, JsonElement state)
     {
+        if (_settingsDrafts.Contains(platform)) return;
+        _populatingSettings = true;
+        try
+        {
         var settingsName = platform == DropsPlatform.YouTube ? "config" : "settings";
         if (!state.TryGetProperty(settingsName, out var settings) || settings.ValueKind != JsonValueKind.Object) return;
 
@@ -334,6 +362,8 @@ public partial class DropsPage : UserControl
         TwitchAvailableDrops.IsChecked = Bool(settings, "available_drops_check");
         TwitchAutoClaim.IsChecked = Bool(settings, "auto_claim_drops", true);
         PopulateTwitchGames(state, settings);
+        }
+        finally { _populatingSettings = false; }
     }
 
     private void PopulateSoopMissions(JsonElement state, string selectedMission)
@@ -348,6 +378,11 @@ public partial class DropsPage : UserControl
 
     private void PopulateSoopMissionOptions(JsonElement tasks, string selectedMission)
     {
+        if (_settingsDrafts.Contains(DropsPlatform.Soop) && !_populatingSettings) return;
+        var wasPopulating = _populatingSettings;
+        _populatingSettings = true;
+        try
+        {
         SoopPriorityMission.Items.Clear();
         if (tasks.ValueKind != JsonValueKind.Array)
         {
@@ -387,6 +422,8 @@ public partial class DropsPage : UserControl
         SelectTag(SoopPriorityMission, selectedMission != "auto" && !selectableIds.Contains(selectedMission)
             ? "auto"
             : selectedMission);
+        }
+        finally { _populatingSettings = wasPopulating; }
     }
 
     private void PopulateTwitchLanguages(JsonElement state, string selectedLanguage)
@@ -802,7 +839,9 @@ public partial class DropsPage : UserControl
                 ["channel_refresh_interval"] = ParseInt(SoopChannelInterval, 300),
                 ["reauth_retry_interval"] = ParseInt(SoopReauthInterval, 300),
             }});
+            _settingsDrafts.Remove(DropsPlatform.Soop);
             await LoadPlatformAsync(DropsPlatform.Soop);
+            _vm.ReportMessage(DropsPlatform.Soop, "SOOP 设置已保存并应用。", "成功");
         }
         catch (Exception ex) { ShowError(ex, "保存 SOOP 设置失败"); }
             });
@@ -1058,7 +1097,9 @@ public partial class DropsPage : UserControl
                 ["mode"] = SelectedTag(YouTubeMode, "auto"), ["manual_url"] = YouTubeManualUrl.Text.Trim(),
                 ["check_interval"] = ParseInt(YouTubeInterval, 300),
             }});
+            _settingsDrafts.Remove(DropsPlatform.YouTube);
             await LoadPlatformAsync(DropsPlatform.YouTube);
+            _vm.ReportMessage(DropsPlatform.YouTube, "YouTube 设置已保存并应用。", "成功");
         }
         catch (Exception ex) { ShowError(ex, "保存 YouTube 设置失败"); }
             });
@@ -1186,11 +1227,38 @@ public partial class DropsPage : UserControl
 
     private async void OnCopyTwitchAuthorizationCode(object sender, RoutedEventArgs e)
     {
-        if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationCode)) return;
-        if (!await ClipboardService.CopyTextAsync(_vm.TwitchAuthorizationCode))
-            ShowInfo("复制失败，请稍后重试。", "Twitch 授权");
-        else
-            _vm.ReportMessage(DropsPlatform.Twitch, "验证码已复制，请在 Twitch 官方页面完成授权。");
+        if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationCode))
+        {
+            _vm?.ReportMessage(DropsPlatform.Twitch, "当前授权码已失效，请重新获取验证码。", "需要操作");
+            return;
+        }
+        var code = _vm.TwitchAuthorizationCode;
+        if (sender is Button button) button.IsEnabled = false;
+        try
+        {
+            var copied = await ClipboardService.CopyTextAsync(code);
+            if (_vm.TwitchAuthorizationCode != code)
+            {
+                _vm.ReportMessage(DropsPlatform.Twitch, "验证码已更新或失效，请使用当前页面的验证码。", "需要操作");
+                return;
+            }
+            if (!copied)
+            {
+                TwitchAuthorizationCodeBox.Focus();
+                TwitchAuthorizationCodeBox.SelectAll();
+                var owner = ClipboardService.BusyProcessName;
+                _vm.ReportMessage(DropsPlatform.Twitch,
+                    owner is null ? "剪贴板暂不可用，已选中验证码，请手动输入或稍后复制。" :
+                    $"剪贴板被 {owner} 占用，未复制。已选中验证码，可手动输入；关闭占用程序的剪贴板同步后重试。", "需要操作");
+            }
+            else
+                _vm.ReportMessage(DropsPlatform.Twitch, "验证码已复制，请在 Twitch 官方页面完成授权。");
+        }
+        catch (Exception)
+        {
+            _vm.ReportMessage(DropsPlatform.Twitch, "复制失败，请使用页面上显示的验证码手动授权。", "需要操作");
+        }
+        finally { if (sender is Button copyButton) copyButton.IsEnabled = true; }
     }
 
     private void OnAutoStartChanged(object sender, RoutedEventArgs e)
@@ -1740,7 +1808,9 @@ public partial class DropsPage : UserControl
                 ["auto_claim_drops"] = TwitchAutoClaim.IsChecked == true,
                 ["language"] = SelectedTag(TwitchLanguage, "简体中文"),
             }});
+            _settingsDrafts.Remove(DropsPlatform.Twitch);
             await LoadPlatformAsync(DropsPlatform.Twitch);
+            _vm.ReportMessage(DropsPlatform.Twitch, "Twitch 设置已保存并应用。", "成功");
         }
         catch (Exception ex) { ShowError(ex, "保存 Twitch 设置失败"); }
             });
@@ -1889,6 +1959,8 @@ public partial class DropsPage : UserControl
         catch { ShowInfo("复制失败，请稍后重试。", "复制日志"); }
     }
 
+    private void OnDismissNotice(object sender, RoutedEventArgs e) => _vm?.DismissMessage(_platform);
+
     private async void OnClearLogDisplay(object sender, RoutedEventArgs e)
     {
         var platform = _platform;
@@ -1932,11 +2004,13 @@ public partial class DropsPage : UserControl
 
     private void OnWorkerEvent(object? sender, WorkerEvent message)
     {
+        if (_main is not null && !_main.DropsHost.IsCurrentEvent(message.Platform, message.Payload)) return;
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
         {
             var payload = message.Payload.Clone();
             Dispatcher.BeginInvoke(new Action(() =>
             {
+                if (_main is not null && !_main.DropsHost.IsCurrentEvent(message.Platform, payload)) return;
                 if (_vm == null) return;
                 if (_platform != DropsPlatform.Soop) return;
                 if (!payload.TryGetProperty("allTasks", out var allTasks) || allTasks.ValueKind != JsonValueKind.Array)
@@ -1999,6 +2073,7 @@ public partial class DropsPage : UserControl
         if (message.Name != "auth_required") return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (_main is not null && !_main.DropsHost.IsCurrentEvent(message.Platform, message.Payload)) return;
             var url = Text(message.Payload, "url");
             var code = Text(message.Payload, "code");
             var automatic = Bool(message.Payload, "automatic");

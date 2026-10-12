@@ -1,10 +1,16 @@
 ﻿param(
     [switch]$SkipDropsWorkers,
-    [string]$Python = ''
+    [string]$Python = '',
+    [ValidateSet('Local', 'Distribution')]
+    [string]$DropsBuildPurpose = 'Distribution',
+    [switch]$OmitUnlicensedSoopCore
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+if ($DropsBuildPurpose -eq 'Distribution' -and -not $OmitUnlicensedSoopCore) {
+    throw '当前 SOOP Core 未确认再分发许可，完整对外安装包构建已阻止。可用 -DropsBuildPurpose Local 生成仅供本机自用的候选包，禁止对外发布。'
+}
 $releaseVersion = '2.1.8'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
@@ -16,8 +22,11 @@ $buildSourceState = if ([string]::IsNullOrWhiteSpace($buildSourceState)) { 'clea
 $msbuildProperties = @(
     "-p:BuildCommit=$buildCommit",
     "-p:BuildTimestamp=$buildTimestamp",
-    '-p:BilibiliUiSchema=2'
+    '-p:BilibiliUiSchema=2',
+    "-p:DropsBuildPurpose=$DropsBuildPurpose"
 )
+$dropsArtifacts = if ($OmitUnlicensedSoopCore) { Join-Path $root 'artifacts\drops-distribution' } else { Join-Path $root 'artifacts\drops' }
+$msbuildProperties += @("-p:DropsArtifactsRoot=$dropsArtifacts", "-p:SoopAdapterOnly=$($OmitUnlicensedSoopCore.IsPresent.ToString().ToLowerInvariant())")
 $buildOriginalPath = $env:PATH
 $buildOriginalCondaPrefix = $env:CONDA_PREFIX
 $buildOriginalPythonHome = $env:PYTHONHOME
@@ -74,15 +83,47 @@ try {
     }
 
     'bin', 'obj', 'publish', 'installer\out' | ForEach-Object {
-        Remove-Item -Recurse -Force $_ -ErrorAction SilentlyContinue
+        $buildDirectory = [IO.Path]::GetFullPath((Join-Path $root $_))
+        if (-not $buildDirectory.StartsWith($root.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw '构建清理路径超出项目目录，已停止。'
+        }
+        Remove-Item -LiteralPath $buildDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if (-not $SkipDropsWorkers) {
         Write-Host '[1/9] Drops Workers' -ForegroundColor Cyan
-        & (Join-Path $root 'Integrations\Drops\build-workers.ps1') -Python $pythonInfo.Path
+        & (Join-Path $root 'Integrations\Drops\build-workers.ps1') -Python $pythonInfo.Path -BuildPurpose $DropsBuildPurpose -ArtifactsRoot $dropsArtifacts -SoopAdapterOnly:$OmitUnlicensedSoopCore
         if ($LASTEXITCODE -ne 0) { throw 'Drops Worker 构建失败。请检查上方 Python/SSL 环境摘要和 pip 错误。' }
     }
     else { Write-Host '[1/9] Drops Workers skipped' -ForegroundColor Yellow }
+
+    # Skipping compilation may reuse binaries only when their recorded runtime
+    # source and commit still match this candidate. Never silently publish old
+    # Workers alongside a new WPF assembly.
+    $workerManifestPath = Join-Path $dropsArtifacts 'build-manifest.json'
+    if (-not (Test-Path -LiteralPath $workerManifestPath)) { throw '缺少 Worker 构建清单，请重新打包。' }
+    $workerManifest = Get-Content -LiteralPath $workerManifestPath -Raw | ConvertFrom-Json
+    if ($workerManifest.commit -ne $buildCommit -or $workerManifest.purpose -ne $DropsBuildPurpose) {
+        throw 'Worker 提交或构建用途与主程序不一致，请重新打包。'
+    }
+    $provenancePython = Join-Path $root '.worker-build-venv\Scripts\python.exe'
+    $currentManifestPath = Join-Path $root 'obj\current-drops-source.json'
+    $currentManifestArgs = @('--repo', $root, '--purpose', $DropsBuildPurpose, '--output', $currentManifestPath)
+    if ($workerManifest.soopCore) { $currentManifestArgs += @('--core', $workerManifest.soopCore.path) }
+    & $provenancePython (Join-Path $root 'Integrations\Drops\Shared\build_provenance.py') @currentManifestArgs
+    if ($LASTEXITCODE -ne 0) { throw '当前 Drops 来源检查失败。' }
+    $currentManifest = Get-Content -LiteralPath $currentManifestPath -Raw | ConvertFrom-Json
+    if ($currentManifest.adapterSources.sha256 -ne $workerManifest.adapterSources.sha256 -or
+        ($workerManifest.soopCore -and $currentManifest.soopCore.sha256 -ne $workerManifest.soopCore.sha256)) {
+        throw 'Worker 与当前 Drops 源码不一致，请重新打包。'
+    }
+    foreach ($platformName in @('twitch', 'soop', 'youtube', 'bilibili')) {
+        $workerPath = Join-Path $dropsArtifacts "$platformName\$platformName-worker.exe"
+        if (-not (Test-Path -LiteralPath $workerPath) -or
+            (Get-FileHash -LiteralPath $workerPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $workerManifest.workers.$platformName) {
+            throw "$platformName Worker 摘要不匹配，请重新打包。"
+        }
+    }
 
     Write-Host '[2/9] dotnet restore' -ForegroundColor Cyan
     & dotnet restore 'CloudLight Blizzard.csproj' -r win-x64 -v minimal @msbuildProperties
@@ -99,10 +140,8 @@ try {
     $publishedDll = Join-Path $root 'publish\CloudLight Blizzard.dll'
     if (-not (Test-Path -LiteralPath $publishedExe -PathType Leaf)) { throw 'publish 输出缺少 CloudLight Blizzard.exe。' }
     if (-not (Test-Path -LiteralPath $publishedDll -PathType Leaf)) { throw 'publish 输出缺少 CloudLight Blizzard.dll。' }
-    if (-not $SkipDropsWorkers) {
-        & (Join-Path $root 'Integrations\Drops\test-worker-ssl.ps1') -Root (Join-Path $root 'publish\_internal\drops')
-        if ($LASTEXITCODE -ne 0) { throw '发布目录 Drops Worker SSL 自检失败。' }
-    }
+    & (Join-Path $root 'Integrations\Drops\test-worker-ssl.ps1') -Root (Join-Path $root 'publish\_internal\drops') -SoopAdapterOnly:$OmitUnlicensedSoopCore
+    if ($LASTEXITCODE -ne 0) { throw '发布目录 Drops Worker SSL 自检失败。' }
     Remove-Item publish\*.pdb -ErrorAction SilentlyContinue
 
     Write-Host '[5/9] publish selftest' -ForegroundColor Cyan

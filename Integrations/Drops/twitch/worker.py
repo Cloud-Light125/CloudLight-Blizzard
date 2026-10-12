@@ -157,7 +157,7 @@ class TwitchWorker(WorkerBase):
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
         future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
         try:
-            return future.result(timeout=timeout)
+            return self.wait_future(future, timeout)
         except TimeoutError:
             future.cancel()
             raise
@@ -421,7 +421,7 @@ class TwitchWorker(WorkerBase):
         client_state = str(getattr(self._client, "_cloudlight_login_state", "")) if self._client is not None else ""
         auth_state = client_state or self._login_state
         auth_required = getattr(self._client, "_cloudlight_auth_required", None) if self._client is not None else None
-        if self._client is not None and getattr(self._client, "_cloudlight_ready", False):
+        if self.running and self._client is not None and getattr(self._client, "_cloudlight_ready", False):
             auth_state = "running"
         return {
             "_snapshotStarted": captured_at,
@@ -546,7 +546,12 @@ class TwitchWorker(WorkerBase):
         if not self._ready_transition.wait(timeout=90):
             self.stop({})
             raise TimeoutError("Twitch 初始掉宝信息加载超时。")
-        refreshed = self.refresh({})
+        if not self.running or self._client is None or not getattr(self._client, "_cloudlight_ready", False):
+            raise RuntimeError(self._login_error or "Twitch 初始掉宝信息读取未完成，连接已停止。")
+        # The initial run just fetched and published inventory. Restarting it
+        # here races channel discovery and repeats the entire authorization /
+        # inventory pass. Channel readiness is a separate connection phase.
+        refreshed = self.load_state({})
         self._set_login_state("running", "Twitch 正在运行")
         self.status("正在运行", self._account_summary())
         refreshed["autoStartCompleted"] = True
@@ -628,20 +633,16 @@ class TwitchWorker(WorkerBase):
         self.reload({})
         deadline = time.monotonic() + 75.0
         inventory_completed = False
-        stable_states = {self._core["State"].IDLE, self._core["State"].CHANNEL_SWITCH}
         while time.monotonic() < deadline:
+            with self._control_lock:
+                if self._read_interrupted:
+                    raise RuntimeError("Twitch 刷新已被停止操作取消。")
             if not inventory_completed:
                 inventory_completed = facade.wait_for_games(
                     revision,
                     max(0.0, min(0.25, deadline - time.monotonic())),
                 )
-            state_change = getattr(client, "_state_change", None)
-            state_is_stable = (
-                getattr(client, "_state", None) in stable_states
-                and state_change is not None
-                and not state_change.is_set()
-            )
-            if inventory_completed and state_is_stable:
+            if inventory_completed:
                 state = self.load_state({})
                 state["refreshCompleted"] = True
                 event("refresh_completed", {})
@@ -656,7 +657,7 @@ class TwitchWorker(WorkerBase):
 
     def reload(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._client is not None:
-            self._loop.call_soon_threadsafe(self._client.change_state, self._core["State"].RESTART)
+            self._loop.call_soon_threadsafe(self._client.request_inventory_refresh)
         return {"reloading": self._client is not None}
 
     def get_accounts(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -692,7 +693,7 @@ class TwitchWorker(WorkerBase):
             game_name = campaign.game.name
             drops = list(campaign.drops)
             required_minutes = max((drop.total_required_minutes for drop in drops), default=0)
-            remaining_minutes = max((drop.total_remaining_minutes for drop in drops), default=0)
+            remaining_minutes = max((self._remote_remaining_minutes(drop) for drop in drops), default=0)
             completed_drops = sum(
                 drop.is_claimed
                 or drop.required_minutes <= 0
@@ -746,13 +747,26 @@ class TwitchWorker(WorkerBase):
                 result.append({
                     "id": drop.id, "campaignId": campaign.id, "campaign": campaign.name,
                     "game": campaign.game.name, "name": drop.name,
-                    "currentMinutes": drop.current_minutes, "requiredMinutes": drop.required_minutes,
-                    "progress": drop.progress,
+                    "currentMinutes": drop.real_current_minutes, "requiredMinutes": drop.required_minutes,
+                    "estimatedExtraMinutes": drop.extra_current_minutes,
+                    "progressSource": "remote_with_estimate" if drop.extra_current_minutes else "remote",
+                    "progress": min(1, drop.real_current_minutes / drop.required_minutes) if drop.required_minutes > 0 else 0,
                     "completed": drop.watch_requirement_completed,
                     "claimed": drop.is_claimed, "canClaim": drop.can_claim,
                     "startsAt": drop.starts_at.isoformat(), "endsAt": drop.ends_at.isoformat(),
                 })
         return result
+
+    @staticmethod
+    def _remote_remaining_minutes(drop: Any, visited: frozenset[str] = frozenset()) -> int:
+        # Core total_remaining_minutes includes its local timer estimate.
+        # Display progress uses only the last Twitch-confirmed values.
+        if drop.id in visited:
+            return 0
+        own = max(0, drop.required_minutes - drop.real_current_minutes)
+        predecessors = getattr(drop, "precondition_drops", ())
+        return own + max((TwitchWorker._remote_remaining_minutes(drop.campaign.timed_drops[pid], visited | {drop.id})
+                          for pid in predecessors if pid in drop.campaign.timed_drops), default=0)
 
     def _check_snapshot_owner(self) -> None:
         user_id = getattr(getattr(self._client, "_auth_state", None), "user_id", None) or self._authenticated_user_id
@@ -774,9 +788,14 @@ class TwitchWorker(WorkerBase):
         drop = getattr(getattr(getattr(client, "gui", None), "progress", None), "drop", None)
         if drop is None or not self.running:
             return None
+        confirmed = drop.real_current_minutes
+        estimated = drop.extra_current_minutes
         return {"id": drop.id, "name": drop.name, "campaign": drop.campaign.name,
-                "currentMinutes": drop.current_minutes, "requiredMinutes": drop.required_minutes,
-                "progress": drop.progress, "progressSource": "core"}
+                "currentMinutes": confirmed, "requiredMinutes": drop.required_minutes,
+                "estimatedExtraMinutes": estimated,
+                "progress": min(1, confirmed / drop.required_minutes) if drop.required_minutes > 0 else 0,
+                "progressSource": "remote_with_estimate" if estimated else "remote",
+                "lastInventorySyncAt": str(getattr(client, "_cloudlight_inventory_updated_at", ""))}
 
     def claim_drop(self, payload: dict[str, Any]) -> dict[str, Any]:
         drop_id = str(payload.get("id", "")).strip()
