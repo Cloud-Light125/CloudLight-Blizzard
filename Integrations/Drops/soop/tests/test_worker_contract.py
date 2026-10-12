@@ -642,6 +642,16 @@ class SoopWorkerContractTests(unittest.TestCase):
                     "gameAccountLinkState": "linked",
                     "gameAccountBindingStatus": "已绑定",
                     "gameNo": "", "accountLinkPath": "",
+                    "remoteMinutes": 106, "confirmedMinutes": 106,
+                    "historicalHighWaterMinutes": 106, "remotePercent": 88,
+                    "progressSource": "remote", "progressState": "unavailable",
+                    "progressDiagnostic": "尚未完成显式 SOOP 完整刷新，当前值不能标记为确认",
+                    "lastConfirmedAt": "", "watchEligible": True,
+                    "heartbeatStatus": "ok", "heartbeatSuccess": True,
+                    "heartbeatFailures": 0, "heartbeatResult": None,
+                    "heartbeatLastSuccess": "now",
+                    "connectionHealthy": True, "bridgeConnected": True,
+                    "bridgeLastActivitySeconds": None,
                 }])
             finally:
                 self._close(worker)

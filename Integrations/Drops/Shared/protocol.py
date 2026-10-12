@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Callable
@@ -22,8 +23,9 @@ REQUIRED_COMMANDS = {
 }
 _WRITE_LOCK = threading.Lock()
 _OUTPUT_CLOSED = False
+_SEQUENCE = 0
 _SECRET = re.compile(
-    r'''(?i)(["']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|password|passwd|cookie|set-cookie|SESSDATA|bili_jct|DedeUserID(?:__ckMd5)?|buvid3|buvid4|b_nut|sid|LIVE_BUVID|csrf(?:_token)?)["']?\s*[:=]\s*["']?)([^"'\s,;}\]]+)'''
+    r'''(?i)(["']?(?:authorization|authticket|bbsticket|userticket|oauth(?:[_ -]?token)?|access[_ -]?token|refresh[_ -]?token|device[_ -]?code|password|passwd|cookie|set-cookie|SESSDATA|bili_jct|DedeUserID(?:__ckMd5)?|buvid3|buvid4|b_nut|sid|LIVE_BUVID|csrf(?:_token)?)["']?\s*[:=]\s*["']?)([^"'\s,;}\]]+)'''
 )
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/=]+")
 _SECRET_QUERY = re.compile(r"(?i)([?&](?:access_token|refresh_token|oauth_token|token|auth|csrf|csrf_token|SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=)[^&#\s]+")
@@ -114,13 +116,17 @@ def redact(value: object) -> str:
 
 
 def emit(message: dict[str, Any]) -> None:
-    global _OUTPUT_CLOSED
+    global _OUTPUT_CLOSED, _SEQUENCE
     if _OUTPUT_CLOSED:
         return
-    encoded = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
     with _WRITE_LOCK:
         if _OUTPUT_CLOSED:
             return
+        _SEQUENCE += 1
+        envelope = dict(message)
+        envelope["sequence"] = _SEQUENCE
+        envelope["_emittedAt"] = time.monotonic_ns()
+        encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
         try:
             sys.stdout.write(encoded + "\n")
             sys.stdout.flush()
@@ -240,6 +246,7 @@ class WorkerBase:
             "get_logs": self.get_logs,
             "set_proxy": self.set_proxy,
             "ssl_check": self.ssl_check,
+            "network_check": self.network_check,
             "shutdown": self.shutdown,
         }
         if self.needs_https:
@@ -327,7 +334,67 @@ class WorkerBase:
         }
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"running": self.running, "proxy": self.proxy, "runtime": self.runtime_state()}
+        return {"_snapshotStarted": time.monotonic_ns(), "running": self.running, "proxy": self.proxy, "runtime": self.runtime_state()}
+
+    def network_check(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Probe official endpoints without credentials using the configured route."""
+        import ssl
+        import socket
+        endpoints = {
+            "twitch": ["https://id.twitch.tv/oauth2/validate", "https://gql.twitch.tv/gql", "https://www.twitch.tv"],
+            "soop": ["https://login.sooplive.co.kr", "https://drops.sooplive.com", "https://exlogcollector.sooplive.com/gather"],
+            "youtube": ["https://www.youtube.com"],
+            "bilibili": ["https://passport.bilibili.com", "https://api.live.bilibili.com"],
+        }
+        proxy = self.proxy["proxyUrl"] if self.proxy["enableProxy"] else ""
+        context = ssl.create_default_context()
+        results = []
+        for url in endpoints.get(self.platform, []):
+            host = urlsplit(url).hostname
+            item = {"host": host, "route": "proxy" if proxy else "direct", "reachable": False}
+            # This is local DNS only. A CONNECT proxy may resolve independently.
+            if not proxy:
+                try:
+                    item["localDns"] = sorted({entry[4][0] for entry in socket.getaddrinfo(host, 443)})
+                except OSError:
+                    item["dnsError"] = True
+            routes = [proxy]
+            if proxy and self.proxy["fallbackDirect"]:
+                routes.append("")
+            for route in routes:
+                item["route"] = "proxy" if route else "direct"
+                try:
+                    if self.platform == "bilibili":
+                        import httpx
+                        with httpx.Client(proxy=route or None, trust_env=False, verify=context, timeout=8) as client:
+                            status = client.get(url).status_code
+                    elif self.platform == "youtube":
+                        import requests
+                        with requests.Session() as client:
+                            client.trust_env = False
+                            response = client.get(url, proxies={"https": route, "http": route} if route else {}, timeout=8)
+                            status = response.status_code
+                    else:
+                        import asyncio
+                        import aiohttp
+                        async def check():
+                            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8), trust_env=False) as client:
+                                async with client.get(url, proxy=route or None, ssl=context) as response:
+                                    return response.status
+                        status = asyncio.run(check())
+                    # 401/403/405 proves HTTPS connectivity, not authentication.
+                    item.update(reachable=True, status=status, stage="http")
+                    if status in {401, 403, 405, 412, 429}:
+                        item["statusRemark"] = {401: "接口需要登录（探测未携带凭据）", 403: "接口拒绝请求",
+                                                405: "接口不接受 GET 探测", 412: "接口拒绝请求或限制访问",
+                                                429: "接口限流"}[status]
+                except Exception as exc:
+                    item.update(errorType=type(exc).__name__, detail=redact(exc), stage="connect_or_tls")
+                    continue
+                break
+            results.append(item)
+        return {"results": results, "tlsVerification": True, "authenticationTested": False,
+                "ok": all(item["reachable"] and item.get("status", 0) not in {403, 412, 429} and item.get("status", 0) < 500 for item in results)}
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_runtime()

@@ -45,6 +45,7 @@ public static class UiVisualTreeSelfTest
         FileSnapshot? settingsSnapshot = null;
         try
         {
+            AppPaths.UseSelfTestRoot(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "ui-data"));
             settingsPath = AppSettings.FilePath;
             settingsSnapshot = CaptureFile(settingsPath);
             File.WriteAllText(settingsPath, "{\"LastMainSection\":\"overview\"}");
@@ -106,7 +107,9 @@ public static class UiVisualTreeSelfTest
                 checks, "旧 LastMainSection=overview 安全迁移到 accounts 并默认打开账号页面");
             Assert(accountFooter?.Visibility == Visibility.Visible,
                 checks, "AccountFooter 在账号页面可见");
-            Assert(window.MinWidth >= 1000 && window.MinHeight >= 660, checks, "主窗口设置了窄窗口安全最小尺寸");
+            Assert(window.MinWidth > 0 && window.MinHeight > 0 &&
+                   window.MinWidth <= SystemParameters.WorkArea.Width && window.MinHeight <= SystemParameters.WorkArea.Height,
+                checks, "主窗口最小尺寸适应当前 DPI 工作区");
 
             var pages = new[]
             {
@@ -343,6 +346,13 @@ public static class UiVisualTreeSelfTest
                 var bilibiliActivityList = FindNamed(dropsPage, "BilibiliActivityList");
                 var dropsHeader = FindNamed(dropsPage, "DropsPageHeader");
                 var dropsNetworkSummary = FindNamed(dropsPage, "DropsNetworkSummary");
+                if (FindNamed(dropsPage, "DropsDiagnosticsExpander") is Expander diagnostics)
+                    diagnostics.IsExpanded = true;
+                dropsVm.SoopQuickStart.IsExpanded = true;
+                dropsVm.YouTubeQuickStart.IsExpanded = true;
+                dropsVm.TwitchQuickStart.IsExpanded = true;
+                dropsVm.BilibiliQuickStart.IsExpanded = true;
+                dropsPage.UpdateLayout();
                 var proxyScopeChecks = new[]
                 {
                     FindNamed(dropsPage, "SoopUseProxyCheck"),
@@ -668,6 +678,8 @@ public static class UiVisualTreeSelfTest
             preview.UpdateLayout();
             Assert(FindNamed(preview, "StartButton") is Button, checks, "切换预览包含开始切换按钮");
             Assert(FindNamed(preview, "BlockerBox") is Border, checks, "切换预览包含安全阻断区域");
+            if (dropsPage is not null && dropsVm is not null && requestOverrideHost is not null)
+                DropsReliabilitySelfTest.Run(dropsPage, dropsVm, requestOverrideHost, window, outputPath, checks);
             Assert(bindingListener is not BindingErrorTraceListener errors || !errors.HasErrors,
                 checks, "WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误");
 

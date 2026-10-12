@@ -34,6 +34,7 @@ public partial class DropsPage : UserControl
     private readonly SemaphoreSlim _proxySettingsGate = new(1, 1);
     private bool _logTailStarted;
     private bool _applyingProxyScope;
+    private (DropsPlatform Platform, bool PopulateSettings)? _pendingPlatformLoad;
 
     public DropsPage()
     {
@@ -229,21 +230,36 @@ public partial class DropsPage : UserControl
             }
         }
         catch (Exception ex) { ShowError(ex, "刷新掉宝总览失败"); }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
     }
 
-    private async Task LoadPlatformAsync(DropsPlatform platform)
+    private async Task LoadPlatformAsync(DropsPlatform platform, bool populateSettings = true)
     {
-        if (_vm == null || _loading) return;
+        if (_vm == null) return;
+        if (_loading)
+        {
+            _pendingPlatformLoad = (platform, populateSettings ||
+                _pendingPlatformLoad is { } pending && pending.Platform == platform && pending.PopulateSettings);
+            return;
+        }
         _loading = true;
         try
         {
             var state = await _vm.LoadAsync(platform);
             _vm.ApplyState(platform, state);
-            PopulateSettings(platform, state);
+            if (populateSettings && platform == _platform) PopulateSettings(platform, state);
         }
         catch (Exception ex) { ShowError(ex, $"加载 {PlatformName(platform)} 状态失败"); }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
+    }
+
+    private async Task FinishLoadingAsync()
+    {
+        _loading = false;
+        var pending = _pendingPlatformLoad;
+        _pendingPlatformLoad = null;
+        if (pending is { } load && load.Platform == _platform)
+            await LoadPlatformAsync(load.Platform, load.PopulateSettings);
     }
 
     private async Task RefreshPlatformAsync(DropsPlatform platform)
@@ -257,7 +273,7 @@ public partial class DropsPage : UserControl
             PopulateSettings(platform, state);
         }
         catch (Exception ex) { ShowError(ex, $"刷新 {PlatformName(platform)} 失败"); }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
     }
 
     private void PopulateSettings(DropsPlatform platform, JsonElement state)
@@ -424,14 +440,103 @@ public partial class DropsPage : UserControl
 
     private async void OnStart(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null || sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         await StartPlatformAsync(platform);
+            });
+    }
+
+    private async void OnActiveStart(object sender, RoutedEventArgs e) => await RunButtonAsync(sender, async () =>
+    {
+        if (_platform == DropsPlatform.Twitch && _vm?.IsTwitchLoggedIn != true) await LoginTwitchAsync();
+        else if (_platform == DropsPlatform.Bilibili && _vm?.BilibiliDetails.LoggedIn != true) await StartBilibiliQrLoginAsync();
+        else await StartPlatformAsync(_platform);
+    });
+
+    private async void OnActiveStop(object sender, RoutedEventArgs e) =>
+        await RunButtonAsync(sender, () => StopPlatformAsync(_platform));
+
+    private async void OnActiveRetry(object sender, RoutedEventArgs e) => await RunButtonAsync(sender, async () =>
+    {
+        if (_platform == DropsPlatform.Twitch)
+        {
+            if (_vm?.IsTwitchLoggedIn == true) await StartPlatformAsync(_platform);
+            else await LoginTwitchAsync();
+        }
+        else if (_platform == DropsPlatform.Soop) await RefreshSoopAsync();
+        else if (_platform == DropsPlatform.Bilibili) await RefreshBilibiliAsync();
+        else await RefreshPlatformAsync(_platform);
+    });
+
+    private void OnActiveInventory(object sender, RoutedEventArgs e)
+    {
+        var url = _platform switch
+        {
+            DropsPlatform.Soop => "https://drops.sooplive.com/inventory",
+            DropsPlatform.Twitch => "https://www.twitch.tv/drops/inventory",
+            DropsPlatform.Bilibili => "https://live.bilibili.com",
+            _ => "https://www.youtube.com",
+        };
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch (Exception ex) { ShowError(ex, "打开官方页面失败"); }
+    }
+
+    private void OnShowDropsLog(object sender, RoutedEventArgs e)
+    {
+        LogTextBox.BringIntoView();
+        LogTextBox.ScrollToEnd();
+    }
+
+    private void OnOpenCurrentWatch(object sender, RoutedEventArgs e)
+    {
+        var url = _vm?.GetCurrentWatchUrl(SoopAccountsList.SelectedItem as DropsRow) ?? "";
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+            uri.Host is not ("www.twitch.tv" or "play.sooplive.com" or "live.bilibili.com" or "www.youtube.com" or "youtube.com"))
+        {
+            ShowInfo("当前尚未确认直播间；SOOP 多账号可先选中账号。", "打开直播间");
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch (Exception ex) { ShowError(ex, "打开直播间失败"); }
+    }
+
+    private async void OnNetworkCheck(object sender, RoutedEventArgs e) => await RunButtonAsync(sender, async () =>
+    {
+        if (_vm is null) return;
+        var platform = _platform;
+        _vm.ReportMessage(platform, "正在测试官方 HTTPS 接口与当前代理路径…");
+        try
+        {
+            var result = await _vm.RequestAsync(platform, "network_check");
+            var lines = result.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array
+                ? results.EnumerateArray().Select(item => $"{Text(item, "host")} · {Text(item, "route")} · " +
+                    (Bool(item, "reachable") ? $"HTTP {Int(item, "status", 0)} {Text(item, "statusRemark")}" : $"{Text(item, "stage")}：{Text(item, "errorType")} {Text(item, "detail")}"))
+                : new[] { result.ToString() };
+            _vm.ReportMessage(platform, string.Join(Environment.NewLine, lines) + "\nHTTPS 连通性测试；未验证账号授权或观看资格。",
+                Bool(result, "ok") ? "提示" : "警告");
+        }
+        catch (Exception ex) { _vm.ReportMessage(platform, $"网络测试失败：{SafeUiError(ex, "网络测试失败")}", "错误"); }
+    });
+
+    private static async Task RunButtonAsync(object sender, Func<Task> action)
+    {
+        if (sender is not Button button) { await action(); return; }
+        if (!button.IsEnabled) return;
+        button.SetCurrentValue(IsEnabledProperty, false);
+        try { await action(); }
+        finally
+        {
+            button.SetCurrentValue(IsEnabledProperty, true);
+            button.GetBindingExpression(IsEnabledProperty)?.UpdateTarget();
+        }
     }
 
     private async Task StartPlatformAsync(DropsPlatform platform, bool automatic = false)
     {
         if (_vm == null) return;
         if (platform == DropsPlatform.Twitch) _vm.BeginTwitchStart(automatic: false);
+        if (platform == DropsPlatform.Soop) _vm.BeginSoopStartAll();
         try
         {
             if (platform == DropsPlatform.Bilibili)
@@ -457,8 +562,11 @@ public partial class DropsPage : UserControl
 
     private async void OnStop(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null || sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         await StopPlatformAsync(platform);
+            });
     }
 
     private async Task StopPlatformAsync(DropsPlatform platform)
@@ -478,10 +586,13 @@ public partial class DropsPage : UserControl
 
     private async void OnRefresh(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_platform == DropsPlatform.Soop) await RefreshSoopAsync();
         else if (_platform == DropsPlatform.Twitch) await RefreshTwitchAsync();
         else if (_platform == DropsPlatform.Bilibili) await RefreshBilibiliAsync();
         else await RefreshPlatformAsync(_platform);
+            });
     }
 
     private async void OnSoopRefresh(object sender, RoutedEventArgs e) => await RefreshSoopAsync();
@@ -497,7 +608,13 @@ public partial class DropsPage : UserControl
             _vm.ApplyState(DropsPlatform.Soop, state);
             PopulateSettings(DropsPlatform.Soop, state);
             if (!Bool(state, "refreshCompleted"))
-                throw new InvalidOperationException(Text(state, "refreshError", "SOOP 刷新未完成，当前显示上次成功数据。"));
+            {
+                _vm.FailSoopRefresh();
+                if (state.TryGetProperty("refreshDiagnostics", out var diagnostics) && diagnostics.ValueKind == JsonValueKind.Array)
+                    foreach (var account in diagnostics.EnumerateArray().Where(item => Text(item, "status") == "failed"))
+                        _vm.SetSoopFailure(Text(account, "error"), uid: Text(account, "uid"));
+                _vm.ReportMessage(DropsPlatform.Soop, Text(state, "refreshError", "SOOP 刷新未完成，当前显示上次成功数据。"), "警告");
+            }
         }
         catch (Exception ex)
         {
@@ -505,7 +622,7 @@ public partial class DropsPage : UserControl
             _vm.SetSoopFailure(ex.Message);
             if (showError) ShowError(ex, "刷新 SOOP 掉宝信息失败");
         }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
     }
 
     private void OnOpenProxySettings(object sender, RoutedEventArgs e)
@@ -666,6 +783,8 @@ public partial class DropsPage : UserControl
 
     private async void OnSaveSoop(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         try
         {
@@ -686,10 +805,13 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.Soop);
         }
         catch (Exception ex) { ShowError(ex, "保存 SOOP 设置失败"); }
+            });
     }
 
     private async void OnSoopAddAccount(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (SoopAccountPolicy.RequiresMultiAccountConfirmation(_vm.Accounts.Count))
         {
@@ -709,13 +831,16 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.Soop);
         }
         catch (Exception ex) { SoopPassword.Clear(); ShowError(ex, "添加 SOOP 账号失败"); }
+            });
     }
 
-    private async void OnSoopStartAccount(object sender, RoutedEventArgs e) => await RunSoopAccountCommandAsync("start_account", "启动");
-    private async void OnSoopStopAccount(object sender, RoutedEventArgs e) => await RunSoopAccountCommandAsync("stop_account", "停止");
+    private async void OnSoopStartAccount(object sender, RoutedEventArgs e) => await RunButtonAsync(sender, () => RunSoopAccountCommandAsync("start_account", "启动"));
+    private async void OnSoopStopAccount(object sender, RoutedEventArgs e) => await RunButtonAsync(sender, () => RunSoopAccountCommandAsync("stop_account", "停止"));
 
     private async void OnSoopSetPrimaryAccount(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row)
         {
@@ -728,6 +853,7 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.Soop);
         }
         catch (Exception ex) { ShowError(ex, "设置 SOOP 主账号失败"); }
+            });
     }
 
     private async Task RunSoopAccountCommandAsync(string command, string action)
@@ -735,7 +861,7 @@ public partial class DropsPage : UserControl
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个 SOOP 账号。", $"{action}账号"); return; }
         if (command == "start_account") _vm.BeginSoopStart(row.Id, automatic: false);
-        if (command == "stop_account") _vm.StopSoopByUser();
+        if (command == "stop_account") _vm.StopSoopByUser(row.Id);
         try
         {
             await _vm.RequestAsync(DropsPlatform.Soop, command, new { userid = row.Id });
@@ -743,13 +869,15 @@ public partial class DropsPage : UserControl
         }
         catch (Exception ex)
         {
-            if (command == "start_account") _vm.SetSoopFailure(ex.Message);
+            if (command == "start_account") _vm.SetSoopFailure(ex.Message, uid: row.Id);
             ShowError(ex, $"{action} SOOP 账号失败");
         }
     }
 
     private async void OnSoopDeleteAccount(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (SoopAccountsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个 SOOP 账号。", "删除账号"); return; }
         if (MessageBox.Show($"删除 SOOP 账号「{row.Primary}」的本地登录信息？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -763,6 +891,7 @@ public partial class DropsPage : UserControl
             ShowInfo("SOOP 账号已删除，本地登录信息已清理。", "删除账号");
         }
         catch (Exception ex) { ShowError(ex, "删除 SOOP 账号失败"); }
+            });
     }
 
     private async void OnClaimSoopReward(object sender, RoutedEventArgs e)
@@ -917,6 +1046,8 @@ public partial class DropsPage : UserControl
 
     private async void OnSaveYouTube(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         try
         {
@@ -930,13 +1061,17 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.YouTube);
         }
         catch (Exception ex) { ShowError(ex, "保存 YouTube 设置失败"); }
+            });
     }
 
     private async void OnYouTubeAddProfile(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         try { await _vm.RequestAsync(DropsPlatform.YouTube, "add_profile", new { name = YouTubeProfileName.Text.Trim() }); YouTubeProfileName.Clear(); await LoadPlatformAsync(DropsPlatform.YouTube); }
         catch (Exception ex) { ShowError(ex, "添加观看账号失败"); }
+            });
     }
 
     private async void OnYouTubeLogin(object sender, RoutedEventArgs e)
@@ -953,16 +1088,21 @@ public partial class DropsPage : UserControl
 
     private async void OnYouTubeDeleteProfile(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (YouTubeProfilesList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个观看账号。", "删除账号"); return; }
         var result = MessageBox.Show("是否同时删除该观看账号的浏览器登录数据？\n\n选择“否”只从列表移除，浏览器资料目录仍保留。", "删除观看账号", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
         if (result == MessageBoxResult.Cancel) return;
         try { await _vm.RequestAsync(DropsPlatform.YouTube, "delete_profile", new { name = row.Id, deleteData = result == MessageBoxResult.Yes }); await LoadPlatformAsync(DropsPlatform.YouTube); }
         catch (Exception ex) { ShowError(ex, "删除观看账号失败"); }
+            });
     }
 
     private async void OnYouTubeAddChannel(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         try
         {
@@ -975,18 +1115,24 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.YouTube);
         }
         catch (Exception ex) { ShowError(ex, "添加频道失败"); }
+            });
     }
 
     private async void OnYouTubeDeleteChannel(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (YouTubeChannelsList.SelectedIndex < 0) { ShowInfo("请先选择一个频道。", "删除频道"); return; }
         try { await _vm.RequestAsync(DropsPlatform.YouTube, "delete_channel", new { index = YouTubeChannelsList.SelectedIndex }); await LoadPlatformAsync(DropsPlatform.YouTube); }
         catch (Exception ex) { ShowError(ex, "删除频道失败"); }
+            });
     }
 
     private async void OnYouTubeToggleChannel(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (YouTubeChannelsList.SelectedItem is not DropsRow row || YouTubeChannelsList.SelectedIndex < 0) { ShowInfo("请先选择一个频道。", "启用或停用频道"); return; }
         try
@@ -1000,10 +1146,11 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.YouTube);
         }
         catch (Exception ex) { ShowError(ex, "更新频道状态失败"); }
+            });
     }
 
     private async void OnTwitchLogin(object sender, RoutedEventArgs e)
-        => await LoginTwitchAsync();
+        => await RunButtonAsync(sender, LoginTwitchAsync);
 
     private async Task LoginTwitchAsync()
     {
@@ -1014,7 +1161,7 @@ public partial class DropsPage : UserControl
             return;
         }
         _vm.BeginTwitchLogin();
-        try { await _vm.RequestAsync(DropsPlatform.Twitch, "login"); await LoadPlatformAsync(DropsPlatform.Twitch); }
+        try { await _vm.RequestAsync(DropsPlatform.Twitch, "login", new { continueWatching = _main?.Settings.AutoStartTwitch == true }); await LoadPlatformAsync(DropsPlatform.Twitch); }
         catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
     }
 
@@ -1026,6 +1173,13 @@ public partial class DropsPage : UserControl
 
     private void OpenTwitchAuthorizationUrl(string url)
     {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+            uri.Host is not ("www.twitch.tv" or "twitch.tv" or "id.twitch.tv") ||
+            !string.IsNullOrEmpty(uri.UserInfo) || uri.Port != 443)
+        {
+            _vm?.ReportMessage(DropsPlatform.Twitch, "授权地址不可信，请重试授权。", "错误");
+            return;
+        }
         try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
         catch { _ = CopyLoginUrlAsync(url); }
     }
@@ -1035,6 +1189,8 @@ public partial class DropsPage : UserControl
         if (_vm == null || string.IsNullOrWhiteSpace(_vm.TwitchAuthorizationCode)) return;
         if (!await ClipboardService.CopyTextAsync(_vm.TwitchAuthorizationCode))
             ShowInfo("复制失败，请稍后重试。", "Twitch 授权");
+        else
+            _vm.ReportMessage(DropsPlatform.Twitch, "验证码已复制，请在 Twitch 官方页面完成授权。");
     }
 
     private void OnAutoStartChanged(object sender, RoutedEventArgs e)
@@ -1056,6 +1212,8 @@ public partial class DropsPage : UserControl
 
     private async void OnTwitchLogout(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null || !_vm.CanClearTwitchLogin ||
             MessageBox.Show("清除 Twitch 本地登录信息并停止当前登录/连接尝试？\n\n优先游戏、排除游戏、自动启动、代理和其它界面设置都会保留。",
                 "清除 Twitch 登录信息", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
@@ -1071,10 +1229,13 @@ public partial class DropsPage : UserControl
             _vm.FailClearTwitchLogin(ex.Message);
             ShowError(ex, "清除 Twitch 登录信息失败");
         }
+            });
     }
 
     private async void OnTwitchRetry(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null || _vm.IsTwitchLoginInProgress || _vm.IsClearingTwitchLogin) return;
         try
         {
@@ -1091,6 +1252,7 @@ public partial class DropsPage : UserControl
             }
         }
         catch (Exception ex) { _vm.SetTwitchFailure(ex.Message); }
+            });
     }
 
     private void OnSoopRetryNow(object sender, RoutedEventArgs e) => _vm?.RetrySoopNow();
@@ -1130,6 +1292,8 @@ public partial class DropsPage : UserControl
         {
             var state = await _vm.RequestAsync(DropsPlatform.Bilibili, "refresh", new { discover = true });
             _vm.ApplyState(DropsPlatform.Bilibili, state);
+            if (!Bool(state, "refreshCompleted", true))
+                _vm.ReportMessage(DropsPlatform.Bilibili, Text(state, "refreshError", "刷新未完成，保留最近成功数据。"), "警告");
             PopulateSettings(DropsPlatform.Bilibili, state);
             SyncBilibiliSettingsToApp();
         }
@@ -1137,7 +1301,7 @@ public partial class DropsPage : UserControl
         {
             if (showError) ShowError(ex, "刷新哔哩哔哩掉宝失败");
         }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
     }
 
     private async Task DiscoverBilibiliAsync()
@@ -1153,7 +1317,7 @@ public partial class DropsPage : UserControl
                 ShowInfo(Text(result, "message"), "哔哩哔哩活动发现");
         }
         catch (Exception ex) { ShowError(ex, "发现哔哩哔哩活动失败"); }
-        finally { _loading = false; }
+        finally { await FinishLoadingAsync(); }
     }
 
     private async Task StartBilibiliQrLoginAsync()
@@ -1560,6 +1724,8 @@ public partial class DropsPage : UserControl
 
     private async void OnSaveTwitch(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         try
         {
@@ -1577,14 +1743,18 @@ public partial class DropsPage : UserControl
             await LoadPlatformAsync(DropsPlatform.Twitch);
         }
         catch (Exception ex) { ShowError(ex, "保存 Twitch 设置失败"); }
+            });
     }
 
     private async void OnTwitchSelectChannel(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (_vm == null) return;
         if (TwitchChannelsList.SelectedItem is not DropsRow row) { ShowInfo("请先选择一个在线频道。", "切换频道"); return; }
         try { await _vm.RequestAsync(DropsPlatform.Twitch, "select_channel", new { id = row.Id }); await LoadPlatformAsync(DropsPlatform.Twitch); }
         catch (Exception ex) { ShowError(ex, "切换 Twitch 频道失败"); }
+            });
     }
 
     private void OnOpenTwitchInventory(object sender, RoutedEventArgs e)
@@ -1739,6 +1909,8 @@ public partial class DropsPage : UserControl
 
     private async void OnImport(object sender, RoutedEventArgs e)
     {
+        await RunButtonAsync(sender, async () =>
+        {
         if (sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         using var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "选择旧版程序目录", UseDescriptionForTitle = true };
         if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
@@ -1755,6 +1927,7 @@ public partial class DropsPage : UserControl
         var message = result.Success ? $"导入完成：{string.Join("、", result.Copied)}\n原目录已保留。" : $"导入未完全成功：{string.Join("；", result.Failed)}";
         MessageBox.Show(message, "导入旧版数据", MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
         await LoadPlatformAsync(platform);
+            });
     }
 
     private void OnWorkerEvent(object? sender, WorkerEvent message)
@@ -1766,7 +1939,6 @@ public partial class DropsPage : UserControl
             {
                 if (_vm == null) return;
                 if (_platform != DropsPlatform.Soop) return;
-                _vm.ApplySoopAccountStatus(payload);
                 if (!payload.TryGetProperty("allTasks", out var allTasks) || allTasks.ValueKind != JsonValueKind.Array)
                     return;
                 var selected = payload.TryGetProperty("settings", out var settings) &&
@@ -1799,6 +1971,11 @@ public partial class DropsPage : UserControl
             }));
             return;
         }
+        if (message.Name is "drop" or "current_channel" or "channel" or "refresh_completed")
+        {
+            RefreshTwitchStateFromEvent();
+            return;
+        }
         if (message.Name == "games" && message.Payload.TryGetProperty("items", out var items) &&
             items.ValueKind == JsonValueKind.Array)
         {
@@ -1825,10 +2002,9 @@ public partial class DropsPage : UserControl
             var url = Text(message.Payload, "url");
             var code = Text(message.Payload, "code");
             var automatic = Bool(message.Payload, "automatic");
-            _vm?.SetTwitchAuthorization(url, code, automatic);
             if (automatic || string.IsNullOrWhiteSpace(url)) return;
-            try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
-            catch { _ = CopyLoginUrlAsync(url); }
+            if (_vm?.TwitchAuthState != "authorization_required" || _vm.TwitchAuthorizationUrl != url || _vm.TwitchAuthorizationCode != code) return;
+            OpenTwitchAuthorizationUrl(url);
         }));
     }
 
@@ -1838,6 +2014,8 @@ public partial class DropsPage : UserControl
         {
             if (!await ClipboardService.CopyTextAsync(url))
                 ShowInfo("无法打开浏览器，且剪贴板暂时被占用。请稍后重试。", "Twitch 登录");
+            else
+                _vm?.ReportMessage(DropsPlatform.Twitch, "无法自动打开浏览器；官方授权地址已复制，可手动打开并输入验证码。", "需要操作");
         }
         catch { ShowInfo("无法打开浏览器，请稍后重试。", "Twitch 登录"); }
     }
@@ -1848,7 +2026,7 @@ public partial class DropsPage : UserControl
         _ = Dispatcher.InvokeAsync(async () =>
         {
             if (_platform == DropsPlatform.Twitch && !_loading)
-                await LoadPlatformAsync(DropsPlatform.Twitch);
+                await LoadPlatformAsync(DropsPlatform.Twitch, populateSettings: false);
         });
     }
 
@@ -1898,21 +2076,11 @@ public partial class DropsPage : UserControl
     private static string PlatformName(DropsPlatform platform) => platform switch { DropsPlatform.Soop => "SOOP", DropsPlatform.YouTube => "YouTube", DropsPlatform.Bilibili => "哔哩哔哩", _ => "Twitch" };
     private void ShowError(Exception ex, string title)
     {
-        var message = title.Contains("Twitch", StringComparison.OrdinalIgnoreCase)
-            ? "Twitch 掉宝服务运行失败，请查看运行日志。"
-            : title.Contains("YouTube", StringComparison.OrdinalIgnoreCase)
-                ? "YouTube 观看服务启动失败，请查看运行日志。"
-                : title.Contains("SOOP", StringComparison.OrdinalIgnoreCase)
-                    ? "SOOP 掉宝服务运行失败，请查看运行日志。"
-                    : title.Contains("哔哩哔哩", StringComparison.OrdinalIgnoreCase) || title.Contains("Bilibili", StringComparison.OrdinalIgnoreCase)
-                        ? "哔哩哔哩掉宝服务运行失败，请检查网络策略、登录状态和运行日志。"
-                    : SafeUiError(ex, title);
-        var dialog = new PlatformErrorWindow(title, message) { Owner = Window.GetWindow(this) };
-        if (dialog.ShowDialog() == true)
-        {
-            LogTextBox.BringIntoView();
-            LogTextBox.ScrollToEnd();
-        }
+        var platform = title.Contains("Twitch", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.Twitch :
+            title.Contains("SOOP", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.Soop :
+            title.Contains("YouTube", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.YouTube :
+            title.Contains("哔哩哔哩") ? DropsPlatform.Bilibili : _platform;
+        _vm?.ReportMessage(platform, $"{title}：{SafeUiError(ex, title)}", "错误");
     }
 
     private static string SafeUiError(Exception ex, string title)
@@ -1923,5 +2091,5 @@ public partial class DropsPage : UserControl
             ? $"{title}，请查看运行日志。"
             : message;
     }
-    private static void ShowInfo(string message, string title) => MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+    private void ShowInfo(string message, string title) => _vm?.ReportMessage(_platform, $"{title}：{message}");
 }

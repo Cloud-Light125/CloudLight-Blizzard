@@ -58,6 +58,24 @@ from bilibili_drops_miner.client_parts.http import request_with_network_fallback
 
 
 class BilibiliWorkerContractTests(unittest.TestCase):
+    def test_stopping_progress_poller_cancels_inflight_request(self) -> None:
+        entered = threading.Event()
+        released = threading.Event()
+        async def poll():
+            entered.set()
+            try:
+                await asyncio.sleep(30)
+            finally:
+                released.set()
+        worker = SimpleNamespace(auto_task_progress=True, task_interval=10,
+                                 poll_progress_once=poll, report_warning=lambda *args: None)
+        poller = bilibili_worker.BilibiliProgressPoller(worker)
+        poller.start()
+        self.assertTrue(entered.wait(2))
+        poller.stop()
+        self.assertTrue(released.is_set())
+        self.assertIsNone(poller._thread)
+
     @staticmethod
     def _close_worker(worker: bilibili_worker.BilibiliWorker) -> None:
         worker._close_qr()
@@ -743,6 +761,10 @@ class BilibiliWorkerContractTests(unittest.TestCase):
                             status=6, message="领取成功", success=True, skipped=False,
                         )]
 
+                stopped = asyncio.run(worker._claim_with_client(FakeClient(), ["task-a"], automatic=True))
+                self.assertEqual(stopped, [])
+                self.assertEqual(calls, 0)
+                worker.running = True
                 first = asyncio.run(worker._claim_with_client(FakeClient(), ["task-a"], automatic=True))
                 second = asyncio.run(worker._claim_with_client(FakeClient(), ["task-a"], automatic=True))
                 self.assertEqual(len(first), 1)

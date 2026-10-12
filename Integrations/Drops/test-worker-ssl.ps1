@@ -125,6 +125,11 @@ try {
                 $coreError = [string](Get-CloudLightJsonProperty -Object $coreResult -Name 'coreError')
                 throw "Packaged SOOP Worker cannot load SOOP Core. Output: $coreError"
             }
+            $coreCapabilities = Get-CloudLightJsonProperty -Object $coreResult -Name 'coreCapabilities'
+            if (-not [bool](Get-CloudLightJsonProperty -Object $coreCapabilities -Name 'forceRefreshAccount') -or
+                -not [bool](Get-CloudLightJsonProperty -Object $coreCapabilities -Name 'forceRefresh')) {
+                throw 'Packaged SOOP Core is too old: force_refresh_account / force_refresh are required.'
+            }
             Write-Host "Packaged soop Core import self-test: PASS" -ForegroundColor Green
         }
     }

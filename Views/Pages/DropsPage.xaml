@@ -137,8 +137,8 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="1.1*" MinWidth="100"/>
                     <ColumnDefinition Width="1.8*" MinWidth="150"/>
-                    <ColumnDefinition Width="120"/>
-                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="0.8*"/>
+                    <ColumnDefinition Width="1.2*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding Secondary}" ToolTip="{Binding Secondary}"
                            VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
@@ -227,8 +227,10 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid>
+
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding Campaign}" ToolTip="{Binding Campaign}"
                                FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
@@ -246,6 +248,13 @@
                            Foreground="{DynamicResource Text.Secondary}" FontSize="11"/>
                 <ProgressBar Grid.Row="4" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}"
                              Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0"/>
+                <StackPanel Grid.Row="5" Margin="0,7,0,0">
+                    <TextBlock Text="{Binding WatchPathText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SyncState}" Foreground="{DynamicResource Accent.Primary}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding RemainingText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ConfirmationText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Diagnostic}" Foreground="{DynamicResource Status.Warning}" FontSize="11" TextWrapping="Wrap"/>
+                </StackPanel>
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="BilibiliTaskRowTemplate">
@@ -357,7 +366,7 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <ScrollViewer x:Name="DropsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="28,24,22,32">
             <ctrl:PageHeader x:Name="DropsPageHeader" Title="掉宝" Description="统一管理 SOOP、YouTube、Twitch 与哔哩哔哩的观看与掉宝。">
                 <ctrl:PageHeader.HeaderActions>
@@ -367,55 +376,6 @@
                     </StackPanel>
                 </ctrl:PageHeader.HeaderActions>
             </ctrl:PageHeader>
-
-            <Border x:Name="DropsNetworkSummary" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="14,11">
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <WrapPanel>
-                            <TextBlock Text="网络与代理" Style="{StaticResource SectionTitle}" FontSize="16"/>
-                            <Border Style="{StaticResource Badge}" Margin="10,0,0,0" Padding="8,3">
-                                <TextBlock Text="{Binding NetworkProxyModeText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                            </Border>
-                        </WrapPanel>
-                        <UniformGrid Columns="2" Margin="0,8,0,0">
-                            <StackPanel>
-                                <TextBlock Text="代理地址" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
-                                <TextBlock Text="{Binding NetworkProxyUrlText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding NetworkProxyUrlText}"/>
-                            </StackPanel>
-                            <StackPanel Margin="14,0,0,0">
-                                <TextBlock Text="失败策略" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
-                                <TextBlock Text="{Binding NetworkProxyFallbackText}" FontSize="11.5"/>
-                            </StackPanel>
-                        </UniformGrid>
-                        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,9,0,0">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="掉宝代理范围" FontWeight="SemiBold" FontSize="11.5"/>
-                                    <TextBlock Text="{Binding NetworkProxyScopeText}" Foreground="{DynamicResource Text.Muted}"
-                                               FontSize="10.5" Margin="0,2,0,0"/>
-                                </StackPanel>
-                                <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <CheckBox x:Name="SoopUseProxyCheck" Content="SOOP" Style="{StaticResource ThemeCheckBox}"
-                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                    <CheckBox x:Name="YouTubeUseProxyCheck" Content="YouTube" Style="{StaticResource ThemeCheckBox}"
-                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                    <CheckBox x:Name="TwitchUseProxyCheck" Content="Twitch" Style="{StaticResource ThemeCheckBox}"
-                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                    <CheckBox x:Name="BilibiliUseProxyCheck" Content="哔哩哔哩" Style="{StaticResource ThemeCheckBox}"
-                                              Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                </WrapPanel>
-                            </Grid>
-                        </Border>
-                        <TextBlock Text="代理地址、总开关和失败策略仍在设置页管理；Chrome / Brave 调试连接始终直连。"
-                                   Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <Button Grid.Column="1" Content="前往设置" Style="{StaticResource SecondaryButton}"
-                            Padding="13,0" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnOpenProxySettings"/>
-                </Grid>
-            </Border>
 
             <Grid x:Name="PlatformTabsBar" Margin="0,14,0,10">
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -445,30 +405,47 @@
                 </RadioButton>
             </Grid>
 
+            <Border x:Name="DropsRuntimeSummary" Style="{StaticResource SurfaceCard}" Margin="0,0,0,12" Padding="16">
+                <StackPanel>
+                    <WrapPanel>
+                        <TextBlock Text="{Binding ActivePlatform.Name}" Style="{StaticResource SectionTitle}" Margin="0,0,14,0"/>
+                        <TextBlock Text="{Binding ActivePlatform.Status}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding ActiveAccountText, StringFormat=账号：{0}}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ActivePlatform.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                    <WrapPanel Margin="0,10,0,0">
+                        <Button x:Name="DropsActiveStartButton" Content="{Binding ActiveStartText}" IsEnabled="{Binding CanActiveStart}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnActiveStart"/>
+                        <Button x:Name="DropsActiveStopButton" Content="停止" IsEnabled="{Binding CanActiveStop}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnActiveStop"/>
+                        <Button Content="刷新当前平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnRefresh"/>
+                        <Button Content="官方背包 / 平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnActiveInventory"/>
+                        <Button Content="打开直播间" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnOpenCurrentWatch"/>
+                    </WrapPanel>
+                    <Border x:Name="DropsNoticeBanner" Visibility="{Binding ActivePlatform.NoticeVisibility}"
+                            Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="10" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ActivePlatform.NoticeLevel}" FontWeight="SemiBold">
+                                <TextBlock.Style><Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="成功"><Setter Property="Foreground" Value="{DynamicResource Status.Success}"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="警告"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="错误"><Setter Property="Foreground" Value="{DynamicResource Status.Error}"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="需要操作"><Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style></TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding ActivePlatform.Notice}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <WrapPanel Margin="0,7,0,0">
+                                <Button Content="重试连接 / 刷新" Style="{StaticResource SecondaryButton}" Padding="10,0" Click="OnActiveRetry"/>
+                                <Button Content="查看日志" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnShowDropsLog"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
             <StackPanel x:Name="SoopPanel" Visibility="{Binding SoopPanelVisibility}">
-                <Border Style="{StaticResource SurfaceCard}">
-                    <StackPanel>
-                        <DockPanel>
-                            <Button Content="使用帮助" Tag="Soop" DockPanel.Dock="Right"
-                                    Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
-                            <StackPanel>
-                                <TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="先添加账号并刷新掉宝信息，确认任务后再启动账号。"
-                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"/>
-                            </StackPanel>
-                        </DockPanel>
-                        <Border x:Name="SoopHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
-                                Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
-                            <TextBlock Text="添加账号后，先刷新直播间、任务和背包。确认存在可用任务后，再启动账号。程序会按照当前策略自动选择直播间并执行掉宝任务。"
-                                       Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
-                        </Border>
-                        <Expander Header="{Binding SoopQuickStart.Summary}" IsExpanded="{Binding SoopQuickStart.IsExpanded, Mode=TwoWay}"
-                                  Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
-                            <ItemsControl ItemsSource="{Binding SoopQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
-                                          Margin="12,6,0,0"/>
-                        </Expander>
-                    </StackPanel>
-                </Border>
+
 
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
@@ -487,10 +464,11 @@
                                            Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,10,0"/>
                             </StackPanel>
                         </DockPanel>
+                        <TextBlock Text="{Binding SoopWatchStatusText}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                         <Grid Margin="0,10,0,0" MinHeight="92">
                             <ListBox ItemsSource="{Binding SoopCurrentProgress}"
                                      ItemTemplate="{StaticResource SoopProgressRowTemplate}" MaxHeight="300"/>
-                            <TextBlock Text="当前没有正在累计的掉宝任务"
+                            <TextBlock Text="尚未确认有效观看任务，请检查账号、直播间资格和同步状态"
                                        Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center"
                                        VerticalAlignment="Center" IsHitTestVisible="False">
                                 <TextBlock.Style>
@@ -589,41 +567,33 @@
                         <WrapPanel Margin="0,14,0,0"><Button Content="保存设置" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnSaveSoop"/><Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/><ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/></WrapPanel>
                     </StackPanel>
                 </Border>
-            </StackPanel>
-
-            <StackPanel x:Name="YouTubePanel" Visibility="{Binding YouTubePanelVisibility}">
-                <Border Style="{StaticResource SurfaceCard}">
+            <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <Button Content="使用帮助" Tag="YouTube"
-                                        Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
-                                <Button x:Name="YouTubeStartButton" Content="开始观看" Tag="YouTube"
-                                        Visibility="{Binding YouTube.StartVisibility}" Style="{StaticResource PrimaryButton}"
-                                        Padding="12,0" Margin="8,0,0,0" Click="OnStart"/>
-                                <Button x:Name="YouTubeStopButton" Content="停止观看" Tag="YouTube"
-                                        Visibility="{Binding YouTube.StopVisibility}" Style="{StaticResource SecondaryButton}"
-                                        Padding="12,0" Margin="8,0,0,0" Click="OnStop"/>
-                            </StackPanel>
+                            <Button Content="使用帮助" Tag="Soop" DockPanel.Dock="Right"
+                                    Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
                             <StackPanel>
-                                <TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="CloudLight Blizzard 会使用所选 Chrome / Brave 和独立观看账号检查已启用频道，发现直播后自动开始观看。"
-                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"
-                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="先添加账号并刷新掉宝信息，确认任务后再启动账号。"
+                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"/>
                             </StackPanel>
                         </DockPanel>
-                        <Border x:Name="YouTubeHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                        <Border x:Name="SoopHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
                                 Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
-                            <TextBlock Text="选择 Chrome 或 Brave，添加观看账号并通过“打开登录窗口”完成 YouTube 登录。随后添加并启用要监控的频道。启动后，程序会定期检查直播并自动开始观看。"
+                            <TextBlock Text="添加账号后，先刷新直播间、任务和背包。确认存在可用任务后，再启动账号。程序会按照当前策略自动选择直播间并执行掉宝任务。"
                                        Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
                         </Border>
-                        <Expander Header="{Binding YouTubeQuickStart.Summary}" IsExpanded="{Binding YouTubeQuickStart.IsExpanded, Mode=TwoWay}"
+                        <Expander Header="{Binding SoopQuickStart.Summary}" IsExpanded="{Binding SoopQuickStart.IsExpanded, Mode=TwoWay}"
                                   Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
-                            <ItemsControl ItemsSource="{Binding YouTubeQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                            <ItemsControl ItemsSource="{Binding SoopQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
                                           Margin="12,6,0,0"/>
                         </Expander>
                     </StackPanel>
                 </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="YouTubePanel" Visibility="{Binding YouTubePanelVisibility}">
+
 
                 <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                     <StackPanel>
@@ -691,9 +661,69 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+            <Border Style="{StaticResource SurfaceCard}">
+                    <StackPanel>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button Content="使用帮助" Tag="YouTube"
+                                        Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
+                                <Button x:Name="YouTubeStartButton" Content="开始观看" Tag="YouTube"
+                                        Visibility="{Binding YouTube.StartVisibility}" Style="{StaticResource PrimaryButton}"
+                                        Padding="12,0" Margin="8,0,0,0" Click="OnStart"/>
+                                <Button x:Name="YouTubeStopButton" Content="停止观看" Tag="YouTube"
+                                        Visibility="{Binding YouTube.StopVisibility}" Style="{StaticResource SecondaryButton}"
+                                        Padding="12,0" Margin="8,0,0,0" Click="OnStop"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="CloudLight Blizzard 会使用所选 Chrome / Brave 和独立观看账号检查已启用频道，发现直播后自动开始观看。"
+                                           Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <Border x:Name="YouTubeHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8"
+                                Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
+                            <TextBlock Text="选择 Chrome 或 Brave，添加观看账号并通过“打开登录窗口”完成 YouTube 登录。随后添加并启用要监控的频道。启动后，程序会定期检查直播并自动开始观看。"
+                                       Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
+                        </Border>
+                        <Expander Header="{Binding YouTubeQuickStart.Summary}" IsExpanded="{Binding YouTubeQuickStart.IsExpanded, Mode=TwoWay}"
+                                  Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
+                            <ItemsControl ItemsSource="{Binding YouTubeQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}"
+                                          Margin="12,6,0,0"/>
+                        </Expander>
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <StackPanel x:Name="TwitchPanel" Visibility="{Binding TwitchPanelVisibility}">
+                <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="14"
+                            Margin="0,14,0,0" Visibility="{Binding TwitchAuthorizationVisibility}">
+                        <StackPanel>
+                            <TextBlock Text="Twitch 授权" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="请在 Twitch 官方页面完成授权。" Style="{StaticResource FieldHint}"/>
+                            <TextBlock Text="授权码" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                            <TextBlock Text="{Binding TwitchAuthorizationCode}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding TwitchAuthorizationExpiryText}" Margin="0,6,0,0" Foreground="{DynamicResource Text.Secondary}"/>
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Content="打开 Twitch 授权页面" Style="{StaticResource PrimaryButton}"
+                                        Padding="14,0" Click="OnOpenTwitchAuthorization"/>
+                                <Button Content="复制授权码" Style="{StaticResource SecondaryButton}"
+                                        Padding="14,0" Margin="8,0,0,0" Click="OnCopyTwitchAuthorizationCode"/>
+                                <TextBlock Text="正在等待授权……" Foreground="{DynamicResource Text.Secondary}"
+                                           VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                <Border x:Name="TwitchCurrentProgressCard" Style="{StaticResource SurfaceCard}" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="当前观看与奖励" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="{Binding TwitchChannelText}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                        <TextBlock Text="{Binding TwitchDataSourceText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding TwitchCurrentProgressText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding TwitchCurrentProgress, Mode=OneWay}" Style="{StaticResource ThemeProgressBar}" Margin="0,9,0,0" Height="6"/>
+                    </StackPanel>
+                </Border>
                 <Border Style="{StaticResource SurfaceCard}">
                     <StackPanel>
                         <DockPanel>
@@ -792,24 +822,7 @@
                     <TextBlock Text="{Binding TwitchLastSuccessText}"
                                Visibility="{Binding TwitchLastSuccessVisibility}"
                                Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,7,0,0"/>
-                    <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="14"
-                            Margin="0,14,0,0" Visibility="{Binding TwitchAuthorizationVisibility}">
-                        <StackPanel>
-                            <TextBlock Text="Twitch 授权" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Text="请在 Twitch 官方页面完成授权。" Style="{StaticResource FieldHint}"/>
-                            <TextBlock Text="授权码" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                            <TextBlock Text="{Binding TwitchAuthorizationCode}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
-                            <WrapPanel Margin="0,12,0,0">
-                                <Button Content="打开 Twitch 授权页面" Style="{StaticResource PrimaryButton}"
-                                        Padding="14,0" Click="OnOpenTwitchAuthorization"/>
-                                <Button Content="复制授权码" Style="{StaticResource SecondaryButton}"
-                                        Padding="14,0" Margin="8,0,0,0" Click="OnCopyTwitchAuthorizationCode"/>
-                                <TextBlock Text="正在等待授权……" Foreground="{DynamicResource Text.Secondary}"
-                                           VerticalAlignment="Center" Margin="12,0,0,0"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
+
                     <CheckBox x:Name="TwitchAutoStart" Style="{StaticResource ThemeCheckBox}"
                               Content="启动 CloudLight Blizzard 时自动运行 Twitch"
                               Margin="0,14,0,0" Click="OnAutoStartChanged"/>
@@ -1052,8 +1065,8 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="1.1*" MinWidth="100"/>
                                     <ColumnDefinition Width="1.8*" MinWidth="150"/>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="180"/>
+                                    <ColumnDefinition Width="0.8*"/>
+                                    <ColumnDefinition Width="1.2*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="游戏" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
                                 <TextBlock Grid.Column="1" Text="活动或奖励名称" Margin="14,0,0,0" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
@@ -1089,6 +1102,59 @@
                     <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
                     <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" Click="OnSaveTwitch"/>
                 </StackPanel></Border>
+
+            <Expander x:Name="DropsDiagnosticsExpander" Header="网络、代理与诊断" Margin="0,14,0,0"
+                      Foreground="{DynamicResource Text.Primary}" IsExpanded="False">
+            <Border x:Name="DropsNetworkSummary" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="14,11">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <WrapPanel>
+                            <TextBlock Text="网络与代理" Style="{StaticResource SectionTitle}" FontSize="16"/>
+                            <Button Content="网络测试" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnNetworkCheck"/>
+                            <Border Style="{StaticResource Badge}" Margin="10,0,0,0" Padding="8,3">
+                                <TextBlock Text="{Binding NetworkProxyModeText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
+                            </Border>
+                        </WrapPanel>
+                        <UniformGrid Columns="2" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="代理地址" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
+                                <TextBlock Text="{Binding NetworkProxyUrlText}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding NetworkProxyUrlText}"/>
+                            </StackPanel>
+                            <StackPanel Margin="14,0,0,0">
+                                <TextBlock Text="失败策略" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
+                                <TextBlock Text="{Binding NetworkProxyFallbackText}" FontSize="11.5"/>
+                            </StackPanel>
+                        </UniformGrid>
+                        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,9,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="掉宝代理范围" FontWeight="SemiBold" FontSize="11.5"/>
+                                    <TextBlock Text="{Binding NetworkProxyScopeText}" Foreground="{DynamicResource Text.Muted}"
+                                               FontSize="10.5" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <CheckBox x:Name="SoopUseProxyCheck" Content="SOOP" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="YouTubeUseProxyCheck" Content="YouTube" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="TwitchUseProxyCheck" Content="Twitch" Style="{StaticResource ThemeCheckBox}"
+                                              Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                    <CheckBox x:Name="BilibiliUseProxyCheck" Content="哔哩哔哩" Style="{StaticResource ThemeCheckBox}"
+                                              Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                </WrapPanel>
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="代理地址、总开关和失败策略仍在设置页管理；Chrome / Brave 调试连接始终直连。"
+                                   Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="前往设置" Style="{StaticResource SecondaryButton}"
+                            Padding="13,0" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnOpenProxySettings"/>
+                </Grid>
+            </Border>
+            </Expander>
 
             <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                 <StackPanel><DockPanel><TextBlock Text="运行日志" Style="{StaticResource SectionTitle}"/><WrapPanel DockPanel.Dock="Right"><Button Content="复制全部" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnCopyAllLogs"/><Button Content="清空显示" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnClearLogDisplay"/></WrapPanel></DockPanel>

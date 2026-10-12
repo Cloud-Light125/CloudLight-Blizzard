@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using CloudLightBlizzard.Services.Drops;
@@ -60,7 +61,14 @@ public sealed class SoopProgressRow
     public int CurrentMinutes { get; init; }
     public int RequiredMinutes { get; init; }
     public double Percent { get; init; }
-    public string ProgressText => $"{CurrentMinutes} / {RequiredMinutes} 分钟 · {Percent:0}%";
+    public string SyncState { get; init; } = "暂时无法确认";
+    public string Diagnostic { get; init; } = "";
+    public string LastConfirmedAt { get; init; } = "";
+    public string WatchPathText { get; init; } = "观看资格与连接尚未确认";
+    public string ProgressText => $"服务端：{CurrentMinutes} / {RequiredMinutes} 分钟 · {Percent:0}%";
+    public string RemainingText => $"距离奖励还需 {Math.Max(0, RequiredMinutes - CurrentMinutes)} 分钟（有效累计时长）";
+    public string ConfirmationText => string.IsNullOrWhiteSpace(LastConfirmedAt) ? "尚未成功完成服务端刷新" :
+        DateTimeOffset.TryParse(LastConfirmedAt, out var at) ? $"最近完整刷新：{at.ToLocalTime():MM-dd HH:mm:ss}" : "";
 }
 
 public sealed class DropsQuickStartStep : ObservableObject
@@ -100,7 +108,7 @@ public sealed class DropsQuickStartGuide : ObservableObject
     public ObservableCollection<DropsQuickStartStep> Steps { get; }
     private string _summary = "快速开始";
     public string Summary { get => _summary; private set => Set(ref _summary, value); }
-    private bool _isExpanded = true;
+    private bool _isExpanded;
     public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }
 
     public DropsQuickStartGuide(params DropsQuickStartStep[] steps) => Steps = new(steps);
@@ -158,6 +166,11 @@ public enum TwitchConnectionFailureKind
 
 public sealed class DropsPlatformViewModel : ObservableObject
 {
+    private string _notice = "";
+    public string Notice { get => _notice; internal set { Set(ref _notice, value); Raise(nameof(NoticeVisibility)); } }
+    private string _noticeLevel = "提示";
+    public string NoticeLevel { get => _noticeLevel; internal set => Set(ref _noticeLevel, value); }
+    public Visibility NoticeVisibility => string.IsNullOrWhiteSpace(Notice) ? Visibility.Collapsed : Visibility.Visible;
     public DropsPlatform Platform { get; }
     public string Name { get; }
     private string _status = "未运行";
@@ -223,21 +236,97 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     }
 
     private readonly DropsHostService _host;
+    private sealed class SoopAccountRetry
+    {
+        public CancellationTokenSource Cancellation { get; } = new();
+        public TaskCompletionSource Wake { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public DateTimeOffset? NextAttempt { get; set; }
+    }
+    private readonly HashSet<string> _soopAccountIntents = new(StringComparer.Ordinal);
+    private long _soopIntentRevision;
+    private readonly Dictionary<string, SoopAccountRetry> _soopAccountRetries = new(StringComparer.Ordinal);
+    public DropsPlatformViewModel ActivePlatform => For(SelectedPlatform);
+    public string ActiveAccountText => SelectedPlatform == DropsPlatform.Bilibili
+        ? BilibiliDetails.LoggedIn ? $"{BilibiliDetails.UserName}（{BilibiliDetails.Uid}）" : "尚未登录哔哩哔哩"
+        : Accounts.Count == 0 ? "尚未确认登录账号" :
+        string.Join("、", Accounts.Take(3).Select(row => row.Primary));
+    public string ActiveStartText => SelectedPlatform == DropsPlatform.Twitch && !IsTwitchLoggedIn
+        ? TwitchLoginButtonText : SelectedPlatform == DropsPlatform.Bilibili && !BilibiliDetails.LoggedIn
+            ? "扫码登录" : SelectedPlatform == DropsPlatform.YouTube ? "开始观看" : "开始掉宝";
+    public bool CanActiveStart => SelectedPlatform == DropsPlatform.Twitch
+        ? !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !Twitch.Running
+        : !ActivePlatform.Running;
+    public bool CanActiveStop => ActivePlatform.Running || SelectedPlatform == DropsPlatform.Twitch &&
+        (IsTwitchLoginInProgress || TwitchAuthState == "authorization_required");
+    private string _twitchWatchUrl = "";
+    private string _youtubeWatchUrl = "";
+    private string _twitchChannelText = "尚未进入直播间";
+    public string TwitchChannelText { get => _twitchChannelText; private set => Set(ref _twitchChannelText, value); }
+    public string GetCurrentWatchUrl(DropsRow? selectedSoopAccount = null) => SelectedPlatform switch
+    {
+        DropsPlatform.Twitch => _twitchWatchUrl,
+        DropsPlatform.YouTube => _youtubeWatchUrl,
+        DropsPlatform.Soop => (selectedSoopAccount ?? _rows[DropsPlatform.Soop].Accounts.FirstOrDefault(row => Bool(row.Payload, "running"))) is { } account &&
+            !string.IsNullOrWhiteSpace(Text(account.Payload, "channelId"))
+            ? $"https://play.sooplive.com/{Uri.EscapeDataString(Text(account.Payload, "channelId"))}" : "",
+        DropsPlatform.Bilibili => BilibiliDetails.Rooms.FirstOrDefault(room => room.Enabled)?.Url ?? "",
+        _ => "",
+    };
+    public string SoopWatchStatusText => string.Join(Environment.NewLine, _rows[DropsPlatform.Soop].Accounts.Select(row =>
+        $"{row.Primary} · {Text(row.Payload, "channelName", "尚未进入直播间")} · " +
+        (Bool(row.Payload, "connectionHealthy") ? "观看连接正常（资格另行确认）" : "观看连接尚未确认") +
+        $" · 最近成功心跳：{FormatSoopTime(Text(row.Payload, "heartbeatLastSuccess"))}"));
+    private static string FormatSoopTime(string value) => DateTimeOffset.TryParse(value, out var time)
+        ? time.ToLocalTime().ToString("HH:mm:ss") : "尚未确认";
+    private string _twitchCurrentProgressText = "当前没有有效观看任务";
+    public string TwitchCurrentProgressText { get => _twitchCurrentProgressText; private set => Set(ref _twitchCurrentProgressText, value); }
+    private double _twitchCurrentProgress;
+    public double TwitchCurrentProgress { get => _twitchCurrentProgress; private set => Set(ref _twitchCurrentProgress, value); }
+    private string _twitchDataSourceText = "尚未成功读取活动与背包";
+    public string TwitchDataSourceText { get => _twitchDataSourceText; private set => Set(ref _twitchDataSourceText, value); }
+    public void ReportMessage(DropsPlatform platform, string message, string level = "提示")
+    {
+        var target = For(platform);
+        target.Notice = SensitiveDataRedactor.Redact(message);
+        target.NoticeLevel = level;
+    }
+    private readonly Dictionary<DropsPlatform, (long Generation, long Sequence, long StateTime)> _stateVersions = new();
+    private bool AcceptState(DropsPlatform platform, JsonElement state)
+    {
+        if (!state.TryGetProperty("_workerGeneration", out var generation) || !generation.TryGetInt64(out var gen)) return true;
+        var seq = state.TryGetProperty("_workerSequence", out var sequence) && sequence.TryGetInt64(out var number) ? number : 0;
+        var stateTime = state.TryGetProperty("_stateTime", out var captured) && captured.TryGetInt64(out var ticks) ? ticks : 0;
+        if (_stateVersions.TryGetValue(platform, out var previous) &&
+            (gen < previous.Generation || gen == previous.Generation &&
+             (stateTime > 0 && previous.StateTime > 0 ? stateTime < previous.StateTime ||
+                 stateTime == previous.StateTime && seq < previous.Sequence : seq < previous.Sequence))) return false;
+        _stateVersions[platform] = (gen, seq, stateTime);
+        return true;
+    }
     public DropsPlatformViewModel Soop { get; } = new(DropsPlatform.Soop, "SOOP");
     public DropsPlatformViewModel YouTube { get; } = new(DropsPlatform.YouTube, "YouTube");
     public DropsPlatformViewModel Twitch { get; } = new(DropsPlatform.Twitch, "Twitch");
     public DropsPlatformViewModel Bilibili { get; } = new(DropsPlatform.Bilibili, "哔哩哔哩");
     public BilibiliDropsViewModel BilibiliDetails { get; }
     public IReadOnlyList<DropsPlatformViewModel> Platforms { get; }
-    public ObservableCollection<DropsRow> Accounts { get; } = new();
-    public ObservableCollection<DropsRow> Tasks { get; } = new();
-    // ``Tasks`` is the complete display snapshot.  This collection is the
-    // SOOP priority/selection view and intentionally excludes ended,
-    // event-only, and fully completed tasks.
+    private sealed class PlatformRows
+    {
+        public ObservableCollection<DropsRow> Accounts { get; } = new();
+        public ObservableCollection<DropsRow> Tasks { get; } = new();
+        public ObservableCollection<DropsRow> Inventory { get; } = new();
+        public ObservableCollection<DropsRow> Channels { get; } = new();
+        public ObservableCollection<DropsRow> History { get; } = new();
+    }
+    private readonly Dictionary<DropsPlatform, PlatformRows> _rows = Enum.GetValues<DropsPlatform>()
+        .ToDictionary(platform => platform, _ => new PlatformRows());
+    private DropsPlatform? _projectionPlatform;
+    private PlatformRows CurrentRows => _rows[_projectionPlatform ?? SelectedPlatform];
+    public ObservableCollection<DropsRow> Accounts => CurrentRows.Accounts;
+    public ObservableCollection<DropsRow> Tasks => CurrentRows.Tasks;
+    public ObservableCollection<DropsRow> Inventory => CurrentRows.Inventory;
+    public ObservableCollection<DropsRow> Channels => CurrentRows.Channels;
+    public ObservableCollection<DropsRow> History => CurrentRows.History;
     public ObservableCollection<DropsRow> SoopSelectableTasks { get; } = new();
-    public ObservableCollection<DropsRow> Inventory { get; } = new();
-    public ObservableCollection<DropsRow> Channels { get; } = new();
-    public ObservableCollection<DropsRow> History { get; } = new();
     public ObservableCollection<DropsRecoveryEvent> RecoveryEvents { get; } = new();
     internal const int RecoveryEventLimit = 10;
     private readonly object _recoveryEventsSync = new();
@@ -265,10 +354,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             if (_twitchAuthorizationUrl == value) return;
             Set(ref _twitchAuthorizationUrl, value);
             Raise(nameof(TwitchLoginButtonText));
+            Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
         }
     }
     private string _twitchAuthorizationCode = "";
     public string TwitchAuthorizationCode { get => _twitchAuthorizationCode; private set => Set(ref _twitchAuthorizationCode, value); }
+    private string _twitchAuthorizationExpiryText = "";
+    public string TwitchAuthorizationExpiryText { get => _twitchAuthorizationExpiryText; private set => Set(ref _twitchAuthorizationExpiryText, value); }
     public Visibility TwitchAuthorizationVisibility => _twitchAuthState == "authorization_required"
         ? Visibility.Visible : Visibility.Collapsed;
     private TwitchConnectionStage _twitchConnectionStage = TwitchConnectionStage.Unconnected;
@@ -305,6 +397,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(CanClearTwitchLogin));
             Raise(nameof(CanTwitchLogin));
             Raise(nameof(TwitchLoginButtonText));
+            Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
         }
     }
     public bool CanClearTwitchLogin => !IsClearingTwitchLogin;
@@ -318,13 +411,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Set(ref _isTwitchLoginInProgress, value);
             Raise(nameof(CanTwitchLogin));
             Raise(nameof(TwitchLoginButtonText));
+            Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
         }
     }
     public bool CanTwitchLogin => !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !_twitchLoggedIn;
     public string TwitchLoginButtonText => IsClearingTwitchLogin ? "正在清除…"
-        : IsTwitchLoginInProgress ? "正在登录…"
-        : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开登录页面"
-        : _twitchAuthState == "needs_login" ? "重新登录" : "登录 Twitch";
+        : IsTwitchLoginInProgress ? "正在连接…"
+        : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开授权页面"
+        : _twitchAuthState is "needs_login" or "failed" ? "重试授权" : "登录 Twitch";
     public Visibility TwitchRetryVisibility => TwitchRetryNowVisibility == Visibility.Visible
         ? Visibility.Collapsed : _twitchConnectionStage is
         TwitchConnectionStage.NetworkFailed or TwitchConnectionStage.ProxyUnavailable or
@@ -368,7 +462,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private string _soopRetryStatusText = "";
     public string SoopRetryStatusText { get => _soopRetryStatusText; private set { Set(ref _soopRetryStatusText, value); Raise(nameof(SoopRetryStatusVisibility)); } }
     public Visibility SoopRetryStatusVisibility => string.IsNullOrWhiteSpace(SoopRetryStatusText) ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility SoopRetryNowVisibility => _soopNextRetryAt.HasValue && HasSoopRetryIntent()
+    public Visibility SoopRetryNowVisibility => _soopNextRetryAt.HasValue && (HasSoopRetryIntent() || HasSoopAccountRetries())
         ? Visibility.Visible : Visibility.Collapsed;
     private readonly object _soopRetrySync = new();
     private int _soopRetryAttempt;
@@ -383,7 +477,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private bool _soopRetryBlocked;
     private bool _soopRefreshPending;
     private int _soopRecoveryConfirmationInProgress;
-    internal bool SoopRetryLoopActive => _soopRetryTask is { IsCompleted: false };
+    internal bool SoopRetryLoopActive
+    {
+        get { lock (_soopRetrySync) return _soopRetryTask is { IsCompleted: false } ||
+            _soopAccountRetries.Values.Any(retry => !retry.Cancellation.IsCancellationRequested); }
+    }
+    private bool GlobalSoopRetryLoopActive => _soopRetryTask is { IsCompleted: false };
     internal int SoopRetryLoopStarts => _soopRetryLoopStarts;
     private bool _soopHasRefreshed;
     private bool _soopSettingsReady;
@@ -442,6 +541,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(YouTubePanelVisibility));
             Raise(nameof(TwitchPanelVisibility));
             Raise(nameof(BilibiliPanelVisibility));
+            Raise(nameof(ActivePlatform));
+            Raise(nameof(ActiveAccountText));
+            Raise(nameof(ActiveStartText));
+            Raise(nameof(CanActiveStart));
+            Raise(nameof(CanActiveStop));
+            foreach (var property in new[] { nameof(Accounts), nameof(Tasks), nameof(Inventory), nameof(Channels), nameof(History) })
+                Raise(property);
         }
     }
 
@@ -532,7 +638,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public DropsViewModel(DropsHostService host)
         : this(host, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(45), null, TimeSpan.FromMinutes(1), null)
+            TimeSpan.FromSeconds(120), null, TimeSpan.FromMinutes(1), null)
     {
     }
 
@@ -550,6 +656,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         TimeSpan soopRetryDelay, Func<int, CancellationToken, Task>? soopRetryOverride)
     {
         _host = host;
+        foreach (var entry in _rows)
+        {
+            var platform = entry.Key;
+            entry.Value.Accounts.CollectionChanged += (_, _) =>
+            {
+                if (platform == SelectedPlatform) Raise(nameof(ActiveAccountText));
+            };
+        }
         _twitchRetryDelay = twitchRetryDelay;
         _twitchSlowThreshold = slowThreshold;
         _twitchFailureThreshold = failureThreshold;
@@ -557,7 +671,16 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _soopRetryDelay = soopRetryDelay;
         _soopRetryOverride = soopRetryOverride;
         BilibiliDetails = new BilibiliDropsViewModel(Bilibili);
+        BilibiliDetails.PropertyChanged += (_, _) =>
+        {
+            Raise(nameof(ActiveAccountText)); Raise(nameof(ActiveStartText));
+        };
         Platforms = [Soop, YouTube, Twitch, Bilibili];
+        foreach (var platform in Platforms)
+            platform.PropertyChanged += (_, _) =>
+            {
+                Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
+            };
         Twitch.Status = "Twitch 尚未连接";
         Twitch.Summary = "尚未登录 Twitch";
         BilibiliDetails.PropertyChanged += (_, _) => UpdateBilibiliQuickStart();
@@ -639,10 +762,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public bool RetrySoopNow()
     {
+        var wokeAccount = false;
+        lock (_soopRetrySync)
+            foreach (var retry in _soopAccountRetries.Values) wokeAccount |= retry.Wake.TrySetResult();
         TaskCompletionSource<bool>? signal;
         lock (_soopRetrySync)
         {
-            if (!_soopNextRetryAt.HasValue || !HasSoopRetryIntent()) return false;
+            if (!_soopNextRetryAt.HasValue || !HasSoopRetryIntent()) return wokeAccount;
             signal = _soopRetryWakeSignal;
         }
         SoopRetryStatusText = "正在重新连接……";
@@ -699,7 +825,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             DropsPlatform.Soop when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
             DropsPlatform.Soop when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
             DropsPlatform.Soop when _soopRetryBlocked => DropsConnectionState.Failed,
-            DropsPlatform.Soop when vm.Running => DropsConnectionState.Connected,
+            DropsPlatform.Soop when vm.Running && _rows[DropsPlatform.Soop].Accounts.Any(row =>
+                Bool(row.Payload, "connectionHealthy") && Bool(row.Payload, "bridgeConnected") &&
+                Text(row.Payload, "heartbeatStatus") == "success") => DropsConnectionState.Connected,
+            DropsPlatform.Soop when vm.Running => DropsConnectionState.Connecting,
             DropsPlatform.Soop when _soopConnectionIntent => DropsConnectionState.Recovering,
             DropsPlatform.Twitch when _twitchNextRetryAt.HasValue => DropsConnectionState.WaitingRetry,
             DropsPlatform.Twitch when _twitchConnectionStage is TwitchConnectionStage.AuthenticationExpired or
@@ -718,7 +847,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             DropsPlatform.Twitch when _twitchConnectionStage is TwitchConnectionStage.Connected or
                 TwitchConnectionStage.Running or TwitchConnectionStage.LoginSucceeded => DropsConnectionState.Connected,
             DropsPlatform.Twitch when _twitchConnectionIntent => DropsConnectionState.Connecting,
-            DropsPlatform.YouTube when vm.Running => DropsConnectionState.Connected,
+            DropsPlatform.YouTube when vm.Running && vm.Status == "正在观看" => DropsConnectionState.Connected,
+            DropsPlatform.YouTube when vm.Running => DropsConnectionState.Connecting,
             DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Crashed => DropsConnectionState.Failed,
             DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Starting => DropsConnectionState.Connecting,
             DropsPlatform.YouTube when vm.WorkerLifecycle == WorkerLifecycle.Stopping => DropsConnectionState.Stopped,
@@ -918,6 +1048,15 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void BeginSoopStart(string uid, bool automatic)
     {
+        Interlocked.Increment(ref _soopIntentRevision);
+        if (!string.IsNullOrWhiteSpace(uid))
+        {
+            lock (_soopRetrySync)
+            {
+                _soopAccountIntents.Add(uid);
+                if (_soopAccountRetries.TryGetValue(uid, out var retry)) retry.Cancellation.Cancel();
+            }
+        }
         CancelSoopRetry();
         _soopConnectionIntent = true;
         _soopManualIntent |= !automatic;
@@ -930,8 +1069,29 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _soopRetryAttempt = 0;
     }
 
-    public void StopSoopByUser()
+    public void BeginSoopStartAll()
     {
+        foreach (var account in _rows[DropsPlatform.Soop].Accounts.ToArray())
+            BeginSoopStart(account.Id, automatic: false);
+    }
+
+    public void StopSoopByUser(string uid = "")
+    {
+        if (string.IsNullOrEmpty(uid) || uid == _soopRecoveryUid) Interlocked.Increment(ref _soopIntentRevision);
+        lock (_soopRetrySync)
+        {
+            if (string.IsNullOrEmpty(uid))
+            {
+                _soopAccountIntents.Clear();
+                foreach (var retry in _soopAccountRetries.Values) retry.Cancellation.Cancel();
+            }
+            else
+            {
+                _soopAccountIntents.Remove(uid);
+                if (_soopAccountRetries.TryGetValue(uid, out var retry)) retry.Cancellation.Cancel();
+            }
+        }
+        if (!string.IsNullOrEmpty(uid) && uid != _soopRecoveryUid) return;
         _soopUserStopped = true;
         _soopConnectionIntent = false;
         _soopManualIntent = false;
@@ -941,6 +1101,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void LogoutSoopByUser(string uid)
     {
+        StopSoopByUser(uid);
         if (!string.IsNullOrWhiteSpace(uid) &&
             !string.Equals(_soopRecoveryUid, uid, StringComparison.Ordinal)) return;
         _soopUserLoggedOut = true;
@@ -951,9 +1112,28 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         CancelSoopRetry();
     }
 
-    public void SetSoopFailure(string message, bool refreshPending = true)
+    public void SetSoopFailure(string message, bool refreshPending = true, string uid = "")
     {
         var kind = ClassifySoopFailure(message);
+        if (!string.IsNullOrWhiteSpace(uid))
+        {
+            ReportMessage(DropsPlatform.Soop, $"账号 {uid}：{FriendlySoopFailure(kind, message)}", kind == SoopFailureKind.Authentication ? "需要操作" : "警告");
+            lock (_soopRetrySync)
+            {
+                if (kind == SoopFailureKind.TransientNetwork && _soopAccountIntents.Contains(uid) && !_soopApplicationStopping)
+                {
+                    if (!_soopAccountRetries.TryGetValue(uid, out var current) || current.Cancellation.IsCancellationRequested)
+                    {
+                        var owner = new SoopAccountRetry();
+                        _soopAccountRetries[uid] = owner;
+                        _ = RunSoopAccountRetryAsync(uid, owner);
+                    }
+                }
+                else if (kind == SoopFailureKind.Authentication && _soopAccountRetries.TryGetValue(uid, out var current))
+                    current.Cancellation.Cancel();
+            }
+            return;
+        }
         switch (kind)
         {
             case SoopFailureKind.Authentication:
@@ -1011,6 +1191,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var value = message.ToLowerInvariant();
         if (value.Contains("needs_login") || value.Contains("auth_required") ||
             value.Contains("authentication") || value.Contains("登录已失效") ||
+            value.Contains("登录信息已失效") ||
+            value.Contains("drops api 认证失败") || value.Contains("로그인 후 가능") ||
             value.Contains("session 已失效") || value.Contains("未找到该账号的 session") ||
             value.Contains("401"))
             return SoopFailureKind.Authentication;
@@ -1052,6 +1234,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         (_soopConnectionIntent || _soopAutoStartEnabled) &&
         !_soopUserStopped && !_soopUserLoggedOut && !_soopApplicationStopping &&
         !_soopRetryBlocked && !string.IsNullOrWhiteSpace(_soopRecoveryUid);
+    private bool HasSoopAccountRetries()
+    {
+        lock (_soopRetrySync) return _soopAccountRetries.Values.Any(retry => !retry.Cancellation.IsCancellationRequested);
+    }
 
     private void ScheduleSoopRetry()
     {
@@ -1130,7 +1316,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                         if (!Bool(state, "refreshCompleted"))
                             throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
                     }
-                    Dispatch(CompleteSoopNetworkRecovery);
+                    Dispatch(() => { if (!token.IsCancellationRequested && HasSoopRetryIntent()) CompleteSoopNetworkRecovery(); });
                     break;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
@@ -1176,16 +1362,22 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private async Task ConfirmSoopNetworkRecoveryAsync()
     {
         if (Interlocked.Exchange(ref _soopRecoveryConfirmationInProgress, 1) != 0) return;
+        var revision = Interlocked.Read(ref _soopIntentRevision);
+        var uid = _soopRecoveryUid;
         try
         {
             var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh").ConfigureAwait(false);
             if (!Bool(state, "refreshCompleted"))
                 throw new InvalidOperationException("SOOP 刷新未返回完成状态。");
-            Dispatch(CompleteSoopNetworkRecovery);
+            Dispatch(() =>
+            {
+                if (revision == Interlocked.Read(ref _soopIntentRevision) && uid == _soopRecoveryUid && HasSoopRetryIntent())
+                    CompleteSoopNetworkRecovery();
+            });
         }
         catch (Exception ex)
         {
-            if (!_soopApplicationStopping)
+            if (!_soopApplicationStopping && revision == Interlocked.Read(ref _soopIntentRevision) && uid == _soopRecoveryUid)
                 Dispatch(() => SetSoopFailure(ex.Message));
         }
         finally
@@ -1196,10 +1388,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void CompleteSoopNetworkRecovery()
     {
-        var hadRetries = _soopRetryAttempt > 0 || SoopRetryLoopActive;
+        if (_soopUserStopped || _soopApplicationStopping || _soopUserLoggedOut) return;
+        var hadRetries = _soopRetryAttempt > 0 || GlobalSoopRetryLoopActive;
         _soopRetryBlocked = false;
         _soopRefreshPending = false;
-        Soop.Running = true;
+        Soop.Running = _rows[DropsPlatform.Soop].Accounts.Any(row => Bool(row.Payload, "running"));
         Soop.ConsecutiveFailures = 0;
         if (hadRetries)
         {
@@ -1212,6 +1405,63 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         CancelSoopRetry();
         if (hadRetries)
             _host.PublishUserLog(DropsPlatform.Soop, "info", "SOOP 网络连接已恢复。");
+    }
+
+    private async Task RunSoopAccountRetryAsync(string uid, SoopAccountRetry owner)
+    {
+        var token = owner.Cancellation.Token;
+        try
+        {
+            for (var attempt = 1; !token.IsCancellationRequested; attempt++)
+            {
+                lock (_soopRetrySync) owner.Wake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                owner.NextAttempt = DateTimeOffset.Now + _soopRetryDelay;
+                Dispatch(() => SetSoopRetryDeadline(owner.NextAttempt, $"账号 {uid} 等待恢复；停止此账号可取消重试。"));
+                await Task.WhenAny(Task.Delay(_soopRetryDelay, token), owner.Wake.Task).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                lock (_soopRetrySync) if (!_soopAccountIntents.Contains(uid) || _soopApplicationStopping) return;
+                owner.NextAttempt = null;
+                Dispatch(() => SetSoopRetryDeadline(null, $"正在恢复账号 {uid}…"));
+                try
+                {
+                    await _host.RequestAsync(DropsPlatform.Soop, "stop_account", new { uid }, token).ConfigureAwait(false);
+                    await _host.RequestAsync(DropsPlatform.Soop, "start_account", new { uid, retryAttempt = attempt }, token).ConfigureAwait(false);
+                    var state = await _host.RequestAsync(DropsPlatform.Soop, "refresh", new { uid }, token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    if (!Bool(state, "refreshCompleted")) throw new IOException(Text(state, "refreshError", "SOOP 刷新失败"));
+                    Dispatch(() =>
+                    {
+                        lock (_soopRetrySync) if (!_soopAccountIntents.Contains(uid) || token.IsCancellationRequested) return;
+                        ApplyState(DropsPlatform.Soop, state);
+                        ReportMessage(DropsPlatform.Soop, $"账号 {uid} 已恢复连接。", "成功");
+                    });
+                    return;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    var kind = ClassifySoopFailure(ex.Message);
+                    Dispatch(() => ReportMessage(DropsPlatform.Soop, $"账号 {uid}：{FriendlySoopFailure(kind, ex.Message)}", "警告"));
+                    if (kind != SoopFailureKind.TransientNetwork) return;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            lock (_soopRetrySync)
+                if (_soopAccountRetries.TryGetValue(uid, out var current) && ReferenceEquals(current, owner))
+                    _soopAccountRetries.Remove(uid);
+            owner.Cancellation.Dispose();
+            Dispatch(() =>
+            {
+                lock (_soopRetrySync)
+                {
+                    var next = _soopAccountRetries.OrderBy(item => item.Value.NextAttempt).FirstOrDefault();
+                    SetSoopRetryDeadline(next.Value?.NextAttempt, next.Value is null ? "" : $"账号 {next.Key} 等待恢复");
+                }
+            });
+        }
     }
 
     public void BeginSoopRefresh()
@@ -1272,6 +1522,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public void BeginTwitchLogin()
     {
         CancelTwitchRetry();
+        _twitchLastFailureKind = TwitchConnectionFailureKind.None;
         _twitchConnectionIntent = true;
         _twitchManualIntent = true;
         _twitchStartIntent = false;
@@ -1289,6 +1540,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public void BeginTwitchStart(bool automatic)
     {
         CancelTwitchRetry();
+        _twitchLastFailureKind = TwitchConnectionFailureKind.None;
         _twitchConnectionIntent = true;
         _twitchStartIntent = true;
         _twitchManualIntent |= !automatic;
@@ -1363,12 +1615,36 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             retryable: false, scheduleRetry: false);
     }
 
-    public void SetTwitchAuthorization(string url, string code, bool automatic)
+    public void SetTwitchAuthorization(string url, string code, bool automatic, string expiresAt = "")
     {
-        if (automatic) SetTwitchLoggedIn(false);
+        if (automatic)
+        {
+            // Automatic restoration stops its polling task when user action
+            // is required. Do not keep a code/URL that no live task can finish.
+            SetTwitchLoggedIn(false);
+            SetTwitchAuthState("needs_login");
+            Twitch.Running = false;
+            IsTwitchLoginInProgress = false;
+            CancelTwitchRetry();
+            SetTwitchStage(TwitchConnectionStage.AuthenticationExpired, "Twitch 需要重新登录",
+                "请点击登录取得新的验证码并完成授权。");
+            UpdateTwitchQuickStart(default, false);
+            return;
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var trusted) || trusted.Scheme != "https" ||
+            trusted.Host is not ("www.twitch.tv" or "twitch.tv" or "id.twitch.tv") ||
+            !string.IsNullOrEmpty(trusted.UserInfo) || trusted.Port != 443 || string.IsNullOrWhiteSpace(code))
+        {
+            SetTwitchFailure(TwitchConnectionFailureKind.Worker, "Twitch 授权信息不完整或地址不可信，请重试授权。",
+                retryable: false, scheduleRetry: false);
+            return;
+        }
+        TwitchAuthorizationExpiryText = DateTimeOffset.TryParse(expiresAt, out var expiry)
+            ? $"验证码有效至 {expiry.ToLocalTime():HH:mm:ss}" : "请在官方页面提示的有效期内完成授权";
+        SetTwitchLoggedIn(false);
         TwitchAuthorizationUrl = url;
         TwitchAuthorizationCode = code;
-        SetTwitchAuthState(automatic ? "needs_login" : "authorization_required", clearAuthorization: false);
+        SetTwitchAuthState("authorization_required", clearAuthorization: false);
         Twitch.Running = false;
         IsTwitchLoginInProgress = false;
         CancelTwitchRetry();
@@ -1384,6 +1660,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         SetTwitchFailure(kind, FriendlyTwitchFailure(kind, message),
             retryable: IsTwitchRetryableFailure(kind, message),
             scheduleRetry: true);
+    }
+
+    private void SetTwitchOAuthFailure(string code, string message)
+    {
+        SetTwitchFailure(TwitchConnectionFailureKind.Authentication, message, retryable: false, scheduleRetry: false);
+        var status = code switch
+        {
+            "expired_token" or "invalid_grant" => "Twitch 授权已过期",
+            "access_denied" => "Twitch 授权已取消",
+            "invalid_client" => "Twitch 授权客户端被拒绝",
+            _ => "Twitch 需要重新授权",
+        };
+        SetTwitchStage(TwitchConnectionStage.AuthenticationExpired, status, message);
     }
 
     internal void SetTwitchTemporaryNetworkFailure(string message)
@@ -1587,6 +1876,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void SetTwitchAuthState(string state, bool clearAuthorization = true)
     {
+        if (state == "checking") IsTwitchLoginInProgress = true;
         _twitchAuthState = state;
         if (clearAuthorization && state != "authorization_required")
         {
@@ -1623,6 +1913,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
         if (stage is TwitchConnectionStage.Connected or TwitchConnectionStage.Running)
         {
+            if (!string.IsNullOrWhiteSpace(_twitchLastError))
+                ReportMessage(DropsPlatform.Twitch, "已恢复连接，继续观看。", "成功");
             var wasRetrying = _twitchRetryAttempt > 0;
             _lastTwitchConnectedAt = DateTimeOffset.Now;
             RefreshTemporalStatus(DateTimeOffset.Now);
@@ -1877,11 +2169,27 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void ApplyState(DropsPlatform platform, JsonElement state)
     {
+        if (state.ValueKind != JsonValueKind.Object || !AcceptState(platform, state)) return;
+        if (platform == DropsPlatform.Twitch && (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping) && Bool(state, "running")) return;
+        var previousProjection = _projectionPlatform;
+        _projectionPlatform = platform;
+        try
+        {
         var vm = For(platform);
         if (state.TryGetProperty("running", out var running)) vm.Running = running.GetBoolean();
         if (state.TryGetProperty("status", out var status)) vm.Status = status.GetString() ?? vm.Status;
-        Accounts.Clear(); Tasks.Clear(); SoopSelectableTasks.Clear(); Inventory.Clear(); Channels.Clear(); History.Clear();
-        SoopCurrentProgress.Clear();
+        if (state.TryGetProperty("accounts", out _) || state.TryGetProperty("sessions", out _) ||
+            platform == DropsPlatform.YouTube && state.TryGetProperty("config", out _)) Accounts.Clear();
+        if (state.TryGetProperty("tasks", out _) || state.TryGetProperty("campaigns", out _) ||
+            state.TryGetProperty("stream", out _)) Tasks.Clear();
+        if (state.TryGetProperty("inventory", out _)) Inventory.Clear();
+        if (state.TryGetProperty("channels", out _) || platform == DropsPlatform.YouTube && state.TryGetProperty("config", out _)) Channels.Clear();
+        if (state.TryGetProperty("history", out _)) History.Clear();
+        if (platform == DropsPlatform.Soop)
+        {
+            if (state.TryGetProperty("tasks", out _)) SoopSelectableTasks.Clear();
+            if (state.TryGetProperty("currentProgress", out _)) SoopCurrentProgress.Clear();
+        }
         switch (platform)
         {
             case DropsPlatform.Soop: ApplySoop(state, vm); break;
@@ -1892,6 +2200,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
             !Bool(runtime, "available", true))
             ApplyRuntimeError(platform, Text(runtime, "code"), Text(runtime, "message"));
+        }
+        finally { _projectionPlatform = previousProjection; }
     }
 
     internal void ApplySoopAccountStatus(JsonElement state)
@@ -1900,6 +2210,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             return;
         var uid = uidValue.GetString() ?? "";
         if (string.IsNullOrWhiteSpace(uid)) return;
+        var accountRows = _rows[DropsPlatform.Soop].Accounts;
+        var accountIndex = accountRows.ToList().FindIndex(row => row.Id == uid);
+        var accountRow = new DropsRow
+        {
+            Id = uid, Primary = uid,
+            Secondary = $"直播间：{Text(state, "channelName", "尚未进入")} · {Text(state, "status")}",
+            Status = Bool(state, "running") ? "运行中" : "已停止", Payload = state.Clone(),
+        };
+        if (accountIndex >= 0) accountRows[accountIndex] = accountRow;
+        else accountRows.Add(accountRow);
+        Raise(nameof(SoopWatchStatusText));
 
         if (state.TryGetProperty("tasks", out var tasks) && tasks.ValueKind == JsonValueKind.Array)
         {
@@ -1915,8 +2236,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddSoopInventoryRows(state, uid);
 
         AddSoopProgressRows(state, replaceAccount: true);
-        if (state.TryGetProperty("running", out var running) && running.ValueKind is JsonValueKind.True or JsonValueKind.False)
-            Soop.Running = running.GetBoolean();
+        Soop.Running = accountRows.Any(row => Bool(row.Payload, "running"));
         if (state.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
             Soop.Status = status.GetString() ?? Soop.Status;
         var available = SoopSelectableTasks.Select(row => row.Id)
@@ -1946,6 +2266,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddSoopTaskRows(state);
         AddSoopInventoryRows(state);
         AddSoopProgressRows(state, replaceAccount: false);
+        Raise(nameof(SoopWatchStatusText));
         var activeAccounts = Accounts.Count(row => Bool(row.Payload, "running"));
         var availableTasks = SoopSelectableTasks.Where(row => Bool(row.Payload, "active"))
             .Select(row => row.Id)
@@ -1958,7 +2279,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         vm.Summary = $"{Accounts.Count} 个账号 · {availableTasks} 个可用任务";
         if (Bool(state, "refreshCompleted"))
         {
-            if (SoopRetryLoopActive) CompleteSoopNetworkRecovery();
+            if (GlobalSoopRetryLoopActive) CompleteSoopNetworkRecovery();
             else CompleteSoopRefresh();
         }
         UpdateSoopQuickStart(state);
@@ -1991,13 +2312,13 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private void AddSoopProgressRows(JsonElement owner, bool replaceAccount)
     {
         var account = Text(owner, "uid");
+        if (!owner.TryGetProperty("currentProgress", out var rows) || rows.ValueKind != JsonValueKind.Array) return;
         if (replaceAccount && !string.IsNullOrWhiteSpace(account))
         {
             for (var index = SoopCurrentProgress.Count - 1; index >= 0; index--)
                 if (string.Equals(SoopCurrentProgress[index].Account, account, StringComparison.Ordinal))
                     SoopCurrentProgress.RemoveAt(index);
         }
-        if (!owner.TryGetProperty("currentProgress", out var rows) || rows.ValueKind != JsonValueKind.Array) return;
         foreach (var item in rows.EnumerateArray())
         {
             SoopCurrentProgress.Add(new SoopProgressRow
@@ -2011,6 +2332,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 CurrentMinutes = (int)Number(item, "currentMinutes"),
                 RequiredMinutes = (int)Number(item, "requiredMinutes"),
                 Percent = Number(item, "percent"),
+                SyncState = Text(item, "progressState") switch
+                {
+                    "rollback" => "进度回退待确认", "watching" => "正在观看 · 等待服务端更新",
+                    "waiting_server" => "正在同步 / 观看状态待确认", "confirmed" => "已确认进度",
+                    _ => "暂时无法确认",
+                },
+                Diagnostic = Text(item, "progressDiagnostic"),
+                LastConfirmedAt = Text(item, "lastConfirmedAt"),
+                WatchPathText = $"掉宝资格：{(Bool(item, "watchEligible") ? "符合" : "尚未确认")} · " +
+                    $"观看连接：{(Bool(item, "connectionHealthy") && Bool(item, "bridgeConnected") ? "正常" : "未确认")} · " +
+                    $"心跳：{(Bool(item, "heartbeatSuccess") ? "已成功" : "待确认")}（{FormatSoopTime(Text(item, "heartbeatLastSuccess"))}）",
             });
         }
     }
@@ -2046,6 +2378,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void ApplyYouTube(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (state.TryGetProperty("stream", out var watchStream))
+            _youtubeWatchUrl = watchStream.ValueKind == JsonValueKind.Object ? Text(watchStream, "url") : "";
         var sessions = state.TryGetProperty("sessions", out var sessionArray) && sessionArray.ValueKind == JsonValueKind.Array
             ? sessionArray.EnumerateArray().Select(item => item.Clone()).ToArray()
             : [];
@@ -2099,6 +2433,29 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void ApplyTwitch(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (state.TryGetProperty("currentChannel", out var watchChannel))
+        {
+            _twitchWatchUrl = watchChannel.ValueKind == JsonValueKind.Object ? Text(watchChannel, "url") : "";
+            TwitchChannelText = watchChannel.ValueKind == JsonValueKind.Object
+                ? $"直播间：{Text(watchChannel, "name")} · {(Bool(watchChannel, "online") ? "在线" : "在线状态待确认")} · {(Bool(watchChannel, "dropsEnabled") ? "支持掉宝（活动资格以任务为准）" : "掉宝资格待确认")}"
+                : "尚未进入直播间";
+        }
+        if (state.TryGetProperty("inventorySource", out _))
+            TwitchDataSourceText = Text(state, "inventorySource") switch
+            {
+                "remote" => "已读取服务端活动与背包；观看进度由 Core 同步",
+                "cache" => "显示上次成功快照，等待再次刷新确认",
+                _ => "尚未成功读取活动与背包",
+            };
+        if (DateTimeOffset.TryParse(Text(state, "lastInventorySyncAt"), out var inventorySyncedAt))
+            TwitchDataSourceText += $" · 最近服务端查询：{inventorySyncedAt.ToLocalTime():MM-dd HH:mm:ss}";
+        if (state.TryGetProperty("currentDrop", out var drop))
+        {
+            TwitchCurrentProgressText = drop.ValueKind == JsonValueKind.Object
+                ? $"{Text(drop, "campaign")} · {Text(drop, "name")}\nCore 同步进度：{Number(drop, "currentMinutes"):0} / {Number(drop, "requiredMinutes"):0} 分钟；服务端同步可能存在延迟。"
+                : "当前没有有效观看任务";
+            TwitchCurrentProgress = drop.ValueKind == JsonValueKind.Object ? Number(drop, "progress") * 100 : 0;
+        }
         AddRows(state, "accounts", Accounts, item => new DropsRow
         {
             Id = Text(item, "userId"), Primary = Text(item, "userId", "已保存 Session"),
@@ -2114,9 +2471,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             _twitchCampaignScopeInitialized = true;
             Raise(nameof(TwitchCampaignScopeKey));
         }
-        _twitchCampaigns.Clear();
         if (state.TryGetProperty("campaigns", out var campaigns) && campaigns.ValueKind == JsonValueKind.Array)
+        {
+            _twitchCampaigns.Clear();
             _twitchCampaigns.AddRange(campaigns.EnumerateArray().Select(item => item.Clone()));
+        }
         AddRows(state, "inventory", Inventory, item => new DropsRow
         {
             Id = Text(item, "id"), Primary = Text(item, "name"), Secondary = Text(item, "campaign"),
@@ -2131,12 +2490,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Secondary = $"{Text(item, "game", "未知游戏")} · {(Bool(item, "dropsEnabled") ? "可获得掉宝" : "无掉宝")}",
             Status = Bool(item, "online") ? "直播中" : "离线", Payload = item.Clone(),
         });
-        var loggedIn = state.TryGetProperty("accounts", out var accountArray) && accountArray.ValueKind == JsonValueKind.Array &&
-                       accountArray.EnumerateArray().Any(item => Bool(item, "loggedIn"));
+        var loggedIn = state.TryGetProperty("accounts", out var accountArray) && accountArray.ValueKind == JsonValueKind.Array
+            ? accountArray.EnumerateArray().Any(item => Bool(item, "loggedIn")) : _twitchLoggedIn;
         var authState = Text(state, "authState", loggedIn ? "logged_in" : vm.Running ? "checking" : "logged_out");
         if (loggedIn && (authState == "checking" || authState == "logged_out")) authState = "logged_in";
         if (state.TryGetProperty("authRequired", out var authRequired) && authRequired.ValueKind == JsonValueKind.Object)
-            SetTwitchAuthorization(Text(authRequired, "url"), Text(authRequired, "code"), Bool(authRequired, "automatic"));
+            SetTwitchAuthorization(Text(authRequired, "url"), Text(authRequired, "code"), Bool(authRequired, "automatic"), Text(authRequired, "expiresAt"));
         else
             SetTwitchAuthState(authState);
         SetTwitchLoggedIn(loggedIn);
@@ -2148,10 +2507,20 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         var hasCurrentChannel = state.TryGetProperty("currentChannel", out var currentChannel) &&
                                 currentChannel.ValueKind == JsonValueKind.Object;
         var connectionState = Text(state, "connectionState");
-        if (authState == "failed")
+        if (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping)
         {
-            SetTwitchTemporaryNetworkFailure(
-                Text(state, "loginError", "Twitch 暂时无法连接。"));
+            IsTwitchLoginInProgress = false;
+            SetTwitchAuthState(loggedIn ? "logged_in" : "logged_out");
+            SetTwitchStage(TwitchConnectionStage.Stopped, "Twitch 已停止", loggedIn ? "已登录，可重新开始掉宝" : "尚未登录 Twitch");
+        }
+        else if (authState == "failed")
+        {
+            var message = Text(state, "loginError", "Twitch 暂时无法连接。");
+            var code = Text(state, "loginErrorCode");
+            if (!Bool(state, "loginErrorRetryable", true) && code is "expired_token" or "access_denied" or "invalid_grant" or "invalid_token" or "invalid_client" or "oauth_rejected" or "oauth_missing_token" or "oauth_untrusted_url" or "oauth_invalid_identity")
+                SetTwitchOAuthFailure(code, message);
+            else
+                SetTwitchFailure(ClassifyTwitchFailure(code, message), message, Bool(state, "loginErrorRetryable", true), scheduleRetry: true);
         }
         else if (authState == "needs_login")
         {
@@ -2226,6 +2595,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             case "requesting_authorization":
                 SetTwitchStage(TwitchConnectionStage.RequestingAuthorization,
                     "正在获取 Twitch 登录授权…", "正在向 Twitch 请求授权信息", monitor: true);
+                break;
+            case "verifying_authorization":
+                SetTwitchStage(TwitchConnectionStage.RestoringSession,
+                    "正在确认 Twitch 授权…", "正在获取并验证账号信息", monitor: true);
                 break;
             case "login_succeeded":
                 SetTwitchLoggedIn(true);
@@ -2436,14 +2809,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void RebuildTwitchCampaigns()
     {
-        Tasks.Clear();
-        SoopSelectableTasks.Clear();
+        var tasks = _rows[DropsPlatform.Twitch].Tasks;
+        tasks.Clear();
         foreach (var item in _twitchCampaigns.Where(IsTwitchCampaignVisible))
         {
             var completed = Number(item, "completedDrops");
             var total = Number(item, "totalDrops");
             var remaining = Number(item, "remainingMinutes");
-            Tasks.Add(new DropsRow
+            tasks.Add(new DropsRow
             {
                 Id = Text(item, "id"),
                 Primary = Text(item, "name"),
@@ -2536,6 +2909,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                     snapshot.LastError ?? "后台服务意外退出，正在等待恢复。", DropsConnectionState.WaitingRetry);
                 ScheduleBilibiliRecovery();
             }
+            if (snapshot.Platform == DropsPlatform.Soop)
+            {
+                string[] accounts;
+                lock (_soopRetrySync) accounts = _soopAccountIntents.ToArray();
+                foreach (var uid in accounts) SetSoopFailure("SOOP 网络连接中断：后台服务异常退出", uid: uid);
+            }
         }
         else if (snapshot.Lifecycle == WorkerLifecycle.Stopped)
         {
@@ -2555,6 +2934,22 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
+        if (message.Platform == DropsPlatform.Twitch && (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping) &&
+            (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" ||
+             message.Name == "status" && Bool(message.Payload, "running"))) return;
+        if (message.Name is "state" or "account_status" or "auth_state" or "auth_required" or "login_status" or "error" or "status" or
+            "connection_status" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward")
+            if (!AcceptState(message.Platform, message.Payload)) return;
+        var previousProjection = _projectionPlatform;
+        _projectionPlatform = message.Platform;
+        try
+        {
+        if (message.Name == "state" && message.Payload.ValueKind == JsonValueKind.Object)
+            ApplyState(message.Platform, message.Payload);
+        if (message.Name is "error" or "warning" or "notice")
+            ReportMessage(message.Platform, Text(message.Payload, "message"), message.Name == "error" ? "错误" : "提示");
+        if (message.Name is "connection_recovered" or "recovery_succeeded")
+            ReportMessage(message.Platform, Text(message.Payload, "message", "已恢复连接，继续观看。"), "成功");
         var progressEvent = message.Name is "progress" or "watch_time" or "account_status" or
             "current_channel" or "reward" or "games";
         TouchHeartbeat(message.Platform, progressEvent);
@@ -2563,12 +2958,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 DropsConnectionState.Connected);
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
         {
-            AddSoopProgressRows(message.Payload, replaceAccount: true);
+            ApplySoopAccountStatus(message.Payload);
             var soopStatus = Text(message.Payload, "status");
             var failureKind = ClassifySoopFailure(soopStatus);
             if (failureKind is SoopFailureKind.Authentication or SoopFailureKind.TransientNetwork)
-                SetSoopFailure(soopStatus);
-            else if (SoopRetryLoopActive && Bool(message.Payload, "running") &&
+                SetSoopFailure(soopStatus, uid: Text(message.Payload, "uid"));
+            else if (Text(message.Payload, "uid") == _soopRecoveryUid && GlobalSoopRetryLoopActive && Bool(message.Payload, "running") &&
                      Bool(message.Payload, "connectionHealthy"))
             {
                 CancelSoopRetry();
@@ -2639,7 +3034,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 SetTwitchStage(TwitchConnectionStage.CheckingSession,
                     "正在检查 Twitch 登录状态…", "正在检查本机保存的登录信息", monitor: true);
             else if (state == "failed")
-                SetTwitchTemporaryNetworkFailure(Text(message.Payload, "error", "Twitch 暂时无法连接。"));
+                IsTwitchLoginInProgress = false; // structured error event follows, with retry policy
             else if (state == "needs_login")
             {
                 Twitch.Running = false;
@@ -2650,7 +3045,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             UpdateTwitchQuickStart(default, _twitchLoggedIn);
         }
         if (message.Platform == DropsPlatform.Twitch && message.Name == "auth_required")
-            SetTwitchAuthorization(Text(message.Payload, "url"), Text(message.Payload, "code"), Bool(message.Payload, "automatic"));
+            SetTwitchAuthorization(Text(message.Payload, "url"), Text(message.Payload, "code"), Bool(message.Payload, "automatic"), Text(message.Payload, "expiresAt"));
         if (message.Platform == DropsPlatform.Twitch && message.Name == "login_status" &&
             message.Payload.TryGetProperty("userId", out var twitchUserId) &&
             twitchUserId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
@@ -2676,7 +3071,9 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             var category = Text(message.Payload, "category");
             var code = Text(message.Payload, "code");
             var kind = ClassifyTwitchFailure(code, Text(message.Payload, "message"));
-            if (category == "authentication")
+            if (category == "oauth" && !Bool(message.Payload, "retryable"))
+                SetTwitchOAuthFailure(code, Text(message.Payload, "message"));
+            else if (category == "authentication")
             {
                 SetTwitchAuthState("needs_login");
                 SetTwitchFailure(TwitchConnectionFailureKind.Authentication,
@@ -2707,6 +3104,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             YouTube.Summary = $"{_youtubeCurrentLabel} · 已观看 {FormatSeconds(Number(message.Payload, "seconds"))}";
         }
         RefreshRecoveryProjection(message.Platform, DateTimeOffset.Now);
+        }
+        finally { _projectionPlatform = previousProjection; }
     });
 
     private DropsPlatformViewModel For(DropsPlatform platform) => platform switch
@@ -2765,6 +3164,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _bilibiliRecoveryIntent = false;
         CancelBilibiliRecovery();
         _soopApplicationStopping = true;
+        StopSoopByUser();
         _soopConnectionIntent = false;
         CancelSoopRetry();
         _twitchApplicationStopping = true;

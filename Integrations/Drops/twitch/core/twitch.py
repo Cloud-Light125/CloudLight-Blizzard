@@ -15,6 +15,7 @@ from typing import Any, Literal, Final, NoReturn, overload, cast, TYPE_CHECKING
 import aiohttp
 from yarl import URL
 
+from oauth import read_oauth, validate_device
 from translate import _
 from gui import GUIManager
 from channel import Channel
@@ -25,6 +26,7 @@ from exceptions import (
     GQLException,
     ReloadRequest,
     LoginException,
+    OAuthException,
     MinerException,
     RequestInvalid,
     CaptchaRequired,
@@ -139,59 +141,45 @@ class _AuthState:
             "client_id": client_info.CLIENT_ID,
             "scopes": "",  # no scopes needed
         }
-        while True:
-            try:
-                now = datetime.now(timezone.utc)
+        self._twitch.gui.connection.update("requesting_authorization")
+        async with self._twitch.request(
+            "POST", "https://id.twitch.tv/oauth2/device", headers=headers, data=payload
+        ) as response:
+            response_json = await read_oauth(response, "device")
+        validate_device(response_json)
+        device_code = response_json["device_code"]
+        interval = response_json["interval"]
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=response_json["expires_in"])
+        self._twitch._cloudlight_auth_expires_at = expires_at.isoformat()
+        await login_form.ask_enter_code(URL(response_json["verification_uri"]), response_json["user_code"])
+        token_payload = {
+            "client_id": client_info.CLIENT_ID,
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        }
+        try:
+            while datetime.now(timezone.utc) < expires_at:
+                await self._twitch.gui.coro_unless_closed(asyncio.sleep(interval))
                 async with self._twitch.request(
-                    "POST", "https://id.twitch.tv/oauth2/device", headers=headers, data=payload
+                    "POST", "https://id.twitch.tv/oauth2/token", headers=headers,
+                    data=token_payload, invalidate_after=expires_at,
                 ) as response:
-                    # {
-                    #     "device_code": "40 chars [A-Za-z0-9]",
-                    #     "expires_in": 1800,
-                    #     "interval": 5,
-                    #     "user_code": "8 chars [A-Z]",
-                    #     "verification_uri": "https://www.twitch.tv/activate?device-code=ABCDEFGH"
-                    # }
-                    response_json: JsonType = await response.json()
-                    device_code: str = response_json["device_code"]
-                    user_code: str = response_json["user_code"]
-                    interval: int = response_json["interval"]
-                    verification_uri: URL = URL(response_json["verification_uri"])
-                    expires_at = now + timedelta(seconds=response_json["expires_in"])
-
-                # Print the code to the user, open them the activate page so they can type it in
-                await login_form.ask_enter_code(verification_uri, user_code)
-
-                payload = {
-                    "client_id": self._twitch._client_type.CLIENT_ID,
-                    "device_code": device_code,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                }
-                while True:
-                    # sleep first, not like the user is gonna enter the code *that* fast
-                    await asyncio.sleep(interval)
-                    async with self._twitch.request(
-                        "POST",
-                        "https://id.twitch.tv/oauth2/token",
-                        headers=headers,
-                        data=payload,
-                        invalidate_after=expires_at,
-                    ) as response:
-                        # 200 means success, 400 means the user haven't entered the code yet
-                        if response.status != 200:
-                            continue
-                        response_json = await response.json()
-                        # {
-                        #     "access_token": "40 chars [A-Za-z0-9]",
-                        #     "refresh_token": "40 chars [A-Za-z0-9]",
-                        #     "scope": [...],
-                        #     "token_type": "bearer"
-                        # }
-                        self.access_token = cast(str, response_json["access_token"])
-                        return self.access_token
-            except RequestInvalid:
-                # the device_code has expired, request a new code
-                continue
+                    response_json = await read_oauth(response, "token")
+                if response_json.get("error") == "authorization_pending":
+                    continue
+                if response_json.get("error") == "slow_down":
+                    interval += 5
+                    continue
+                token = response_json.get("access_token")
+                if not isinstance(token, str) or not token:
+                    raise OAuthException("oauth_missing_token", "Twitch 未返回有效登录令牌，请重试授权。")
+                self._twitch.gui.connection.update("verifying_authorization")
+                self._twitch._cloudlight_auth_required = None
+                self._twitch._cloudlight_login_state = "checking"
+                return token
+        except RequestInvalid:
+            pass
+        raise OAuthException("expired_token", "Twitch 授权码已过期，请点击重试授权。")
 
     async def _login(self) -> str:
         logger.info("Twitch 授权流程已开始")
@@ -368,18 +356,10 @@ class _AuthState:
             jar = cast(aiohttp.CookieJar, session.cookie_jar)
             client_info: ClientInfo = self._twitch._client_type
         if not self._hasattrs("device_id"):
-            async with self._twitch.request(
-                "GET", client_info.CLIENT_URL, headers=self.headers()
-            ) as response:
-                page_html = await response.text("utf8")
-                assert page_html is not None
-            #     match = re.search(r'twilightBuildID="([-a-z0-9]+)"', page_html)
-            # if match is None:
-            #     raise MinerException("Unable to extract client_version")
-            # self.client_version = match.group(1)
-            # doing the request ends up setting the "unique_id" value in the cookie
+            # A browser landing page is not a prerequisite for the device grant.
+            # Keep a saved device ID or create the same-format local identifier.
             cookie = jar.filter_cookies(client_info.CLIENT_URL)
-            self.device_id = cookie["unique_id"].value
+            self.device_id = cookie["unique_id"].value if "unique_id" in cookie else create_nonce(CHARS_HEX_LOWER, 32)
         if not self._hasattrs("access_token", "user_id"):
             # looks like we're missing something
             login_form: LoginForm = self._twitch.gui.login
@@ -392,6 +372,12 @@ class _AuthState:
                 for invalid_token_attempt in range(2):
                     cookie = jar.filter_cookies(client_info.CLIENT_URL)
                     if "auth-token" not in cookie:
+                        # Existing Android/Web sessions were stored at www.twitch.tv.
+                        legacy = jar.filter_cookies(ClientType.WEB.CLIENT_URL)
+                        if "auth-token" in legacy:
+                            cookie = legacy
+                    new_authorization = "auth-token" not in cookie
+                    if new_authorization:
                         if callable(phase):
                             phase("requesting_authorization")
                         self.access_token = await self._oauth_login()
@@ -411,22 +397,32 @@ class _AuthState:
                             # the access token we have is invalid - clear the cookie and reauth
                             logger.debug("Restored Twitch session is invalid")
                             assert client_info.CLIENT_URL.host is not None
-                            jar.clear_domain(client_info.CLIENT_URL.host)
+                            jar.clear()
+                            self._delattrs("access_token", "user_id")
+                            if new_authorization:
+                                raise OAuthException("invalid_token", "Twitch 新授权未通过账号验证，请手动重新授权。")
                             continue
-                        elif response.status == 200:
-                            validate_response = await response.json()
-                            break
+                        validate_response = await read_oauth(response, "validate")
+                        if not isinstance(validate_response.get("user_id"), str) or not validate_response["user_id"].isdigit() or int(validate_response["user_id"]) <= 0 or not validate_response.get("client_id"):
+                            raise OAuthException("oauth_invalid_identity", "Twitch 未返回有效账号信息，请重新授权。")
+                        break
                 else:
-                    raise RuntimeError("Login verification failure (step #2)")
+                    raise OAuthException("invalid_token", "Twitch 登录信息未通过验证，请重新授权。")
                 # ensure the cookie's client ID matches the currently selected client
                 if validate_response["client_id"] == client_info.CLIENT_ID:
+                    break
+                compatible = next((info for info in (ClientType.ANDROID_APP, ClientType.WEB)
+                                   if info.CLIENT_ID == validate_response["client_id"]), None)
+                if compatible is not None:
+                    self._twitch._client_type = client_info = compatible
                     break
                 # otherwise, we need to delete the entire cookie file and clear the jar
                 logger.debug("Twitch cookie client ID mismatch")
                 jar.clear()
+                self._delattrs("access_token", "user_id")
                 COOKIES_PATH.unlink(missing_ok=True)
             else:
-                raise RuntimeError("Login verification failure (step #1)")
+                raise OAuthException("invalid_client", "Twitch Token 所属客户端与当前客户端不匹配，请重新授权。")
             self.user_id = int(validate_response["user_id"])
             cookie["persistent"] = str(self.user_id)
             logger.info("Twitch 登录成功")
@@ -448,6 +444,7 @@ class Twitch:
         self._state_change = asyncio.Event()
         self.wanted_games: list[Game] = []
         self.inventory: list[DropsCampaign] = []
+        self._cloudlight_inventory_loaded = False
         self._drops: dict[str, TimedDrop] = {}
         self._campaigns: dict[str, DropsCampaign] = {}
         # TDM_CLAIM_TOGGLE_PATCH_BEGIN: claim-policy-state
@@ -463,7 +460,7 @@ class Twitch:
         # Do not modify the default, safe values.
         self._qgl_limiter = RateLimiter(capacity=5, window=1)
         # Client type, session and auth
-        self._client_type: ClientInfo = ClientType.ANDROID_APP
+        self._client_type: ClientInfo = ClientType.SMARTBOX
         self._session: aiohttp.ClientSession | None = None
         self._auth_state: _AuthState = _AuthState(self)
         # GUI
@@ -1395,9 +1392,13 @@ class Twitch:
         )
         proxy_failure_logged = False
         direct_failure_logged = False
-        logger.debug(f"Request: ({method=}, {url=}, {kwargs=})")
+        logger.debug("Request method=%s host=%s path=%s route=%s", method, URL(url).host, URL(url).path, "proxy" if kwargs.get("proxy") else "direct")
         session_timeout = timedelta(seconds=session.timeout.total or 0)
-        backoff = ExponentialBackoff(maximum=3*60)
+        # The host owns reconnects. Each request must finish before its monitor
+        # can replace this attempt; do not hide an unbounded retry loop here.
+        kwargs.setdefault("timeout", aiohttp.ClientTimeout(total=15, sock_connect=10))
+        backoff = ExponentialBackoff(maximum=3)
+        last_error = None
         for delay in backoff:
             if self.gui.close_requested:
                 raise ExitRequest()
@@ -1413,20 +1414,23 @@ class Twitch:
                     session.request(method, url, **kwargs)
                 )
                 assert response is not None
-                logger.debug(f"Response: {response.status}: {response}")
-                if response.status < 500:
+                logger.debug("Response HTTP=%s host=%s", response.status, URL(url).host)
+                if response.status < 500 or URL(url).host == "id.twitch.tv":
                     # pre-read the response to avoid getting errors outside of the context manager
                     raw_response = await response.read()  # noqa
                     yield response
                     return
+                last_error = RequestException(f"Twitch HTTP {response.status}: 服务器暂时不可用")
                 self.print(_("error", "site_down").format(seconds=round(delay)))
             except aiohttp.ClientConnectorCertificateError:
                 # for a case where SSL verification fails
                 self.gui.connection.update("ssl_certificate_failed", "certificate_verify_failed")
                 raise
             except (
-                aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError
+                aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError,
+                aiohttp.ClientHttpProxyError,
             ) as exc:
+                last_error = exc
                 if proxy_fallback_pending:
                     proxy_fallback_pending = False
                     kwargs.pop("proxy", None)
@@ -1460,6 +1464,8 @@ class Twitch:
             finally:
                 if response is not None:
                     response.release()
+            if backoff.steps >= 3:
+                raise last_error or RequestException("Twitch 请求失败")
             with suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.gui.wait_until_closed(), timeout=delay)
 
@@ -1689,7 +1695,6 @@ class Twitch:
 
         self._drops.clear()
         self.gui.inv.clear()
-        self.inventory.clear()
         self._mnt_triggers.clear()
         switch_triggers: set[datetime] = set()
         next_hour = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -1698,8 +1703,10 @@ class Twitch:
             self._drops.update({drop.id: drop for drop in campaign.drops})
             if campaign.can_earn_within(next_hour):
                 switch_triggers.update(campaign.time_triggers)
-            self.inventory.append(campaign)
             self._campaigns[campaign.id] = campaign
+        # The JSONL host reads inventory from another thread. Publish the
+        # complete replacement at once; do not expose a partially rebuilt list.
+        self.inventory = campaigns
         # TDM_CLAIM_TOGGLE_PATCH_BEGIN: refresh-claim-policy-state
         if self.settings.auto_claim_drops:
             self.clear_claim_progression_blocks()
@@ -1752,6 +1759,8 @@ class Twitch:
         if self._mnt_task is not None and not self._mnt_task.done():
             self._mnt_task.cancel()
         self._mnt_task = asyncio.create_task(self._maintenance_task())
+        self._cloudlight_inventory_loaded = True
+        self._cloudlight_inventory_updated_at = datetime.now(timezone.utc).isoformat()
 
     def get_active_campaign(self, channel: Channel | None = None) -> DropsCampaign | None:
         if not self.wanted_games:

@@ -74,6 +74,13 @@ public partial class MainWindow : Window
         DataContext = _vm;
         Width = _vm.Settings.WindowWidth >= MinWidth ? _vm.Settings.WindowWidth : Width;
         Height = _vm.Settings.WindowHeight >= MinHeight ? _vm.Settings.WindowHeight : Height;
+        // WorkArea is in DIPs, so a 1366x768 display at 150% must not force a
+        // 1000x660 DIP window outside the available desktop.
+        var available = SystemParameters.WorkArea;
+        MinWidth = Math.Min(MinWidth, available.Width);
+        MinHeight = Math.Min(MinHeight, available.Height);
+        Width = Math.Min(Width, available.Width);
+        Height = Math.Min(Height, available.Height);
         if (_vm.Settings.WindowMaximized) WindowState = WindowState.Maximized;
 
         _accountsPage.Initialize(_vm);

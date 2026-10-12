@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import TimeoutError as FutureTimeoutError
 import dataclasses
 import importlib
 import importlib.util
@@ -156,6 +157,22 @@ class GameAccountLinkState(str, Enum):
     LINKED = "linked"
     UNLINKED = "unlinked"
     UNKNOWN = "unknown"
+
+
+@dataclasses.dataclass
+class _ProgressObservation:
+    """Keep the latest remote value and its historical high water mark.
+
+    SOOP's mission endpoint can legitimately return a lower ``viewTime`` on
+    a later request (the web site shows the same behaviour).  The lower
+    response remains the value shown to the user; the high water mark exists
+    only to make that rollback visible in diagnostics.
+    """
+
+    remote_minutes: int
+    remote_percent: int
+    historical_high_water_minutes: int
+    diagnostic: str = ""
 
 
 def _api_optional_bool(value: Any) -> bool | None:
@@ -335,8 +352,12 @@ class SoopWorker(WorkerBase):
         self._core_error = ""
         self._core: dict[str, Any] = {}
         self._manager: Any = None
+        self._manager_stopping = False
         self._states: dict[str, Any] = {}
         self._state_changed = threading.Condition()
+        self._progress_lock = threading.RLock()
+        self._progress_observations: dict[tuple[str, str, int], _ProgressObservation] = {}
+        self._refresh_diagnostics: dict[str, dict[str, Any]] = {}
         self._auto_start_uid = ""
         self._reauth_guard = threading.Lock()
         self._reauth_cancel: dict[str, threading.Event] = {}
@@ -462,7 +483,14 @@ class SoopWorker(WorkerBase):
         return config.AppConfig.from_dict(self._effective_settings())
 
     def _submit(self, coroutine: Any, timeout: float = 35.0) -> Any:
-        return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(timeout=timeout)
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            # A timed-out refresh/stop must not keep the account coroutine
+            # alive in the worker loop and create a second session on retry.
+            future.cancel()
+            raise
 
     def _credentials_path(self, uid: str) -> Path:
         return self.accounts_dir / uid / "credentials.dpapi"
@@ -635,6 +663,280 @@ class SoopWorker(WorkerBase):
             current = current.__cause__ or current.__context__
         return False
 
+    @staticmethod
+    def _progress_int(value: Any, default: int = 0) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _progress_key(uid: str, mission: Any, tier_index: int) -> tuple[str, str, int]:
+        items = list(getattr(mission, "items", []))
+        item = items[tier_index] if tier_index < len(items) else None
+        # A reused activity ID or a changed reward stage must not inherit an
+        # unrelated historical high-water value and produce a false rollback.
+        phase = (str(getattr(mission, "start_date", "")), str(getattr(mission, "end_date", "")),
+                 str(getattr(item, "item_name", "")), str(getattr(item, "give_term", "")))
+        return str(uid), json.dumps((str(getattr(mission, "drops_idx", "")), phase)), tier_index
+
+    @staticmethod
+    def _heartbeat_is_successful(state: Any) -> bool:
+        """Only an explicit successful heartbeat proves the watch path."""
+        heartbeat_status = str(getattr(state, "heartbeat_status", "") or "").strip().casefold()
+        # ``ok`` is retained for the worker's older Core/test state contract;
+        # ``unknown`` is deliberately not treated as a usable heartbeat.
+        return heartbeat_status in {"success", "ok"}
+
+    def _mission_is_eligible_for_state(self, state: Any, mission: Any) -> bool:
+        """Use the Core channel selector before calling a mission watchable."""
+        if not bool(getattr(state, "running", False)) or not getattr(state, "channel_id", None):
+            return False
+        if self._manager is None or not self._core:
+            return False
+        get_miner = getattr(self._manager, "get_miner", None)
+        miner = get_miner(state.uid) if callable(get_miner) else None
+        current_channel = getattr(miner, "_current", None)
+        missions_for_channel = getattr(self._core.get("channel"), "missions_for_channel", None)
+        if current_channel is None or not callable(missions_for_channel):
+            return False
+        try:
+            eligible = missions_for_channel(state.missions, current_channel)
+        except Exception:
+            return False
+        mission_id = str(getattr(mission, "drops_idx", ""))
+        return any(
+            candidate is mission
+            or str(getattr(candidate, "drops_idx", "")) == mission_id
+            for candidate in eligible
+        )
+
+    def _observe_state_progress(self, state: Any) -> None:
+        """Record each account's remote mission response without mutating it.
+
+        ``viewTime`` is the only server-confirmed progress value.  A lower
+        later value is retained as-is and compared with the historical high
+        water mark for diagnostics; no local time is ever added to it.
+        """
+        uid = str(getattr(state, "uid", ""))
+        with self._progress_lock:
+            for mission in getattr(state, "missions", []) or []:
+                for tier_index, item in enumerate(getattr(mission, "items", []) or []):
+                    remote_minutes = self._progress_int(getattr(item, "view_time", 0))
+                    remote_percent = min(100, self._progress_int(getattr(item, "percent", 0)))
+                    key = self._progress_key(uid, mission, tier_index)
+                    previous = self._progress_observations.get(key)
+                    historical_high_water = max(
+                        previous.historical_high_water_minutes if previous is not None else 0,
+                        remote_minutes,
+                    )
+                    diagnostic = ""
+                    if previous is not None and remote_minutes < historical_high_water:
+                        diagnostic = (
+                            f"SOOP 官方最新确认 viewTime={remote_minutes} 分钟；"
+                            f"此前确认高水位={historical_high_water} 分钟；"
+                            "当前展示仍为真实远端值，未使用本地累加"
+                        )
+                    self._progress_observations[key] = _ProgressObservation(
+                        remote_minutes=remote_minutes,
+                        remote_percent=remote_percent,
+                        historical_high_water_minutes=historical_high_water,
+                        diagnostic=diagnostic,
+                    )
+
+    def _progress_details(
+        self,
+        uid: str,
+        mission: Any,
+        item: Any,
+        tier_index: int,
+        state: Any,
+    ) -> dict[str, Any]:
+        remote_minutes = self._progress_int(getattr(item, "view_time", 0))
+        remote_percent = min(100, self._progress_int(getattr(item, "percent", 0)))
+        required_minutes = self._progress_int(getattr(item, "give_term", 0))
+        key = self._progress_key(uid, mission, tier_index)
+        with self._progress_lock:
+            observation = self._progress_observations.get(key)
+            if observation is None:
+                observation = _ProgressObservation(
+                    remote_minutes=remote_minutes,
+                    remote_percent=remote_percent,
+                    historical_high_water_minutes=remote_minutes,
+                )
+                self._progress_observations[key] = observation
+            diagnostic = observation.diagnostic
+            historical_high_water = observation.historical_high_water_minutes
+        with self._progress_lock:
+            refresh_diagnostic = dict(self._refresh_diagnostics.get(uid, {}))
+        last_confirmed_at = str(refresh_diagnostic.get("lastConfirmedAt", "") or "")
+        rollback = remote_minutes < historical_high_water
+        watch_eligible = self._mission_is_eligible_for_state(state, mission)
+        heartbeat_success = self._heartbeat_is_successful(state)
+        connection_healthy = bool(getattr(state, "connection_healthy", False))
+        bridge_connected = bool(getattr(state, "bridge_connected", False))
+        heartbeat_failures = self._progress_int(getattr(state, "heartbeat_failures", 0))
+        heartbeat_result = getattr(state, "heartbeat_result", None)
+        heartbeat_last_success = getattr(state, "heartbeat_last_success", None)
+        bridge_last_activity_seconds = getattr(state, "bridge_last_activity_seconds", None)
+        if refresh_diagnostic.get("status") == "failed":
+            progress_state = "unavailable"
+            state_diagnostic = "最近刷新失败，保留上次成功快照；当前服务端进度暂时无法获取"
+        elif not last_confirmed_at:
+            progress_state = "unavailable"
+            state_diagnostic = "尚未完成显式 SOOP 完整刷新，当前值不能标记为确认"
+        elif rollback:
+            progress_state = "rollback"
+            state_diagnostic = diagnostic
+        elif bool(getattr(item, "mission_success", False)) or (
+            required_minutes > 0 and remote_minutes >= required_minutes
+        ):
+            progress_state = "confirmed"
+            state_diagnostic = ""
+        elif (
+            bool(getattr(state, "running", False))
+            and connection_healthy
+            and bridge_connected
+            and heartbeat_success
+            and watch_eligible
+        ):
+            progress_state = "watching"
+            state_diagnostic = ""
+        else:
+            progress_state = "waiting_server"
+            state_diagnostic = (
+                "频道符合活动；心跳业务响应尚无法确认，请以服务端进度为准"
+                if watch_eligible and connection_healthy and bridge_connected and not heartbeat_success
+                else "当前频道资格或观看连接尚未确认，请以服务端进度为准"
+            )
+        if not state_diagnostic:
+            state_diagnostic = diagnostic
+        return {
+            "remoteMinutes": remote_minutes,
+            "confirmedMinutes": remote_minutes,
+            "historicalHighWaterMinutes": historical_high_water,
+            "remotePercent": remote_percent,
+            "currentMinutes": remote_minutes,
+            "percent": remote_percent,
+            "progressSource": "remote",
+            "progressState": progress_state,
+            "progressDiagnostic": state_diagnostic,
+            "lastConfirmedAt": last_confirmed_at,
+            "watchEligible": watch_eligible,
+            "heartbeatStatus": getattr(state, "heartbeat_status", None),
+            "heartbeatSuccess": heartbeat_success,
+            "heartbeatFailures": heartbeat_failures,
+            "heartbeatResult": heartbeat_result,
+            "heartbeatLastSuccess": heartbeat_last_success,
+            "connectionHealthy": connection_healthy,
+            "bridgeConnected": bridge_connected,
+            "bridgeLastActivitySeconds": bridge_last_activity_seconds,
+            "diverged": rollback,
+        }
+
+    def _progress_diagnostics_for_state(self, state: Any) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
+        uid = str(getattr(state, "uid", ""))
+        for mission in getattr(state, "missions", []) or []:
+            for tier_index, item in enumerate(getattr(mission, "items", []) or []):
+                details = self._progress_details(uid, mission, item, tier_index, state)
+                if details["progressState"] == "confirmed" and not details["progressDiagnostic"]:
+                    continue
+                diagnostics.append({
+                    "uid": uid,
+                    "missionId": str(getattr(mission, "drops_idx", "")),
+                    "tierIndex": tier_index,
+                    "remoteMinutes": details["remoteMinutes"],
+                    "confirmedMinutes": details["confirmedMinutes"],
+                    "historicalHighWaterMinutes": details["historicalHighWaterMinutes"],
+                    "currentMinutes": details["currentMinutes"],
+                    "progressSource": details["progressSource"],
+                    "progressState": details["progressState"],
+                    "diagnostic": details["progressDiagnostic"],
+                    "lastConfirmedAt": details["lastConfirmedAt"],
+                    "watchEligible": details["watchEligible"],
+                    "heartbeatStatus": details["heartbeatStatus"],
+                    "heartbeatSuccess": details["heartbeatSuccess"],
+                    "heartbeatFailures": details["heartbeatFailures"],
+                    "heartbeatResult": details["heartbeatResult"],
+                    "heartbeatLastSuccess": details["heartbeatLastSuccess"],
+                    "connectionHealthy": details["connectionHealthy"],
+                    "bridgeConnected": details["bridgeConnected"],
+                    "bridgeLastActivitySeconds": details["bridgeLastActivitySeconds"],
+                })
+        return diagnostics
+
+    def _all_progress_diagnostics(self) -> list[dict[str, Any]]:
+        return [
+            diagnostic
+            for state in list(self._states.values())
+            for diagnostic in self._progress_diagnostics_for_state(state)
+        ]
+
+    def _record_refresh_diagnostic(
+        self,
+        uid: str,
+        *,
+        status: str,
+        error: str = "",
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._progress_lock:
+            diagnostic = dict(self._refresh_diagnostics.get(uid, {}))
+            diagnostic.update({
+                "uid": uid,
+                "status": status,
+                "lastAttemptAt": now,
+                "error": error,
+            })
+            if status == "success":
+                diagnostic["lastSuccessAt"] = now
+                diagnostic["lastConfirmedAt"] = now
+                diagnostic["lastSuccessSource"] = "remote"
+                diagnostic["lastSuccessKind"] = "完整远端刷新"
+            elif status == "failed":
+                diagnostic["lastFailureAt"] = now
+            self._refresh_diagnostics[uid] = diagnostic
+
+    def _refresh_diagnostics_snapshot(self) -> list[dict[str, Any]]:
+        with self._progress_lock:
+            return [dict(value) for value in self._refresh_diagnostics.values()]
+
+    def _decorate_mission_progress(
+        self,
+        uid: str,
+        mission: Any,
+        row: dict[str, Any],
+        state: Any,
+    ) -> None:
+        diagnostics: list[dict[str, Any]] = []
+        item_rows = row.get("items") if isinstance(row.get("items"), list) else []
+        for tier_index, item in enumerate(getattr(mission, "items", []) or []):
+            details = self._progress_details(uid, mission, item, tier_index, state)
+            if tier_index >= len(item_rows) or not details["diverged"]:
+                continue
+            item_rows[tier_index].update({
+                key: details[key]
+                for key in (
+                    "remoteMinutes", "confirmedMinutes", "historicalHighWaterMinutes",
+                    "currentMinutes", "progressSource", "progressState",
+                    "progressDiagnostic", "lastConfirmedAt",
+                )
+            })
+            diagnostics.append({
+                "tierIndex": tier_index,
+                "remoteMinutes": details["remoteMinutes"],
+                "confirmedMinutes": details["confirmedMinutes"],
+                "historicalHighWaterMinutes": details["historicalHighWaterMinutes"],
+                "currentMinutes": details["currentMinutes"],
+                "progressSource": details["progressSource"],
+                "progressState": details["progressState"],
+                "diagnostic": details["progressDiagnostic"],
+                "lastConfirmedAt": details["lastConfirmedAt"],
+            })
+        if diagnostics:
+            row["progressDiagnostics"] = diagnostics
+
     def _normalize_priority_mission_id(self, *, fallback_if_missing: bool) -> bool:
         """Keep a saved priority only while it remains selectable.
 
@@ -649,7 +951,7 @@ class SoopWorker(WorkerBase):
 
         tasks = [
             task
-            for state in self._states.values()
+            for state in list(self._states.values())
             for task in self._tasks_for_state(state, include_ended=True)
             if str(task.get("id", "")) == selected and not bool(task.get("eventOnly"))
         ]
@@ -663,12 +965,13 @@ class SoopWorker(WorkerBase):
         return True
 
     def _state_callback(self, state: Any) -> None:
+        self._observe_state_progress(state)
         with self._state_changed:
             self._states[state.uid] = state
             self._state_changed.notify_all()
         self._normalize_priority_mission_id(fallback_if_missing=False)
         event("account_status", self._state_to_dict(state))
-        active = sum(1 for item in self._states.values() if item.running)
+        active = sum(1 for item in list(self._states.values()) if item.running)
         if state.uid == self._auto_start_uid:
             self.status("正在刷新掉宝信息…", "正在读取直播间、任务与奖励背包")
         else:
@@ -806,7 +1109,7 @@ class SoopWorker(WorkerBase):
             if activity_requirement is not GameAccountRequirement.UNKNOWN:
                 requirement = activity_requirement
             link_state = _game_account_link_state(requirement, activity_raw)
-            rows.append({
+            row = {
                 "id": f"{state.uid}:{mission.drops_idx}",
                 "account": state.uid,
                 "channel": state.channel_nick or state.channel_id,
@@ -825,23 +1128,59 @@ class SoopWorker(WorkerBase):
                     activity_raw.get("acctLinkPath") or activity_raw.get("loginPath")
                     or mission_raw.get("acctLinkPath") or mission_raw.get("loginPath") or ""
                 ),
+            }
+            tier_index = next(
+                (index for index, value in enumerate(getattr(mission, "items", []) or []) if value is item),
+                0,
+            )
+            details = self._progress_details(str(state.uid), mission, item, tier_index, state)
+            row.update({
+                key: details[key]
+                for key in (
+                    "remoteMinutes", "confirmedMinutes", "historicalHighWaterMinutes",
+                    "remotePercent", "progressSource", "progressState",
+                    "progressDiagnostic", "lastConfirmedAt", "watchEligible",
+                    "heartbeatStatus", "heartbeatSuccess", "heartbeatFailures",
+                    "heartbeatResult", "heartbeatLastSuccess", "connectionHealthy",
+                    "bridgeConnected", "bridgeLastActivitySeconds",
+                )
             })
+            # ``currentMinutes`` and ``percent`` are always the latest remote
+            # confirmation, including when the server rolls back to zero.
+            row["currentMinutes"] = details["currentMinutes"]
+            row["percent"] = details["percent"]
+            rows.append(row)
         return rows
 
     def _state_to_dict(self, state: Any) -> dict[str, Any]:
         tasks = self._tasks_for_state(state)
         all_tasks = self.get_tasks({})
+        refresh_diagnostic = dict(self._refresh_diagnostics.get(str(state.uid), {}))
+        mission_rows: list[dict[str, Any]] = []
+        for mission in getattr(state, "missions", []) or []:
+            mission_row = self._mission_to_dict(mission)
+            self._decorate_mission_progress(str(state.uid), mission, mission_row, state)
+            mission_rows.append(mission_row)
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
             "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
             "channelId": state.channel_id, "channelName": state.channel_nick, "broadcastNo": state.broad_no,
             "connectionHealthy": state.connection_healthy, "bridgeConnected": state.bridge_connected,
             "heartbeatStatus": state.heartbeat_status, "heartbeatLastSuccess": state.heartbeat_last_success,
+            "heartbeatFailures": self._progress_int(getattr(state, "heartbeat_failures", 0)),
+            "heartbeatResult": getattr(state, "heartbeat_result", None),
             "networkUploaded": state.network_uploaded, "networkDownloaded": state.network_downloaded,
             "networkBps": state.network_last_minute_bps,
+            "networkUploadBps": getattr(state, "network_upload_bps", 0.0),
+            "networkDownloadBps": getattr(state, "network_download_bps", 0.0),
+            "networkEstimated": bool(getattr(state, "network_estimated", True)),
+            "bridgeLastActivitySeconds": getattr(state, "bridge_last_activity_seconds", None),
             "settings": {"priority_mission_id": str(self.settings.get("priority_mission_id", "auto"))},
             "currentProgress": self._current_progress_for_state(state),
-            "missions": [self._mission_to_dict(mission) for mission in state.missions],
+            "progressDiagnostics": self._progress_diagnostics_for_state(state),
+            "lastConfirmedAt": str(refresh_diagnostic.get("lastConfirmedAt", "") or ""),
+            "refreshDiagnostic": refresh_diagnostic,
+            "missions": mission_rows,
             "events": [self._event_to_dict(activity) for activity in getattr(state, "events", [])],
             "tasks": tasks,
             "displayTasks": tasks,
@@ -860,8 +1199,10 @@ class SoopWorker(WorkerBase):
         }
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
+        captured_at = time.monotonic_ns()
         tasks = self.get_tasks({})
         return {
+            "_snapshotStarted": captured_at,
             "running": self.running,
             "settings": self._effective_settings(),
             "accounts": self.get_accounts({}),
@@ -873,8 +1214,14 @@ class SoopWorker(WorkerBase):
             "events": self.get_events({}),
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
+            "progressDiagnostics": self._all_progress_diagnostics(),
+            "refreshDiagnostics": self._refresh_diagnostics_snapshot(),
             "channels": self.get_channels({}),
             "coreAvailable": bool(self._core),
+            "coreCapabilities": {
+                "forceRefreshAccount": callable(getattr(getattr(self._core.get("multi"), "MultiMinerManager", None), "force_refresh_account", None)),
+                "forceRefresh": callable(getattr(getattr(self._core.get("miner"), "SoopMiner", None), "force_refresh", None)),
+            },
             "coreError": self._core_error,
             "proxy": self.proxy,
             "runtime": self.runtime_state(),
@@ -908,6 +1255,8 @@ class SoopWorker(WorkerBase):
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
+        if self._manager_stopping:
+            raise RuntimeError("SOOP 旧观看会话仍在清理，请先停止后台后重试。")
         if self.running:
             return self.load_state({})
         for uid in self._core["auth"].list_accounts():
@@ -923,17 +1272,30 @@ class SoopWorker(WorkerBase):
     def stop(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._cancel_all_reauthentication()
         if self._manager is not None:
+            self._manager_stopping = True
             try:
                 self._submit(self._manager.shutdown(), timeout=20)
-            finally:
+            except TimeoutError as exc:
+                raise TimeoutError("SOOP 旧观看会话停止超时，清理完成前不能重新启动。") from exc
+            else:
                 self._manager = None
+                self._manager_stopping = False
         self.running = False
         self.status("已停止", f"{len(self.get_accounts({}))} 个账号")
         return self.load_state({})
 
     def _restart_manager(self) -> None:
+        active = list(getattr(self._manager, "running_uids", []))
         self.stop({})
-        self.start({})
+        failures = []
+        for uid in active:
+            try:
+                self.start_account({"uid": uid})
+            except Exception as exc:
+                failures.append(str(uid))
+                self.logger.warning("SOOP account restart failed: %s", exc)
+        if failures:
+            event("notice", {"message": "部分 SOOP 账号恢复失败，请重新登录或重试：" + "、".join(failures)})
 
     def on_proxy_changed(self) -> None:
         if self.running and self._core:
@@ -950,6 +1312,13 @@ class SoopWorker(WorkerBase):
         if accounts:
             self._require_core()
 
+        persisted_accounts = set(accounts)
+        requested_uid = str(payload.get("uid", payload.get("userid", ""))).strip()
+        if requested_uid:
+            if requested_uid not in persisted_accounts:
+                raise ValueError("未找到要刷新的 SOOP 账号")
+            accounts = [requested_uid]
+
         self.logger.info("SOOP mission refresh started accounts=%d", len(accounts))
         self.status("正在刷新掉宝信息…", "正在重新获取 SOOP 活动、奖励和直播间")
         errors: list[str] = []
@@ -960,8 +1329,9 @@ class SoopWorker(WorkerBase):
         get_miner = getattr(manager, "get_miner", None) if manager is not None else None
 
         for uid in accounts:
+            is_running = uid in running_uids
             try:
-                is_running = uid in running_uids or (
+                is_running = is_running or (
                     callable(get_miner) and get_miner(uid) is not None
                 )
                 if is_running:
@@ -979,17 +1349,35 @@ class SoopWorker(WorkerBase):
                     )
                 if state is None:
                     raise RuntimeError("SOOP 账号刷新未返回状态。")
+                self._record_refresh_diagnostic(uid, status="success")
+                # Publish the explicit-refresh timestamp before account_status
+                # so consumers never observe a successful state without its
+                # matching lastConfirmedAt diagnostic.
                 self._state_callback(state)
             except Exception as exc:
                 if self._is_authentication_error(exc):
                     self._handle_authentication_failure(uid, restart=is_running)
-                errors.append(f"{uid}: {exc}")
+                self._record_refresh_diagnostic(uid, status="failed", error=str(exc))
+                cached_state = self._states.get(uid)
+                if cached_state is not None:
+                    # Surface the failed refresh diagnostic beside the
+                    # preserved successful snapshot.
+                    self._state_callback(cached_state)
+                public_error = "SOOP 登录信息已失效，请重新登录或添加账号。" if self._is_authentication_error(exc) else str(exc)
+                errors.append(f"{uid}: {public_error}")
                 self.logger.warning("SOOP mission refresh failed uid=%s: %s", uid, exc)
 
-        persisted = set(accounts)
+        persisted = persisted_accounts
         for uid in list(self._states):
             if uid not in persisted:
                 self._states.pop(uid, None)
+        with self._progress_lock:
+            for uid in list(self._refresh_diagnostics):
+                if uid not in persisted:
+                    self._refresh_diagnostics.pop(uid, None)
+            for key in list(self._progress_observations):
+                if key[0] not in persisted:
+                    self._progress_observations.pop(key, None)
 
         state = self.load_state({})
         tasks = state["tasks"]
@@ -1017,6 +1405,7 @@ class SoopWorker(WorkerBase):
         )
         state["refreshStatus"] = "failed" if errors else "success"
         state["refreshCompleted"] = not errors
+        state["refreshDiagnostics"] = self._refresh_diagnostics_snapshot()
         if errors:
             state["refreshError"] = "；".join(errors)
             self.status("SOOP 刷新失败", "当前显示上次成功数据")
@@ -1107,6 +1496,10 @@ class SoopWorker(WorkerBase):
             raise RuntimeError("SOOP 账号删除失败，本地登录信息仍然存在。")
 
         self._states.pop(uid, None)
+        with self._progress_lock:
+            self._refresh_diagnostics.pop(uid, None)
+            for key in [key for key in self._progress_observations if key[0] == uid]:
+                self._progress_observations.pop(key, None)
         if uid == str(self.settings.get("primary_account_uid", "")):
             self.settings["primary_account_uid"] = ""
             atomic_write_json(self.settings_path, self.settings)
@@ -1203,6 +1596,8 @@ class SoopWorker(WorkerBase):
 
     def start_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_core()
+        if self._manager_stopping:
+            raise RuntimeError("SOOP 旧观看会话仍在清理，请先停止后台后重试。")
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
         self._allow_reauthentication(uid)
         retry_attempt = int(payload.get("retryAttempt", 0) or 0)
@@ -1237,10 +1632,20 @@ class SoopWorker(WorkerBase):
         self._cancel_reauthentication(uid)
         if self._manager is not None:
             self._submit(self._manager.stop_account_and_wait(uid), timeout=20)
+            self.running = bool(getattr(self._manager, "running_uids", []))
+        state = self._states.get(uid)
+        if state is not None:
+            state.running = False
+            state.status = "已停止"
+            self._state_callback(state)
         return {"userid": uid, "stopped": True}
 
     def _tasks_for_state(self, state: Any, *, include_ended: bool = False) -> list[dict[str, Any]]:
-        rows = [{"uid": state.uid, **self._mission_to_dict(mission)} for mission in state.missions]
+        rows: list[dict[str, Any]] = []
+        for mission in state.missions:
+            row = {"uid": state.uid, **self._mission_to_dict(mission)}
+            self._decorate_mission_progress(str(state.uid), mission, row, state)
+            rows.append(row)
         by_id = {
             str(row["id"]): row for row in rows if str(row.get("id", ""))
         }
@@ -1304,12 +1709,12 @@ class SoopWorker(WorkerBase):
 
     def get_tasks(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
-        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        states = ([self._states[uid]] if uid in self._states else []) if uid else list(self._states.values())
         return [task for state in states for task in self._tasks_for_state(state)]
 
     def get_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
-        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        states = ([self._states[uid]] if uid in self._states else []) if uid else list(self._states.values())
         return [
             {"uid": state.uid, **self._event_to_dict(activity)}
             for state in states
@@ -1318,19 +1723,22 @@ class SoopWorker(WorkerBase):
 
     def get_inventory(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
-        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        states = ([self._states[uid]] if uid in self._states else []) if uid else list(self._states.values())
         return [{"uid": state.uid, **item} for state in states for item in map(self._inventory_to_dict, state.inventory)]
 
     def get_current_progress(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
-        states = [self._states[uid]] if uid and uid in self._states else list(self._states.values())
+        states = ([self._states[uid]] if uid in self._states else []) if uid else list(self._states.values())
         return [row for state in states for row in self._current_progress_for_state(state)]
 
     def get_channels(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        channels: dict[str, dict[str, Any]] = {}
-        for state in self._states.values():
+        uid = str(payload.get("userid", payload.get("uid", ""))).strip()
+        states = ([self._states[uid]] if uid in self._states else []) if uid else list(self._states.values())
+        channels: dict[tuple[str, str], dict[str, Any]] = {}
+        for state in states:
             for item in self._state_to_dict(state)["channels"]:
-                channels[item["id"]] = item
+                item = {"uid": state.uid, **item}
+                channels[(str(state.uid), str(item.get("id", "")))] = item
         return list(channels.values())
 
     def set_channel(self, payload: dict[str, Any]) -> dict[str, Any]:

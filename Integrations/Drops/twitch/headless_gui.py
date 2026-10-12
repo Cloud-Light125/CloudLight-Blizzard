@@ -227,6 +227,7 @@ class LoginForm:
         payload = {
             "url": str(verification_uri), "code": user_code,
             "method": "device", "automatic": automatic,
+            "expiresAt": str(getattr(self._twitch, "_cloudlight_auth_expires_at", "")),
         }
         if self._twitch is not None:
             self._twitch._cloudlight_auth_required = payload

@@ -8,6 +8,7 @@ namespace CloudLightBlizzard.Services.Drops;
 
 public sealed class DropsHostService : IAsyncDisposable
 {
+    private static long _nextGeneration;
     private sealed class WorkerConnection
     {
         public required DropsPlatform Platform { get; init; }
@@ -17,20 +18,25 @@ public sealed class DropsHostService : IAsyncDisposable
         public required Task OutputLoop { get; set; }
         public required Task ErrorLoop { get; set; }
         public SemaphoreSlim WriteGate { get; } = new(1, 1);
+        public SemaphoreSlim CommandGate { get; } = new(1, 1);
         public ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> Pending { get; } = new();
         public WorkerLifecycle Lifecycle { get; set; } = WorkerLifecycle.Starting;
         public string Status { get; set; } = "正在启动";
         public string Summary { get; set; } = "";
         public string? LastError { get; set; }
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.Now;
+        public long Generation { get; } = Interlocked.Increment(ref _nextGeneration);
         public bool BusinessRunning { get; set; }
         public bool RuntimeErrorReported { get; set; }
+        public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<DropsPlatform, WorkerConnection> _workers = new();
     private readonly List<WorkerConnection> _retiredWorkers = [];
     private readonly object _sync = new();
+    private readonly Dictionary<DropsPlatform, SemaphoreSlim> _connectionGates = Enum.GetValues<DropsPlatform>()
+        .ToDictionary(platform => platform, _ => new SemaphoreSlim(1, 1));
     private bool _disposing;
     private DropsProxySettings _proxySettings = new(false, "", false);
     private Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? _requestOverrideForSelfTest;
@@ -64,11 +70,26 @@ public sealed class DropsHostService : IAsyncDisposable
     public async Task<JsonElement> RequestAsync(DropsPlatform platform, string command, object? payload = null,
         CancellationToken cancellationToken = default)
     {
+        if (_disposing && command is not ("stop" or "shutdown")) throw new ObjectDisposedException(nameof(DropsHostService));
         var requestOverride = _requestOverrideForSelfTest;
         if (requestOverride is not null)
             return await requestOverride(platform, command, payload, cancellationToken).ConfigureAwait(false);
 
         var worker = await EnsureConnectedAsync(platform, cancellationToken).ConfigureAwait(false);
+        return await SendAsync(worker, command, payload, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JsonElement> SendAsync(WorkerConnection worker, string command, object? payload,
+        CancellationToken cancellationToken)
+    {
+        var platform = worker.Platform;
+        if (worker.Process.HasExited) throw new IOException($"{platform} 后台在握手前已退出。");
+        if (command is not ("hello" or "set_proxy" or "shutdown"))
+            await worker.Ready.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+        using var commandLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, worker.Lifetime.Token);
+        await worker.CommandGate.WaitAsync(commandLifetime.Token).ConfigureAwait(false);
+        try
+        {
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!worker.Pending.TryAdd(id, completion)) throw new InvalidOperationException("无法发送后台请求。");
@@ -79,7 +100,10 @@ public sealed class DropsHostService : IAsyncDisposable
             "refresh" when platform == DropsPlatform.Soop => 180,
             "auto_start" when platform == DropsPlatform.Twitch => 270,
             "auto_start" when platform == DropsPlatform.Soop => 120,
+            "start_account" or "stop_account" when platform == DropsPlatform.Soop => 50,
             "claim_reward" when platform == DropsPlatform.Soop => 90,
+            "claim_drop" when platform == DropsPlatform.Twitch => 70,
+            "network_check" => 65,
             "refresh" when platform == DropsPlatform.Bilibili => 120,
             "discover" or "claim_reward" when platform == DropsPlatform.Bilibili => 120,
             "start" when platform == DropsPlatform.Bilibili => 90,
@@ -109,14 +133,51 @@ public sealed class DropsHostService : IAsyncDisposable
             PublishSnapshot(worker);
             return result;
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !worker.Lifetime.IsCancellationRequested)
+        {
+            if (command is "refresh" or "auto_start" or "start_account" or "claim_drop" or "claim_reward")
+            {
+                MarkCrashed(worker, $"{command} 操作超时，已终止旧后台以避免迟到状态覆盖。");
+                TryTerminate(worker);
+                await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            throw new TimeoutException($"{platform} {command} 操作超时，请重试连接；领取结果请重新刷新确认。");
+        }
         finally { worker.Pending.TryRemove(id, out _); }
+        }
+        finally { worker.CommandGate.Release(); }
     }
 
     public Task<JsonElement> StartAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
         RequestAsync(platform, "start", cancellationToken: cancellationToken);
 
-    public Task<JsonElement> StopAsync(DropsPlatform platform, CancellationToken cancellationToken = default) =>
-        RequestAsync(platform, "stop", cancellationToken: cancellationToken);
+    public async Task<JsonElement> StopAsync(DropsPlatform platform, CancellationToken cancellationToken = default)
+    {
+        if (_requestOverrideForSelfTest is null)
+        {
+            lock (_sync)
+                if (!_workers.TryGetValue(platform, out var current) || current.Process.HasExited)
+                    return JsonSerializer.SerializeToElement(new { running = false, status = "已停止" });
+        }
+        try
+        {
+            using var stopTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            stopTimeout.CancelAfter(TimeSpan.FromSeconds(20));
+            return await RequestAsync(platform, "stop", cancellationToken: stopTimeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            WorkerConnection? worker;
+            lock (_sync) _workers.TryGetValue(platform, out worker);
+            if (worker is null) throw;
+            worker.Lifecycle = WorkerLifecycle.Stopping;
+            worker.BusinessRunning = false;
+            TryTerminate(worker);
+            await worker.Process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            PublishUserLog(platform, "warning", "后台停止请求未完成，已关闭本应用持有的后台进程。可手动重新启动。");
+            return JsonSerializer.SerializeToElement(new { running = false, status = "已停止", forcedStop = true });
+        }
+    }
 
     /// <summary>
     /// 只重启本服务实际创建并持有的 worker。不会按进程名查杀用户启动的 Python 进程。
@@ -214,7 +275,12 @@ public sealed class DropsHostService : IAsyncDisposable
                 await RequestAsync(worker.Platform, "set_proxy", settings.ForWorker(worker.Platform), cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                PublishUserLog(worker.Platform, "warning", $"代理策略尚未应用：{SensitiveDataRedactor.Redact(ex.Message)}，请停止并重新启动该平台。");
+                EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, "notice",
+                    JsonSerializer.SerializeToElement(new { message = "代理策略更新失败，请停止并重新启动该平台。" })));
+            }
         }
     }
 
@@ -226,6 +292,12 @@ public sealed class DropsHostService : IAsyncDisposable
 
     private async Task<WorkerConnection> EnsureConnectedAsync(DropsPlatform platform, CancellationToken cancellationToken)
     {
+        lock (_sync)
+            if (_workers.TryGetValue(platform, out var ready) && !ready.Process.HasExited) return ready;
+        var gate = _connectionGates[platform];
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
         lock (_sync)
         {
             if (_workers.TryGetValue(platform, out var connected) && !connected.Process.HasExited)
@@ -251,10 +323,10 @@ public sealed class DropsHostService : IAsyncDisposable
             ErrorLoop = Task.CompletedTask,
         };
         worker.Input.AutoFlush = true;
-        worker.OutputLoop = ReadOutputAsync(worker);
-        worker.ErrorLoop = ReadErrorsAsync(worker);
         process.Exited += (_, _) => OnExited(worker);
         lock (_sync) _workers[platform] = worker;
+        worker.OutputLoop = ReadOutputAsync(worker);
+        worker.ErrorLoop = ReadErrorsAsync(worker);
         PublishSnapshot(worker);
         if (platform == DropsPlatform.Twitch)
             EventReceived?.Invoke(this, new WorkerEvent(platform, "connection_status",
@@ -262,19 +334,23 @@ public sealed class DropsHostService : IAsyncDisposable
 
         try
         {
-            await RequestAsync(platform, "hello", new { protocol = 1 }, cancellationToken).ConfigureAwait(false);
-            await RequestAsync(platform, "set_proxy", _proxySettings.ForWorker(platform), cancellationToken)
+            await SendAsync(worker, "hello", new { protocol = 1 }, cancellationToken).ConfigureAwait(false);
+            await SendAsync(worker, "set_proxy", _proxySettings.ForWorker(platform), cancellationToken)
                 .ConfigureAwait(false);
             worker.Lifecycle = WorkerLifecycle.Running;
             worker.Status = "就绪";
+            worker.Ready.TrySetResult();
             PublishSnapshot(worker);
             return worker;
         }
-        catch
+        catch (Exception ex)
         {
+            worker.Ready.TrySetException(ex);
             TryTerminate(worker);
             throw;
         }
+        }
+        finally { gate.Release(); }
     }
 
     private static ProcessStartInfo BuildStartInfo(DropsPlatform platform)
@@ -375,6 +451,8 @@ public sealed class DropsHostService : IAsyncDisposable
             while (!worker.Lifetime.IsCancellationRequested &&
                    await worker.Process.StandardError.ReadLineAsync(worker.Lifetime.Token).ConfigureAwait(false) is { } line)
             {
+                lock (_sync)
+                    if (!_workers.TryGetValue(worker.Platform, out var current) || !ReferenceEquals(current, worker)) continue;
                 var safe = SensitiveDataRedactor.Redact(line);
                 if (string.IsNullOrWhiteSpace(safe)) continue;
                 if (IsSslRuntimeError(safe))
@@ -415,6 +493,8 @@ public sealed class DropsHostService : IAsyncDisposable
 
     private void HandleMessage(WorkerConnection worker, string line)
     {
+        lock (_sync)
+            if (!_workers.TryGetValue(worker.Platform, out var current) || !ReferenceEquals(current, worker)) return;
         try
         {
             using var document = JsonDocument.Parse(line);
@@ -424,7 +504,7 @@ public sealed class DropsHostService : IAsyncDisposable
             {
                 if (root.TryGetProperty("ok", out var ok) && ok.GetBoolean())
                 {
-                    var result = root.TryGetProperty("result", out var value) ? value.Clone() : JsonSerializer.SerializeToElement(new { });
+                    var result = root.TryGetProperty("result", out var value) ? StampState(value, root, worker) : JsonSerializer.SerializeToElement(new { });
                     pending.TrySetResult(result);
                 }
                 else
@@ -436,7 +516,7 @@ public sealed class DropsHostService : IAsyncDisposable
             }
             if (!root.TryGetProperty("event", out var eventElement) || eventElement.GetString() is not { } eventName) return;
             var payload = root.TryGetProperty("payload", out var eventPayload)
-                ? eventPayload.Clone()
+                ? StampState(eventPayload, root, worker)
                 : JsonSerializer.SerializeToElement(new { });
             if (eventName == "status") UpdateStatus(worker, payload);
             EventReceived?.Invoke(this, new WorkerEvent(worker.Platform, eventName, payload));
@@ -446,6 +526,21 @@ public sealed class DropsHostService : IAsyncDisposable
             worker.LastError = "后台服务返回了无效数据。";
             PublishSnapshot(worker);
         }
+    }
+
+    private static JsonElement StampState(JsonElement value, JsonElement envelope, WorkerConnection worker)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return value.Clone();
+        var fields = value.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone());
+        fields["_workerGeneration"] = JsonSerializer.SerializeToElement(worker.Generation);
+        fields["_workerSequence"] = envelope.TryGetProperty("sequence", out var sequence)
+            ? sequence.Clone() : JsonSerializer.SerializeToElement(0);
+        fields["_stateTime"] = value.TryGetProperty("_snapshotStarted", out var captured)
+            ? captured.Clone() : envelope.TryGetProperty("_emittedAt", out var emitted)
+                ? emitted.Clone() : JsonSerializer.SerializeToElement(0);
+        if (fields.TryGetValue("state", out var nested) && nested.ValueKind == JsonValueKind.Object)
+            fields["state"] = StampState(nested, envelope, worker);
+        return JsonSerializer.SerializeToElement(fields);
     }
 
     private void UpdateStatus(WorkerConnection worker, JsonElement payload)
@@ -482,9 +577,13 @@ public sealed class DropsHostService : IAsyncDisposable
         PublishSnapshot(worker);
     }
 
-    private void PublishSnapshot(WorkerConnection worker) =>
+    private void PublishSnapshot(WorkerConnection worker)
+    {
+        lock (_sync)
+            if (!_workers.TryGetValue(worker.Platform, out var current) || !ReferenceEquals(current, worker)) return;
         SnapshotChanged?.Invoke(this, new WorkerSnapshot(worker.Platform, worker.Lifecycle, worker.Status,
             worker.Summary, worker.StartedAt, worker.Process.HasExited ? null : worker.Process.Id, worker.LastError));
+    }
 
     private WorkerSnapshot GetSnapshotLocked(DropsPlatform platform)
     {
@@ -531,6 +630,7 @@ public sealed class DropsHostService : IAsyncDisposable
             worker.Lifetime.Cancel();
             worker.Lifetime.Dispose();
             worker.WriteGate.Dispose();
+            worker.CommandGate.Dispose();
             worker.Process.Dispose();
         }
         lock (_sync)

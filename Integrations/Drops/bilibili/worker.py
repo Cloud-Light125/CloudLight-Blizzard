@@ -423,6 +423,9 @@ class BilibiliProgressPoller:
         self._worker = worker
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._task_lock = threading.Lock()
+        self._loop: Any = None
+        self._task: Any = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -435,10 +438,29 @@ class BilibiliProgressPoller:
 
     def stop(self) -> None:
         self._stop_event.set()
+        with self._task_lock:
+            loop, task = self._loop, self._task
+        if loop is not None and task is not None:
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                pass  # The iteration already closed its event loop.
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(5.0)
-        self._thread = None
+        if thread is None or not thread.is_alive():
+            self._thread = None
+
+    async def _poll_once(self) -> None:
+        with self._task_lock:
+            self._loop = asyncio.get_running_loop()
+            self._task = asyncio.current_task()
+        try:
+            if not self._stop_event.is_set():
+                await self._worker.poll_progress_once()
+        finally:
+            with self._task_lock:
+                self._loop = self._task = None
 
     def _run(self) -> None:
         first = True
@@ -454,7 +476,9 @@ class BilibiliProgressPoller:
                     continue
             first = False
             try:
-                asyncio.run(self._worker.poll_progress_once())
+                asyncio.run(self._poll_once())
+            except asyncio.CancelledError:
+                return
             except Exception as exc:
                 self._worker.report_warning("task_progress_failed", "任务进度查询失败", exc)
 
@@ -802,9 +826,11 @@ class BilibiliWorker(WorkerBase):
         return result
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
+        captured_at = time.monotonic_ns()
         with self._state_lock:
             state = json.loads(json.dumps(self._state, ensure_ascii=False))
         state.update({
+            "_snapshotStarted": captured_at,
             "platform": self.platform,
             "running": self.running,
             "status": self._status_text(),
@@ -845,6 +871,8 @@ class BilibiliWorker(WorkerBase):
             self._bilibili_use_proxy = use_global_proxy
             self._fallback_direct = fallback_direct
             self._network_fallback_active = False
+        self.proxy = {"enableProxy": new_policy.has_explicit_proxy, "proxyUrl": new_policy.proxy_url,
+                      "fallbackDirect": new_policy.fallback_direct}
         changed = previous != (
             new_policy,
             enabled and bool(proxy_url),
@@ -1323,18 +1351,22 @@ class BilibiliWorker(WorkerBase):
 
     def refresh(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_runtime()
+        errors: list[str] = []
         if payload.get("discover", True):
             try:
                 self.discover(payload)
             except Exception as exc:
                 self.report_warning("discovery_failed", "活动发现失败", exc)
+                errors.append("活动发现失败，保留最近成功数据")
         if self.cookie and self._state.get("taskIds"):
             try:
                 asyncio.run(self.poll_progress_once())
             except Exception as exc:
                 self.report_warning("task_progress_failed", "任务进度查询失败", exc)
+                errors.append("任务进度查询失败，保留最近确认进度")
         self._save_state()
-        return self.load_state({})
+        return {**self.load_state({}), "refreshCompleted": not errors,
+                "refreshStatus": "failed" if errors else "success", "refreshError": "；".join(errors)}
 
     async def poll_progress_once(self) -> None:
         with self._state_lock:
@@ -1375,7 +1407,7 @@ class BilibiliWorker(WorkerBase):
                     )
             if completed_to_notify:
                 self._save_state()
-            if self._settings_state().get("autoClaim", False):
+            if self.running and self._settings_state().get("autoClaim", False):
                 completed = [item.task_id for item in progresses if item.is_completed]
                 if completed:
                     await self._claim_with_client(client, completed, automatic=True)
@@ -1385,6 +1417,8 @@ class BilibiliWorker(WorkerBase):
     async def _claim_with_client(self, client: BilibiliClient, task_ids: list[str], *, automatic: bool) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for task_id in dict.fromkeys(str(item).strip() for item in task_ids if str(item).strip()):
+            if automatic and not self.running:
+                break
             with self._claim_lock:
                 if task_id in self._claimed_ids or task_id in self._claim_inflight:
                     continue
@@ -1464,10 +1498,12 @@ class BilibiliWorker(WorkerBase):
             network_policy=self._network_policy_snapshot(),
             on_network_fallback=self._mark_network_fallback,
         )
-        try:
-            results = asyncio.run(self._claim_with_client(client, [task_id], automatic=False))
-        finally:
-            asyncio.run(client.close())
+        async def claim_and_close():
+            try:
+                return await self._claim_with_client(client, [task_id], automatic=False)
+            finally:
+                await client.close()
+        results = asyncio.run(claim_and_close())
         return {"results": results, "tasks": self.get_tasks({})}
 
     def get_session_details(self, payload: dict[str, Any]) -> dict[str, Any]:

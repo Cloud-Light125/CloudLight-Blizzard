@@ -6,7 +6,12 @@ namespace CloudLightBlizzard.Services;
 /// <summary>CloudLight Blizzard 的所有应用数据路径。</summary>
 public sealed class AppPaths
 {
-    public static AppPaths Current { get; } = new();
+    public static AppPaths Current { get; private set; } = new();
+    internal static void UseSelfTestRoot(string root)
+    {
+        Current = new AppPaths(root, Path.Combine(root, "legacy"));
+        Current.EnsureDirectories();
+    }
 
     public string Root { get; }
     public string SettingsFile => Path.Combine(Root, "settings.json");

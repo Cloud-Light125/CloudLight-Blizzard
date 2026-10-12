@@ -196,6 +196,7 @@ class YouTubeWorker(WorkerBase):
         return config
 
     def _state(self) -> dict[str, Any]:
+        captured_at = time.monotonic_ns()
         with self._lock:
             sessions = [
                 {"profile": profile, "running": session.alive(), "url": session.url, "debugPort": session.port}
@@ -206,6 +207,7 @@ class YouTubeWorker(WorkerBase):
         except (FileNotFoundError, OSError):
             detected_browser_path = ""
         return {
+            "_snapshotStarted": captured_at,
             "running": self.running,
             "status": "正在观看" if self.current_stream and self.running else ("正在检测" if self.running else "已停止"),
             "stream": self.current_stream,
@@ -285,7 +287,10 @@ class YouTubeWorker(WorkerBase):
         thread = self._thread
         if thread and thread is not threading.current_thread():
             thread.join(timeout=8)
-        self._thread = None
+        if thread is None or not thread.is_alive():
+            self._thread = None
+        else:
+            event("notice", {"message": "YouTube 扫描正在结束，完成清理前不会启动新的观看线程。"})
         self._close_all_browsers()
         self.current_stream = None
         self.last_browser_status = "已停止"
@@ -424,6 +429,8 @@ class YouTubeWorker(WorkerBase):
                 )
                 self.logger.info("正在检查 %d 个已启用频道", enabled_channels)
                 stream = self._detect_stream()
+                if self._stop.is_set():
+                    break
                 if stream:
                     self.current_stream = stream
                     for profile in list(self.config["profiles"]):
@@ -457,11 +464,16 @@ class YouTubeWorker(WorkerBase):
             self.status("后台组件异常", "Python SSL 组件无法加载，无法访问 YouTube。")
             self._report_runtime_error(exc)
         except Exception as exc:
+            if self._stop.is_set():
+                return
             self.logger.exception("YouTube 观看服务运行异常")
             self.running = False
             message = "YouTube 检测失败，请检查网络或浏览器设置"
             self.status("运行异常", message)
             event("error", {"message": message})
+        finally:
+            if self._stop.is_set():
+                self._close_all_browsers()
 
     def _detect_stream(self) -> dict[str, Any] | None:
         self._last_scan_failed = False
@@ -623,6 +635,8 @@ class YouTubeWorker(WorkerBase):
         raise FileNotFoundError("未找到 Chrome / Brave，请在设置中指定浏览器路径。")
 
     def _launch(self, profile: str, url: str, login: bool = False) -> BrowserSession:
+        if not login and self._stop.is_set():
+            raise RuntimeError("YouTube 观看已停止")
         self._close_profile(profile)
         binary = self._browser_binary()
         profile_dir = (self.profiles_dir / normalize_profile(profile)).resolve()
@@ -644,6 +658,14 @@ class YouTubeWorker(WorkerBase):
         args.append(url)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process = subprocess.Popen(args, creationflags=flags)
+        if not login and self._stop.is_set():
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+            raise RuntimeError("YouTube 观看已停止")
         session = BrowserSession(profile, process, port, url)
         with self._lock:
             self.sessions[profile] = session
