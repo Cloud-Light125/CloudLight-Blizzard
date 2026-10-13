@@ -38,6 +38,10 @@ public partial class MainWindow : Window
     private bool _exitRequested;
     private bool _showSignalDisposed;
     private bool _exitCleanupStarted;
+    private Task? _exitCleanupTask;
+    private Task _accountDrainTask = Task.CompletedTask;
+    private readonly ExitLifecycleCoordinator _exitLifecycleCoordinator =
+        new(TimeSpan.FromSeconds(90));
     private bool _pagesReady;
     private bool _initialized;
     private readonly CancellationTokenSource _updateCancellation = new();
@@ -54,9 +58,9 @@ public partial class MainWindow : Window
     public AnnouncementService AnnouncementState => _announcementService;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null,
-        IInstallerLauncher? installerLauncher = null, AppSettings? settings = null)
+        IInstallerLauncher? installerLauncher = null, AppSettings? settings = null, BattleNetPaths? paths = null)
     {
-        _vm = new MainViewModel(logSession, settings);
+        _vm = new MainViewModel(logSession, settings, paths);
         _installerLaunchCoordinator = new UpdateInstallerLaunchCoordinator(
             installerLauncher ?? new ProcessInstallerLauncher());
         _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
@@ -115,10 +119,12 @@ public partial class MainWindow : Window
 
     private async Task InitializeAsync()
     {
-        if (_initialized) return;
+        if (_isExiting || _initialized) return;
         _initialized = true;
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        if (_isExiting) return;
         await _vm.RefreshAsync();
+        if (_isExiting) return;
         var args = Environment.GetCommandLineArgs();
         var demoIndex = Array.FindIndex(args, value => string.Equals(value, "--accountlayoutdemo", StringComparison.OrdinalIgnoreCase));
         if (demoIndex >= 0 && demoIndex + 1 < args.Length && int.TryParse(args[demoIndex + 1], out var demoCount))
@@ -129,6 +135,7 @@ public partial class MainWindow : Window
         if (StatsNav.IsChecked == true) _statsPage.SelectAccount(_vm.CurrentAccount ?? _vm.SavedAccounts.FirstOrDefault());
         if (RegionNav.IsChecked == true) await _regionPage.RefreshAsync();
         if (SnapshotsNav.IsChecked == true) await _snapshotsPage.RefreshAsync();
+        if (_isExiting) return;
         _watchTimer.Tick += async (_, _) => await _vm.PollAccountsAsync();
         _watchTimer.Start();
         _dropsPage.StartAutomaticPlatforms();
@@ -185,7 +192,7 @@ public partial class MainWindow : Window
         {
             var outcome = await _vm.UpdateChecks.CheckAfterDelayAsync(
                 TimeSpan.FromSeconds(3), _updateCancellation.Token);
-            PresentUpdateOutcome(outcome, automatic: true);
+            await PresentUpdateOutcome(outcome, automatic: true);
         }
         catch (OperationCanceledException) { }
     }
@@ -195,13 +202,14 @@ public partial class MainWindow : Window
         try
         {
             var outcome = await _vm.UpdateChecks.CheckAsync(UpdateCheckMode.Manual, _updateCancellation.Token);
-            PresentUpdateOutcome(outcome, automatic: false);
+            await PresentUpdateOutcome(outcome, automatic: false);
         }
         catch (OperationCanceledException) { }
     }
 
-    private void PresentUpdateOutcome(UpdateCheckOutcome outcome, bool automatic)
+    private async Task PresentUpdateOutcome(UpdateCheckOutcome outcome, bool automatic)
     {
+        if (_isExiting) return;
         if (outcome.Kind == UpdateCheckOutcomeKind.UpdateAvailable && outcome.Result is { } result)
         {
             Notify(new NotificationRequest("CloudLight Blizzard 有新版本", $"版本 {result.LatestVersion} 已发布。",
@@ -217,7 +225,7 @@ public partial class MainWindow : Window
             else if (dialog.Action == UpdateDialogAction.InstallDownloaded &&
                       !string.IsNullOrWhiteSpace(dialog.DownloadedInstallerPath))
             {
-                if (InstallDownloadedUpdate(dialog.DownloadedInstallerPath, dialog.MarkInstallerStarted))
+                if (await InstallDownloadedUpdate(dialog.DownloadedInstallerPath, dialog.MarkInstallerStarted))
                     _vm.RecordSuccessfulUpdate(result);
             }
             return;
@@ -412,40 +420,47 @@ public partial class MainWindow : Window
         return double.TryParse(value.ToString(), out number) ? number : 0;
     }
 
-    internal bool InstallDownloadedUpdate(string installerPath, Action? installerStarted = null)
+    internal async Task<bool> InstallDownloadedUpdate(string installerPath, Action? installerStarted = null)
     {
         if (_installerStarted) return true;
-
-        Notify(new NotificationRequest("在线更新下载完成", "安装包已通过大小、MZ 与 SHA-256 校验，准备启动安装程序。",
-            NotificationCategory.Updates, "updates"));
-
-        _vm.UpdateDownloader.MarkLaunchingInstaller();
-        var started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(
-            installerPath,
-            PersistSettingsBeforeUpdate,
-            () =>
-            {
-                _installerStarted = true;
-                installerStarted?.Invoke();
-            },
-            () =>
-            {
-                var closeNeeded = !_isExiting && !_exitCleanupStarted;
-                _exitRequested = true;
-                BeginExit();
-                if (closeNeeded && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
-                    Close();
-            },
-            out var error);
-        if (!started)
+        if (_isExiting || _exitCleanupStarted) return false;
+        if (!File.Exists(installerPath) || !PersistSettingsBeforeUpdate())
         {
-            _vm.UpdateDownloader.MarkFailed();
-            MessageBox.Show($"无法启动更新安装程序：{error}", "在线更新",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("安装包不存在或设置无法保存，已取消安装。", "在线更新");
             return false;
         }
 
-        return true;
+        Notify(new NotificationRequest("在线更新下载完成", "安装包已验证，正在安全停止后台任务。",
+            NotificationCategory.Updates, "updates"));
+        // Stop/account-drain BEFORE launching an installer that may force-close
+        // this process. The UI continues pumping throughout the drain.
+        _exitRequested = true;
+        BeginExit();
+        _exitCleanupStarted = true;
+        var cleanup = _exitLifecycleCoordinator.BeginAsync(CompleteExitCleanupAsync);
+        _exitCleanupTask = cleanup;
+        await cleanup;
+        if (_exitLifecycleCoordinator.Error is Exception cleanupError) RecordExitError("exit coordinator", cleanupError);
+        var started = false;
+        try
+        {
+            _vm.UpdateDownloader.MarkLaunchingInstaller();
+            started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(installerPath,
+                PersistSettingsBeforeUpdate,
+                () => { _installerStarted = true; installerStarted?.Invoke(); },
+                () => { }, out var error);
+            if (!started)
+            {
+                _vm.UpdateDownloader.MarkFailed();
+                MessageBox.Show($"无法启动更新安装程序：{error}\n后台已安全停止；请重新打开程序后重试。",
+                    "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            if (!Dispatcher.HasShutdownStarted) Close();
+        }
+        return started;
     }
 
     private bool PersistSettingsBeforeUpdate()
@@ -483,7 +498,7 @@ public partial class MainWindow : Window
 
     private async void OnNavigate(object sender, RoutedEventArgs e)
     {
-        if (!_pagesReady || sender is not RadioButton { Tag: string section }) return;
+        if (_isExiting || !_pagesReady || sender is not RadioButton { Tag: string section }) return;
         PageHost.Content = section switch
         {
             "region" => _regionPage,
@@ -499,6 +514,7 @@ public partial class MainWindow : Window
         _vm.Settings.LastMainSection = section;
         _vm.Settings.Save();
         await Dispatcher.Yield(DispatcherPriority.Render);
+        if (_isExiting) return;
         if (section == "region") await _regionPage.RefreshAsync();
         if (section == "stats") _statsPage.OnPageOpened();
         if (section == "drops") await _dropsPage.RefreshAsync();
@@ -613,7 +629,13 @@ public partial class MainWindow : Window
     {
         if (_isExiting)
         {
-            CompleteExitCleanup();
+            // The first close request starts async cleanup and is cancelled;
+            // the coordinator asks WPF to close again only after cleanup.
+            if (!_exitLifecycleCoordinator.IsCompleted)
+            {
+                e.Cancel = true;
+                return;
+            }
             base.OnClosing(e);
             return;
         }
@@ -650,14 +672,14 @@ public partial class MainWindow : Window
                 return;
             }
             BeginExit();
-            CompleteExitCleanup();
-            base.OnClosing(e);
+            e.Cancel = true;
+            StartExitCleanup();
             return;
         }
 
         BeginExit();
-        CompleteExitCleanup();
-        base.OnClosing(e);
+        e.Cancel = true;
+        StartExitCleanup();
     }
 
     private void CancelClosing(CancelEventArgs e)
@@ -669,8 +691,14 @@ public partial class MainWindow : Window
 
     private void BeginExit()
     {
+        if (_isExiting) return;
         _isExiting = true;
+        IsEnabled = false;
+        _isClosing = true;
         _watchTimer.Stop();
+        _dropsPage.BeginShutdown();
+        _vm.DropsHost.BeginShutdown();
+        _accountDrainTask = _vm.BeginShutdownAsync();
         _settingsPage.CancelUpdateDownload();
         _vm.CancelSwitchPlan();
         if (!_updateCancellationDisposed)
@@ -679,23 +707,75 @@ public partial class MainWindow : Window
         DisposeShowSignal();
     }
 
-    private void CompleteExitCleanup()
+    private void StartExitCleanup()
     {
         if (_exitCleanupStarted) return;
         _exitCleanupStarted = true;
-        try { _dropsPage.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        _exitCleanupTask = AwaitExitCleanupAndCloseAsync();
+    }
+
+    private async Task AwaitExitCleanupAndCloseAsync()
+    {
+        await Task.Yield(); // Leave the first synchronous Closing event first.
+        await _exitLifecycleCoordinator.BeginAsync(CompleteExitCleanupAsync);
+        if (_exitLifecycleCoordinator.Error is Exception error) RecordExitError("exit coordinator", error);
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        // The first Closing notification was cancelled.  Re-enter Closing
+        // only after all cleanup has completed; this second notification is
+        // deliberately the only one allowed to call base.OnClosing.
+        Close();
+    }
+
+    private async Task CompleteExitCleanupAsync(CancellationToken cancellationToken)
+    {
+        // BeginShutdownAsync closes the account-operation gate and waits for
+        // an already-written account transaction to finish or roll back.  Do
+        // not dispose DropsHost before that await has completed.
+        // This stage intentionally is not cut short by the coordinator budget:
+        // abandoning an in-flight account restore can corrupt the user's
+        // profile.  The page/worker stages below have their own finite waits.
+        _ = cancellationToken;
+        try { await _accountDrainTask; } catch (Exception ex) { RecordExitError("account drain", ex); }
+        try { await _dropsPage.DisposeAsync().AsTask(); } catch (Exception ex) { RecordExitError("Drops page", ex); }
         try { _diagnosticsPage.Dispose(); } catch { }
-        try { _vm.DropsHost.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        try { await _vm.DropsHost.DisposeAsync().AsTask(); } catch (Exception ex) { RecordExitError("Drops Host", ex); }
         try { _announcementService.Dispose(); } catch { }
         _vm.RegionSwitchCompleted -= OnRegionSwitchCompleted;
         _vm.DropsHost.EventReceived -= OnDropsEventForNotification;
         _dropsNotificationGate.Dispose();
         try { _notificationService.Dispose(); } catch { }
         try { _vm.CloudHttpClients.Dispose(); } catch { }
-        _updateCancellation.Dispose();
-        _updateCancellationDisposed = true;
-        if (WindowState != WindowState.Maximized) { _vm.Settings.WindowWidth = ActualWidth; _vm.Settings.WindowHeight = ActualHeight; }
-        _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized; _vm.Settings.Save();
+        if (!_updateCancellationDisposed)
+        {
+            _updateCancellation.Dispose();
+            _updateCancellationDisposed = true;
+        }
+        if (WindowState != WindowState.Maximized)
+        {
+            _vm.Settings.WindowWidth = ActualWidth;
+            _vm.Settings.WindowHeight = ActualHeight;
+        }
+        _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized;
+        try { _vm.Settings.Save(); } catch { }
+    }
+
+    private static void RecordExitError(string stage, Exception error)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppPaths.Current.LogsDir);
+            File.AppendAllText(Path.Combine(AppPaths.Current.LogsDir, "exit-cleanup.log"),
+                $"{DateTimeOffset.UtcNow:O} {stage}: {SensitiveDataRedactor.Redact(error.ToString())}\n");
+        }
+        catch { }
+    }
+
+    // Kept as a small compatibility shim for the UI self-test's reflection
+    // hook.  It starts the asynchronous path; it must never block Dispatcher.
+    private void CompleteExitCleanup()
+    {
+        BeginExit();
+        StartExitCleanup();
     }
 
     private void DisposeTray()

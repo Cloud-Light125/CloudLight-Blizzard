@@ -295,7 +295,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
     public bool HasRegionFileCheck => RegionFileCheck is not null;
-    public bool CanCheckRegionFiles => !Busy && !IsRegionOperationBusy && _regionPageStatus.GamePathValid &&
+    public bool CanCheckRegionFiles => !_shuttingDown && !Busy && !IsRegionOperationBusy && _regionPageStatus.GamePathValid &&
                                        _regionPageStatus.State is RegionBackupState.Ready or RegionBackupState.Stale;
     public bool CanClearTemporaryFiles => CanCheckRegionFiles && RegionFileCheck?.TemporaryCount > 0;
     public bool CanResetCurrentRegion => CanCheckRegionFiles &&
@@ -314,7 +314,7 @@ public sealed class MainViewModel : ObservableObject
             $"{CheckKindName(item.Kind)}\n{item.RelativePath}\n" +
             $"原大小：{FormatBytes(item.OriginalSize)} · 当前大小：{FormatBytes(item.CurrentSize)}\n{item.Reason}"));
 
-    public MainViewModel(PlatformLogSession? dropsLogSession = null, AppSettings? settings = null)
+    public MainViewModel(PlatformLogSession? dropsLogSession = null, AppSettings? settings = null, BattleNetPaths? paths = null)
     {
         DropsLogSession = dropsLogSession ?? new PlatformLogSession(AppPaths.Current.LogsDir);
         _settings = settings ?? AppSettings.Load();
@@ -334,7 +334,7 @@ public sealed class MainViewModel : ObservableObject
             DropsHost.ConfigureProxy(CreateDropsProxySettings(_settings));
         };
         UpdateChecks = new UpdateCheckCoordinator(new UpdateService(_settings, CloudHttpClients), _settings);
-        _paths = new BattleNetPaths();
+        _paths = paths ?? new BattleNetPaths();
         if (!string.IsNullOrEmpty(_settings.ClientExe) && File.Exists(_settings.ClientExe))
             _paths.ClientExe = _settings.ClientExe;
 
@@ -344,6 +344,8 @@ public sealed class MainViewModel : ObservableObject
         _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
         _switchLog = new AccountSwitchLog();
         _authLogProbe = new BattleNetAuthLogProbe(_paths);
+        _accountOperations = AccountOperationService.Create(_paths, _settings, _profiles, _controller,
+            _reader, () => _regionManager, _switchLog);
         _regionPageStatus.GamePath = _settings.OverwatchGamePath ?? "";
         _regionPageStatus.GamePathValid = OverwatchRegionManager.IsValidGameRoot(_settings.OverwatchGamePath);
         UpdateRegionGuide();
@@ -424,6 +426,8 @@ public sealed class MainViewModel : ObservableObject
     private bool _staleNotified;
     private const int SwitchVerifySeconds = 150;
     private long? _pendingSwitchId;
+    private long? _unconfirmedSwitchId;
+    private long? _pendingInitialActiveId;
     private DateTime _pendingSwitchUntil;
     private DateTime _pendingSwitchStartedUtc;
     private BattleNetAuthLogCursor _pendingLogCursor = new(new Dictionary<string, long>());
@@ -506,7 +510,9 @@ public sealed class MainViewModel : ObservableObject
 
     private async Task VerifySwitchAsync(long targetId)
     {
+        var verificationStarted = _pendingSwitchStartedUtc;
         var active = await Task.Run(() => _reader.ReadActiveAccountId());
+        if (_shuttingDown || Busy || _pendingSwitchId != targetId || _pendingSwitchStartedUtc != verificationStarted) return;
         if (active != _lastPendingActiveId)
         {
             _lastPendingActiveId = active;
@@ -514,8 +520,10 @@ public sealed class MainViewModel : ObservableObject
                 detail: active?.ToString() ?? "unknown");
         }
         var evidence = await Task.Run(() => _authLogProbe.ReadAppended(_pendingLogCursor));
+        if (_shuttingDown || Busy || _pendingSwitchId != targetId || _pendingSwitchStartedUtc != verificationStarted) return;
         var verification = AccountSwitchVerification.Evaluate(ClientRunning, active, targetId,
-            DateTime.UtcNow, _pendingSwitchUntil, evidence);
+            DateTime.UtcNow, _pendingSwitchUntil, evidence,
+            targetObservedThisAttempt: _pendingInitialActiveId.HasValue && _pendingInitialActiveId != targetId);
         if (verification == AccountSwitchVerificationState.WaitingForBattleNet)
         {
             StatusText = "正在等待 Battle.net 启动…";
@@ -563,6 +571,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         _pendingSwitchId = null;
+        _unconfirmedSwitchId = targetId;
         var target = Accounts.FirstOrDefault(a => a.AccountId == targetId);
         StatusText = $"暂时没有确认「{target?.BattleTag ?? targetId.ToString()}」的登录结果。可以继续等待或打开 Battle.net 查看。";
         _switchLog.Write("Unconfirmed", targetAccountId: targetId,
@@ -581,7 +590,11 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task PollAccountsAsync()
     {
+        if (_shuttingDown) return;
+        var previouslyRunning = ClientRunning;
         ClientRunning = await Task.Run(() => _controller.IsClientRunning());
+        if (_shuttingDown) return;
+        ResumeUnconfirmedVerificationIfClientStarted(previouslyRunning);
         if (_pendingSwitchId is long pending && !Busy)
             await VerifySwitchAsync(pending);
         if (_polling || Busy || !_paths.Exists) return;
@@ -622,6 +635,7 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task RefreshAsync()
     {
+        if (_shuttingDown) return;
         if (Busy) return;
         Busy = true;
         try
@@ -671,275 +685,131 @@ public sealed class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
-    public async Task LaunchClientAsync()
-    {
-        if (Busy) return;
-        Busy = true;
-        try
+    public Task LaunchClientAsync() => RunAccountUiAsync("启动战网失败", () =>
+        _accountOperations.RunExclusiveAsync(async token =>
         {
+            token.ThrowIfCancellationRequested();
             if (await Task.Run(() => _controller.TryFocusClient()))
             {
-                StatusText = "战网已在运行,已唤到前台。";
+                StatusText = "战网已在运行，已唤到前台。";
                 return;
             }
-
-            StatusText = "正在启动战网…";
-            await Task.Run(() => _controller.LaunchClient());
+            token.ThrowIfCancellationRequested();
+            await Task.Run(_controller.LaunchClient);
             ClientRunning = true;
-            StatusText = CurrentAccount is { } cur
-                ? $"战网启动中,稍等几秒会自动登录「{cur.BattleTag}」。"
-                : "战网启动中。";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "启动失败:" + ex.Message;
-            MessageBox.Show(ex.Message, "启动战网失败", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally { Busy = false; }
-    }
+            StatusText = "战网启动中。";
+        }));
 
-    public async Task SaveCurrentAsync()
-    {
-        if (Busy) return;
-        Busy = true;
-        try
+    public Task SaveCurrentAsync() => RunAccountUiAsync("保存失败", () =>
+        _accountOperations.RunExclusiveAsync(async token =>
         {
+            if (OverwatchRegionManager.IsGameRunning())
+                throw new InvalidOperationException("守望先锋正在运行，请先退出游戏后保存账号。");
             StampDb();
             var (list, activeId) = await ReadAllAsync();
             ApplyAccounts(list, activeId);
             var active = activeId is null ? null : Accounts.FirstOrDefault(a => a.AccountId == activeId.Value);
-            if (active is null)
-            {
-                MessageBox.Show("没有检测到当前登录的账号。\n请先在战网里登录一个账号并确认进入,再回来保存。",
-                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
+            if (active is null) throw new InvalidOperationException("没有检测到当前登录的账号，请先登录。");
+            token.ThrowIfCancellationRequested();
             StatusText = "正在关闭战网以保存账号文件…";
-            var stopped = await Task.Run(() => _controller.GracefulQuit());
-            if (!stopped)
-                throw new InvalidOperationException("战网未能完全退出,已中止保存。请从托盘右键『退出』战网后重试。");
-
-            StatusText = $"正在更新「{active.BattleTag}」的账号备份…";
+            if (!await Task.Run(() => _controller.GracefulQuit()))
+                throw new InvalidOperationException("战网未能完全退出，已中止保存。");
+            token.ThrowIfCancellationRequested();
+            if (OverwatchRegionManager.IsGameRunning())
+                throw new InvalidOperationException("守望先锋已启动，已中止保存。");
             await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag));
             if (_settings.ExpiredAccountIds.Remove(active.AccountId)) _settings.Save();
             active.HasProfile = true;
             active.SavedAtUtc = DateTime.UtcNow;
             active.IsExpired = false;
             RebuildGroups();
-
-            StatusText = "正在重新启动战网…";
-            await Task.Run(() => _controller.LaunchClient());
+            token.ThrowIfCancellationRequested();
+            await Task.Run(_controller.LaunchClient);
             StatusText = $"已更新「{active.BattleTag}」的账号备份，Battle.net 正在重启。";
-        }
+        }));
+
+    private void ResumeUnconfirmedVerificationIfClientStarted(bool previouslyRunning)
+    {
+        if (_shuttingDown || Busy || previouslyRunning || !ClientRunning || _unconfirmedSwitchId is not long target) return;
+        _unconfirmedSwitchId = null;
+        _pendingSwitchId = target;
+        _pendingSwitchStartedUtc = DateTime.UtcNow;
+        _pendingSwitchUntil = _pendingSwitchStartedUtc.AddSeconds(SwitchVerifySeconds);
+        StatusText = "Battle.net 已启动，重新确认之前未确认的登录结果…";
+    }
+
+    private bool _shuttingDown;
+    private readonly AccountOperationService _accountOperations;
+
+    internal async Task BeginShutdownAsync()
+    {
+        _shuttingDown = true;
+        UpdateRegionGuide();
+        _pendingSwitchId = null;
+        _unconfirmedSwitchId = null;
+        CancelSwitchPlan();
+        _regionOperationCancellation?.Cancel();
+        await _accountOperations.BeginShutdownAsync();
+        // Region operations own their cancellation/atomic per-file writes; keep Dispatcher alive until unwound.
+        while (Busy) await Task.Delay(25);
+    }
+
+    private async Task RunAccountUiAsync(string errorTitle, Func<Task> action)
+    {
+        if (Busy || _shuttingDown) return;
+        Busy = true;
+        try { await action(); }
+        catch (OperationCanceledException) when (_shuttingDown) { StatusText = "应用退出，账号操作已停止。"; }
         catch (Exception ex)
         {
-            StatusText = "保存失败:" + ex.Message;
-            MessageBox.Show(ex.Message, "保存失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText = errorTitle + "：" + ex.Message;
+            if (!_shuttingDown) MessageBox.Show(ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { Busy = false; }
     }
 
-    public async Task SwitchToAsync(AccountRow target)
+    public Task SwitchToAsync(AccountRow target) => RunAccountUiAsync("切换账号失败", async () =>
     {
-        if (Busy || !target.HasProfile) return;
-        var currentId = await Task.Run(() => _reader.ReadActiveAccountId());
-        if (currentId == target.AccountId)
+        if (!target.HasProfile) throw new InvalidOperationException("目标账号没有本地备份。");
+        _pendingSwitchId = null;
+        _unconfirmedSwitchId = null;
+        _pendingLogCursor = _authLogProbe.CaptureCursor();
+        var result = await _accountOperations.SwitchAsync(target.AccountId, text => StatusText = text);
+        if (result.AlreadyCurrent)
         {
-            foreach (var a in Accounts) a.IsActive = a.AccountId == target.AccountId;
-            RebuildGroups();
-            StatusText = $"「{target.BattleTag}」已经是当前登录账号。";
+            StatusText = $"缓存已指向「{target.BattleTag}」，未执行恢复；请在 Battle.net 确认实际登录状态。";
             return;
         }
+        // Do not label a restored pointer as an authenticated account before verification.
+        _pendingSwitchId = target.AccountId;
+        _pendingInitialActiveId = result.PreviousId;
+        _pendingSwitchUntil = DateTime.UtcNow.AddSeconds(SwitchVerifySeconds);
+        _pendingSwitchStartedUtc = DateTime.UtcNow;
+        _pendingClientSeen = false;
+        _lastPendingActiveId = result.PreviousId;
+        StatusText = $"已准备「{target.BattleTag}」；{result.Warning ?? ""} 正在确认 Battle.net 登录结果…";
+    });
 
-        if (OverwatchRegionManager.IsGameRunning())
-        {
-            MessageBox.Show("守望先锋正在运行，请先退出游戏后再切换账号。",
-                "无法切换账号", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        var targetRegion = target.IsCnRegion ? OverwatchRegion.China : OverwatchRegion.International;
-        var shouldSwitchRegion = false;
-        var regionSkipReason = "";
-        try
-        {
-            var regionStatus = await _regionManager.GetStatusAsync(_settings.OverwatchGamePath);
-            var canNormalize = regionStatus.SwitchEligibility is
-                RegionSwitchEligibility.Normal or RegionSwitchEligibility.BestEffort;
-
-            if (regionStatus.GamePathValid && canNormalize)
-            {
-                shouldSwitchRegion = true;
-            }
-            else
-            {
-                regionSkipReason = regionStatus.SwitchEligibility == RegionSwitchEligibility.GameUpdated
-                    ? "游戏已更新，现有区服备份基于旧版本。"
-                    : !regionStatus.GamePathValid
-                        ? "未找到有效的守望先锋游戏目录。"
-                        : "区服备份缺失、损坏或当前不可安全使用。";
-            }
-        }
-        catch (Exception ex)
-        {
-            // 区服文件预检失败发生在任何游戏文件修改之前，因此只降级为账号切换。
-            regionSkipReason = "无法检查本地区服文件：" + ex.Message;
-        }
-
-        Busy = true;
-        var stage = "关闭 Battle.net";
-        string? regionFileWarning = null;
-        _switchLog.Write("SwitchStarted", currentId, target.AccountId,
-            Accounts.FirstOrDefault(a => a.AccountId == currentId)?.RegionText, target.RegionText);
-        _pendingLogCursor = await Task.Run(() => _authLogProbe.CaptureCursor());
-        try
-        {
-            await AccountSwitchPipeline.ExecuteAsync(
-                async () =>
-                {
-                    StatusText = "正在关闭 Battle.net…";
-                    _switchLog.Write("BattleNetCloseStarted", currentId, target.AccountId);
-                    RegionSwitchLog.Write("Battle.net quit begin", targetRegion);
-                    var stopped = await Task.Run(() => _controller.GracefulQuit());
-                    if (!stopped)
-                        throw new InvalidOperationException("Battle.net 未能完全退出，已中止切换。请从托盘右键“退出”后重试。");
-                    _switchLog.Write("BattleNetCloseCompleted", currentId, target.AccountId);
-                    RegionSwitchLog.Write("Battle.net quit end", targetRegion);
-                },
-                async () =>
-                {
-                    if (!shouldSwitchRegion)
-                    {
-                        StatusText = string.IsNullOrWhiteSpace(regionSkipReason)
-                            ? "区服文件当前不可用，本次仅切换 Battle.net 账号。"
-                            : $"区服文件未修改：{regionSkipReason} 本次仅切换 Battle.net 账号。";
-                        _switchLog.Write("RegionFilesSkipped", currentId, target.AccountId,
-                            targetRegion: target.RegionText, detail: regionSkipReason);
-                        return;
-                    }
-
-                    stage = "区服文件";
-                    var progress = new Progress<RegionProgress>(p => StatusText = p.Message);
-                    _switchLog.Write("RegionFilesSwitchStarted", currentId, target.AccountId,
-                        sourceRegion: "NormalizeCurrentKnownDifferences", targetRegion: target.RegionText);
-                    var result = await _regionManager.NormalizeToRegionAsync(
-                        _settings.OverwatchGamePath!, targetRegion, progress);
-                    if (result.Outcome == RegionSwitchOutcome.Failed)
-                        throw new InvalidDataException($"区服文件切换失败，{result.FailedCount:N0} 个文件无法处理。" +
-                                                       FormatRegionFileIssues(result.Issues));
-                    if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
-                        regionFileWarning = $"{result.FailedCount:N0} 个区服文件存在异常，已跳过；其他文件已继续处理。";
-                    _switchLog.Write("RegionFilesSwitchCompleted", currentId, target.AccountId,
-                        targetRegion: target.RegionText,
-                        detail: $"outcome={result.Outcome};restored={result.Restored};deleted={result.Deleted};" +
-                                $"failed={result.FailedCount};verified={result.Verified}");
-                },
-                async () =>
-                {
-                    stage = "目标账号恢复";
-                    StatusText = $"正在准备「{target.BattleTag}」的账号…";
-                    _switchLog.Write("TargetRestoreStarted", currentId, target.AccountId);
-                    await Task.Run(() => _profiles.Restore(target.AccountId));
-                    _switchLog.Write("TargetRestoreCompleted", currentId, target.AccountId);
-                },
-                async () =>
-                {
-                    stage = "Battle.net 启动";
-                    StatusText = "正在启动 Battle.net…";
-                    await Task.Run(() => _controller.LaunchClient());
-                    _switchLog.Write("BattleNetStarted", currentId, target.AccountId);
-                    RegionSwitchLog.Write("Battle.net restart", targetRegion);
-                });
-
-            foreach (var a in Accounts) a.IsActive = a.AccountId == target.AccountId;
-            _lastActiveId = target.AccountId;
-            RebuildGroups();
-            _pendingSwitchId = target.AccountId;
-            _pendingSwitchUntil = DateTime.UtcNow.AddSeconds(SwitchVerifySeconds);
-            _pendingSwitchStartedUtc = DateTime.UtcNow;
-            _pendingClientSeen = false;
-            _lastPendingActiveId = currentId;
-            StatusText = regionFileWarning is not null
-                ? $"已切换到「{target.BattleTag}」；{regionFileWarning} 战网正在启动，正在确认登录结果…"
-                : shouldSwitchRegion
-                ? $"已切换到「{target.BattleTag}」,战网正在启动,正在确认登录结果…"
-                : $"已切换到「{target.BattleTag}」；本次未修改守望先锋国服/国际服文件，正在确认登录结果…";
-        }
-        catch (Exception ex)
-        {
-            _switchLog.Write(stage.Contains("区服") ? "RegionFileError" :
-                stage.Contains("启动") ? "BattleNetStartError" : "SnapshotError",
-                currentId, target.AccountId, targetRegion: target.RegionText, detail: ex.Message);
-            StatusText = $"{stage}错误：{ex.Message}";
-            MessageBox.Show(ex.Message, stage + "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally { Busy = false; }
-    }
-
-    public async Task ReloginAsync(AccountRow row)
+    public Task ReloginAsync(AccountRow row) => AddAccountCoreAsync(row.BattleTag);
+    public Task AddAccountAsync() => AddAccountCoreAsync(null);
+    private Task AddAccountCoreAsync(string? tag) => RunAccountUiAsync("登录账号失败", async () =>
     {
-        if (Busy) return;
-        Busy = true;
-        try
-        {
-            StatusText = "正在关闭战网…";
-            var stopped = await Task.Run(() => _controller.GracefulQuit());
-            if (!stopped)
-                throw new InvalidOperationException("战网未能完全退出,请从托盘右键『退出』战网后重试。");
+        _pendingSwitchId = null;
+        _unconfirmedSwitchId = null;
+        await _accountOperations.AddAccountAsync();
+        foreach (var a in Accounts) a.IsActive = false;
+        _lastActiveId = null;
+        _dbStamp = "";
+        RebuildGroups();
+        StatusText = tag is null
+            ? "已回到登录页。请在战网里登录新账号，登录成功后本工具会自动识别。"
+            : $"已回到登录页。请登录「{tag}」，登录成功后更新账号备份。";
+    });
 
-            StatusText = "正在回到登录页(未登出)…";
-            await Task.Run(() => _profiles.ClearCurrentPointer());
-            await Task.Run(() => _controller.LaunchClient());
-            foreach (var a in Accounts) a.IsActive = false;
-            _lastActiveId = null;
-            _dbStamp = "";
-            _pendingSwitchId = null;
-            RebuildGroups();
-            StatusText = $"已回到登录页。请在 Battle.net 里登录「{row.BattleTag}」，登录成功后点击『更新账号备份』。";
-        }
-        catch (Exception ex)
+    public Task DeleteProfileAsync(AccountRow row) => RunAccountUiAsync("删除失败", () =>
+        _accountOperations.RunExclusiveAsync(async token =>
         {
-            StatusText = "出错:" + ex.Message;
-            MessageBox.Show(ex.Message, "重新登录失败", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally { Busy = false; }
-    }
-
-    public async Task AddAccountAsync()
-    {
-        if (Busy) return;
-        Busy = true;
-        try
-        {
-            StatusText = "正在关闭战网…";
-            var stopped = await Task.Run(() => _controller.GracefulQuit());
-            if (!stopped)
-                throw new InvalidOperationException("战网未能完全退出,请从托盘右键『退出』战网后重试。");
-
-            StatusText = "正在回到登录页(未登出)…";
-            await Task.Run(() => _profiles.ClearCurrentPointer());
-            await Task.Run(() => _controller.LaunchClient());
-            foreach (var a in Accounts) a.IsActive = false;
-            _lastActiveId = null;
-            _dbStamp = "";
-            RebuildGroups();
-            StatusText = "已回到登录页。请在战网里登录新账号(换区也行),登录成功后本工具会自动识别。";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "出错:" + ex.Message;
-            MessageBox.Show(ex.Message, "登录新号失败", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally { Busy = false; }
-    }
-
-    public async Task DeleteProfileAsync(AccountRow row)
-    {
-        if (Busy || !row.HasProfile) return;
-        Busy = true;
-        try
-        {
+            token.ThrowIfCancellationRequested();
             await Task.Run(() => _profiles.Delete(row.AccountId));
             if (_settings.ExpiredAccountIds.Remove(row.AccountId)) _settings.Save();
             row.HasProfile = false;
@@ -947,16 +817,11 @@ public sealed class MainViewModel : ObservableObject
             row.IsExpired = false;
             RebuildGroups();
             StatusText = $"已删除「{row.BattleTag}」的账号备份。";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "删除失败:" + ex.Message;
-        }
-        finally { Busy = false; }
-    }
+        }));
 
     public void SaveAccountPreference(AccountRow row, string customName, string remark, AccountRegionOverride region)
     {
+        if (Busy || _shuttingDown) return;
         var pref = _settings.PreferenceFor(row.AccountId);
         pref.CustomName = customName.Trim();
         pref.Remark = remark.Trim();
@@ -1032,7 +897,7 @@ public sealed class MainViewModel : ObservableObject
             _regionPageStatus,
             _regionOperationPhase,
             _regionRestartRequested,
-            Busy,
+            Busy || _shuttingDown,
             _regionOperationProgress,
             _regionManager.BackupRoot,
             _regionOperationNotice,
@@ -1091,6 +956,7 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task<RegionSnapshotStatus?> RefreshHomeRegionAsync(bool verifyFiles = false)
     {
+        if (_shuttingDown) return null;
         try
         {
             var status = await GetRegionStatusAsync(verifyFiles);
@@ -1159,7 +1025,7 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task<SwitchPlan?> CreateRegionSwitchPlanAsync(OverwatchRegion target)
     {
-        if (Busy || IsRegionOperationBusy || _switchPlanCancellation is not null || !RegionGuide.CanRestore &&
+        if (_shuttingDown || Busy || IsRegionOperationBusy || _switchPlanCancellation is not null || !RegionGuide.CanRestore &&
             (target == OverwatchRegion.China ? !RegionGuide.CanSwitchChina : !RegionGuide.CanSwitchInternational))
             return null;
         var cts = new CancellationTokenSource();
@@ -1195,7 +1061,7 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task SwitchGameRegionOnlyAsync(OverwatchRegion target, SwitchPlan? suppliedPlan = null)
     {
-        if (Busy || IsRegionOperationBusy || _switchPlanCancellation is not null ||
+        if (_shuttingDown || Busy || IsRegionOperationBusy || _switchPlanCancellation is not null ||
             (suppliedPlan is null && !RegionGuide.CanRestore &&
              ((target == OverwatchRegion.China && !RegionGuide.CanSwitchChina) ||
               (target == OverwatchRegion.International && !RegionGuide.CanSwitchInternational)))) return;
@@ -1213,6 +1079,7 @@ public sealed class MainViewModel : ObservableObject
         var restartClient = false;
         try
         {
+            using var accountLease = _accountOperations.EnterOperation();
             if (OverwatchRegionManager.IsGameRunning())
                 throw new InvalidOperationException("守望先锋正在运行，请先退出游戏后再切换区服文件。");
             restartClient = await Task.Run(() => _controller.IsClientRunning());
@@ -1234,7 +1101,7 @@ public sealed class MainViewModel : ObservableObject
             if (result.Outcome == RegionSwitchOutcome.Failed)
                 throw new InvalidDataException($"未能处理任何区服差异文件；{result.FailedCount:N0} 个文件存在异常。" +
                                                FormatRegionFileIssues(result.Issues));
-            if (restartClient)
+            if (restartClient && !_shuttingDown)
             {
                 StatusText = "正在重新启动 Battle.net…";
                 await Task.Run(() => _controller.LaunchClient());
@@ -1245,7 +1112,7 @@ public sealed class MainViewModel : ObservableObject
                 ? $"区服文件已部分切换到{RegionName(target)}；{result.FailedCount:N0} 个异常文件已跳过。"
                 : $"守望先锋区服文件已切换到{RegionName(target)}。";
             RegionSwitchCompleted?.Invoke(true, target, StatusText);
-            if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
+            if (!_shuttingDown && result.Outcome == RegionSwitchOutcome.PartialSuccess)
                 MessageBox.Show($"{result.FailedCount:N0} 个文件存在异常，已自动跳过。\n其他区服差异文件已继续处理。" +
                                 FormatRegionFileIssues(result.Issues), "区服文件部分完成",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1254,7 +1121,7 @@ public sealed class MainViewModel : ObservableObject
         {
             StatusText = "切换区服文件失败：" + ex.Message;
             RegionSwitchCompleted?.Invoke(false, target, ex.Message);
-            MessageBox.Show(ex.Message, "无法切换区服文件", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!_shuttingDown) MessageBox.Show(ex.Message, "无法切换区服文件", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {

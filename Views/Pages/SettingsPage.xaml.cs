@@ -312,7 +312,7 @@ public partial class SettingsPage : UserControl
             UpdateDownloadText.Text = "正在启动安装程序…";
             _isUpdateRunning = false;
             if (Window.GetWindow(this) is MainWindow mainWindow &&
-                mainWindow.InstallDownloadedUpdate(path, () =>
+                await mainWindow.InstallDownloadedUpdate(path, () =>
                 {
                     _installerStarted = true;
                     UpdateDownloadText.Text = "安装程序已启动，正在退出 CloudLight Blizzard…";

@@ -61,6 +61,7 @@ public sealed class CloudHttpClientFactory : IDisposable
         _directClient = CreateClientFor(null);
     }
 
+    /// <summary>Factory must create a fresh request per attempt; this layer disposes requests, caller owns response.</summary>
     public async Task<HttpResponseMessage> SendGetAsync(Func<HttpRequestMessage> requestFactory,
         string service, CancellationToken cancellationToken)
         => (await SendGetWithRouteAsync(requestFactory, service, cancellationToken).ConfigureAwait(false)).Response;

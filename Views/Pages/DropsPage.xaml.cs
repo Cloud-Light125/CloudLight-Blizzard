@@ -30,6 +30,7 @@ public partial class DropsPage : UserControl
     private readonly HashSet<string> _twitchClaimsInProgress = new(StringComparer.Ordinal);
     private CancellationTokenSource? _bilibiliQrPollingCts;
     private Task? _bilibiliQrPollingTask;
+    private bool _shutdownStarted;
     private readonly DispatcherTimer _retryDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly SemaphoreSlim _proxySettingsGate = new(1, 1);
     private bool _logTailStarted;
@@ -51,7 +52,7 @@ public partial class DropsPage : UserControl
         _retryDisplayTimer.Tick += (_, _) => _vm?.RefreshTemporalStatus(DateTimeOffset.Now);
         IsVisibleChanged += async (_, _) =>
         {
-            if (!IsVisible || !_initialized) return;
+            if (_shutdownStarted || !IsVisible || !_initialized) return;
             await EnsureLogTailStartedAsync();
             if (_logTail is not null) await _logTail.RefreshAsync(_platform);
             RenderLogBuffer();
@@ -129,6 +130,7 @@ public partial class DropsPage : UserControl
 
     public void StartAutomaticPlatforms()
     {
+        if (_shutdownStarted) return;
         if (_main?.Settings.AutoStartSoop == true) _ = AutoStartSoopAsync();
         if (_main?.Settings.AutoStartTwitch == true) _ = AutoStartTwitchAsync();
         if (_main?.Settings.AutoStartBilibili == true) _ = AutoStartBilibiliAsync();
@@ -137,13 +139,15 @@ public partial class DropsPage : UserControl
 
     private async Task AutoStartBilibiliAsync()
     {
-        if (_vm == null || _main == null) return;
+        if (_shutdownStarted || _vm == null || _main == null) return;
         try
         {
             var state = await _vm.LoadAsync(DropsPlatform.Bilibili);
+            if (_shutdownStarted) return;
             _vm.ApplyState(DropsPlatform.Bilibili, state);
             PopulateSettings(DropsPlatform.Bilibili, state);
             await EnsureBilibiliCredentialsAsync(showError: false);
+            if (_shutdownStarted) return;
             if (_main.Settings.AutoResumeBilibiliDrops && _main.Settings.BilibiliEnabled)
                 await StartPlatformAsync(DropsPlatform.Bilibili, automatic: true);
         }
@@ -160,7 +164,7 @@ public partial class DropsPage : UserControl
 
     private async Task AutoStartSoopAsync()
     {
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         try
         {
             _vm.Soop.Status = "正在恢复 SOOP 账号…";
@@ -169,6 +173,7 @@ public partial class DropsPage : UserControl
             // 自动启动与手动启动共用同一个 start_account 业务入口。
             // 自动流程只额外负责从已保存账号中找到明确设置的主账号。
             var initialState = await _vm.LoadAsync(DropsPlatform.Soop);
+            if (_shutdownStarted) return;
             JsonElement primaryAccount = default;
             if (initialState.TryGetProperty("accounts", out var accounts) &&
                 accounts.ValueKind == JsonValueKind.Array)
@@ -205,7 +210,7 @@ public partial class DropsPage : UserControl
 
     private async Task AutoStartTwitchAsync()
     {
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         try
         {
             _vm.BeginTwitchStart(automatic: true);
@@ -215,6 +220,7 @@ public partial class DropsPage : UserControl
             // 登录、初始化活动/频道和实际掉宝流程仍走与手动启动相同的 Worker 路径。
             var state = await _vm.RequestAsync(
                 DropsPlatform.Twitch, "start", new { automatic = true });
+            if (_shutdownStarted) return;
 
             if (_platform == DropsPlatform.Twitch)
             {
@@ -234,7 +240,7 @@ public partial class DropsPage : UserControl
 
     public async Task RefreshAsync()
     {
-        if (_vm == null || _loading) return;
+        if (_shutdownStarted || _vm == null || _loading) return;
         if (_main != null)
             ApplyProxySettingsToUi();
         _loading = true;
@@ -244,6 +250,7 @@ public partial class DropsPage : UserControl
             foreach (var platform in Enum.GetValues<DropsPlatform>())
             {
                 var state = await _vm.LoadAsync(platform);
+                if (_shutdownStarted) return;
                 _vm.ApplyState(platform, state);
                 if (platform == _platform) selectedState = state.Clone();
             }
@@ -259,7 +266,7 @@ public partial class DropsPage : UserControl
 
     private async Task LoadPlatformAsync(DropsPlatform platform, bool populateSettings = true)
     {
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         if (_loading)
         {
             _pendingPlatformLoad = (platform, populateSettings ||
@@ -270,6 +277,7 @@ public partial class DropsPage : UserControl
         try
         {
             var state = await _vm.LoadAsync(platform);
+            if (_shutdownStarted) return;
             _vm.ApplyState(platform, state);
             if (populateSettings && platform == _platform) PopulateSettings(platform, state);
         }
@@ -280,6 +288,11 @@ public partial class DropsPage : UserControl
     private async Task FinishLoadingAsync()
     {
         _loading = false;
+        if (_shutdownStarted)
+        {
+            _pendingPlatformLoad = null;
+            return;
+        }
         var pending = _pendingPlatformLoad;
         _pendingPlatformLoad = null;
         if (pending is { } load && load.Platform == _platform)
@@ -288,11 +301,12 @@ public partial class DropsPage : UserControl
 
     private async Task RefreshPlatformAsync(DropsPlatform platform)
     {
-        if (_vm == null || _loading) return;
+        if (_shutdownStarted || _vm == null || _loading) return;
         _loading = true;
         try
         {
             var state = await _vm.RequestAsync(platform, "refresh");
+            if (_shutdownStarted) return;
             _vm.ApplyState(platform, state);
             PopulateSettings(platform, state);
         }
@@ -456,7 +470,7 @@ public partial class DropsPage : UserControl
 
     private async void OnPlatformChanged(object sender, RoutedEventArgs e)
     {
-        if (!_initialized || sender is not RadioButton { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
+        if (_shutdownStarted || !_initialized || sender is not RadioButton { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         _platform = platform;
         _vm?.SelectPlatform(platform);
         await EnsureLogTailStartedAsync();
@@ -467,6 +481,7 @@ public partial class DropsPage : UserControl
 
     private async void OnOpenPlatform(object sender, RoutedEventArgs e)
     {
+        if (_shutdownStarted) return;
         if (sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         if (platform == DropsPlatform.Soop) SoopTab.IsChecked = true;
         else if (platform == DropsPlatform.YouTube) YouTubeTab.IsChecked = true;
@@ -571,7 +586,7 @@ public partial class DropsPage : UserControl
 
     private async Task StartPlatformAsync(DropsPlatform platform, bool automatic = false)
     {
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         if (platform == DropsPlatform.Twitch) _vm.BeginTwitchStart(automatic: false);
         if (platform == DropsPlatform.Soop) _vm.BeginSoopStartAll();
         try
@@ -586,7 +601,9 @@ public partial class DropsPage : UserControl
                 if (!await EnsureBilibiliCredentialsAsync(showError: true)) return;
                 _vm.BeginBilibiliStart(automatic);
             }
+            if (_shutdownStarted) return;
             var state = await _vm.StartAsync(platform);
+            if (_shutdownStarted) return;
             _vm.ApplyState(platform, state);
             if (platform == _platform) PopulateSettings(platform, state); else await LoadPlatformAsync(_platform);
         }
@@ -608,13 +625,14 @@ public partial class DropsPage : UserControl
 
     private async Task StopPlatformAsync(DropsPlatform platform)
     {
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         if (platform == DropsPlatform.Soop) _vm.StopSoopByUser();
         if (platform == DropsPlatform.Twitch) _vm.StopTwitchByUser();
         if (platform == DropsPlatform.Bilibili) _vm.StopBilibiliByUser();
         try
         {
             var state = await _vm.StopAsync(platform);
+            if (_shutdownStarted) return;
             _vm.ApplyState(platform, state);
             if (platform == _platform) PopulateSettings(platform, state); else await LoadPlatformAsync(_platform);
         }
@@ -636,12 +654,13 @@ public partial class DropsPage : UserControl
 
     private async Task RefreshSoopAsync(bool showError = true)
     {
-        if (_vm == null || _vm.IsSoopRefreshing || _loading) return;
+        if (_shutdownStarted || _vm == null || _vm.IsSoopRefreshing || _loading) return;
         _vm.BeginSoopRefresh();
         _loading = true;
         try
         {
             var state = await _vm.RequestAsync(DropsPlatform.Soop, "refresh");
+            if (_shutdownStarted) return;
             _vm.ApplyState(DropsPlatform.Soop, state);
             PopulateSettings(DropsPlatform.Soop, state);
             if (!Bool(state, "refreshCompleted"))
@@ -1334,11 +1353,12 @@ public partial class DropsPage : UserControl
 
     private async Task RefreshTwitchAsync()
     {
-        if (_vm == null || _vm.IsTwitchRefreshing) return;
+        if (_shutdownStarted || _vm == null || _vm.IsTwitchRefreshing) return;
         _vm.BeginTwitchRefresh();
         try
         {
             var state = await _vm.RequestAsync(DropsPlatform.Twitch, "refresh");
+            if (_shutdownStarted) return;
             _vm.ApplyState(DropsPlatform.Twitch, state);
             PopulateSettings(DropsPlatform.Twitch, state);
             _vm.CompleteTwitchRefresh(DateTimeOffset.Now);
@@ -1356,11 +1376,12 @@ public partial class DropsPage : UserControl
 
     private async Task RefreshBilibiliAsync(bool showError = true)
     {
-        if (_vm == null || _loading) return;
+        if (_shutdownStarted || _vm == null || _loading) return;
         _loading = true;
         try
         {
             var state = await _vm.RequestAsync(DropsPlatform.Bilibili, "refresh", new { discover = true });
+            if (_shutdownStarted) return;
             _vm.ApplyState(DropsPlatform.Bilibili, state);
             if (!Bool(state, "refreshCompleted", true))
                 _vm.ReportMessage(DropsPlatform.Bilibili, Text(state, "refreshError", "刷新未完成，保留最近成功数据。"), "警告");
@@ -1376,11 +1397,12 @@ public partial class DropsPage : UserControl
 
     private async Task DiscoverBilibiliAsync()
     {
-        if (_vm == null || _loading) return;
+        if (_shutdownStarted || _vm == null || _loading) return;
         _loading = true;
         try
         {
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "discover");
+            if (_shutdownStarted) return;
             ApplyBilibiliResult(result);
             SyncBilibiliSettingsToApp();
             if (!string.IsNullOrWhiteSpace(Text(result, "message")))
@@ -1392,17 +1414,15 @@ public partial class DropsPage : UserControl
 
     private async Task StartBilibiliQrLoginAsync()
     {
-        if (_vm == null || _bilibiliQrPollingTask is { IsCompleted: false }) return;
+        if (_shutdownStarted || _vm == null || _bilibiliQrPollingCts is not null ||
+            _bilibiliQrPollingTask is { IsCompleted: false }) return;
+        var operation = new CancellationTokenSource();
+        _bilibiliQrPollingCts = operation;
+        var loginTask = RunBilibiliQrLoginAsync(operation);
+        _bilibiliQrPollingTask = loginTask;
         try
         {
-            var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "qr_generate");
-            ApplyBilibiliResult(result);
-            _bilibiliQrPollingCts?.Cancel();
-            _bilibiliQrPollingCts?.Dispose();
-            var cts = new CancellationTokenSource();
-            _bilibiliQrPollingCts = cts;
-            _bilibiliQrPollingTask = PollBilibiliQrAsync(cts);
-            await _bilibiliQrPollingTask;
+            await loginTask;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -1412,13 +1432,23 @@ public partial class DropsPage : UserControl
         }
         finally
         {
-            if (_bilibiliQrPollingCts?.IsCancellationRequested == true)
-            {
-                _bilibiliQrPollingCts.Dispose();
-                _bilibiliQrPollingCts = null;
-            }
-            _bilibiliQrPollingTask = null;
+            if (ReferenceEquals(_bilibiliQrPollingCts, operation)) _bilibiliQrPollingCts = null;
+            if (ReferenceEquals(_bilibiliQrPollingTask, loginTask)) _bilibiliQrPollingTask = null;
+            operation.Dispose();
         }
+    }
+
+    private async Task RunBilibiliQrLoginAsync(CancellationTokenSource operation)
+    {
+        // The generate request is part of the same cancellable operation as
+        // polling.  In particular, shutdown can happen while the worker is
+        // still waiting for the QR image and must not allow a late response
+        // to start a new poller after the window has begun closing.
+        var result = await _vm!.RequestAsync(DropsPlatform.Bilibili, "qr_generate",
+            token: operation.Token);
+        if (_shutdownStarted || operation.IsCancellationRequested) return;
+        ApplyBilibiliResult(result);
+        await PollBilibiliQrAsync(operation);
     }
 
     private async Task PollBilibiliQrAsync(CancellationTokenSource owner)
@@ -1429,11 +1459,12 @@ public partial class DropsPage : UserControl
         {
             await Task.Delay(TimeSpan.FromSeconds(2), token);
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "qr_poll", token: token);
+            if (_shutdownStarted || token.IsCancellationRequested) return;
             ApplyBilibiliResult(result);
             var state = Text(result, "state");
             if (state is "success" or "expired" or "cancelled")
             {
-                if (state == "success")
+                if (state == "success" && !_shutdownStarted && !token.IsCancellationRequested)
                 {
                     ShowInfo("哔哩哔哩扫码登录成功，账号凭据已安全保存。", "哔哩哔哩登录");
                     await LoadPlatformAsync(DropsPlatform.Bilibili);
@@ -1446,7 +1477,7 @@ public partial class DropsPage : UserControl
     private async Task CancelBilibiliQrAsync()
     {
         _bilibiliQrPollingCts?.Cancel();
-        if (_vm == null) return;
+        if (_shutdownStarted || _vm == null) return;
         try
         {
             var result = await _vm.RequestAsync(DropsPlatform.Bilibili, "qr_cancel");
@@ -1689,7 +1720,7 @@ public partial class DropsPage : UserControl
 
     private void ApplyBilibiliResult(JsonElement result)
     {
-        if (_vm == null || result.ValueKind != JsonValueKind.Object) return;
+        if (_shutdownStarted || _vm == null || result.ValueKind != JsonValueKind.Object) return;
         _vm.ApplyState(DropsPlatform.Bilibili, result);
         if (result.TryGetProperty("state", out var nested) && nested.ValueKind == JsonValueKind.Object)
             _vm.ApplyState(DropsPlatform.Bilibili, nested);
@@ -1902,11 +1933,11 @@ public partial class DropsPage : UserControl
 
     private async Task EnsureLogTailStartedAsync()
     {
-        if (_logTailStarted || _logTail is null) return;
+        if (_shutdownStarted || _logTailStarted || _logTail is null) return;
         await _logStartGate.WaitAsync();
         try
         {
-            if (_logTailStarted || _logTail is null) return;
+            if (_shutdownStarted || _logTailStarted || _logTail is null) return;
             await _logTail.StartAsync();
             _logTailStarted = true;
         }
@@ -1915,6 +1946,7 @@ public partial class DropsPage : UserControl
 
     private void OnLogTailChanged(object? sender, PlatformLogChunk chunk) => Dispatcher.BeginInvoke(new Action(() =>
     {
+        if (_shutdownStarted) return;
         if (chunk.Revision < _logVisibleRevisions[chunk.Platform]) return;
         _logVisibleRevisions[chunk.Platform] = chunk.Revision;
         var buffer = _logBuffers[chunk.Platform];
@@ -2006,6 +2038,7 @@ public partial class DropsPage : UserControl
 
     private void OnWorkerEvent(object? sender, WorkerEvent message)
     {
+        if (_shutdownStarted) return;
         if (_main is not null && !_main.DropsHost.IsCurrentEvent(message.Platform, message.Payload)) return;
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_status")
         {
@@ -2107,25 +2140,47 @@ public partial class DropsPage : UserControl
         });
     }
 
-    public async ValueTask DisposeAsync()
+    private Task? _disposeTask;
+    public ValueTask DisposeAsync() => new(_disposeTask ??= DisposeCoreAsync());
+
+    private async Task DisposeCoreAsync()
     {
+        BeginShutdown();
         _retryDisplayTimer.Stop();
         _bilibiliQrPollingCts?.Cancel();
-        if (_bilibiliQrPollingTask is not null)
+        var qrTask = _bilibiliQrPollingTask;
+        if (qrTask is not null)
         {
-            try { await _bilibiliQrPollingTask.ConfigureAwait(false); } catch { }
+            try { await qrTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         }
-        _bilibiliQrPollingCts?.Dispose();
-        _bilibiliQrPollingCts = null;
+        // If a non-cooperative fixture/worker ignored cancellation, leave the
+        // CTS owned by RunBilibiliQrLoginAsync.  Its finally block disposes it
+        // after the request eventually unwinds; disposing it here would race
+        // the generate continuation.
         if (_main is not null) _main.DropsHost.EventReceived -= OnWorkerEvent;
         _main?.SetDropsDiagnosticSnapshotProvider(null);
-        _vm?.Dispose();
         if (_logTail is not null)
         {
             _logTail.Changed -= OnLogTailChanged;
             await _logTail.DisposeAsync().ConfigureAwait(false);
         }
-        _logStartGate.Dispose();
+        // An already-started log-tail initialization may still release this gate.
+    }
+
+    /// <summary>
+    /// Synchronously closes the page's ability to start work and cancels the
+    /// QR generate/poll operation.  MainWindow calls this before awaiting any
+    /// asynchronous cleanup; it intentionally does not send a new network
+    /// request, so shutdown cannot be held by a QR cancel round trip.
+    /// </summary>
+    public void BeginShutdown()
+    {
+        if (_shutdownStarted) return;
+        _shutdownStarted = true;
+        _vm?.Dispose(); // Fence automatic recovery before any asynchronous drain.
+        _retryDisplayTimer.Stop();
+        _bilibiliQrPollingCts?.Cancel();
+        _pendingPlatformLoad = null;
     }
 
     private static void ReplaceStrings(System.Collections.ObjectModel.ObservableCollection<string> target, IEnumerable<string> values)
@@ -2153,6 +2208,7 @@ public partial class DropsPage : UserControl
     private static string PlatformName(DropsPlatform platform) => platform switch { DropsPlatform.Soop => "SOOP", DropsPlatform.YouTube => "YouTube", DropsPlatform.Bilibili => "哔哩哔哩", _ => "Twitch" };
     private void ShowError(Exception ex, string title)
     {
+        if (_shutdownStarted) return;
         var platform = title.Contains("Twitch", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.Twitch :
             title.Contains("SOOP", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.Soop :
             title.Contains("YouTube", StringComparison.OrdinalIgnoreCase) ? DropsPlatform.YouTube :
@@ -2168,5 +2224,9 @@ public partial class DropsPage : UserControl
             ? $"{title}，请查看运行日志。"
             : message;
     }
-    private void ShowInfo(string message, string title) => _vm?.ReportMessage(_platform, $"{title}：{message}");
+    private void ShowInfo(string message, string title)
+    {
+        if (_shutdownStarted) return;
+        _vm?.ReportMessage(_platform, $"{title}：{message}");
+    }
 }

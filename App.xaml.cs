@@ -22,6 +22,12 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length == 2 && e.Args[0] == "--account-gate-probe")
+        {
+            try { using var lease = new AccountOperationGate(Path.GetFullPath(e.Args[1])).Enter(); Shutdown(0); }
+            catch (InvalidOperationException) { Shutdown(2); }
+            return;
+        }
         string? dropsAcceptanceRoot = null;
         if (e.Args.Length >= 2 && e.Args[0] == "--drops-acceptance")
         {
@@ -53,8 +59,13 @@ public partial class App : Application
         {
             IsHeadlessSelfTest = true;
             AppPaths.UseSelfTestRoot(Path.Combine(Path.GetFullPath(e.Args[1]), "app-data"));
-            Task.Run(() => FeatureSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2))).GetAwaiter().GetResult();
-            Shutdown(0);
+            if (e.Args.ElementAtOrDefault(2) == "exit-safety")
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                FeatureSelfTest.Run(e.Args[1], "exit-safety");
+            }
+            else Task.Run(() => FeatureSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2))).GetAwaiter().GetResult();
+            Shutdown(File.ReadAllText(Path.Combine(e.Args[1], "feature-selftest.txt")).Contains("OVERALL: FAIL") ? 1 : 0);
             return;
         }
 
@@ -76,19 +87,23 @@ public partial class App : Application
             return;
         }
 
-        // 无界面切换:--switch <accountId>。走的是与界面相同的服务逻辑,结果写到 switch.txt。
-        if (e.Args.Length >= 1 && e.Args[0] == "--switch")
+        // CLI owns the same lifetime mutex as the GUI before constructing data services.
+        // An existing (including older) primary cannot safely accept these commands: fail explicitly.
+        if (e.Args.Length >= 1 && e.Args[0] is "--switch" or "--addaccount")
         {
-            RunSwitch(e.Args.Length >= 2 ? e.Args[1] : "");
-            Shutdown(0);
-            return;
-        }
-
-        // 登录新号:--addaccount。优雅退出 → 清空本地令牌(非登出)→ 启动到登录页,供手动登录新号。
-        if (e.Args.Contains("--addaccount"))
-        {
-            RunAddAccount();
-            Shutdown(0);
+            _singleInstance = new Mutex(true, MutexName, out var cliOwnsInstance);
+            var result = !cliOwnsInstance
+                ? new AccountCommandResult(2, "rejected", "主实例已运行（可能忙碌或正在退出）；请在主窗口执行账号操作。")
+                : Task.Run(() => AccountCommandRunner.RunAsync(e.Args)).GetAwaiter().GetResult();
+            try
+            {
+                Directory.CreateDirectory(AppPaths.Current.Root);
+                File.WriteAllText(Path.Combine(AppPaths.Current.Root, e.Args[0] == "--switch" ? "switch.txt" : "addaccount.txt"),
+                    System.Text.Json.JsonSerializer.Serialize(result), Encoding.UTF8);
+            }
+            catch (Exception ex) { result = new(1, "report_failed", result.Message + "；无法写入报告：" + ex.Message); }
+            Console.WriteLine(result.Message);
+            Shutdown(result.ExitCode);
             return;
         }
 
@@ -183,99 +198,6 @@ public partial class App : Application
             var dir = AppPaths.Current.Root;
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, "selftest.txt"), sb.ToString(), Encoding.UTF8);
-        }
-        catch { /* ignore */ }
-    }
-
-    private static void RunSwitch(string idStr)
-    {
-        var sb = new StringBuilder();
-        try
-        {
-            if (!long.TryParse(idStr, out var targetId))
-            {
-                sb.AppendLine("用法: CloudLight Blizzard.exe --switch <accountId>");
-            }
-            else
-            {
-                var paths = new BattleNetPaths();
-                var reader = new AccountReader(paths);
-                var profiles = new AppDataStore(paths);
-                var controller = new BattleNetController(paths);
-
-                if (!profiles.HasProfile(targetId))
-                {
-                    sb.AppendLine($"账号 {targetId} 没有快照,无法切换。");
-                }
-                else
-                {
-                    var accounts = reader.ReadAccounts(out var before);
-                    string TagOf(long id) =>
-                        accounts.FirstOrDefault(a => a.AccountId == id)?.BattleTag ?? id.ToString();
-
-                    sb.AppendLine($"切换前当前账号: {(before?.ToString() ?? "未知")} {(before is long b ? TagOf(b) : "")}");
-                    sb.AppendLine($"目标账号: {targetId} {TagOf(targetId)}");
-
-                    var stopped = controller.GracefulQuit();
-                    sb.AppendLine($"战网已关闭:{stopped}");
-                    if (!stopped)
-                    {
-                        sb.AppendLine("战网未能退出,已中止。");
-                    }
-                    else
-                    {
-                        // 不自动备份当前号(避免把出错状态覆盖好快照)。只注入目标令牌,绝不登出。
-                        profiles.Restore(targetId);
-                        sb.AppendLine($"已注入目标快照 {targetId}");
-                        controller.LaunchClient();
-                        sb.AppendLine("已启动战网。");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            sb.AppendLine("切换异常: " + ex);
-        }
-
-        try
-        {
-            var dir = AppPaths.Current.Root;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "switch.txt"), sb.ToString(), Encoding.UTF8);
-        }
-        catch { /* ignore */ }
-    }
-
-    private static void RunAddAccount()
-    {
-        var sb = new StringBuilder();
-        try
-        {
-            var paths = new BattleNetPaths();
-            var profiles = new AppDataStore(paths);
-            var controller = new BattleNetController(paths);
-
-            var stopped = controller.GracefulQuit();
-            sb.AppendLine($"战网已关闭:{stopped}");
-            if (stopped)
-            {
-                profiles.ClearCurrentPointer();       // 清本地指针(文件层),非登出
-                sb.AppendLine("已清空登录指针(未登出、未碰注册表)。");
-                controller.LaunchClient();
-                sb.AppendLine("已启动到登录页,请手动登录新号,登录后回工具『保存当前登录为快照』。");
-            }
-        }
-        catch (Exception ex)
-        {
-            sb.AppendLine("异常: " + ex);
-        }
-
-        try
-        {
-            var dir = AppPaths.Current.Root;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "addaccount.txt"), sb.ToString(), Encoding.UTF8);
         }
         catch { /* ignore */ }
     }

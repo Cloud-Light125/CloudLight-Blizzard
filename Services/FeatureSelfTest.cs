@@ -29,8 +29,34 @@ public static class FeatureSelfTest
         Directory.CreateDirectory(workspace);
         RegionSwitchLog.FileOverride = Path.Combine(outputRoot, "region-switch.log");
         var report = new StringBuilder();
+        var previousDownloadRoot = UpdateDownloadService.SelfTestDownloadRoot.Value;
+        UpdateDownloadService.SelfTestDownloadRoot.Value = Path.Combine(workspace, "isolated-updates");
         try
         {
+            if (string.Equals(test, "exit-safety", StringComparison.OrdinalIgnoreCase))
+            {
+                ExitLifecycleSelfTest.Run(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
+            if (string.Equals(test, "account-safety", StringComparison.OrdinalIgnoreCase))
+            {
+                AccountStoreSafetySelfTest.Run(workspace, report);
+                AccountOperationSelfTest.RunAsync(workspace, report).GetAwaiter().GetResult();
+                RunAccountSnapshotTest(workspace, report);
+                RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
+                RunLoginVerificationTest(report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
+            if (string.Equals(test, "update-safety", StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateSafetySelfTest.RunAsync(workspace, report).GetAwaiter().GetResult();
+                RunUpdateCheckTest(workspace, report).GetAwaiter().GetResult();
+                RunUpdaterResilienceTests(workspace, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             if (string.Equals(test, "twitch-long", StringComparison.OrdinalIgnoreCase))
             {
                 TwitchLongSmoke.RunAsync(outputRoot, report).GetAwaiter().GetResult();
@@ -110,6 +136,7 @@ public static class FeatureSelfTest
         }
         finally
         {
+            UpdateDownloadService.SelfTestDownloadRoot.Value = previousDownloadRoot;
             File.WriteAllText(Path.Combine(outputRoot, "feature-selftest.txt"), report.ToString());
             RegionSwitchLog.FileOverride = null;
             try { Directory.Delete(workspace, true); } catch { }
@@ -172,7 +199,7 @@ public static class FeatureSelfTest
                == AccountSwitchVerificationState.Unconfirmed, "timeout remains unconfirmed");
         Assert(AccountSwitchVerification.Evaluate(true, 1, 2, now, now.AddMinutes(1), BattleNetLoginEvidence.RealAuthExpired)
                == AccountSwitchVerificationState.LoginRequired, "explicit auth evidence requires login");
-        Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired)
+        Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired, targetObservedThisAttempt: true)
                == AccountSwitchVerificationState.LoggedIn, "confirmed target wins");
         report.AppendLine("TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)");
     }
@@ -818,7 +845,7 @@ public static class FeatureSelfTest
         const string latestVersion = "2.0.82";
         var installerName = $"CloudLight-Blizzard-{latestVersion}-win-x64-Setup.exe";
         var expectedInstaller = Path.Combine(
-            Path.GetTempPath(), "CloudLight Blizzard", "updates", latestVersion, installerName);
+            UpdateDownloadService.DownloadRoot, latestVersion, installerName);
         var expectedPartial = expectedInstaller + ".partial";
         if (File.Exists(expectedInstaller)) File.Delete(expectedInstaller);
         if (File.Exists(expectedPartial)) File.Delete(expectedPartial);
@@ -1912,7 +1939,7 @@ public static class FeatureSelfTest
             catch (HttpRequestException) { }
             Assert(exhaustedHandler.Calls == 4 && downloader.State == UpdaterState.Failed,
                 "updater stops after three retries and reports Failed");
-            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.92"));
+            TryDeleteDirectory(Path.Combine(UpdateDownloadService.DownloadRoot, "2.0.92"));
         }
 
         var notFoundHandler = new ScriptedDownloadHandler((_, _) =>
@@ -1925,7 +1952,7 @@ public static class FeatureSelfTest
             try { await downloader.DownloadInstallerAsync(notFoundResult); throw new InvalidOperationException("404 unexpectedly succeeded"); }
             catch (HttpRequestException) { }
             Assert(notFoundHandler.Calls == 1, "updater does not retry a permanent 404");
-            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.93"));
+            TryDeleteDirectory(Path.Combine(UpdateDownloadService.DownloadRoot, "2.0.93"));
         }
 
         await RunRangeResumeCase(workspace, bytes, "2.0.94", changeEtag: false, ignoreRange: false,
@@ -1955,7 +1982,7 @@ public static class FeatureSelfTest
             "updater accepts uppercase/lowercase valid SHA-256 and rejects missing, malformed, and wrong-length digests");
 
         var mismatchResult = CreateDownloadResult("2.0.97", bytes);
-        var mismatchRoot = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.97");
+        var mismatchRoot = Path.Combine(UpdateDownloadService.DownloadRoot, "2.0.97");
         TryDeleteDirectory(mismatchRoot);
         Directory.CreateDirectory(mismatchRoot);
         var mismatchPartial = Path.Combine(mismatchRoot, mismatchResult.InstallerName! + ".partial");
@@ -1990,7 +2017,7 @@ public static class FeatureSelfTest
             }
             catch (InvalidDataException) { }
             Assert(downloader.State == UpdaterState.Failed, "updater rejects a SHA-256 mismatch");
-            TryDeleteDirectory(Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", "2.0.98"));
+            TryDeleteDirectory(Path.Combine(UpdateDownloadService.DownloadRoot, "2.0.98"));
         }
 
         report.AppendLine("TEST 11 updater resilience: PASS (retry/exhaustion/404/Range/ignored Range/ETag/metadata mismatch/digest)");
@@ -2003,7 +2030,7 @@ public static class FeatureSelfTest
         bool changeLastModified = false, RangeResponseMode responseMode = RangeResponseMode.Normal)
     {
         var result = CreateDownloadResult(version, bytes);
-        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        var root = Path.Combine(UpdateDownloadService.DownloadRoot, version);
         TryDeleteDirectory(root);
         Directory.CreateDirectory(root);
         var prefixLength = 700;
@@ -2057,7 +2084,7 @@ public static class FeatureSelfTest
     {
         const string version = "2.0.965";
         var result = CreateDownloadResult(version, bytes);
-        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        var root = Path.Combine(UpdateDownloadService.DownloadRoot, version);
         TryDeleteDirectory(root);
         Directory.CreateDirectory(root);
         var partial = Path.Combine(root, result.InstallerName! + ".partial");
@@ -2081,7 +2108,7 @@ public static class FeatureSelfTest
     {
         const string version = "2.0.966";
         var result = CreateDownloadResult(version, bytes);
-        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        var root = Path.Combine(UpdateDownloadService.DownloadRoot, version);
         TryDeleteDirectory(root);
         Directory.CreateDirectory(root);
         File.WriteAllBytes(Path.Combine(root, result.InstallerName! + ".partial"), bytes.Concat(new byte[3]).ToArray());
@@ -2107,7 +2134,7 @@ public static class FeatureSelfTest
     {
         const string version = "2.0.967";
         var result = CreateDownloadResult(version, bytes);
-        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", version);
+        var root = Path.Combine(UpdateDownloadService.DownloadRoot, version);
         TryDeleteDirectory(root);
         Directory.CreateDirectory(root);
         File.WriteAllBytes(Path.Combine(root, result.InstallerName! + ".partial"), Array.Empty<byte>());

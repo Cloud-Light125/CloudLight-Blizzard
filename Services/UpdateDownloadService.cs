@@ -38,6 +38,8 @@ public sealed record UpdateDownloadProgress(
 /// </summary>
 public sealed class UpdateDownloadService
 {
+    internal static readonly AsyncLocal<string?> SelfTestDownloadRoot = new();
+    internal static string DownloadRoot => SelfTestDownloadRoot.Value ?? Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates");
     private const int BufferSize = 128 * 1024;
     private const int MaxRetryCount = 3;
     private const int MaxAttempts = MaxRetryCount + 1;
@@ -90,7 +92,7 @@ public sealed class UpdateDownloadService
             throw;
         }
         var releaseKey = SafeReleaseKey(result.Tag, latestVersion);
-        var root = Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates", releaseKey);
+        var root = Path.Combine(DownloadRoot, releaseKey);
         Directory.CreateDirectory(root);
         var finalPath = Path.Combine(root, installerName);
         var partialPath = finalPath + ".partial";
@@ -281,8 +283,9 @@ public sealed class UpdateDownloadService
         string partialPath, ResumeMetadata? metadata, long existingBytes,
         IProgress<UpdateDownloadProgress>? progress, CancellationToken token)
     {
-        var request = CreateInstallerRequest(uri, existingBytes, metadata);
-        using var response = await _httpClients.SendGetAsync(() => request, "update-download", token)
+        // The routing layer owns/disposes each attempt, including a failed proxy request.
+        using var response = await _httpClients.SendGetAsync(
+                () => CreateInstallerRequest(uri, existingBytes, metadata), "update-download", token)
             .ConfigureAwait(false);
         if (existingBytes > 0 && (response.StatusCode == HttpStatusCode.OK ||
                                   response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable))

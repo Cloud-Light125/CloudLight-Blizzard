@@ -403,7 +403,18 @@ public sealed class DropsHostService : IAsyncDisposable
 
         var startInfo = _startInfoOverrideForSelfTest?.Invoke(platform) ?? BuildStartInfo(platform);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        if (!process.Start()) throw new InvalidOperationException($"无法启动 {platform} 后台服务。");
+        try
+        {
+            // Process.Start is synchronous and cannot be cancelled.  If it
+            // fails before a WorkerConnection exists, still release the
+            // Process handle here rather than leaving an unowned instance.
+            if (!process.Start()) throw new InvalidOperationException($"无法启动 {platform} 后台服务。");
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
         var lifetime = new CancellationTokenSource();
         var worker = new WorkerConnection
         {
@@ -416,16 +427,23 @@ public sealed class DropsHostService : IAsyncDisposable
         };
         worker.Input.AutoFlush = true;
         process.Exited += (_, _) => OnExited(worker);
+        var rejectedByShutdown = false;
         lock (_sync)
         {
             if (_disposing)
             {
-                lifetime.Cancel();
-                TryTerminate(worker);
-                _retiredWorkers.Add(worker);
-                throw new ObjectDisposedException(nameof(DropsHostService));
+                // DisposeCore may already have drained the creation gate and
+                // cleared _retiredWorkers.  Do not append a late registration
+                // there: it would be orphaned after DisposeCore returns.
+                rejectedByShutdown = true;
             }
-            _workers[platform] = worker;
+            else
+                _workers[platform] = worker;
+        }
+        if (rejectedByShutdown)
+        {
+            await DisposeRejectedWorkerAsync(worker).ConfigureAwait(false);
+            throw new ObjectDisposedException(nameof(DropsHostService));
         }
         worker.OutputLoop = ReadOutputAsync(worker);
         worker.ErrorLoop = ReadErrorsAsync(worker);
@@ -453,6 +471,25 @@ public sealed class DropsHostService : IAsyncDisposable
         }
         }
         finally { gate.Release(); }
+    }
+
+    private static async Task DisposeRejectedWorkerAsync(WorkerConnection worker)
+    {
+        worker.Lifecycle = WorkerLifecycle.Stopping;
+        worker.Lifetime.Cancel();
+        TryTerminate(worker);
+        try { await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+        catch { }
+        try
+        {
+            await Task.WhenAll(worker.OutputLoop, worker.ErrorLoop)
+                .WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+        catch { }
+        worker.WriteGate.Dispose();
+        worker.CommandGate.Dispose();
+        worker.Lifetime.Dispose();
+        worker.Process.Dispose();
     }
 
     private static ProcessStartInfo BuildStartInfo(DropsPlatform platform)
@@ -724,6 +761,16 @@ public sealed class DropsHostService : IAsyncDisposable
         value.Contains("SSL is not supported", StringComparison.OrdinalIgnoreCase);
 
     private Task? _disposeTask;
+    public void BeginShutdown()
+    {
+        lock (_sync)
+        {
+            if (_disposing) return;
+            _disposing = true;
+            _connectionLifetime.Cancel();
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
         lock (_sync) return new ValueTask(_disposeTask ??= DisposeCoreAsync());
@@ -735,6 +782,8 @@ public sealed class DropsHostService : IAsyncDisposable
         _connectionLifetime.Cancel();
         // A process can be between Start() and registration. Drain creation
         // gates before capturing workers so that process is also retired.
+        // Handshakes share the cancelled connection lifetime. Do not abandon
+        // a Process.Start between creation and registration.
         foreach (var gate in _connectionGates.Values)
         {
             await gate.WaitAsync().ConfigureAwait(false);
@@ -751,7 +800,16 @@ public sealed class DropsHostService : IAsyncDisposable
         }
         foreach (var worker in workers)
         {
-            try { await worker.Process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); } catch { TryTerminate(worker); }
+            try { await worker.Process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
+            catch
+            {
+                // Only Process instances created by this Host are present in
+                // workers.  A second bounded wait verifies that Kill actually
+                // reaped our child before its handle is disposed.
+                TryTerminate(worker);
+                try { await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+                catch { }
+            }
             try
             {
                 await Task.WhenAll(worker.OutputLoop, worker.ErrorLoop)
