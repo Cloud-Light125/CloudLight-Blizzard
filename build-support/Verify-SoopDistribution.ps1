@@ -3,9 +3,15 @@ param(
     [Parameter(Mandatory)][string]$Authorization
 )
 $ErrorActionPreference = 'Stop'
+function Get-DistributionSha256([string]$Path) {
+    $stream = [IO.File]::OpenRead([IO.Path]::GetFullPath($Path))
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $algorithm.Dispose(); $stream.Dispose() }
+}
 $record = Get-Content -LiteralPath $Authorization -Raw -Encoding UTF8 | ConvertFrom-Json
 $build = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
-$recordHash = (Get-FileHash -LiteralPath $Authorization -Algorithm SHA256).Hash.ToLowerInvariant()
+$recordHash = Get-DistributionSha256 $Authorization
 if ($record.schema -ne 1 -or $record.repository -ne 'Cloud-Light125/CloudLight-Blizzard' -or
     $record.binaryRedistribution -ne $true -or [string]::IsNullOrWhiteSpace($record.declaredBy) -or
     $build.purpose -ne 'Distribution' -or -not $build.soopCore -or
@@ -18,7 +24,7 @@ $artifactRoot = Split-Path ([IO.Path]::GetFullPath($Manifest)) -Parent
 foreach ($platform in @('twitch', 'soop', 'youtube', 'bilibili')) {
     $workerFile = Join-Path $artifactRoot "$platform\$platform-worker.exe"
     if (-not (Test-Path -LiteralPath $workerFile) -or
-        (Get-FileHash -LiteralPath $workerFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $build.workers.$platform) {
+        (Get-DistributionSha256 $workerFile) -ne $build.workers.$platform) {
         throw "Distribution $platform Worker hash does not match the build manifest."
     }
 }
