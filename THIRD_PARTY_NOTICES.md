@@ -37,6 +37,17 @@ artifacts directory; that adapter reports SOOP unavailable and cannot load
 an external Core into a frozen distribution. The feature remains in the UI.
 Full SOOP binary redistribution requires confirmation from the rights holders.
 
+On 2026-10-13 the publisher, Cloud-Light125 / cloudlight, identified the bundled
+SOOP Core source as their own and explicitly authorized packaging and public
+GitHub Release distribution. The declaration and exact permitted Core commit
+and source digest are recorded in
+`Integrations/Drops/soop/redistribution-authorization.json`. Distribution builds
+now require that declaration to match the actual Core, record its SHA256, and
+verify the resulting Workers. The earlier default restriction above describes
+builds without such authorization; Local and adapter-only builds remain
+available. This is the publisher's declaration, not a newly inferred MIT/GPL
+license for the direct upstream. Original source and upstream attribution remain.
+
 ## CloudLight Overwatch YouTube Watcher
 
 - Source: <https://github.com/yundan125/CloudLight-Overwatch-YouTube-Watcher>

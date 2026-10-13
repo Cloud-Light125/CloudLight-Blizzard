@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "declaredAt": "2026-10-13",
+  "declaredBy": "Cloud-Light125 / cloudlight",
+  "basis": "The publisher identified this SOOP Core source as their own and explicitly instructed packaging and public GitHub Release distribution in the release task.",
+  "repository": "Cloud-Light125/CloudLight-Blizzard",
+  "source": "https://github.com/yundan125/cloudlight-soop-drops-miner",
+  "coreCommit": "6050b8a35690b091996a1efedad4655b1b094cac",
+  "coreSha256": "65801b6e10f1777cd08af4ae0c6903003b2544c6bfd58b60f7295ba77d879be6",
+  "binaryRedistribution": true,
+  "scope": "Bundle this exact modified SOOP Core in CloudLight Blizzard installers distributed through this repository's GitHub Releases.",
+  "requiredNotices": "Retain original SOOP source and direct-upstream attribution in THIRD_PARTY_NOTICES.md. This publisher declaration does not replace third-party licenses or independently establish an upstream license."
+}

@@ -51,6 +51,23 @@ def core_info(root: Path) -> dict:
             "capabilities": capabilities, "redistributionAuthorized": False, **sources(root)}
 
 
+def authorize_core(core: dict, record_path: Path) -> None:
+    record = json.loads(record_path.read_text(encoding="utf-8-sig"))
+    if (not isinstance(record, dict) or record.get("schema") != 1
+            or record.get("repository") != "Cloud-Light125/CloudLight-Blizzard"
+            or record.get("binaryRedistribution") is not True
+            or not isinstance(record.get("declaredBy"), str) or not record["declaredBy"].strip()
+            or record.get("coreCommit") != core["commit"]
+            or record.get("coreSha256") != core["sha256"]):
+        raise RuntimeError("SOOP Core does not match the publisher's explicit redistribution authorization.")
+    core["redistributionAuthorized"] = True
+    core["authorization"] = {
+        "recordSha256": hashlib.sha256(record_path.read_bytes()).hexdigest(),
+        "declaredBy": record["declaredBy"], "declaredAt": record.get("declaredAt"),
+        "scope": record.get("scope"), "requiredNotices": record.get("requiredNotices"),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, required=True)
@@ -58,16 +75,20 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--purpose", choices=("Local", "Distribution"), default="Local")
+    parser.add_argument("--soop-authorization", type=Path)
     args = parser.parse_args()
+    core = core_info(args.core) if args.core else None
     if args.purpose == "Distribution" and args.core:
-        raise RuntimeError("SOOP redistribution permission is unconfirmed; only a local-use build may bundle this Core.")
+        if not args.soop_authorization:
+            raise RuntimeError("SOOP Distribution requires an explicit authorization matching this Core.")
+        authorize_core(core, args.soop_authorization)
     info = {"schema": 1, "protocol": 1, "purpose": args.purpose,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "commit": git(args.repo, "rev-parse", "HEAD"),
             "dirty": bool(git(args.repo, "status", "--porcelain")),
             "python": platform.python_version(),
             "dependencies": {d.metadata["Name"]: d.version for d in importlib.metadata.distributions()},
-            "soopCore": core_info(args.core) if args.core else None,
+            "soopCore": core,
             "adapterSources": adapter_sources(args.repo)}
     if args.artifacts:
         info["workers"] = {p.parent.name: hashlib.sha256(p.read_bytes()).hexdigest()

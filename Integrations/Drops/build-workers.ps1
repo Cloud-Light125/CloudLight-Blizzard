@@ -18,8 +18,9 @@ $dropsRoot = $PSScriptRoot
 $venv = Join-Path $repoRoot ".worker-build-venv"
 $artifacts = if ($ArtifactsRoot) { [System.IO.Path]::GetFullPath($ArtifactsRoot) } else { Join-Path $repoRoot "artifacts\drops" }
 $tuna = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-if ($BuildPurpose -eq 'Distribution' -and $Platforms -contains 'soop' -and -not $SoopAdapterOnly) {
-    throw 'SOOP Core 再分发许可尚未确认。对外构建禁止捆绑；本地自用请明确使用 -BuildPurpose Local。'
+$soopAuthorization = Join-Path $repoRoot 'Integrations\Drops\soop\redistribution-authorization.json'
+if ($BuildPurpose -eq 'Distribution' -and $Platforms -contains 'soop' -and -not $SoopAdapterOnly -and -not (Test-Path -LiteralPath $soopAuthorization)) {
+    throw '完整 SOOP Distribution 构建缺少再分发授权记录。'
 }
 $pythonFinder = Join-Path $repoRoot 'build-support\Find-Python.ps1'
 if (-not (Test-Path -LiteralPath $pythonFinder)) {
@@ -85,6 +86,7 @@ if ($Platforms -contains 'soop' -and -not $SoopAdapterOnly) {
     }
     $SoopCorePath = (Resolve-Path -LiteralPath $SoopCorePath).Path
     $provenanceArgs += @('--core', $SoopCorePath)
+    if ($BuildPurpose -eq 'Distribution') { $provenanceArgs += @('--soop-authorization', $soopAuthorization) }
 }
 $provenanceScript = Join-Path $dropsRoot 'Shared\build_provenance.py'
 $provenanceFile = Join-Path $artifacts 'build-manifest.json'

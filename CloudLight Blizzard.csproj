@@ -12,10 +12,10 @@
     <RootNamespace>CloudLightBlizzard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>2.1.8</Version>
-    <AssemblyVersion>2.1.8.0</AssemblyVersion>
-    <FileVersion>2.1.8.0</FileVersion>
-    <InformationalVersion>2.1.8</InformationalVersion>
+    <Version>2.1.9</Version>
+    <AssemblyVersion>2.1.9.0</AssemblyVersion>
+    <FileVersion>2.1.9.0</FileVersion>
+    <InformationalVersion>2.1.9</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>CloudLight</Authors>
     <Company>CloudLight</Company>
@@ -59,6 +59,11 @@
 
   <ItemGroup>
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Integrations\Drops\soop\redistribution-authorization.json">
+      <Link>THIRD_PARTY_LICENSES\SOOP-Redistribution-Authorization.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="Integrations\Drops\twitch\core\LICENSE">
       <Link>THIRD_PARTY_LICENSES\TwitchDropsMiner-MIT.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -83,7 +88,7 @@
 
   <Target Name="CheckSoopDistributionPermission" BeforeTargets="Publish"
           Condition="'$(DropsBuildPurpose)' == 'Distribution' And '$(SoopAdapterOnly)' != 'true' And Exists('$(DropsArtifactsRoot)\soop\soop-worker.exe')">
-    <Error Text="SOOP Core redistribution permission is unconfirmed. Distribution publish cannot bundle this Core. Use Local only for local-use candidates." />
+    <Exec Command="powershell -NoProfile -File &quot;$(MSBuildProjectDirectory)\build-support\Verify-SoopDistribution.ps1&quot; -Manifest &quot;$(DropsArtifactsRoot)\build-manifest.json&quot; -Authorization &quot;$(MSBuildProjectDirectory)\Integrations\Drops\soop\redistribution-authorization.json&quot;" />
   </Target>
   <Target Name="ValidateDistributionWorkerContents" BeforeTargets="Publish"
           Condition="'$(DropsBuildPurpose)' == 'Distribution' And '$(SoopAdapterOnly)' == 'true'">

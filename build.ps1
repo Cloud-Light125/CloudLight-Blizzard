@@ -8,10 +8,11 @@
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-if ($DropsBuildPurpose -eq 'Distribution' -and -not $OmitUnlicensedSoopCore) {
-    throw '当前 SOOP Core 未确认再分发许可，完整对外安装包构建已阻止。可用 -DropsBuildPurpose Local 生成仅供本机自用的候选包，禁止对外发布。'
+$soopAuthorization = Join-Path $root 'Integrations\Drops\soop\redistribution-authorization.json'
+if ($DropsBuildPurpose -eq 'Distribution' -and -not $OmitUnlicensedSoopCore -and -not (Test-Path -LiteralPath $soopAuthorization)) {
+    throw '完整 SOOP Distribution 构建需要匹配当前 Core 的明确再分发授权记录。'
 }
-$releaseVersion = '2.1.8'
+$releaseVersion = '2.1.9'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
@@ -110,9 +111,13 @@ try {
     $currentManifestPath = Join-Path $root 'obj\current-drops-source.json'
     $currentManifestArgs = @('--repo', $root, '--purpose', $DropsBuildPurpose, '--output', $currentManifestPath)
     if ($workerManifest.soopCore) { $currentManifestArgs += @('--core', $workerManifest.soopCore.path) }
+    if ($DropsBuildPurpose -eq 'Distribution' -and $workerManifest.soopCore) { $currentManifestArgs += @('--soop-authorization', $soopAuthorization) }
     & $provenancePython (Join-Path $root 'Integrations\Drops\Shared\build_provenance.py') @currentManifestArgs
     if ($LASTEXITCODE -ne 0) { throw '当前 Drops 来源检查失败。' }
     $currentManifest = Get-Content -LiteralPath $currentManifestPath -Raw | ConvertFrom-Json
+    if ($DropsBuildPurpose -eq 'Distribution' -and $workerManifest.soopCore) {
+        & (Join-Path $root 'build-support\Verify-SoopDistribution.ps1') -Manifest $workerManifestPath -Authorization $soopAuthorization
+    }
     if ($currentManifest.adapterSources.sha256 -ne $workerManifest.adapterSources.sha256 -or
         ($workerManifest.soopCore -and $currentManifest.soopCore.sha256 -ne $workerManifest.soopCore.sha256)) {
         throw 'Worker 与当前 Drops 源码不一致，请重新打包。'
