@@ -1,5 +1,9 @@
 namespace CloudLightBlizzard.Services;
 
+public enum ExitCleanupStage { AccountOperationDrain, DropsPageCleanup, DropsHostShutdown, SettingsPersistence, NonCriticalCleanup }
+public enum ExitCleanupState { NotStarted, Cleaning, Completed, Failed, TimedOut }
+public sealed record ExitStageResult(ExitCleanupStage Stage, bool Critical, Exception? Error);
+
 /// <summary>
 /// Coordinates the two-phase WPF exit path.
 ///
@@ -16,6 +20,35 @@ public sealed class ExitLifecycleCoordinator
     private Task? _runTask;
     private bool _completed;
     private Exception? _error;
+    private readonly List<ExitStageResult> _stages = [];
+    private bool _timedOut;
+
+    public ExitCleanupState State
+    {
+        get { lock (_sync) return _completed ? (_timedOut ? ExitCleanupState.TimedOut :
+            _error is not null ? ExitCleanupState.Failed : ExitCleanupState.Completed) :
+            _runTask is null ? ExitCleanupState.NotStarted : ExitCleanupState.Cleaning; }
+    }
+    public IReadOnlyList<ExitStageResult> Stages { get { lock (_sync) return _stages.ToArray(); } }
+    public bool InstallerReady
+    {
+        get
+        {
+            lock (_sync) return _completed && !_timedOut && _error is null &&
+                new[] { ExitCleanupStage.AccountOperationDrain, ExitCleanupStage.DropsPageCleanup,
+                    ExitCleanupStage.DropsHostShutdown, ExitCleanupStage.SettingsPersistence }
+                .All(stage => _stages.Any(result => result.Stage == stage && result.Critical && result.Error is null));
+        }
+    }
+
+    // Continue other cleanup stages even after a failure, but never lose critical failure information.
+    public async Task RunStageAsync(ExitCleanupStage stage, Func<Task> cleanup, bool critical = true)
+    {
+        Exception? error = null;
+        try { await cleanup(); }
+        catch (Exception ex) { error = ex; if (critical) SetError(ex); }
+        lock (_sync) _stages.Add(new(stage, critical, error));
+    }
 
     public ExitLifecycleCoordinator(TimeSpan? budget = null)
     {
@@ -59,11 +92,11 @@ public sealed class ExitLifecycleCoordinator
         {
             await cleanup(budget.Token);
             if (budget.IsCancellationRequested)
-                SetError(new TimeoutException("退出清理超过有界时间。"));
+                SetTimeout();
         }
         catch (OperationCanceledException) when (budget.IsCancellationRequested)
         {
-            SetError(new TimeoutException("退出清理超过有界时间。"));
+            SetTimeout();
         }
         catch (Exception ex)
         {
@@ -78,5 +111,11 @@ public sealed class ExitLifecycleCoordinator
     private void SetError(Exception error)
     {
         lock (_sync) _error ??= error;
+    }
+
+    private void SetTimeout()
+    {
+        lock (_sync) _timedOut = true;
+        SetError(new TimeoutException("退出清理超过有界时间；禁止启动安装器。"));
     }
 }

@@ -21,11 +21,11 @@ internal static class AccountCommandRunner
             var log = new AccountSwitchLog();
             var service = AccountOperationService.Create(paths, settings, profiles, controller, reader, () => regions, log);
             var probe = new BattleNetAuthLogProbe(paths);
-            var cursor = probe.CaptureCursor();
+            BattleNetAuthLogCursor cursor = new(new Dictionary<string, long>());
             return await ExecuteAsync(args, service, (target, result, deadline) => Task.Run(() =>
                 AccountSwitchVerification.Evaluate(controller.IsClientRunning(), reader.ReadActiveAccountId(),
-                    target, DateTime.UtcNow, deadline, probe.ReadAppended(cursor),
-                    targetObservedThisAttempt: result.PreviousId.HasValue && result.PreviousId != target)));
+                    target, DateTime.UtcNow, deadline, probe.ReadAppended(cursor))),
+                beginVerification: () => cursor = probe.CaptureCursor());
         }
         catch (Exception ex) { return new(1, "failed", ex.Message); }
     }
@@ -34,7 +34,7 @@ internal static class AccountCommandRunner
     // an offline authentication probe, without constructing real controllers.
     internal static async Task<AccountCommandResult> ExecuteAsync(string[] args, AccountOperationService service,
         Func<long, AccountSwitchExecution, DateTime, Task<AccountSwitchVerificationState>> verify,
-        TimeSpan? verificationTimeout = null)
+        TimeSpan? verificationTimeout = null, Action? beginVerification = null)
     {
         if (!TryParse(args, out var id, out var error)) return new(2, "invalid_arguments", error);
         try
@@ -44,7 +44,7 @@ internal static class AccountCommandRunner
                 await service.AddAccountAsync();
                 return new(0, "login_page_requested", "已清除本地账号指针并启动战网，请手动登录；未宣称登录成功。");
             }
-            var result = await service.SwitchAsync(id.Value);
+            var result = await service.SwitchAsync(id.Value, beginVerification: beginVerification);
             if (result.AlreadyCurrent)
                 return new(3, "unconfirmed", "缓存已指向目标账号，未执行恢复；仅凭旧缓存不能确认本次登录。请在 Battle.net 查看。");
             var deadline = DateTime.UtcNow.Add(verificationTimeout ?? TimeSpan.FromSeconds(120));

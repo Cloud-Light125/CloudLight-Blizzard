@@ -94,15 +94,20 @@ internal static class AccountOperationSelfTest
         await Rejected(gui.SwitchAsync(3), "shutdown rejects new operation");
         restore.SetResult();
         await Rejected(inFlight, "shutdown cancels subsequent launch");
-        await shutdown;
+        await Rejected(shutdown, "drain preserves earlier mutation failure rather than reporting installer safety");
         Check(!calls.Contains("launch"), "no Battle.net restart after shutdown intent");
         restore = null;
         async Task<AccountCommandResult> Command(string[] args, AccountOperationService? service = null,
-            AccountSwitchVerificationState state = AccountSwitchVerificationState.LoggedIn) =>
+            AccountSwitchVerificationState state = AccountSwitchVerificationState.Unconfirmed) =>
             await AccountCommandRunner.ExecuteAsync(args, service ?? Service(), (_, _, _) => Task.FromResult(state), TimeSpan.Zero);
         calls.Clear();
-        Check((await Command(new[] { "--switch", "2" })).ExitCode == 0 && calls.SequenceEqual(new[] { "quit", "region", "restore", "launch" }),
-            "no-primary CLI core executes same protected pipeline and reports confirmed success");
+        var unconfirmed = await Command(new[] { "--switch", "2" });
+        Check(unconfirmed.ExitCode == 3 && unconfirmed.Status == "unconfirmed" && calls.SequenceEqual(new[] { "quit", "region", "restore", "launch" }),
+            "no-primary CLI core executes same protected pipeline but does not invent authentication success");
+        calls.Clear();
+        await Service().SwitchAsync(2, beginVerification: () => calls.Enqueue("verification"));
+        Check(calls.SequenceEqual(new[] { "quit", "region", "restore", "verification", "launch" }),
+            "GUI/CLI authentication cursor begins after old client shutdown/restore and before new launch");
         calls.Clear();
         Check((await Command(new[] { "--addaccount" })).Status == "login_page_requested" && calls.SequenceEqual(new[] { "quit", "clear", "launch" }),
             "CLI addaccount uses protected clear/login pipeline and does not claim authentication");

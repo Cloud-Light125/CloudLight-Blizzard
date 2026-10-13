@@ -761,6 +761,7 @@ public sealed class DropsHostService : IAsyncDisposable
         value.Contains("SSL is not supported", StringComparison.OrdinalIgnoreCase);
 
     private Task? _disposeTask;
+    internal Func<int, bool>? WorkerExitConfirmedForSelfTest { get; set; }
     public void BeginShutdown()
     {
         lock (_sync)
@@ -791,6 +792,7 @@ public sealed class DropsHostService : IAsyncDisposable
         }
         WorkerConnection[] workers;
         lock (_sync) workers = _workers.Values.Concat(_retiredWorkers).ToArray();
+        var failures = new List<Exception>();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         foreach (var worker in workers)
         {
@@ -810,6 +812,12 @@ public sealed class DropsHostService : IAsyncDisposable
                 try { await worker.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
                 catch { }
             }
+            try
+            {
+                if (!worker.Process.HasExited || WorkerExitConfirmedForSelfTest?.Invoke(worker.Process.Id) == false)
+                    failures.Add(new IOException($"无法确认本程序拥有的 Worker 已退出：{worker.Platform} / PID {worker.Process.Id}。"));
+            }
+            catch (Exception ex) { failures.Add(new IOException("无法确认 Worker 退出状态。", ex)); }
             try
             {
                 await Task.WhenAll(worker.OutputLoop, worker.ErrorLoop)
@@ -836,5 +844,6 @@ public sealed class DropsHostService : IAsyncDisposable
             _retiredWorkers.Clear();
         }
         _connectionLifetime.Dispose();
+        if (failures.Count > 0) throw new AggregateException("Drops Host 关键清理失败，禁止更新安装。", failures);
     }
 }

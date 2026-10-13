@@ -199,8 +199,8 @@ public static class FeatureSelfTest
                == AccountSwitchVerificationState.Unconfirmed, "timeout remains unconfirmed");
         Assert(AccountSwitchVerification.Evaluate(true, 1, 2, now, now.AddMinutes(1), BattleNetLoginEvidence.RealAuthExpired)
                == AccountSwitchVerificationState.LoginRequired, "explicit auth evidence requires login");
-        Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired, targetObservedThisAttempt: true)
-               == AccountSwitchVerificationState.LoggedIn, "confirmed target wins");
+        Assert(AccountSwitchVerification.Evaluate(true, 2, 2, now, now, BattleNetLoginEvidence.RealAuthExpired)
+               == AccountSwitchVerificationState.LoginRequired, "local pointer cannot override explicit auth expiry");
         report.AppendLine("TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)");
     }
 

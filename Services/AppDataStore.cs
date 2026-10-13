@@ -37,6 +37,7 @@ public sealed class AppDataStore
 
     // 仅供隔离自测故障注入；生产代码默认 null。
     internal static Func<string, Exception?>? RestoreMutationFailureForSelfTest { get; set; }
+    internal static Func<string, Exception?>? RestorePreparationFailureForSelfTest { get; set; }
 
     public string Root { get; }
 
@@ -448,61 +449,99 @@ public sealed class AppDataStore
         Directory.CreateDirectory(RecoveryRoot);
 
         var transactionDirectory = Path.Combine(RecoveryRoot, "restore-" + Guid.NewGuid().ToString("N"));
-        var snapshotsDirectory = Path.Combine(transactionDirectory, "snapshots");
-        Directory.CreateDirectory(snapshotsDirectory);
-        var files = new List<RestoreJournalFile>();
-        var index = 0;
-        foreach (var snapshot in plan.FileSnapshots.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
-        {
-            var relative = Path.GetRelativePath(plan.TargetRoot, snapshot.Path).Replace('\\', '/');
-            if (relative.StartsWith("../", StringComparison.Ordinal) || relative == "..")
-                throw new InvalidDataException($"恢复 journal 路径越界：{snapshot.Path}");
-            string? snapshotFile = null;
-            if (snapshot.Existed)
-            {
-                snapshotFile = $"file-{index++:D8}.bin";
-                WriteDurableBytes(Path.Combine(snapshotsDirectory, snapshotFile), snapshot.Content!);
-            }
-            files.Add(new RestoreJournalFile(relative, snapshot.Existed, snapshotFile,
-                snapshot.LastWriteTimeUtc, snapshot.Attributes));
-        }
-
-        var directories = plan.DirectorySnapshots.Values
-            .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
-            .Select(snapshot => new RestoreJournalDirectory(
-                Path.GetRelativePath(plan.TargetRoot, snapshot.Path).Replace('\\', '/'),
-                snapshot.LastWriteTimeUtc, snapshot.Attributes))
-            .ToList();
-        var document = new RestoreJournalDocument(
-            1, accountId, DateTime.UtcNow, "Applying", plan.TargetRoot, files, directories, Array.Empty<string>());
-        var journalPath = Path.Combine(transactionDirectory, "journal.json");
-        WriteDurableText(journalPath, JsonSerializer.Serialize(document, JsonOptions));
-        // Stage and validate every input before the first target delete/write.
-        // This also detects locked/unreadable unhashed legacy files up front.
-        var prepared = new List<RestoreCopy>();
+        // Only this fresh invocation-owned directory may be removed on preparation failure.
+        // Existing recovery entries were rejected above and must never be auto-cleaned.
+        if (Directory.Exists(transactionDirectory) || File.Exists(transactionDirectory))
+            throw new IOException("恢复事务目录已存在，已中止准备。");
         try
         {
+            InjectRestorePreparationFailure("create-directory");
+            var snapshotsDirectory = Path.Combine(transactionDirectory, "snapshots");
+            Directory.CreateDirectory(snapshotsDirectory);
+            var files = new List<RestoreJournalFile>();
+            var index = 0;
+            foreach (var snapshot in plan.FileSnapshots.Values.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                var relative = Path.GetRelativePath(plan.TargetRoot, snapshot.Path).Replace('\\', '/');
+                if (relative.StartsWith("../", StringComparison.Ordinal) || relative == "..")
+                    throw new InvalidDataException($"恢复 journal 路径越界：{snapshot.Path}");
+                string? snapshotFile = null;
+                if (snapshot.Existed)
+                {
+                    snapshotFile = $"file-{index++:D8}.bin";
+                    InjectRestorePreparationFailure("snapshot-" + index);
+                    WriteDurableBytes(Path.Combine(snapshotsDirectory, snapshotFile), snapshot.Content!);
+                }
+                files.Add(new RestoreJournalFile(relative, snapshot.Existed, snapshotFile,
+                    snapshot.LastWriteTimeUtc, snapshot.Attributes));
+            }
+
+            var directories = plan.DirectorySnapshots.Values
+                .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(snapshot => new RestoreJournalDirectory(
+                    Path.GetRelativePath(plan.TargetRoot, snapshot.Path).Replace('\\', '/'),
+                    snapshot.LastWriteTimeUtc, snapshot.Attributes))
+                .ToList();
+            var document = new RestoreJournalDocument(
+                1, accountId, DateTime.UtcNow, "Preparing", plan.TargetRoot, files, directories, Array.Empty<string>());
+            var journalPath = Path.Combine(transactionDirectory, "journal.json");
+            InjectRestorePreparationFailure("journal");
+            WriteDurableText(journalPath, JsonSerializer.Serialize(document, JsonOptions));
+            // Stage and validate every input before the first target delete/write.
+            // This also detects locked/unreadable unhashed legacy files up front.
+            var prepared = new List<RestoreCopy>();
             var input = Path.Combine(transactionDirectory, "input");
             Directory.CreateDirectory(input);
             foreach (var copy in plan.Copies)
             {
                 EnsureNoReparsePath(copy.Source, true, "账号备份源文件");
                 var staged = Path.Combine(input, prepared.Count.ToString("D8"));
+                InjectRestorePreparationFailure("staging");
                 File.Copy(copy.Source, staged);
                 if (new FileInfo(staged).Length != copy.Entry.Size ||
                     (copy.Entry.Sha256 is not null && !string.Equals(ComputeSha256(staged), copy.Entry.Sha256, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidDataException($"恢复 staging 校验失败：{copy.Entry.RelativePath}");
                 prepared.Add(copy with { Source = staged });
             }
+            // Persist the boundary before ANY target directory creation/delete/overwrite.
+            // If this write fails we are still preparing: target has not been touched.
+            InjectRestorePreparationFailure("applying-journal");
+            ReplaceDurableText(journalPath, JsonSerializer.Serialize(document with { State = "Applying" }, JsonOptions));
+            return new RestoreJournalHandle(transactionDirectory, journalPath, prepared);
         }
-        catch
+        catch (Exception original)
         {
-            // Target is still untouched. A cleanup failure deliberately leaves
-            // a journal that fences future recovery and contains originals.
-            try { Directory.Delete(transactionDirectory, true); } catch { }
+            // Every exception in this boundary precedes the first target mutation.
+            // Cleanup failure retains the exact path and blocks future restore, never hides it.
+            try
+            {
+                InjectRestorePreparationFailure("cleanup");
+                EnsureNoReparsePath(transactionDirectory, true, "本次准备事务目录");
+                // Directory.Exists can hide an access error as false; attempt cleanup
+                // and only regard a genuinely missing directory as already removed.
+                try { Directory.Delete(transactionDirectory, true); }
+                catch (DirectoryNotFoundException) { }
+            }
+            catch (Exception cleanupError)
+            {
+                throw new IOException($"恢复准备失败，目标尚未修改；本次事务目录无法清理：{transactionDirectory}",
+                    new AggregateException(original, cleanupError));
+            }
             throw;
         }
-        return new RestoreJournalHandle(transactionDirectory, journalPath, prepared);
+    }
+
+    private static void InjectRestorePreparationFailure(string stage)
+    {
+        var error = RestorePreparationFailureForSelfTest?.Invoke(stage);
+        if (error is not null) throw error;
+    }
+
+    private static void ReplaceDurableText(string path, string text)
+    {
+        var temporary = path + ".next";
+        WriteDurableText(temporary, text);
+        File.Replace(temporary, path, null);
     }
 
     private static void DeleteRestoreJournal(RestoreJournalHandle journal)
@@ -537,7 +576,7 @@ public sealed class AppDataStore
         return journal.Path;
     }
 
-    private void EnsureNoPendingRestoreJournal()
+    internal void EnsureNoPendingRestoreJournal()
     {
         if (File.Exists(RecoveryRoot))
             throw new IOException($"恢复 journal 路径被文件占用：{RecoveryRoot}");

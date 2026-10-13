@@ -98,18 +98,42 @@ internal static class UpdateSafetySelfTest
         }
         var now = DateTime.UtcNow;
         void State(bool running, long? id, DateTime deadline, BattleNetLoginEvidence evidence, AccountSwitchVerificationState expected, string label) =>
-            Check(AccountSwitchVerification.Evaluate(running, id, 2, now, deadline, evidence,
-                targetObservedThisAttempt: expected == AccountSwitchVerificationState.LoggedIn) == expected, label);
+            Check(AccountSwitchVerification.Evaluate(running, id, 2, now, deadline, evidence) == expected, label);
         State(false, null, now.AddSeconds(1), BattleNetLoginEvidence.None, AccountSwitchVerificationState.WaitingForBattleNet, "absent client before deadline waits");
         State(false, null, now, BattleNetLoginEvidence.None, AccountSwitchVerificationState.Unconfirmed, "absent client at deadline terminates");
         State(false, 2, now, BattleNetLoginEvidence.None, AccountSwitchVerificationState.Unconfirmed, "stale target cache cannot confirm absent client");
         State(true, 1, now.AddSeconds(1), BattleNetLoginEvidence.None, AccountSwitchVerificationState.WaitingForLogin, "running client waits for target login");
         State(true, 1, now, BattleNetLoginEvidence.None, AccountSwitchVerificationState.Unconfirmed, "running wrong account times out");
-        State(true, 2, now, BattleNetLoginEvidence.None, AccountSwitchVerificationState.LoggedIn, "confirmed target wins over deadline");
+        State(true, 2, now.AddSeconds(1), BattleNetLoginEvidence.None, AccountSwitchVerificationState.WaitingForLogin, "changed local pointer is NOT authenticated login");
+        State(true, 2, now.AddSeconds(1), BattleNetLoginEvidence.LoginPage, AccountSwitchVerificationState.WaitingForLogin, "correct pointer on login page remains unconfirmed");
         State(true, 1, now, BattleNetLoginEvidence.RealAuthExpired, AccountSwitchVerificationState.LoginRequired, "real expiry precedes timeout");
         State(true, 2, now, BattleNetLoginEvidence.None, AccountSwitchVerificationState.Unconfirmed, "running client with only old cached target is not confirmed");
         State(true, 2, now, BattleNetLoginEvidence.RealAuthExpired, AccountSwitchVerificationState.LoginRequired, "old cached target cannot hide real auth expiry");
         State(false, null, now, BattleNetLoginEvidence.RealAuthExpired, AccountSwitchVerificationState.LoginRequired, "reliable auth expiry precedes deadline even if client subsequently exits");
+        var probePaths = new BattleNetPaths(Path.Combine(workspace, "auth-local"), Path.Combine(workspace, "auth-roaming"));
+        var logs = Path.Combine(probePaths.LocalRoot, "Logs");
+        Directory.CreateDirectory(logs);
+        var file = Path.Combine(logs, "auth.log");
+        File.WriteAllText(file, "session expired\n");
+        var probe = new BattleNetAuthLogProbe(probePaths);
+        var cursor = probe.CaptureCursor();
+        Check(probe.ReadAppended(cursor) == BattleNetLoginEvidence.None, "old expiry log ignored by new attempt cursor");
+        File.AppendAllText(file, "authentication succeeded account_id=2\n");
+        Check(probe.ReadAppended(cursor) == BattleNetLoginEvidence.None,
+            "unverified success-shaped log cannot manufacture target/session-bound authentication");
+        File.AppendAllText(file, "session expired\n");
+        Check(probe.ReadAppended(cursor) == BattleNetLoginEvidence.RealAuthExpired, "fresh appended expiry is reported");
+        var newAttempt = probe.CaptureCursor();
+        Check(probe.ReadAppended(newAttempt) == BattleNetLoginEvidence.None, "later startup gets fresh evidence scope, no inherited expiry");
+        File.WriteAllText(file, "session expired\n");
+        Check(probe.ReadAppended(newAttempt) == BattleNetLoginEvidence.None, "truncated historic log not reread as fresh failure");
+        var history = Path.Combine(logs, "old-rotated.log");
+        File.WriteAllText(history, "session expired\n");
+        File.SetLastWriteTimeUtc(history, now.AddDays(-1));
+        Check(probe.ReadAppended(newAttempt) == BattleNetLoginEvidence.None, "copied historical logs ignored");
+        Check(probe.ReadAppended(new(new Dictionary<string, long>())) == BattleNetLoginEvidence.None,
+            "failed/unknown cursor cannot attribute historical evidence to this attempt");
+        report.AppendLine("NOT TESTED authenticated success/event ordering: no reliable positive target/session-bound source exists; production stays unconfirmed rather than inventing success");
     }
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {

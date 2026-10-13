@@ -4,7 +4,8 @@ using System.Text.RegularExpressions;
 namespace CloudLightBlizzard.Services;
 
 public enum BattleNetLoginEvidence { None, LoginPage, RealAuthExpired }
-public sealed record BattleNetAuthLogCursor(IReadOnlyDictionary<string, long> Lengths);
+public sealed record BattleNetAuthLogCursor(IReadOnlyDictionary<string, long> Lengths,
+    DateTime CapturedAtUtc = default, bool IsValid = false);
 
 /// <summary>只读查看切换开始后的 Battle.net 日志；不保存日志内容，也不匹配或提取认证值。</summary>
 public sealed class BattleNetAuthLogProbe
@@ -22,13 +23,13 @@ public sealed class BattleNetAuthLogProbe
     public BattleNetAuthLogCursor CaptureCursor()
     {
         var root = Path.Combine(_paths.LocalRoot, "Logs");
-        if (!Directory.Exists(root)) return new(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase));
+        var capturedAt = DateTime.UtcNow;
+        if (!Directory.Exists(root)) return new(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase), capturedAt, true);
         try
         {
             return new(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                 .Select(path => new FileInfo(path))
-                .Where(info => info.Length <= 8 * 1024 * 1024)
-                .ToDictionary(info => info.FullName, info => info.Length, StringComparer.OrdinalIgnoreCase));
+                .ToDictionary(info => info.FullName, info => info.Length, StringComparer.OrdinalIgnoreCase), capturedAt, true);
         }
         catch { return new(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)); }
     }
@@ -36,20 +37,33 @@ public sealed class BattleNetAuthLogProbe
     public BattleNetLoginEvidence ReadAppended(BattleNetAuthLogCursor cursor)
     {
         var root = Path.Combine(_paths.LocalRoot, "Logs");
-        if (!Directory.Exists(root)) return BattleNetLoginEvidence.None;
+        if (!cursor.IsValid || !Directory.Exists(root)) return BattleNetLoginEvidence.None;
         try
         {
+            var evidence = BattleNetLoginEvidence.None;
             foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                          .Select(path => new FileInfo(path)).Where(info => info.Length <= 8 * 1024 * 1024)
                          .OrderByDescending(info => info.LastWriteTimeUtc).Take(12))
             {
                 string text;
-                var previousLength = cursor.Lengths.TryGetValue(file.FullName, out var length) && file.Length >= length
-                    ? length : 0;
+                long previousLength;
+                if (cursor.Lengths.TryGetValue(file.FullName, out var length))
+                {
+                    // Rotation/truncation cannot be proven to be appended events of this attempt.
+                    if (file.Length < length || file.LastWriteTimeUtc < cursor.CapturedAtUtc) continue;
+                    previousLength = length;
+                }
+                else
+                {
+                    // Do not reinterpret pre-existing/copied historical logs as this session.
+                    if (file.CreationTimeUtc < cursor.CapturedAtUtc || file.LastWriteTimeUtc < cursor.CapturedAtUtc) continue;
+                    previousLength = 0;
+                }
                 try { text = ReadAppended(file.FullName, previousLength, 256 * 1024); } catch { continue; }
                 if (RealExpiry.IsMatch(text)) return BattleNetLoginEvidence.RealAuthExpired;
-                if (LoginPage.IsMatch(text)) return BattleNetLoginEvidence.LoginPage;
+                if (LoginPage.IsMatch(text)) evidence = BattleNetLoginEvidence.LoginPage;
             }
+            return evidence;
         }
         catch { }
         return BattleNetLoginEvidence.None;

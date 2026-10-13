@@ -76,7 +76,18 @@ internal sealed class AccountOperationBackend
 internal sealed class AccountOperationService(AccountOperationGate gate, AccountOperationBackend backend,
     AccountSwitchLog log)
 {
-    internal Task BeginShutdownAsync() => gate.BeginShutdownAsync();
+    private Exception? _mutationFailure;
+    internal async Task BeginShutdownAsync()
+    {
+        await gate.BeginShutdownAsync();
+        if (_mutationFailure is not null)
+            throw new InvalidOperationException("账号文件操作曾失败，无法确认更新安装安全；请重新启动软件并检查恢复诊断。", _mutationFailure);
+    }
+    private async Task TrackMutationAsync(Func<Task> action)
+    {
+        try { await action(); }
+        catch (Exception ex) { _mutationFailure ??= ex; throw; }
+    }
     internal IDisposable EnterOperation() => gate.Enter();
 
     internal async Task RunExclusiveAsync(Func<CancellationToken, Task> action)
@@ -85,7 +96,8 @@ internal sealed class AccountOperationService(AccountOperationGate gate, Account
         await action(gate.ShutdownToken);
     }
 
-    internal async Task<AccountSwitchExecution> SwitchAsync(long id, Action<string>? status = null)
+    internal async Task<AccountSwitchExecution> SwitchAsync(long id, Action<string>? status = null,
+        Action? beginVerification = null)
     {
         using var lease = gate.Enter();
         var token = gate.ShutdownToken;
@@ -140,10 +152,15 @@ internal sealed class AccountOperationService(AccountOperationGate gate, Account
                     stage = "区服文件";
                     log.Write("RegionFilesSwitchStarted", current, id, targetRegion: target.Region.ToString());
                     RegionSwitchLog.Write("Region files begin", target.Region);
-                    var result = await backend.Normalize(target.Region,
-                        new Progress<RegionProgress>(p => status?.Invoke(p.Message)));
+                    RegionSwitchResult result = null!;
+                    await TrackMutationAsync(async () => result = await backend.Normalize(target.Region,
+                        new Progress<RegionProgress>(p => status?.Invoke(p.Message))));
                     if (result.Outcome == RegionSwitchOutcome.Failed)
-                        throw new InvalidDataException($"区服文件切换失败，{result.FailedCount} 个文件无法处理。" + FormatIssues(result));
+                    {
+                        var error = new InvalidDataException($"区服文件切换失败，{result.FailedCount} 个文件无法处理。" + FormatIssues(result));
+                        _mutationFailure ??= error;
+                        throw error;
+                    }
                     if (result.Outcome == RegionSwitchOutcome.PartialSuccess)
                         warning = $"{result.FailedCount} 个区服文件异常，已跳过；其他文件已处理。" + FormatIssues(result);
                     log.Write("RegionFilesSwitchCompleted", current, id, detail:
@@ -157,13 +174,15 @@ internal sealed class AccountOperationService(AccountOperationGate gate, Account
                     stage = "目标账号恢复";
                     status?.Invoke($"正在准备「{target.BattleTag}」的账号…");
                     log.Write("TargetRestoreStarted", current, id);
-                    await backend.Restore(id); // Do not abandon an in-flight transaction at shutdown.
+                    await TrackMutationAsync(() => backend.Restore(id)); // Never abandon restore/rollback at shutdown.
                     log.Write("TargetRestoreCompleted", current, id);
                 },
                 async () =>
                 {
                     token.ThrowIfCancellationRequested();
                     stage = "Battle.net 启动";
+                    // Scope log evidence after old-client shutdown and target restore, not before the switch.
+                    beginVerification?.Invoke();
                     await backend.Launch();
                     log.Write("BattleNetStarted", current, id);
                 });
@@ -184,7 +203,7 @@ internal sealed class AccountOperationService(AccountOperationGate gate, Account
         if (!await backend.Quit()) throw new InvalidOperationException("Battle.net 未能完全退出，已中止操作。");
         token.ThrowIfCancellationRequested();
         EnsureGameClosed();
-        await backend.ClearPointer();
+        await TrackMutationAsync(backend.ClearPointer);
         token.ThrowIfCancellationRequested();
         await backend.Launch();
     });

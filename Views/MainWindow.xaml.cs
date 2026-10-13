@@ -48,6 +48,9 @@ public partial class MainWindow : Window
     private bool _updateCancellationDisposed;
     private readonly UpdateInstallerLaunchCoordinator _installerLaunchCoordinator;
     private bool _installerStarted;
+    internal Func<ExitCleanupStage, Task>? CleanupFailureForSelfTest { get; set; }
+    internal Action<string>? UpdateFailureForSelfTest { get; set; }
+    internal ExitLifecycleCoordinator ExitResult => _exitLifecycleCoordinator;
     private readonly AnnouncementService _announcementService;
     private readonly INotificationService _notificationService;
     private readonly DropsNotificationGate _dropsNotificationGate;
@@ -58,9 +61,11 @@ public partial class MainWindow : Window
     public AnnouncementService AnnouncementState => _announcementService;
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null,
-        IInstallerLauncher? installerLauncher = null, AppSettings? settings = null, BattleNetPaths? paths = null)
+        IInstallerLauncher? installerLauncher = null, AppSettings? settings = null, BattleNetPaths? paths = null,
+        TimeSpan? exitBudgetForSelfTest = null)
     {
         _vm = new MainViewModel(logSession, settings, paths);
+        if (exitBudgetForSelfTest is not null) _exitLifecycleCoordinator = new(exitBudgetForSelfTest);
         _installerLaunchCoordinator = new UpdateInstallerLaunchCoordinator(
             installerLauncher ?? new ProcessInstallerLauncher());
         _announcementService = new AnnouncementService(_vm.Settings, httpClients: _vm.CloudHttpClients);
@@ -444,6 +449,15 @@ public partial class MainWindow : Window
         var started = false;
         try
         {
+            if (!_exitLifecycleCoordinator.InstallerReady)
+            {
+                _vm.UpdateDownloader.MarkFailed();
+                var stages = string.Join("、", _exitLifecycleCoordinator.Stages
+                    .Where(stage => stage.Critical && stage.Error is not null).Select(stage => stage.Stage));
+                ReportUpdateFailure($"关键退出清理未成功（{_exitLifecycleCoordinator.State}；{stages}），已阻止安装。\n" +
+                    "程序将保持退出，不会重新启用已释放的服务；请查看退出诊断并重新启动后重试。");
+                return false;
+            }
             _vm.UpdateDownloader.MarkLaunchingInstaller();
             started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(installerPath,
                 PersistSettingsBeforeUpdate,
@@ -452,8 +466,7 @@ public partial class MainWindow : Window
             if (!started)
             {
                 _vm.UpdateDownloader.MarkFailed();
-                MessageBox.Show($"无法启动更新安装程序：{error}\n后台已安全停止；请重新打开程序后重试。",
-                    "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ReportUpdateFailure($"无法启动更新安装程序：{error}\n后台已安全停止；请重新打开程序后重试。");
             }
         }
         finally
@@ -461,6 +474,12 @@ public partial class MainWindow : Window
             if (!Dispatcher.HasShutdownStarted) Close();
         }
         return started;
+    }
+
+    private void ReportUpdateFailure(string message)
+    {
+        if (UpdateFailureForSelfTest is { } report) report(message);
+        else MessageBox.Show(message, "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private bool PersistSettingsBeforeUpdate()
@@ -735,28 +754,44 @@ public partial class MainWindow : Window
         // abandoning an in-flight account restore can corrupt the user's
         // profile.  The page/worker stages below have their own finite waits.
         _ = cancellationToken;
-        try { await _accountDrainTask; } catch (Exception ex) { RecordExitError("account drain", ex); }
-        try { await _dropsPage.DisposeAsync().AsTask(); } catch (Exception ex) { RecordExitError("Drops page", ex); }
-        try { _diagnosticsPage.Dispose(); } catch { }
-        try { await _vm.DropsHost.DisposeAsync().AsTask(); } catch (Exception ex) { RecordExitError("Drops Host", ex); }
-        try { _announcementService.Dispose(); } catch { }
+        async Task Stage(ExitCleanupStage stage, Func<Task> action)
+        {
+            await _exitLifecycleCoordinator.RunStageAsync(stage, async () =>
+            {
+                await action();
+                if (CleanupFailureForSelfTest is { } inject) await inject(stage);
+            });
+        }
+        await Stage(ExitCleanupStage.AccountOperationDrain, () => _accountDrainTask);
+        await Stage(ExitCleanupStage.DropsPageCleanup, () => _dropsPage.DisposeAsync().AsTask());
+        await Stage(ExitCleanupStage.DropsHostShutdown, () => _vm.DropsHost.DisposeAsync().AsTask());
+        async Task Warning(Action action)
+        {
+            await _exitLifecycleCoordinator.RunStageAsync(ExitCleanupStage.NonCriticalCleanup, () =>
+            { action(); return Task.CompletedTask; }, critical: false);
+        }
+        await Warning(_diagnosticsPage.Dispose);
+        await Warning(_announcementService.Dispose);
         _vm.RegionSwitchCompleted -= OnRegionSwitchCompleted;
         _vm.DropsHost.EventReceived -= OnDropsEventForNotification;
-        _dropsNotificationGate.Dispose();
-        try { _notificationService.Dispose(); } catch { }
-        try { _vm.CloudHttpClients.Dispose(); } catch { }
+        await Warning(_dropsNotificationGate.Dispose);
+        await Warning(_notificationService.Dispose);
+        await Warning(_vm.CloudHttpClients.Dispose);
         if (!_updateCancellationDisposed)
         {
             _updateCancellation.Dispose();
             _updateCancellationDisposed = true;
         }
-        if (WindowState != WindowState.Maximized)
+        if (CleanupFailureForSelfTest is { } injectWarning)
+            await _exitLifecycleCoordinator.RunStageAsync(ExitCleanupStage.NonCriticalCleanup,
+                () => injectWarning(ExitCleanupStage.NonCriticalCleanup), critical: false);
+        await Stage(ExitCleanupStage.SettingsPersistence, () =>
         {
-            _vm.Settings.WindowWidth = ActualWidth;
-            _vm.Settings.WindowHeight = ActualHeight;
-        }
-        _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized;
-        try { _vm.Settings.Save(); } catch { }
+            if (!PersistSettingsBeforeUpdate()) throw new IOException("退出时设置无法保存。");
+            return Task.CompletedTask;
+        });
+        foreach (var result in _exitLifecycleCoordinator.Stages.Where(stage => stage.Error is not null))
+            RecordExitError(result.Stage.ToString(), result.Error!);
     }
 
     private static void RecordExitError(string stage, Exception error)

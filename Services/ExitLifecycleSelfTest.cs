@@ -37,8 +37,10 @@ public static class ExitLifecycleSelfTest
         foreach (var scenario in new[] { "generate", "waiting", "network", "queued-success", "cancel-race", "update" })
             await CheckPageAsync(scenario, report);
         await CheckHostAsync(report);
+        await CheckHostAsync(report, denyConfirmation: true);
         await CheckWindowPolicyAsync(report);
         await CheckUpdateExitAsync(report);
+        await CheckUpdateFailuresAsync(report);
         await CheckActualGuiOperationAsync(report);
         var exceptional = new ExitLifecycleCoordinator();
         await exceptional.BeginAsync(_ => Task.FromException(new IOException("fixture cleanup failure")));
@@ -156,7 +158,101 @@ public static class ExitLifecycleSelfTest
     private sealed class FixtureInstaller : IInstallerLauncher
     {
         internal int Calls;
-        public Process? Start(string path) { Calls++; return Process.GetCurrentProcess(); }
+        internal bool Fail;
+        public Process? Start(string path)
+        {
+            Calls++;
+            if (Fail) throw new IOException("fixture installer launch failure");
+            return Process.GetCurrentProcess();
+        }
+    }
+
+    private static async Task CheckUpdateFailuresAsync(StringBuilder report)
+    {
+        foreach (var mode in new[] { "account", "pending-journal", "page", "host", "settings", "timeout", "warning", "launcher" })
+        {
+            var launcher = new FixtureInstaller { Fail = mode == "launcher" };
+            var root = Path.Combine(AppPaths.Current.Root, "exit-failure-" + mode);
+            Directory.CreateDirectory(root);
+            var window = new MainWindow(installerLauncher: launcher,
+                settings: new AppSettings { EnableWindowsNotifications = false },
+                paths: new BattleNetPaths(Path.Combine(root, "local"), Path.Combine(root, "roaming")),
+                exitBudgetForSelfTest: mode == "timeout" ? TimeSpan.FromMilliseconds(10) : null);
+            var messages = new List<string>();
+            window.UpdateFailureForSelfTest = messages.Add;
+            window.CleanupFailureForSelfTest = stage =>
+            {
+                if ((mode == "page" && stage == ExitCleanupStage.DropsPageCleanup) ||
+                    (mode == "host" && stage == ExitCleanupStage.DropsHostShutdown) ||
+                    (mode == "settings" && stage == ExitCleanupStage.SettingsPersistence) ||
+                    (mode == "warning" && stage == ExitCleanupStage.NonCriticalCleanup))
+                    throw new IOException("fixture failure in " + stage);
+                return Task.CompletedTask;
+            };
+            var vm = (MainViewModel)window.DataContext;
+            if (mode == "pending-journal")
+            {
+                var profiles = new AppDataStore(new BattleNetPaths(Path.Combine(root, "local"), Path.Combine(root, "roaming")),
+                    Path.Combine(root, "profiles"));
+                var evidence = Path.Combine(profiles.Root + ".recovery", "restore-old", "snapshot.bin");
+                Directory.CreateDirectory(Path.GetDirectoryName(evidence)!);
+                File.WriteAllText(evidence, "retained original bytes");
+                typeof(MainViewModel).GetField("_profiles", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, profiles);
+            }
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task? operation = null;
+            if (mode is "account" or "timeout")
+            {
+                var backend = new AccountOperationBackend
+                {
+                    ResolveTarget = id => new(id, "fixture", Services.OverwatchRegion.OverwatchRegion.International),
+                    ValidateProfile = _ => Task.CompletedTask, ReadActive = () => Task.FromResult<long?>(1),
+                    GameRunning = () => false, RegionStatus = () => Task.FromResult(new Services.OverwatchRegion.RegionSnapshotStatus()),
+                    Normalize = (_, _) => throw new InvalidOperationException("no fixture region"),
+                    Quit = () => Task.FromResult(true), ClearPointer = () => Task.CompletedTask, Launch = () => Task.CompletedTask,
+                    Restore = async _ =>
+                    {
+                        entered.SetResult(); await released.Task;
+                        if (mode == "account") throw new IOException("fixture restore/rollback failure");
+                    },
+                };
+                var service = new AccountOperationService(new AccountOperationGate(Path.Combine(root, "operation.lock")),
+                    backend, new AccountSwitchLog(Path.Combine(root, "switch.log")));
+                typeof(MainViewModel).GetField("_accountOperations", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, service);
+                operation = vm.SwitchToAsync(new AccountRow { AccountId = 2, BattleTag = "fixture", HasProfile = true });
+                await entered.Task;
+            }
+            var installer = Path.Combine(root, "fake-installer.exe");
+            File.WriteAllText(installer, "fixture: never executed");
+            var updating = window.InstallDownloadedUpdate(installer);
+            if (operation is not null)
+            {
+                Assert(!updating.IsCompleted && launcher.Calls == 0, "failed account transaction is still drained before installer decision", report);
+                if (mode == "timeout")
+                {
+                    await Task.Delay(50);
+                    Assert(!updating.IsCompleted && vm.Busy && launcher.Calls == 0,
+                        "cleanup budget never abandons in-flight restore or launches installer", report);
+                }
+                released.SetResult();
+                await operation;
+            }
+            var result = await updating.WaitAsync(TimeSpan.FromSeconds(8));
+            var allowed = mode == "warning";
+            Assert(result == allowed && launcher.Calls == (mode is "warning" or "launcher" ? 1 : 0),
+                mode + ": actual window installer invocation count and result correct", report);
+            Assert(window.ExitResult.IsCompleted && !window.IsEnabled && !vm.Busy,
+                mode + ": completed controlled exit never resumes disposed UI/services", report);
+            Assert(window.ExitResult.InstallerReady == (mode is "warning" or "launcher") &&
+                (allowed || messages.Count == 1), mode + ": strict readiness/failure reason retained", report);
+            Assert(!await window.InstallDownloadedUpdate(installer) || allowed,
+                mode + ": repeated installation cannot start another installer", report);
+            Assert(launcher.Calls == (mode is "warning" or "launcher" ? 1 : 0), mode + ": one-shot launch gate", report);
+            if (mode == "pending-journal")
+                Assert(File.ReadAllText(Path.Combine(root, "profiles.recovery", "restore-old", "snapshot.bin")) == "retained original bytes",
+                    "update gate protects old recovery evidence without auto-cleaning", report);
+        }
     }
 
     private static async Task CheckActualGuiOperationAsync(StringBuilder report)
@@ -199,6 +295,30 @@ public static class ExitLifecycleSelfTest
         held.SetResult();
         await first;
         Assert(!vm.Busy && mutations == 1, "actual GUI releases Busy after one switch pipeline", report);
+        Directory.CreateDirectory(paths.RoamingDir);
+        File.WriteAllText(Path.Combine(paths.RoamingDir, "fixture.config"), "isolated saved profile");
+        var profiles = (AppDataStore)typeof(MainViewModel).GetField("_profiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm)!;
+        profiles.Save(2, "Fixture#2");
+        var savedFile = Path.Combine(profiles.Root, "2", "BattleNet", "fixture.config");
+        var savedBytes = File.ReadAllBytes(savedFile);
+        vm.Accounts.Add(target);
+        Directory.CreateDirectory(paths.LocalRoot);
+        using (var database = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + paths.CachedDataDb + ";Pooling=False"))
+        {
+            database.Open();
+            using var command = database.CreateCommand();
+            command.CommandText = "CREATE TABLE key_value_store(key TEXT,value TEXT); INSERT INTO key_value_store VALUES('features_cached_data_points','{\"account_id\":2}');";
+            command.ExecuteNonQuery();
+        }
+        Assert(new AccountReader(paths).ReadActiveAccountId() == 2, "isolated cache genuinely points at target", report);
+        typeof(MainViewModel).GetProperty("ClientRunning")!.SetValue(vm, true);
+        await (Task)typeof(MainViewModel).GetMethod("VerifySwitchAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, new object[] { 2L })!;
+        Assert(vm.StatusText.Contains("等待") && !vm.StatusText.Contains("已切换到"),
+            "actual GUI correct pointer + running process remains waiting without auth proof", report);
+        var cliUnknown = await AccountCommandRunner.ExecuteAsync(new[] { "--switch", "2" }, cli,
+            (id, _, deadline) => Task.FromResult(AccountSwitchVerification.Evaluate(true, 2, id, DateTime.UtcNow, deadline, BattleNetLoginEvidence.None)), TimeSpan.Zero);
+        Assert(cliUnknown.ExitCode == 3 && cliUnknown.Status == "unconfirmed", "CLI uses same conservative semantics for correct local pointer", report);
+        typeof(MainViewModel).GetProperty("ClientRunning")!.SetValue(vm, false);
         typeof(MainViewModel).GetField("_pendingSwitchUntil", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(vm, DateTime.UtcNow.AddSeconds(-1));
         Assert(!vm.ClientRunning, "fixture client remains absent", report);
@@ -206,25 +326,37 @@ public static class ExitLifecycleSelfTest
             .Invoke(vm, new object[] { 2L })!;
         await verify;
         Assert(typeof(MainViewModel).GetField("_pendingSwitchId", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm) is null &&
-            vm.StatusText.Contains("暂时没有确认"), "actual GUI consumes absent-client timeout and clears pending verification", report);
+            vm.StatusText.Contains("登录未确认"), "actual GUI consumes absent-client timeout and clears pending verification", report);
         typeof(MainViewModel).GetProperty("ClientRunning")!.SetValue(vm, true);
         typeof(MainViewModel).GetMethod("ResumeUnconfirmedVerificationIfClientStarted", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(vm, new object[] { false });
         Assert((long?)typeof(MainViewModel).GetField("_pendingSwitchId", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm) == 2 &&
             (DateTime)typeof(MainViewModel).GetField("_pendingSwitchUntil", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm)! > DateTime.UtcNow,
             "actual GUI allows bounded revalidation after later client start", report);
+        await (Task)typeof(MainViewModel).GetMethod("VerifySwitchAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, new object[] { 2L })!;
+        Assert(vm.StatusText.Contains("等待"), "late client startup cannot inherit local-pointer login success", report);
+        var logs = Path.Combine(paths.LocalRoot, "Logs");
+        Directory.CreateDirectory(logs);
+        File.WriteAllText(Path.Combine(logs, "fresh-auth.log"), "session expired\n");
+        await (Task)typeof(MainViewModel).GetMethod("VerifySwitchAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, new object[] { 2L })!;
+        var cliExpired = await AccountCommandRunner.ExecuteAsync(new[] { "--switch", "2" }, cli,
+            (id, _, deadline) => Task.FromResult(AccountSwitchVerification.Evaluate(true, 2, id, DateTime.UtcNow, deadline, BattleNetLoginEvidence.RealAuthExpired)), TimeSpan.Zero);
+        Assert(vm.StatusText.Contains("需要重新登录") && target.HasProfile && profiles.HasProfile(2) &&
+            File.ReadAllBytes(savedFile).SequenceEqual(savedBytes) && cliExpired.ExitCode == 3 && cliExpired.Status == "login_required",
+            "GUI/CLI explicit expiry overrides correct pointer; saved snapshot not deleted", report);
         await vm.BeginShutdownAsync();
         await vm.DropsHost.DisposeAsync();
         vm.CloudHttpClients.Dispose();
     }
 
-    private static async Task CheckHostAsync(StringBuilder report)
+    private static async Task CheckHostAsync(StringBuilder report, bool denyConfirmation = false)
     {
         var repo = new DirectoryInfo(AppContext.BaseDirectory);
         while (repo is not null && !File.Exists(Path.Combine(repo.FullName, ".worker-build-venv", "Scripts", "python.exe")))
             repo = repo.Parent;
         if (repo is null) throw new InvalidOperationException("Isolated Worker fixture requires existing Python build environment.");
-        await using var host = new DropsHostService();
+        var host = new DropsHostService();
+        if (denyConfirmation) host.WorkerExitConfirmedForSelfTest = _ => false;
         int? pid = null;
         host.SnapshotChanged += (_, snapshot) => { if (snapshot.ProcessId is int id) pid = id; };
         host.ConfigureTimeoutForSelfTest((_, command) => command == "shutdown" ? TimeSpan.FromMilliseconds(150) : null);
@@ -240,15 +372,27 @@ public static class ExitLifecycleSelfTest
             start.ArgumentList.Add("import sys,json,time\nfor line in sys.stdin:\n r=json.loads(line)\n if r['command']=='shutdown': time.sleep(60)\n print(json.dumps({'type':'response','id':r['id'],'ok':True,'result':{}}),flush=True)");
             return start;
         });
-        await host.RequestAsync(DropsPlatform.Bilibili, "load_state").WaitAsync(TimeSpan.FromSeconds(5));
-        host.BeginShutdown();
-        var rejected = false;
-        try { await host.RequestAsync(DropsPlatform.Bilibili, "start"); } catch (ObjectDisposedException) { rejected = true; }
-        var one = host.DisposeAsync().AsTask();
-        await Task.WhenAll(one, host.DisposeAsync().AsTask()).WaitAsync(TimeSpan.FromSeconds(8));
-        var alive = false;
-        try { using var process = Process.GetProcessById(pid!.Value); alive = !process.HasExited; } catch (ArgumentException) { }
-        Assert(pid.HasValue && !alive && rejected, "real unresponsive isolated Worker reaped; new work rejected; double Host dispose safe", report);
+        try
+        {
+            await host.RequestAsync(DropsPlatform.Bilibili, "load_state").WaitAsync(TimeSpan.FromSeconds(5));
+            host.BeginShutdown();
+            var rejected = false;
+            try { await host.RequestAsync(DropsPlatform.Bilibili, "start"); } catch (ObjectDisposedException) { rejected = true; }
+            var one = host.DisposeAsync().AsTask();
+            Exception? shutdownFailure = null;
+            try { await Task.WhenAll(one, host.DisposeAsync().AsTask()).WaitAsync(TimeSpan.FromSeconds(8)); }
+            catch (AggregateException ex) { shutdownFailure = ex; }
+            var alive = false;
+            try { using var process = Process.GetProcessById(pid!.Value); alive = !process.HasExited; } catch (ArgumentException) { }
+            Assert(pid.HasValue && !alive && rejected, "real unresponsive isolated Worker reaped; new work rejected; double Host dispose safe", report);
+            Assert(denyConfirmation ? shutdownFailure is not null : shutdownFailure is null,
+                "Host reports critical failure when owned Worker exit cannot be confirmed: " + denyConfirmation, report);
+        }
+        finally
+        {
+            try { await host.DisposeAsync(); }
+            catch (AggregateException) when (denyConfirmation) { }
+        }
     }
 
     private static Task InvokeTask(object owner, string method) =>

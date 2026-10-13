@@ -427,7 +427,6 @@ public sealed class MainViewModel : ObservableObject
     private const int SwitchVerifySeconds = 150;
     private long? _pendingSwitchId;
     private long? _unconfirmedSwitchId;
-    private long? _pendingInitialActiveId;
     private DateTime _pendingSwitchUntil;
     private DateTime _pendingSwitchStartedUtc;
     private BattleNetAuthLogCursor _pendingLogCursor = new(new Dictionary<string, long>());
@@ -522,8 +521,7 @@ public sealed class MainViewModel : ObservableObject
         var evidence = await Task.Run(() => _authLogProbe.ReadAppended(_pendingLogCursor));
         if (_shuttingDown || Busy || _pendingSwitchId != targetId || _pendingSwitchStartedUtc != verificationStarted) return;
         var verification = AccountSwitchVerification.Evaluate(ClientRunning, active, targetId,
-            DateTime.UtcNow, _pendingSwitchUntil, evidence,
-            targetObservedThisAttempt: _pendingInitialActiveId.HasValue && _pendingInitialActiveId != targetId);
+            DateTime.UtcNow, _pendingSwitchUntil, evidence);
         if (verification == AccountSwitchVerificationState.WaitingForBattleNet)
         {
             StatusText = "正在等待 Battle.net 启动…";
@@ -566,14 +564,14 @@ public sealed class MainViewModel : ObservableObject
         {
             StatusText = evidence == BattleNetLoginEvidence.LoginPage
                 ? "Battle.net 已打开登录页面，正在等待明确的登录结果…"
-                : "正在等待 Battle.net 完成登录…";
+                : "账号配置已恢复，正在等待 Battle.net 登录确认…";
             return;
         }
 
         _pendingSwitchId = null;
         _unconfirmedSwitchId = targetId;
         var target = Accounts.FirstOrDefault(a => a.AccountId == targetId);
-        StatusText = $"暂时没有确认「{target?.BattleTag ?? targetId.ToString()}」的登录结果。可以继续等待或打开 Battle.net 查看。";
+        StatusText = $"「{target?.BattleTag ?? targetId.ToString()}」账号配置已恢复，登录未确认。请打开 Battle.net 查看。";
         _switchLog.Write("Unconfirmed", targetAccountId: targetId,
             detail: "No expiry flag written; active account was not confirmed before timeout");
     }
@@ -620,14 +618,11 @@ public sealed class MainViewModel : ObservableObject
                                              .Distinct().OrderBy(x => x));
             if (activeId == _lastActiveId && idSet == _lastIdSet) return;
 
-            var knownBefore = new HashSet<long>(Accounts.Select(r => r.AccountId));
             ApplyAccounts(list, activeId);
-            if (CurrentAccount is { IsExpired: true } exp)
-                StatusText = $"「{exp.BattleTag}」已经重新登录，建议更新账号备份。";
-            else if (CurrentAccount is { } cur && !knownBefore.Contains(cur.AccountId))
-                StatusText = $"检测到新登录的账号「{cur.BattleTag}」，可以保存为账号备份。";
-            else if (CurrentAccount is { } c2)
-                StatusText = $"当前登录账号已变为「{c2.BattleTag}」。";
+            // DB/pointer refresh is local configuration evidence, not server authentication.
+            // Do not overwrite the verification outcome with cache-derived login claims.
+            if (_pendingSwitchId is null && _unconfirmedSwitchId is null && CurrentAccount is { IsExpired: false } cur)
+                StatusText = $"检测到本地账号配置「{cur.BattleTag}」；实际登录状态请在 Battle.net 确认。";
         }
         catch { }
         finally { _polling = false; }
@@ -735,10 +730,13 @@ public sealed class MainViewModel : ObservableObject
         _pendingSwitchId = target;
         _pendingSwitchStartedUtc = DateTime.UtcNow;
         _pendingSwitchUntil = _pendingSwitchStartedUtc.AddSeconds(SwitchVerifySeconds);
+        _pendingLogCursor = _authLogProbe.CaptureCursor();
+        _pendingClientSeen = false;
         StatusText = "Battle.net 已启动，重新确认之前未确认的登录结果…";
     }
 
     private bool _shuttingDown;
+    private Exception? _shutdownOperationError;
     private readonly AccountOperationService _accountOperations;
 
     internal async Task BeginShutdownAsync()
@@ -749,9 +747,15 @@ public sealed class MainViewModel : ObservableObject
         _unconfirmedSwitchId = null;
         CancelSwitchPlan();
         _regionOperationCancellation?.Cancel();
-        await _accountOperations.BeginShutdownAsync();
+        Exception? drainError = null;
+        try { await _accountOperations.BeginShutdownAsync(); }
+        catch (Exception ex) { drainError = ex; }
         // Region operations own their cancellation/atomic per-file writes; keep Dispatcher alive until unwound.
         while (Busy) await Task.Delay(25);
+        if (drainError is not null || _shutdownOperationError is not null)
+            throw new InvalidOperationException("账号/区服操作清理失败，禁止更新安装。", drainError ?? _shutdownOperationError);
+        // A pending recovery from an earlier run is not proof of a safe completed transaction either.
+        await Task.Run(_profiles.EnsureNoPendingRestoreJournal);
     }
 
     private async Task RunAccountUiAsync(string errorTitle, Func<Task> action)
@@ -762,6 +766,7 @@ public sealed class MainViewModel : ObservableObject
         catch (OperationCanceledException) when (_shuttingDown) { StatusText = "应用退出，账号操作已停止。"; }
         catch (Exception ex)
         {
+            if (_shuttingDown) _shutdownOperationError ??= ex;
             StatusText = errorTitle + "：" + ex.Message;
             if (!_shuttingDown) MessageBox.Show(ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -773,8 +778,8 @@ public sealed class MainViewModel : ObservableObject
         if (!target.HasProfile) throw new InvalidOperationException("目标账号没有本地备份。");
         _pendingSwitchId = null;
         _unconfirmedSwitchId = null;
-        _pendingLogCursor = _authLogProbe.CaptureCursor();
-        var result = await _accountOperations.SwitchAsync(target.AccountId, text => StatusText = text);
+        var result = await _accountOperations.SwitchAsync(target.AccountId, text => StatusText = text,
+            beginVerification: () => _pendingLogCursor = _authLogProbe.CaptureCursor());
         if (result.AlreadyCurrent)
         {
             StatusText = $"缓存已指向「{target.BattleTag}」，未执行恢复；请在 Battle.net 确认实际登录状态。";
@@ -782,12 +787,11 @@ public sealed class MainViewModel : ObservableObject
         }
         // Do not label a restored pointer as an authenticated account before verification.
         _pendingSwitchId = target.AccountId;
-        _pendingInitialActiveId = result.PreviousId;
         _pendingSwitchUntil = DateTime.UtcNow.AddSeconds(SwitchVerifySeconds);
         _pendingSwitchStartedUtc = DateTime.UtcNow;
         _pendingClientSeen = false;
         _lastPendingActiveId = result.PreviousId;
-        StatusText = $"已准备「{target.BattleTag}」；{result.Warning ?? ""} 正在确认 Battle.net 登录结果…";
+        StatusText = $"「{target.BattleTag}」账号配置已恢复；{result.Warning ?? ""} 等待 Battle.net 登录确认…";
     });
 
     public Task ReloginAsync(AccountRow row) => AddAccountCoreAsync(row.BattleTag);
@@ -1119,6 +1123,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (_shuttingDown) _shutdownOperationError ??= ex;
             StatusText = "切换区服文件失败：" + ex.Message;
             RegionSwitchCompleted?.Invoke(false, target, ex.Message);
             if (!_shuttingDown) MessageBox.Show(ex.Message, "无法切换区服文件", MessageBoxButton.OK, MessageBoxImage.Error);

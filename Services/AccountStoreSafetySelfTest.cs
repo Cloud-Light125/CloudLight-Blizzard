@@ -21,6 +21,7 @@ internal static class AccountStoreSafetySelfTest
             RunValidLegacyManifest(root);
             RunInvalidManifests(root);
             RunMutationRollback(root);
+            RunPreparationFailures(root, report);
             RunReadFailure(root);
             RunFailedRollbackJournal(root);
             RunStagingReadFailure(root);
@@ -32,6 +33,7 @@ internal static class AccountStoreSafetySelfTest
         finally
         {
             AppDataStore.RestoreMutationFailureForSelfTest = null;
+            AppDataStore.RestorePreparationFailureForSelfTest = null;
             try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
         }
     }
@@ -166,6 +168,58 @@ internal static class AccountStoreSafetySelfTest
             AppDataStore.RestoreMutationFailureForSelfTest = null;
         }
         AssertFilesEqual(before, CaptureFiles(test.Roaming), "write failure rolls back affected files");
+    }
+
+    private static void RunPreparationFailures(string root, StringBuilder report)
+    {
+        foreach (var stage in new[] { "create-directory", "snapshot-1", "snapshot-2", "journal", "staging", "applying-journal", "cleanup" })
+        {
+            var test = CreateSandbox(root, "preparation-" + stage);
+            File.WriteAllText(Path.Combine(test.Roaming, "a.config"), "backup-a");
+            File.WriteAllText(Path.Combine(test.Roaming, "b.config"), "backup-b");
+            test.Store.Save(9, "Fixture#9");
+            File.WriteAllText(Path.Combine(test.Roaming, "a.config"), "original-a");
+            File.WriteAllText(Path.Combine(test.Roaming, "b.config"), "original-b");
+            var before = CaptureFiles(test.Roaming);
+            var backup = CaptureFiles(test.Profiles);
+            var injected = false;
+            AppDataStore.RestorePreparationFailureForSelfTest = current =>
+            {
+                if (current == stage || (stage == "cleanup" && current == "staging"))
+                {
+                    injected = true;
+                    return new IOException("isolated preparation fault: " + current);
+                }
+                return null;
+            };
+            Exception? failure = null;
+            try { test.Store.Restore(9); } catch (IOException ex) { failure = ex; }
+            finally { AppDataStore.RestorePreparationFailureForSelfTest = null; }
+            Assert(injected && failure is not null, stage + " failure surfaced");
+            AssertFilesEqual(before, CaptureFiles(test.Roaming), stage + " target byte-for-byte unchanged");
+            AssertFilesEqual(backup, CaptureFiles(test.Profiles), stage + " backup byte-for-byte unchanged");
+            var recovery = test.Profiles + ".recovery";
+            if (stage == "cleanup")
+            {
+                var own = Directory.GetDirectories(recovery).Single();
+                var evidence = CaptureFiles(own);
+                Assert(failure!.Message.Contains(own) && failure.InnerException is AggregateException,
+                    "preparation cleanup failure exposes retained exact path and both errors");
+                var rejected = false;
+                try { test.Store.Restore(9); } catch (IOException ex) { rejected = ex.Message.Contains("未完成"); }
+                Assert(rejected, "failed preparation cleanup blocks further restore");
+                AssertFilesEqual(evidence, CaptureFiles(own), "old pending preparation never deleted");
+                AssertFilesEqual(before, CaptureFiles(test.Roaming), "old pending preparation blocks before mutation");
+            }
+            else
+            {
+                Assert(!Directory.EnumerateFileSystemEntries(recovery).Any(), stage + " owned preparation directory removed");
+                test.Store.Restore(9);
+                Assert(File.ReadAllText(Path.Combine(test.Roaming, "a.config")) == "backup-a", stage + " subsequent legal restore works");
+                Assert(!Directory.EnumerateFileSystemEntries(recovery).Any(), "successful restore cleans journal");
+            }
+            report.AppendLine("PASS journal " + stage + ": target/backup bytes preserved; preparation cleanup/retry or retained fence verified");
+        }
     }
 
     private static void RunReadFailure(string root)
