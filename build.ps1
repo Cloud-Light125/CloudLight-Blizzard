@@ -12,7 +12,7 @@ $soopAuthorization = Join-Path $root 'Integrations\Drops\soop\redistribution-aut
 if ($DropsBuildPurpose -eq 'Distribution' -and -not $OmitUnlicensedSoopCore -and -not (Test-Path -LiteralPath $soopAuthorization)) {
     throw '完整 SOOP Distribution 构建需要匹配当前 Core 的明确再分发授权记录。'
 }
-$releaseVersion = '2.1.9'
+$releaseVersion = '2.1.10'
 $buildCommit = (& git -C $root rev-parse HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($buildCommit)) {
     throw '无法读取当前 Git commit，拒绝生成没有来源标识的发布包。'
