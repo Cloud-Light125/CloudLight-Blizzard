@@ -32,7 +32,10 @@
                         <TextBlock><Run Text="3. " Foreground="{DynamicResource Acc}" FontWeight="SemiBold" /><Run Text="自动重新启动战网" Foreground="{DynamicResource Tx2}" /></TextBlock>
                     </StackPanel>
                 </Border>
-                <TextBlock Text="完成后即可从账号列表快速切换回来。" Foreground="{DynamicResource Tx3}" FontSize="11.5" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="快照校验通过后可恢复账号配置。认证状态请在 Battle.net 确认；会话失效时仍需重新登录。" Foreground="{DynamicResource Tx3}" FontSize="11.5" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <CheckBox x:Name="ConfirmedLoginBox" Margin="0,10,0,0" Foreground="{DynamicResource Tx2}">
+                    <TextBlock Text="我已在 Battle.net 确认该账号完成重新登录（清除本工具的重新登录提醒）" TextWrapping="Wrap"/>
+                </CheckBox>
             </StackPanel>
 
             <Grid Margin="15,14,15,15">

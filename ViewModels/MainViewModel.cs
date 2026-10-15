@@ -77,8 +77,22 @@ public sealed class AccountRow : ObservableObject
     public bool HasProfile
     {
         get => _hasProfile;
-        set { Set(ref _hasProfile, value); Raise(nameof(ProfileText)); Raise(nameof(SavedRelative)); Raise(nameof(CanSwitch)); }
+        set { Set(ref _hasProfile, value); Raise(nameof(ProfileText)); Raise(nameof(SavedRelative)); Raise(nameof(CanSwitch)); Raise(nameof(SwitchText)); Raise(nameof(HasSnapshot)); }
     }
+
+    private AccountProfileStatus? _profileStatus;
+    public AccountProfileStatus? ProfileStatus
+    {
+        get => _profileStatus;
+        set { Set(ref _profileStatus, value); Raise(nameof(ProfileText)); Raise(nameof(ProfileDetail)); Raise(nameof(HasSnapshot)); }
+    }
+    public bool HasSnapshot => HasProfile || ProfileStatus is { State: not AccountProfileState.Missing };
+    private bool _isSaving;
+    public bool IsSaving { get => _isSaving; set { Set(ref _isSaving, value); Raise(nameof(ProfileText)); } }
+    private string? _saveError;
+    public string? SaveError { get => _saveError; set { Set(ref _saveError, value); Raise(nameof(ProfileText)); Raise(nameof(ProfileDetail)); } }
+    public string ProfileDetail => SaveError ?? ProfileStatus?.Detail ?? "请在 Battle.net 登录后保存账号快照。";
+    public bool NeedsRelogin => IsExpired || !HasProfile;
 
     private DateTime? _savedAtUtc;
     public DateTime? SavedAtUtc
@@ -91,11 +105,11 @@ public sealed class AccountRow : ObservableObject
     public bool IsExpired
     {
         get => _isExpired;
-        set { Set(ref _isExpired, value); Raise(nameof(ExpiredVisibility)); Raise(nameof(SwitchText)); }
+        set { Set(ref _isExpired, value); Raise(nameof(ExpiredVisibility)); Raise(nameof(SwitchText)); Raise(nameof(CanSwitch)); Raise(nameof(ProfileText)); }
     }
 
     public Visibility ExpiredVisibility => _isExpired ? Visibility.Visible : Visibility.Collapsed;
-    public string SwitchText => IsActive ? "当前" : (_isExpired ? "重新登录" : "切换");
+    public string SwitchText => NeedsRelogin ? "重新登录" : IsActive ? "当前" : "切换";
     public Visibility CurrentVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
 
     public string NameOnly { get { var i = BattleTag.IndexOf('#'); return i < 0 ? BattleTag : BattleTag[..i]; } }
@@ -108,7 +122,10 @@ public sealed class AccountRow : ObservableObject
     public Brush AvatarBg => Av.bg;
     public Brush AvatarFg => Av.fg;
 
-    public string ProfileText => HasProfile ? $"已保存 · {SavedAtUtc?.ToLocalTime():MM-dd HH:mm}" : "未保存";
+    public string ProfileText => IsSaving ? "正在保存…" : SaveError is not null ? "保存失败（原快照状态见详情）" :
+        ProfileStatus?.State == AccountProfileState.Corrupt ? "备份损坏" :
+        ProfileStatus?.State == AccountProfileState.Unavailable ? "备份目录不可用" :
+        HasProfile ? (IsExpired ? "已保存 · 重新登录后需要更新" : $"已保存 · {SavedAtUtc?.ToLocalTime():MM-dd HH:mm}") : "未保存";
 
     public string SavedRelative
     {
@@ -123,7 +140,7 @@ public sealed class AccountRow : ObservableObject
         }
     }
 
-    public bool CanSwitch => HasProfile && !IsActive;
+    public bool CanSwitch => NeedsRelogin || !IsActive;
 }
 
 public sealed class MainViewModel : ObservableObject
@@ -150,6 +167,8 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<AccountRow> Accounts { get; } = new();
     public ObservableCollection<AccountRow> SavedAccounts { get; } = new();
     public ObservableCollection<AccountRow> UnsavedAccounts { get; } = new();
+    public string AccountSnapshotPath => _profiles.Root;
+    public string AccountMigrationWarning => string.Join("\n", AppPaths.Current.AccountMigrationWarnings);
 
     private AccountRow? _current;
     public AccountRow? CurrentAccount
@@ -372,20 +391,20 @@ public sealed class MainViewModel : ObservableObject
             SavedAccounts.Add(a);
 
         UnsavedAccounts.Clear();
-        foreach (var a in Accounts.Where(a => !a.HasProfile && !hidden.Contains(a.AccountId))
+        foreach (var a in Accounts.Where(a => !a.HasSnapshot && !hidden.Contains(a.AccountId))
                                   .OrderBy(a => a.BattleTag, StringComparer.CurrentCulture))
             UnsavedAccounts.Add(a);
 
         var total = Accounts.Count(a => a.HasProfile || !hidden.Contains(a.AccountId));
         var saved = Accounts.Count(a => a.HasProfile);
-        ReadyCountText = $"{SavedAccounts.Count} 个账号备份";
+        ReadyCountText = $"{saved} 个有效快照 · {SavedAccounts.Count - saved} 个需检查";
         UnsavedCountText = $"尚未保存 · {UnsavedAccounts.Count}";
         TotalCountText = $"共 {total} 个 · 已保存 {saved} 个";
         Raise(nameof(UnsavedVisibility));
     }
 
     public static IReadOnlyList<AccountRow> SelectSavedAccounts(IEnumerable<AccountRow> accounts) =>
-        accounts.Where(a => a.HasProfile)
+        accounts.Where(a => a.HasSnapshot)
             .OrderByDescending(a => a.SavedAtUtc ?? DateTime.MinValue).ToList();
 
     public void ApplyAccountLayoutDemo(int count)
@@ -442,7 +461,8 @@ public sealed class MainViewModel : ObservableObject
 
     private void ApplyAccounts(IReadOnlyList<BattleAccount> accounts, long? activeId)
     {
-        Accounts.Clear();
+        var profileIds = _profiles.ReadProfileIds(); // Fail before replacing a usable account list.
+        var rows = new List<AccountRow>();
         var seen = new HashSet<long>();
         var envs = accounts.GroupBy(a => a.AccountId).ToDictionary(
             g => g.Key,
@@ -452,14 +472,16 @@ public sealed class MainViewModel : ObservableObject
         foreach (var a in accounts)
         {
             if (!seen.Add(a.AccountId)) continue;
-            var meta = _profiles.ReadMeta(a.AccountId);
-            Accounts.Add(new AccountRow
+            var status = _profiles.InspectProfile(a.AccountId);
+            var meta = status.Meta;
+            rows.Add(new AccountRow
             {
                 AccountId = a.AccountId,
                 Environment = envs.TryGetValue(a.AccountId, out var env) ? env : a.Environment,
                 BattleTag = string.IsNullOrWhiteSpace(a.BattleTag) ? a.AccountId.ToString() : a.BattleTag,
                 IsActive = activeId.HasValue && a.AccountId == activeId.Value,
-                HasProfile = meta != null,
+                HasProfile = status.CanRestore,
+                ProfileStatus = status,
                 SavedAtUtc = meta?.SavedAtUtc,
                 IsExpired = meta?.Expired == true || _settings.ExpiredAccountIds.Contains(a.AccountId),
                 CustomName = _settings.PreferenceFor(a.AccountId).CustomName,
@@ -468,17 +490,20 @@ public sealed class MainViewModel : ObservableObject
             });
         }
 
-        foreach (var meta in _profiles.ReadAllMeta().Where(m => seen.Add(m.AccountId)))
+        foreach (var profileId in profileIds.Where(id => seen.Add(id)))
         {
-            var pref = _settings.PreferenceFor(meta.AccountId);
-            Accounts.Add(new AccountRow
+            var status = _profiles.InspectProfile(profileId);
+            var meta = status.Meta;
+            var pref = _settings.PreferenceFor(profileId);
+            rows.Add(new AccountRow
             {
-                AccountId = meta.AccountId,
-                BattleTag = string.IsNullOrWhiteSpace(meta.BattleTag) ? meta.AccountId.ToString() : meta.BattleTag,
-                IsActive = activeId == meta.AccountId,
-                HasProfile = true,
-                SavedAtUtc = meta.SavedAtUtc,
-                IsExpired = meta.Expired || _settings.ExpiredAccountIds.Contains(meta.AccountId),
+                AccountId = profileId,
+                BattleTag = string.IsNullOrWhiteSpace(meta?.BattleTag) ? profileId.ToString() : meta.BattleTag,
+                IsActive = activeId == profileId,
+                HasProfile = status.CanRestore,
+                ProfileStatus = status,
+                SavedAtUtc = meta?.SavedAtUtc,
+                IsExpired = meta?.Expired == true || _settings.ExpiredAccountIds.Contains(profileId),
                 CustomName = pref.CustomName,
                 Remark = pref.Remark,
                 RegionOverride = pref.Region,
@@ -487,13 +512,15 @@ public sealed class MainViewModel : ObservableObject
 
         if (activeId is long id && !seen.Contains(id))
         {
-            var meta = _profiles.ReadMeta(id);
-            Accounts.Add(new AccountRow
+            var status = _profiles.InspectProfile(id);
+            var meta = status.Meta;
+            rows.Add(new AccountRow
             {
                 AccountId = id,
                 BattleTag = string.IsNullOrWhiteSpace(meta?.BattleTag) ? id.ToString() : meta!.BattleTag,
                 IsActive = true,
-                HasProfile = meta != null,
+                HasProfile = status.CanRestore,
+                ProfileStatus = status,
                 SavedAtUtc = meta?.SavedAtUtc,
                 IsExpired = meta?.Expired == true || _settings.ExpiredAccountIds.Contains(id),
                 CustomName = _settings.PreferenceFor(id).CustomName,
@@ -502,6 +529,8 @@ public sealed class MainViewModel : ObservableObject
             });
         }
 
+        Accounts.Clear();
+        foreach (var row in rows) Accounts.Add(row);
         _lastActiveId = activeId;
         _lastIdSet = string.Join(",", Accounts.Select(r => r.AccountId).OrderBy(x => x));
         RebuildGroups();
@@ -636,14 +665,6 @@ public sealed class MainViewModel : ObservableObject
         try
         {
             StatusText = "读取账号列表…";
-            if (!_paths.Exists)
-            {
-                Accounts.Clear();
-                RebuildGroups();
-                StatusText = "未找到战网数据目录。请确认战网已安装并至少登录过一次。";
-                return;
-            }
-
             StampDb();
             var (accounts, activeId) = await ReadAllAsync();
             ApplyAccounts(accounts, activeId);
@@ -658,6 +679,8 @@ public sealed class MainViewModel : ObservableObject
                 StatusText = "还没有保存账号。请先在 Battle.net 登录，然后保存当前账号。";
             else
                 StatusText = $"共 {visibleTotal} 个账号，已保存 {saved} 个账号备份。";
+            if (!string.IsNullOrWhiteSpace(AccountMigrationWarning))
+                StatusText = "旧账号快照迁移需要检查，请查看账号页的路径提示。";
 
             if (string.IsNullOrWhiteSpace(_settings.OverwatchGamePath))
             {
@@ -695,7 +718,7 @@ public sealed class MainViewModel : ObservableObject
             StatusText = "战网启动中。";
         }));
 
-    public Task SaveCurrentAsync() => RunAccountUiAsync("保存失败", () =>
+    public Task SaveCurrentAsync(bool clientLoginConfirmed = false) => RunAccountUiAsync("保存失败", () =>
         _accountOperations.RunExclusiveAsync(async token =>
         {
             if (OverwatchRegionManager.IsGameRunning())
@@ -705,22 +728,54 @@ public sealed class MainViewModel : ObservableObject
             ApplyAccounts(list, activeId);
             var active = activeId is null ? null : Accounts.FirstOrDefault(a => a.AccountId == activeId.Value);
             if (active is null) throw new InvalidOperationException("没有检测到当前登录的账号，请先登录。");
-            token.ThrowIfCancellationRequested();
-            StatusText = "正在关闭战网以保存账号文件…";
-            if (!await Task.Run(() => _controller.GracefulQuit()))
-                throw new InvalidOperationException("战网未能完全退出，已中止保存。");
-            token.ThrowIfCancellationRequested();
-            if (OverwatchRegionManager.IsGameRunning())
-                throw new InvalidOperationException("守望先锋已启动，已中止保存。");
-            await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag));
-            if (_settings.ExpiredAccountIds.Remove(active.AccountId)) _settings.Save();
-            active.HasProfile = true;
-            active.SavedAtUtc = DateTime.UtcNow;
-            active.IsExpired = false;
-            RebuildGroups();
-            token.ThrowIfCancellationRequested();
-            await Task.Run(_controller.LaunchClient);
-            StatusText = $"已更新「{active.BattleTag}」的账号备份，Battle.net 正在重启。";
+            active.IsSaving = true;
+            active.SaveError = null;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                StatusText = "正在关闭战网以保存账号文件…";
+                if (!await Task.Run(() => _controller.GracefulQuit()))
+                    throw new InvalidOperationException("战网未能完全退出，已中止保存。");
+                token.ThrowIfCancellationRequested();
+                if (OverwatchRegionManager.IsGameRunning())
+                    throw new InvalidOperationException("守望先锋已启动，已中止保存。");
+                await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag,
+                    expired: active.IsExpired && !clientLoginConfirmed));
+                var saved = _profiles.InspectProfile(active.AccountId);
+                if (!saved.CanRestore) throw new InvalidDataException(saved.Detail);
+                active.HasProfile = true;
+                active.ProfileStatus = saved;
+                active.SavedAtUtc = saved.Meta?.SavedAtUtc;
+                if (clientLoginConfirmed)
+                {
+                    var removed = _settings.ExpiredAccountIds.Remove(active.AccountId);
+                    if (!removed || _settings.Save())
+                    {
+                        active.IsExpired = false;
+                        _switchLog.Write("LoginManuallyConfirmed", detail: "用户在保存确认窗口声明已于客户端重新登录；未自动验证服务器认证。");
+                    }
+                    else _settings.ExpiredAccountIds.Add(active.AccountId);
+                }
+                RebuildGroups();
+                token.ThrowIfCancellationRequested();
+                try { await Task.Run(_controller.LaunchClient); }
+                catch (Exception ex)
+                {
+                    StatusText = $"账号快照已保存并校验，但 Battle.net 启动失败：{ex.Message}。请手动启动。";
+                    return;
+                }
+                StatusText = $"已更新「{active.BattleTag}」的账号快照，Battle.net 正在重启；请在客户端确认认证状态。";
+            }
+            catch (Exception ex)
+            {
+                active.SaveError = ex.Message;
+                var remaining = _profiles.InspectProfile(active.AccountId);
+                active.HasProfile = remaining.CanRestore;
+                active.ProfileStatus = remaining;
+                RebuildGroups();
+                throw;
+            }
+            finally { active.IsSaving = false; }
         }));
 
     private void ResumeUnconfirmedVerificationIfClientStarted(bool previouslyRunning)
@@ -775,7 +830,7 @@ public sealed class MainViewModel : ObservableObject
 
     public Task SwitchToAsync(AccountRow target) => RunAccountUiAsync("切换账号失败", async () =>
     {
-        if (!target.HasProfile) throw new InvalidOperationException("目标账号没有本地备份。");
+        if (!target.HasProfile) throw new InvalidOperationException("目标账号快照无法安全恢复：" + target.ProfileDetail + "\n请重新登录并保存。");
         _pendingSwitchId = null;
         _unconfirmedSwitchId = null;
         var result = await _accountOperations.SwitchAsync(target.AccountId, text => StatusText = text,
@@ -817,6 +872,8 @@ public sealed class MainViewModel : ObservableObject
             await Task.Run(() => _profiles.Delete(row.AccountId));
             if (_settings.ExpiredAccountIds.Remove(row.AccountId)) _settings.Save();
             row.HasProfile = false;
+            row.ProfileStatus = new(AccountProfileState.Missing, null, "快照已删除；请登录该账号后重新保存。");
+            row.SaveError = null;
             row.SavedAtUtc = null;
             row.IsExpired = false;
             RebuildGroups();

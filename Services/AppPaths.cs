@@ -27,6 +27,15 @@ public sealed class AppPaths
     public string DefaultRegionStorageDir => Path.Combine(Root, "region-switch");
     public string LegacyRoot { get; }
     public string LegacyRegionStorageDir => Path.Combine(LegacyRoot, "region-switch");
+    public IReadOnlyList<string> AccountMigrationWarnings { get; private set; } = Array.Empty<string>();
+
+    public void MigrateLegacyAccounts(List<string>? migrated = null)
+    {
+        if (PathsEqual(LegacyRoot, Root)) return;
+        AccountMigrationWarnings = AccountProfileMigration.Run(Path.Combine(LegacyRoot, "accounts"), AccountsDir,
+            migrated ?? new List<string>(), message => new AccountSwitchLog(Path.Combine(LogsDir, "account-switch.log"))
+                .Write("AccountMigration", detail: message));
+    }
 
     public AppPaths(string? root = null, string? legacyRoot = null)
     {
@@ -71,7 +80,7 @@ public sealed class AppPaths
                            !PathsEqual(legacySettings.RegionStoragePath!, LegacyRegionStorageDir);
 
         CopyFileIfMissing(Path.Combine(LegacyRoot, "settings.json"), SettingsFile, migrated);
-        CopyDirectoryMissing(Path.Combine(LegacyRoot, "accounts"), AccountsDir, migrated);
+        MigrateLegacyAccounts(migrated);
         CopyDirectoryMissing(Path.Combine(LegacyRoot, "logs"), LogsDir, migrated);
         // 兼容旧目录中其它应用数据，但排除广告缓存与单独处理的区服大文件。
         foreach (var entry in Directory.EnumerateFileSystemEntries(LegacyRoot))
@@ -81,6 +90,7 @@ public sealed class AppPaths
                 name.Equals("cache", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("settings.json", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("accounts", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("accounts.recovery", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("logs", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("ow", StringComparison.OrdinalIgnoreCase)) continue;
             if (Directory.Exists(entry)) CopyDirectoryMissing(entry, Path.Combine(Root, name), migrated);

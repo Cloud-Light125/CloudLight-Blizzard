@@ -30,7 +30,7 @@ namespace CloudLightBlizzard.Services;
 /// </summary>
 public static class UiVisualTreeSelfTest
 {
-    public static int Run(string outputPath)
+    public static int Run(string outputPath, bool accountsOnly = false)
     {
         var checks = new List<string>();
         MainWindow? window = null;
@@ -60,7 +60,7 @@ public static class UiVisualTreeSelfTest
                 args.Handled = true;
             };
             Application.Current.DispatcherUnhandledException += dispatcherUnhandledHandler;
-            window = new MainWindow(startHidden: true);
+            window = new MainWindow(startHidden: !accountsOnly);
             Application.Current.MainWindow = window;
             requestOverrideHost = typeof(MainWindow).GetField("_vm", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) is MainViewModel mainViewModel ? mainViewModel.DropsHost : null;
@@ -100,7 +100,19 @@ public static class UiVisualTreeSelfTest
                 ?.GetValue(window) as MainViewModel;
             var accountsPage = typeof(MainWindow).GetField("_accountsPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as AccountsPage;
+            DrainDispatcher(window.Dispatcher);
             Assert(pageHost is not null, checks, "主窗口包含单一 PageHost");
+            Assert(accountsPage is not null &&
+                   FindNamed(accountsPage, "AccountSnapshotPathText") is TextBlock snapshotPath &&
+                   snapshotPath.Text == windowViewModel?.AccountSnapshotPath &&
+                   snapshotPath.Text == AppPaths.Current.AccountsDir,
+                checks, "账号页显示实际账号快照目录，与区服自定义目录独立");
+            var accountSettingsPage = typeof(MainWindow).GetField("_settingsPage", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(window) as SettingsPage;
+            Assert(accountSettingsPage is not null &&
+                   FindNamed(accountSettingsPage, "AccountSnapshotPathText") is TextBlock settingsSnapshotPath &&
+                   settingsSnapshotPath.Text == windowViewModel?.AccountSnapshotPath,
+                checks, "设置页与账号页展示同一个实际快照路径");
             Assert(windowViewModel?.Settings.LastMainSection == "accounts" &&
                    FindNamed(window, "AccountsNav") is RadioButton { IsChecked: true } &&
                    ReferenceEquals(pageHost?.Content, accountsPage),
@@ -110,6 +122,12 @@ public static class UiVisualTreeSelfTest
             Assert(window.MinWidth > 0 && window.MinHeight > 0 &&
                    window.MinWidth <= SystemParameters.WorkArea.Width && window.MinHeight <= SystemParameters.WorkArea.Height,
                 checks, "主窗口最小尺寸适应当前 DPI 工作区");
+
+            if (accountsOnly && accountsPage is not null && windowViewModel is not null)
+                RunAccountBackupUiTest(accountsPage, windowViewModel, outputPath, checks);
+
+            if (!accountsOnly)
+            {
 
             var pages = new[]
             {
@@ -680,6 +698,7 @@ public static class UiVisualTreeSelfTest
             Assert(FindNamed(preview, "BlockerBox") is Border, checks, "切换预览包含安全阻断区域");
             if (dropsPage is not null && dropsVm is not null && requestOverrideHost is not null)
                 DropsReliabilitySelfTest.Run(dropsPage, dropsVm, requestOverrideHost, window, outputPath, checks);
+            }
             Assert(bindingListener is not BindingErrorTraceListener errors || !errors.HasErrors,
                 checks, "WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误");
 
@@ -737,6 +756,41 @@ public static class UiVisualTreeSelfTest
 
     private static void Assert(bool condition, ICollection<string> checks, string description) =>
         checks.Add((condition ? "PASS " : "FAIL ") + description);
+
+    private static void RunAccountBackupUiTest(AccountsPage page, MainViewModel vm, string outputPath, List<string> checks)
+    {
+        vm.ApplyAccountLayoutDemo(4);
+        vm.SavedAccounts[1].HasProfile = false;
+        vm.SavedAccounts[1].ProfileStatus = new(AccountProfileState.Corrupt, null, "fixture manifest corruption");
+        vm.SavedAccounts[2].HasProfile = false;
+        vm.SavedAccounts[2].ProfileStatus = new(AccountProfileState.Unavailable, null, "fixture inaccessible directory");
+        vm.SavedAccounts[3].SaveError = "fixture save failure; prior valid snapshot retained";
+        var fixtures = vm.SavedAccounts.ToList();
+        vm.Accounts.Clear();
+        foreach (var row in fixtures) vm.Accounts.Add(row);
+        vm.Accounts.Add(new AccountRow { AccountId = 999, BattleTag = "UnsavedFixture#999" });
+        typeof(MainViewModel).GetMethod("RebuildGroups", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, null);
+        page.Measure(new Size(1180, 900));
+        page.Arrange(new Rect(0, 0, 1180, 900));
+        page.UpdateLayout();
+        DrainDispatcher(page.Dispatcher);
+        Assert(ContainsVisual(page, value => value is TextBlock { Text: "备份损坏" }) &&
+               ContainsVisual(page, value => value is TextBlock { Text: "备份目录不可用" }) &&
+               ContainsVisual(page, value => value is TextBlock text && text.Text.StartsWith("保存失败")),
+            checks, "账号卡片真实模板显示损坏、目录不可用和保存失败");
+        Assert(ContainsVisual(page, value => value is Button { Content: "重新登录", IsEnabled: true }) &&
+               ContainsVisual(page, value => value is Button { Content: "重新登录并保存", IsEnabled: true }),
+            checks, "损坏和无快照账号提供可用的重新登录入口");
+        var image = new System.Windows.Media.Imaging.RenderTargetBitmap(1180, 900, 96, 96, PixelFormats.Pbgra32);
+        image.Render(page);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+        using (var stream = File.Create(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "accounts-ui.png")))
+            encoder.Save(stream);
+        var confirmation = new SnapshotConfirmWindow("Fixture#1");
+        Assert(!confirmation.ClientLoginConfirmed, checks, "保存默认不声明服务器认证有效；人工确认复选框默认关闭");
+        confirmation.Close();
+    }
 
     private static void RunSnapshotBindingRegressionTest(
         SnapshotsPage page,

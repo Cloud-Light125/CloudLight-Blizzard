@@ -73,7 +73,7 @@ public partial class App : Application
         {
             IsHeadlessSelfTest = true;
             base.OnStartup(e);
-            var exitCode = UiVisualTreeSelfTest.Run(e.Args[1]);
+            var exitCode = UiVisualTreeSelfTest.Run(e.Args[1], e.Args.ElementAtOrDefault(2) == "accounts");
             Environment.ExitCode = exitCode;
             Shutdown(exitCode);
             return;

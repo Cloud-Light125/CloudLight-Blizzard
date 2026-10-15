@@ -46,6 +46,7 @@ public static class FeatureSelfTest
                 RunAccountSnapshotTest(workspace, report);
                 RunAccountSwitchOrderTest(report).GetAwaiter().GetResult();
                 RunLoginVerificationTest(report);
+                RunAppPathsMigrationTest(workspace, report);
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
@@ -1864,7 +1865,10 @@ public static class FeatureSelfTest
         Directory.CreateDirectory(Path.Combine(oldRoot, "logs"));
         Directory.CreateDirectory(Path.Combine(oldRoot, "region-switch", "generations", "g1"));
         File.WriteAllText(Path.Combine(oldRoot, "settings.json"), "{\"DarkMode\":true}");
-        File.WriteAllText(Path.Combine(oldRoot, "accounts", "42", "meta.json"), "{}");
+        File.WriteAllText(Path.Combine(oldRoot, "accounts", "42", "meta.json"),
+            JsonSerializer.Serialize(new AccountProfileMeta(42, "Fixture#42", DateTime.UtcNow)));
+        Directory.CreateDirectory(Path.Combine(oldRoot, "accounts", "42", "BattleNet"));
+        File.WriteAllText(Path.Combine(oldRoot, "accounts", "42", "BattleNet", "Battle.net.config"), "fixture");
         File.WriteAllText(Path.Combine(oldRoot, "logs", "account-switch.log"), "ok");
         File.WriteAllText(Path.Combine(oldRoot, "region-switch", "active-generation.json"), "{}");
         File.WriteAllText(Path.Combine(oldRoot, "region-switch", "generations", "g1", "pair.json"), "{}");

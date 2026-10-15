@@ -27,6 +27,9 @@ internal static class AccountStoreSafetySelfTest
             RunStagingReadFailure(root);
             RunReparseRejection(root, report);
             RunPointerClear(root);
+            RunSaveFailures(root);
+            RunDiscoveryAndMigration(root);
+            report.AppendLine("TEST issue #3 save/discovery/migration/UI state: PASS (empty source, locks, staging/manifest/meta/validation/promotion failures, old snapshot preserved, cleanup pending, legacy/current isolation, journals retained)");
             report.AppendLine("TEST account store safety: PASS (strict manifest preflight, legacy compatibility, "
                               + "path/type/size/hash/managed/excluded validation, write-failure rollback)");
         }
@@ -34,6 +37,7 @@ internal static class AccountStoreSafetySelfTest
         {
             AppDataStore.RestoreMutationFailureForSelfTest = null;
             AppDataStore.RestorePreparationFailureForSelfTest = null;
+            AppDataStore.SaveFailureForSelfTest = null;
             try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
         }
     }
@@ -78,11 +82,16 @@ internal static class AccountStoreSafetySelfTest
         test.Store.Save(2, "Legacy#2");
         File.Delete(Path.Combine(test.Profiles, "2", "manifest.json"));
         File.WriteAllText(Path.Combine(test.Roaming, "legacy.config"), "changed");
+        var protectedFixture = Path.Combine(test.Profiles, "2", "BattleNet", "UnifiedAuth", "fixture.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(protectedFixture)!);
+        File.WriteAllText(protectedFixture, "excluded fixture");
+        using var protectedHeld = new FileStream(protectedFixture, FileMode.Open, FileAccess.Read, FileShare.None);
 
         test.Store.ValidateProfile(2);
         test.Store.Restore(2);
         Assert(File.ReadAllText(Path.Combine(test.Roaming, "legacy.config")) == "legacy-source",
             "manifest absence alone permits legacy restore");
+        Assert(!Directory.Exists(Path.Combine(test.Roaming, "UnifiedAuth")), "legacy validation/restoration never reads or restores excluded authentication leftovers");
     }
 
     private static void RunInvalidManifests(string root)
@@ -334,6 +343,173 @@ internal static class AccountStoreSafetySelfTest
         Directory.CreateDirectory(local);
         var paths = new BattleNetPaths(local, roaming);
         return new Sandbox(roaming, profiles, new AppDataStore(paths, profiles));
+    }
+
+    private static void RunSaveFailures(string root)
+    {
+        var test = CreateSandbox(root, "save-failures");
+        var source = Path.Combine(test.Roaming, "Battle.net.config");
+        File.WriteAllText(source, "original-valid-backup");
+        test.Store.Save(51, "Fixture#51");
+        var before = CaptureFiles(Path.Combine(test.Profiles, "51"));
+        foreach (var stage in new[] { "创建 staging", "复制账号配置", "写入 manifest", "写入 meta", "验证 staging", "提升正式快照", "移动 staging" })
+        {
+            AppDataStore.SaveFailureForSelfTest = (current, _) => current == stage
+                ? new UnauthorizedAccessException("injected denied write") : null;
+            try
+            {
+                var rejected = false;
+                try { test.Store.Save(51, "Fixture#51"); }
+                catch (IOException ex) { rejected = ex.Message.Contains(stage) && ex.Message.Contains(test.Roaming) && ex.Message.Contains(test.Profiles); }
+                Assert(rejected, "save rejected with operation and paths: " + stage);
+                AssertFilesEqual(before, CaptureFiles(Path.Combine(test.Profiles, "51")), "failed save preserves old snapshot");
+                Assert(test.Store.InspectProfile(51).CanRestore, "previous snapshot still usable");
+            }
+            finally { AppDataStore.SaveFailureForSelfTest = null; }
+        }
+        foreach (var corrupt in new[] { "BattleNet/Battle.net.config", "manifest.json", "meta.json" })
+        {
+            AppDataStore.SaveFailureForSelfTest = (stage, staging) =>
+            {
+                if (stage == "验证 staging") File.WriteAllText(Path.Combine(staging, corrupt), "damaged");
+                return null;
+            };
+            try
+            {
+                var rejected = false;
+                try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { rejected = true; }
+                Assert(rejected, "corrupt staging cannot be committed: " + corrupt);
+                AssertFilesEqual(before, CaptureFiles(Path.Combine(test.Profiles, "51")), "staging validation precedes old snapshot move");
+            }
+            finally { AppDataStore.SaveFailureForSelfTest = null; }
+        }
+        using (var held = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var rejected = false;
+            try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { rejected = true; }
+            Assert(rejected, "locked source cannot report success");
+        }
+        File.Delete(source);
+        Directory.CreateDirectory(Path.Combine(test.Roaming, "Logs"));
+        File.WriteAllText(Path.Combine(test.Roaming, "Logs", "ignored.log"), "ignored");
+        var emptyRejected = false;
+        try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { emptyRejected = true; }
+        Assert(emptyRejected, "empty/only-excluded source rejected");
+        AssertFilesEqual(before, CaptureFiles(Path.Combine(test.Profiles, "51")), "empty source preserves old backup");
+        Directory.Delete(test.Roaming, true);
+        var missingRejected = false;
+        try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { missingRejected = true; }
+        Assert(missingRejected, "missing source rejected");
+        Directory.CreateDirectory(test.Roaming);
+        File.WriteAllText(source, "new-valid-backup");
+        AppDataStore.SaveFailureForSelfTest = (stage, _) => stage == "清理旧快照" ? new IOException("cleanup locked") : null;
+        try { test.Store.Save(51, "Fixture#51"); }
+        finally { AppDataStore.SaveFailureForSelfTest = null; }
+        Assert(test.Store.InspectProfile(51).CanRestore, "cleanup failure is still a committed valid save");
+        Assert(Directory.GetDirectories(test.Profiles, "51.previous-*").Length == 1, "cleanup failure preserves previous snapshot");
+        Assert(Directory.GetDirectories(test.Profiles, "*.staging-*").Length == 0, "failed staging cleaned");
+        test.Store.Save(51, "Fixture#51", expired: true);
+        Assert(test.Store.InspectProfile(51).Meta?.Expired == true, "expiry reminder survives ordinary snapshot persistence and refresh");
+        var unavailable = CreateSandbox(root, "unwritable-destination");
+        File.WriteAllText(Path.Combine(unavailable.Roaming, "Battle.net.config"), "fixture");
+        File.WriteAllText(unavailable.Profiles, "path is a file");
+        var targetRejected = false;
+        try { unavailable.Store.Save(52, "Fixture#52"); } catch (IOException ex) { targetRejected = ex.Message.Contains(unavailable.Profiles); }
+        Assert(targetRejected && unavailable.Store.InspectProfile(52).State == AccountProfileState.Unavailable,
+            "unavailable target is actionable, never unsaved/success");
+        var journal = Path.Combine(test.Profiles + ".recovery", "pending", "journal.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(journal)!);
+        File.WriteAllText(journal, "retained recovery evidence");
+        var validBeforeJournal = CaptureFiles(Path.Combine(test.Profiles, "51"));
+        var journalRejected = false;
+        try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { journalRejected = true; }
+        Assert(journalRejected && File.ReadAllText(journal) == "retained recovery evidence", "pending restore journal also fences new saves");
+        AssertFilesEqual(validBeforeJournal, CaptureFiles(Path.Combine(test.Profiles, "51")), "pending journal leaves backup untouched");
+    }
+
+    private static void RunDiscoveryAndMigration(string root)
+    {
+        var missingRoot = CreateSandbox(root, "missing-root");
+        var missingRootRejected = false;
+        try { _ = missingRoot.Store.ReadProfileIds(); }
+        catch (IOException ex) { missingRootRejected = ex.Message.Contains(missingRoot.Profiles); }
+        Assert(missingRootRejected, "missing backup root reports failure instead of an empty profile list");
+        var test = CreateSandbox(root, "discovery");
+        File.WriteAllText(Path.Combine(test.Roaming, "Battle.net.config"), "fixture");
+        test.Store.Save(61, "Fixture#61");
+        test.Store.Save(62, "Fixture#62");
+        Directory.Move(Path.Combine(test.Profiles, "62"), Path.Combine(test.Profiles, "62.staging-interrupted"));
+        Assert(test.Store.ReadAllMeta().Select(meta => meta.AccountId).SequenceEqual(new long[] { 61 }), "staging metadata cannot invent a saved account");
+        var profile = Path.Combine(test.Profiles, "61");
+        File.WriteAllText(Path.Combine(profile, "manifest.json"), "broken");
+        Assert(test.Store.InspectProfile(61).State == AccountProfileState.Corrupt && !test.Store.HasProfile(61), "corrupt manifest displayed, never legacy");
+        Assert(test.Store.ReadProfileIds().Contains(61), "broken profile remains discoverable");
+        File.Delete(Path.Combine(profile, "manifest.json"));
+        Assert(test.Store.InspectProfile(61).State == AccountProfileState.Legacy, "valid legacy accepted");
+        var metaFile = Path.Combine(profile, "meta.json");
+        var correctMeta = File.ReadAllText(metaFile);
+        File.WriteAllText(metaFile, JsonSerializer.Serialize(new AccountProfileMeta(999, "WrongFixture#999", DateTime.UtcNow)));
+        Assert(test.Store.InspectProfile(61).State == AccountProfileState.Corrupt && !test.Store.HasProfile(61), "metadata ID mismatch never becomes a valid profile");
+        File.WriteAllText(metaFile, correctMeta);
+        test.Store.Save(63, "Fixture#63");
+        var oldRoot = Path.Combine(root, "migration-old");
+        var newRoot = Path.Combine(root, "migration-new");
+        Directory.CreateDirectory(oldRoot);
+        Directory.Move(test.Profiles, Path.Combine(oldRoot, "accounts"));
+        var protectedFile = Path.Combine(oldRoot, "accounts", "63", "BattleNet", "UnifiedAuth", "fixture.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(protectedFile)!);
+        File.WriteAllText(protectedFile, "excluded fixture; never read or migrated");
+        var paths = new AppPaths(newRoot, oldRoot);
+        using (var held = new FileStream(protectedFile, FileMode.Open, FileAccess.Read, FileShare.None))
+            paths.MigrateLegacyAccounts();
+        Assert(Directory.Exists(Path.Combine(paths.AccountsDir, "63")) &&
+               !File.Exists(Path.Combine(paths.AccountsDir, "63", "BattleNet", "UnifiedAuth", "fixture.txt")),
+            "migration neither reads nor copies undeclared protected authentication leftovers");
+        var destination = Path.Combine(paths.AccountsDir, "61");
+        Assert(Directory.Exists(destination) && Directory.Exists(Path.Combine(oldRoot, "accounts", "61")), "legacy discovered and copied, source retained");
+        Assert(!Directory.Exists(Path.Combine(paths.AccountsDir, "62.staging-interrupted")), "migration ignores staging");
+        _ = AppDataStore.ValidateSnapshotDirectory(destination, 61);
+        var before = CaptureFiles(destination);
+        File.WriteAllText(Path.Combine(oldRoot, "accounts", "61", "BattleNet", "Battle.net.config"), "changed-old");
+        paths.MigrateLegacyAccounts();
+        AssertFilesEqual(before, CaptureFiles(destination), "existing destination never merged with legacy");
+        File.WriteAllText(Path.Combine(destination, "manifest.json"), "broken");
+        paths.MigrateLegacyAccounts();
+        Assert(paths.AccountMigrationWarnings.Count > 0 && File.ReadAllText(Path.Combine(destination, "manifest.json")) == "broken", "corrupt destination preserved with warning");
+        Directory.CreateDirectory(Path.Combine(oldRoot, "accounts.recovery", "pending"));
+        var journal = Path.Combine(oldRoot, "accounts.recovery", "pending", "journal.json");
+        File.WriteAllText(journal, "evidence");
+        var blocked = new AppPaths(Path.Combine(root, "migration-blocked"), oldRoot);
+        blocked.MigrateLegacyAccounts();
+        Assert(blocked.AccountMigrationWarnings.Count > 0 && !Directory.Exists(blocked.AccountsDir) && File.ReadAllText(journal) == "evidence", "pending legacy journal blocks migration and remains intact");
+
+        var defaultStore = new AppDataStore(new BattleNetPaths(Path.Combine(root, "local-default"), test.Roaming));
+        var region = Path.Combine(root, "custom-region");
+        var settings = new AppSettings { RegionStoragePath = region };
+        defaultStore.Save(991, "Fixture#991");
+        Assert(defaultStore.Root == AppPaths.Current.AccountsDir && !Directory.Exists(settings.RegionStoragePath), "custom region path never redirects default account snapshots");
+
+        var missed = Path.Combine(AppPaths.Current.LegacyRoot, "accounts", "701");
+        Directory.CreateDirectory(Path.Combine(missed, "BattleNet"));
+        File.WriteAllText(Path.Combine(missed, "BattleNet", "Battle.net.config"), "missed old account");
+        File.WriteAllText(Path.Combine(missed, "meta.json"), JsonSerializer.Serialize(new AccountProfileMeta(701, "Fixture#701", DateTime.UtcNow)));
+        File.WriteAllText(AppPaths.Current.SettingsFile, JsonSerializer.Serialize(new AppSettings { MigrationCompleted = true }));
+        _ = AppSettings.Load();
+        Assert(defaultStore.InspectProfile(701).CanRestore && Directory.Exists(missed), "completed settings migration flag does not hide a missed legacy account");
+
+        var missing = new CloudLightBlizzard.ViewModels.AccountRow { AccountId = 63, IsActive = true };
+        Assert(missing.CanSwitch && missing.SwitchText == "重新登录", "missing profile has actionable relogin even if local pointer is current");
+        var damaged = new CloudLightBlizzard.ViewModels.AccountRow { AccountId = 61, ProfileStatus = new(AccountProfileState.Corrupt, null, "fixture corruption") };
+        Assert(damaged.HasSnapshot && !damaged.HasProfile && damaged.ProfileText == "备份损坏", "corrupt profile not mislabeled saved or missing");
+        var row = new CloudLightBlizzard.ViewModels.AccountRow { HasProfile = true, IsActive = true };
+        row.IsSaving = true;
+        Assert(row.ProfileText == "正在保存…", "saving state visible");
+        row.IsSaving = false;
+        row.SaveError = "fixture write failure";
+        Assert(row.ProfileText.StartsWith("保存失败") && row.HasProfile, "save failure retains previous valid profile state");
+        row.SaveError = null;
+        row.IsExpired = true;
+        Assert(row.CanSwitch && row.SwitchText == "重新登录" && row.ProfileText.Contains("需要更新"), "expired current account has relogin/update action");
     }
 
     private static string CreateManifestJson(

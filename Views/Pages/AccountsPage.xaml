@@ -13,7 +13,7 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="当前账号" Foreground="{DynamicResource Text.Secondary}"/>
+                        <TextBlock Text="当前账号（本地配置指向，认证请在 Battle.net 确认）" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
                         <StackPanel Visibility="{Binding HasCurrentVisibility}" Margin="0,7,0,0">
                             <TextBlock Text="{Binding CurrentAccount.DisplayName}" FontSize="21" FontWeight="SemiBold"/>
                             <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
@@ -32,8 +32,18 @@
                 </Grid>
             </Border>
 
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="Battle.net 账号快照位置" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AccountSnapshotPathText" Text="{Binding AccountSnapshotPath}" TextWrapping="Wrap" TextOptions.TextFormattingMode="Display" Margin="0,5,0,0"/>
+                    <TextBlock Text="守望先锋的自定义区服备份位置不影响此目录。快照只保存账号配置，不能保证认证永久有效。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,0"/>
+                    <TextBlock Text="{Binding AccountMigrationWarning}" TextWrapping="Wrap" Foreground="{DynamicResource Status.Warning}"/>
+                    <Button Content="打开账号快照目录" HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}" Margin="0,8,0,0" Padding="12,0" Click="OnOpenSnapshots"/>
+                </StackPanel>
+            </Border>
+
             <DockPanel Margin="0,28,0,12">
-                <TextBlock Text="已保存账号" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="账号快照" Style="{StaticResource SectionTitle}"/>
                 <TextBlock Text="{Binding ReadyCountText}" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource Text.Muted}"/>
             </DockPanel>
 
@@ -60,7 +70,7 @@
                                     <TextBlock Text="{Binding Remark}" Visibility="{Binding RemarkVisibility}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" MaxHeight="38" Margin="0,8,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Row="1" VerticalAlignment="Bottom">
-                                    <TextBlock Text="{Binding SavedRelative}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,8,0,0"/>
+                                    <TextBlock Text="{Binding ProfileText}" ToolTip="{Binding ProfileDetail}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,8,0,0"/>
                                     <TextBlock Text="需要重新登录 Battle.net" Foreground="{DynamicResource Status.Error}" Visibility="{Binding ExpiredVisibility}" FontSize="11" Margin="0,3,0,0"/>
                                 </StackPanel>
                                 <Grid Grid.Row="2" Margin="0,12,0,0">
@@ -86,7 +96,8 @@
                             <Border Style="{StaticResource SurfaceCard}" Margin="0,0,0,8" Padding="14">
                                 <DockPanel>
                                     <Button Content="隐藏" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="32" Padding="12,0" Click="OnHide"/>
-                                    <StackPanel><TextBlock Text="{Binding BattleTag}" FontWeight="SemiBold"/><TextBlock Text="尚未保存账号备份" Foreground="{DynamicResource Text.Muted}"/></StackPanel>
+                                    <Button Content="重新登录并保存" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="32" Padding="12,0" Margin="0,0,8,0" Click="OnSwitchCard"/>
+                                    <StackPanel><TextBlock Text="{Binding BattleTag}" FontWeight="SemiBold"/><TextBlock Text="{Binding ProfileText}" ToolTip="{Binding ProfileDetail}" Foreground="{DynamicResource Text.Muted}"/></StackPanel>
                                 </DockPanel>
                             </Border>
                         </DataTemplate>

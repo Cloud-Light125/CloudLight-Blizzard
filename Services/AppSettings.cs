@@ -86,6 +86,8 @@ public sealed class AppSettings
         var migration = existing?.MigrationCompleted == true
             ? new MigrationResult(false, false, false, Array.Empty<string>())
             : AppPaths.Current.MigrateLegacyData();
+        // A historical completed flag must not hide accounts left behind by a partial migration.
+        if (existing?.MigrationCompleted == true) AppPaths.Current.MigrateLegacyAccounts();
         var settings = LoadFrom(FilePath, rewrite: false);
         if (settings._persistenceBlocked) return settings;
         if (!settings.MigrationCompleted || migration.Migrated)

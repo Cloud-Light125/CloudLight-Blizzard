@@ -48,6 +48,7 @@ public partial class SettingsPage : UserControl
         FeedbackPanel.Initialize(vm.Settings, vm.FeedbackService);
         ProxyNoticeText.Text = "公告、反馈和更新会在下一次请求时读取当前代理；四个掉宝平台的使用范围在掉宝页面设置。";
         DataPathText.Text = AppPaths.Current.Root;
+        AccountSnapshotPathText.Text = vm.AccountSnapshotPath;
         CacheText.Text = "打开设置页后统计";
         IsVisibleChanged += async (_, _) =>
         {

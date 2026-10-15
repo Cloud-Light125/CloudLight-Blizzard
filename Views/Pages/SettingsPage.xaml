@@ -147,6 +147,9 @@
                     <TextBlock Text="数据位置" FontWeight="SemiBold" Margin="0,14,0,0"/>
                     <TextBlock x:Name="DataPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>
                     <TextBlock Text="账号备份、日志和程序设置保存在这里。" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12"/>
+                    <TextBlock Text="Battle.net 账号快照目录" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AccountSnapshotPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>
+                    <TextBlock Text="该路径不随守望先锋区服文件备份位置改变。账号页可查看状态并打开此目录。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12"/>
                     <WrapPanel><Button Content="打开数据文件夹" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,0" Click="OnOpenData"/><Button Content="清理战绩缓存" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClearCache"/></WrapPanel>
                     <TextBlock x:Name="CacheText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0"/>
                 </StackPanel>

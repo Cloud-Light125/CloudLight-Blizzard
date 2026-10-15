@@ -9,6 +9,12 @@ namespace CloudLightBlizzard.Services;
 
 public sealed record AccountProfileMeta(long AccountId, string BattleTag, DateTime SavedAtUtc, bool Expired = false);
 
+public enum AccountProfileState { Missing, Valid, Legacy, Corrupt, Unavailable }
+public sealed record AccountProfileStatus(AccountProfileState State, AccountProfileMeta? Meta, string Detail)
+{
+    public bool CanRestore => State is AccountProfileState.Valid or AccountProfileState.Legacy;
+}
+
 public sealed record BattleNetAccountSnapshotEntry(
     string RelativePath,
     long Size,
@@ -38,14 +44,14 @@ public sealed class AppDataStore
     // 仅供隔离自测故障注入；生产代码默认 null。
     internal static Func<string, Exception?>? RestoreMutationFailureForSelfTest { get; set; }
     internal static Func<string, Exception?>? RestorePreparationFailureForSelfTest { get; set; }
+    internal static Func<string, string, Exception?>? SaveFailureForSelfTest { get; set; }
 
     public string Root { get; }
 
     public AppDataStore(BattleNetPaths paths, string? root = null)
     {
         _paths = paths;
-        Root = root ?? AppPaths.Current.AccountsDir;
-        Directory.CreateDirectory(Root);
+        Root = Path.GetFullPath(root ?? AppPaths.Current.AccountsDir);
     }
 
     private string Dir(long id) => Path.Combine(Root, id.ToString());
@@ -56,11 +62,51 @@ public sealed class AppDataStore
     private string RecoveryRoot => Path.GetFullPath(Root).TrimEnd(Path.DirectorySeparatorChar,
         Path.AltDirectorySeparatorChar) + ".recovery";
 
-    public bool HasProfile(long id) => File.Exists(MetaFile(id)) && Directory.Exists(DataDir(id));
+    public bool HasProfile(long id) => InspectProfile(id).CanRestore;
+
+    public AccountProfileStatus InspectProfile(long id)
+    {
+        try
+        {
+            if (!File.GetAttributes(Root).HasFlag(FileAttributes.Directory)) // Exists() hides access failures.
+                throw new IOException("账号快照根路径被文件占用。");
+            try { _ = File.GetAttributes(Dir(id)); }
+            catch (FileNotFoundException) { return new(AccountProfileState.Missing, null, "未保存；请登录该账号后创建快照。"); }
+            catch (DirectoryNotFoundException) { return new(AccountProfileState.Missing, null, "未保存；请登录该账号后创建快照。"); }
+            var (meta, _, legacy) = ValidateSnapshotDirectory(Dir(id), id);
+            return new(legacy ? AccountProfileState.Legacy : AccountProfileState.Valid, meta,
+                legacy ? "旧格式快照已通过兼容校验。" : "账号快照完整性校验通过。");
+        }
+        catch (InvalidDataException ex) { return new(AccountProfileState.Corrupt, ReadMeta(id), ex.Message + "\n位置：" + Dir(id)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return new(AccountProfileState.Unavailable, ReadMeta(id), "备份目录或文件不可用：" + ex.Message + "\n位置：" + Dir(id));
+        }
+    }
+
+    public IReadOnlyList<long> ReadProfileIds()
+    {
+        try
+        {
+            EnsureNoReparsePath(Root, true, "账号快照目录");
+            if (!File.GetAttributes(Root).HasFlag(FileAttributes.Directory))
+                throw new IOException("账号快照根路径被文件占用：" + Root);
+            return Directory.EnumerateDirectories(Root)
+                .Select(path => Path.GetFileName(path))
+                .Where(name => long.TryParse(name, out var id) && id > 0 && name == id.ToString(CultureInfo.InvariantCulture))
+                .Select(name => long.Parse(name, CultureInfo.InvariantCulture)).ToList();
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        { throw new IOException("账号快照根目录不存在或不可用：" + Root, ex); }
+    }
 
     public AccountProfileMeta? ReadMeta(long id)
     {
-        try { return JsonSerializer.Deserialize<AccountProfileMeta>(File.ReadAllText(MetaFile(id))); }
+        try
+        {
+            EnsureNoReparsePath(MetaFile(id), true, "账号元数据");
+            return JsonSerializer.Deserialize<AccountProfileMeta>(File.ReadAllText(MetaFile(id)));
+        }
         catch { return null; }
     }
 
@@ -72,50 +118,83 @@ public sealed class AppDataStore
 
     public IReadOnlyList<AccountProfileMeta> ReadAllMeta()
     {
-        if (!Directory.Exists(Root)) return Array.Empty<AccountProfileMeta>();
         var result = new List<AccountProfileMeta>();
-        foreach (var file in EnumerateFilesSafely(Root).Where(path =>
-                     string.Equals(Path.GetFileName(path), "meta.json", StringComparison.OrdinalIgnoreCase)))
+        foreach (var id in ReadProfileIds())
         {
-            try
-            {
-                var meta = JsonSerializer.Deserialize<AccountProfileMeta>(File.ReadAllText(file));
-                if (meta is not null) result.Add(meta);
-            }
-            catch { }
+            var status = InspectProfile(id);
+            if (status.CanRestore && status.Meta is not null) result.Add(status.Meta);
         }
         return result.GroupBy(m => m.AccountId).Select(g => g.OrderByDescending(m => m.SavedAtUtc).First()).ToList();
     }
 
-    public void Save(long accountId, string battleTag)
+    public void Save(long accountId, string battleTag, bool expired = false)
     {
-        if (!Directory.Exists(_paths.RoamingDir))
-            throw new DirectoryNotFoundException("未找到 Battle.net 的账号配置目录。");
-
+        if (accountId <= 0) throw new ArgumentException("账号 ID 必须是有效的正整数。");
         var profile = Dir(accountId);
         var staging = profile + ".staging-" + Guid.NewGuid().ToString("N");
         var previous = profile + ".previous-" + Guid.NewGuid().ToString("N");
         var stagingData = Path.Combine(staging, "BattleNet");
-        Directory.CreateDirectory(stagingData);
-
+        var stage = "检查源目录";
         try
         {
+            EnsureNoPendingRestoreJournal();
+            if (!Directory.Exists(_paths.RoamingDir))
+                throw new DirectoryNotFoundException("原始账号配置目录缺失；请在 Battle.net 登录后重试。");
+            if (IsWithinRoot(_paths.RoamingDir, Root) || IsWithinRoot(Root, _paths.RoamingDir))
+                throw new InvalidDataException("账号快照目录不能与 Battle.net 源目录重叠。");
+            EnsureNoReparsePath(Root, true, "账号快照目标目录");
+            EnsureNoReparsePath(profile, true, "已有账号快照");
+            stage = "创建 staging";
+            InjectSaveFailure(stage, staging);
+            Directory.CreateDirectory(stagingData);
+            stage = "复制账号配置";
             var manifest = BuildManifestAndCopy(stagingData);
-            File.WriteAllText(Path.Combine(staging, "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
-            File.WriteAllText(Path.Combine(staging, "meta.json"), JsonSerializer.Serialize(
-                new AccountProfileMeta(accountId, battleTag, DateTime.UtcNow), JsonOptions));
-
+            InjectSaveFailure(stage, staging);
+            stage = "写入 manifest";
+            InjectSaveFailure(stage, staging);
+            WriteDurableText(Path.Combine(staging, "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
+            stage = "写入 meta";
+            InjectSaveFailure(stage, staging);
+            WriteDurableText(Path.Combine(staging, "meta.json"), JsonSerializer.Serialize(
+                new AccountProfileMeta(accountId, battleTag, DateTime.UtcNow, expired), JsonOptions));
+            stage = "验证 staging";
+            InjectSaveFailure(stage, staging);
+            _ = ValidateSnapshotDirectory(staging, accountId);
+            stage = "提升正式快照";
+            InjectSaveFailure(stage, staging);
             if (Directory.Exists(profile)) Directory.Move(profile, previous);
             try
             {
+                stage = "移动 staging";
+                InjectSaveFailure("移动 staging", staging);
                 Directory.Move(staging, profile);
-                if (Directory.Exists(previous)) Directory.Delete(previous, true);
             }
             catch
             {
                 if (!Directory.Exists(profile) && Directory.Exists(previous)) Directory.Move(previous, profile);
                 throw;
             }
+            // Promotion is the commit point. Cleanup failure must not report a failed save.
+            try
+            {
+                InjectSaveFailure("清理旧快照", previous);
+                if (Directory.Exists(previous)) Directory.Delete(previous, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                new AccountSwitchLog().Write("SnapshotCleanupPending", detail: "旧快照保留于：" + previous);
+            }
+            new AccountSwitchLog().Write("SnapshotSaved", detail: $"files={manifest.ManagedPaths.Count};destination={profile}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            var reason = ex is UnauthorizedAccessException ? "目录不可写或文件无读取权限，请检查权限。" :
+                ex is InvalidDataException ? "配置或快照校验失败，请重新登录后保存。" :
+                ex is DirectoryNotFoundException ? "路径不存在，请检查磁盘和原始配置。" :
+                "请检查文件占用、磁盘空间和目录可写权限。";
+            var message = $"账号快照保存失败（{stage}）。{reason}\n源目录：{_paths.RoamingDir}\n目标目录：{profile}\n原因：{ex.Message}";
+            new AccountSwitchLog().Write("SnapshotSaveFailed", detail: $"stage={stage};type={ex.GetType().Name};source={_paths.RoamingDir};destination={profile}");
+            throw new IOException(message, ex);
         }
         finally
         {
@@ -123,6 +202,28 @@ public sealed class AppDataStore
             // If promotion AND rollback failed, previous is the last good backup.
             // Never delete it from a finally block.
         }
+    }
+
+    private static void InjectSaveFailure(string stage, string path)
+    {
+        if (SaveFailureForSelfTest?.Invoke(stage, path) is { } error) throw error;
+    }
+
+    internal static (AccountProfileMeta Meta, BattleNetAccountSnapshotManifest Manifest, bool Legacy)
+        ValidateSnapshotDirectory(string profile, long id)
+    {
+        EnsureNoReparseTree(profile, "账号快照");
+        var metaText = ReadOptionalFile(Path.Combine(profile, "meta.json"));
+        AccountProfileMeta? meta;
+        try { meta = metaText is null ? null : JsonSerializer.Deserialize<AccountProfileMeta>(metaText); }
+        catch (JsonException ex) { throw new InvalidDataException("账号元数据损坏。", ex); }
+        if (meta is null || id <= 0 || meta.AccountId != id || meta.SavedAtUtc == default)
+            throw new InvalidDataException("账号元数据缺失或与快照目录不匹配。");
+        var data = Path.Combine(profile, "BattleNet");
+        var text = ReadOptionalFile(Path.Combine(profile, "manifest.json"));
+        var manifest = CanonicalizeManifest(text is null ? BuildLegacyManifest(data) : ParseManifestJson(text, profile));
+        ValidateManifest(data, manifest);
+        return (meta, manifest, text is null);
     }
 
     /// <summary>
@@ -188,7 +289,7 @@ public sealed class AppDataStore
             var relative = Normalize(Path.GetRelativePath(_paths.RoamingDir, file));
             if (IsExcluded(relative, false)) { excluded.Add(relative); continue; }
             var info = new FileInfo(file);
-            var hash = info.Length <= 4 * 1024 * 1024 ? ComputeSha256(file) : null;
+            var hash = ComputeSha256(file);
             entries.Add(new(relative, info.Length, info.LastWriteTimeUtc, false, hash));
             managed.Add(relative);
             ForceCopy(file, SafeCombine(destinationRoot, relative));
@@ -205,7 +306,8 @@ public sealed class AppDataStore
     private static BattleNetAccountSnapshotManifest BuildLegacyManifest(string data)
     {
         EnsureNoReparseTree(data, "账号备份目录");
-        var entries = EnumerateFilesSafely(data).Select(file =>
+        var entries = EnumerateFilesSafely(data)
+            .Where(file => !IsExcluded(Normalize(Path.GetRelativePath(data, file)), false)).Select(file =>
         {
             var info = new FileInfo(file);
             return new BattleNetAccountSnapshotEntry(Normalize(Path.GetRelativePath(data, file)), info.Length,
@@ -221,18 +323,11 @@ public sealed class AppDataStore
     private RestorePlan PrepareRestore(long accountId)
     {
         EnsureNoPendingRestoreJournal();
+        var (_, manifest, _) = ValidateSnapshotDirectory(Dir(accountId), accountId);
         var data = DataDir(accountId);
         if (!Directory.Exists(data))
             throw new DirectoryNotFoundException($"账号 {accountId} 还没有本地备份。");
         EnsureNoReparseTree(data, "账号备份目录");
-
-        // 只有 FileNotFound/DirectoryNotFound 才能走 legacy；JSON/结构/读取错误全部拒绝。
-        var manifestText = ReadOptionalFile(ManifestFile(accountId));
-        var manifest = manifestText is null
-            ? BuildLegacyManifest(data)
-            : ParseManifestJson(manifestText, ManifestFile(accountId));
-        manifest = CanonicalizeManifest(manifest);
-        ValidateManifest(data, manifest);
 
         var targetRoot = Path.GetFullPath(_paths.RoamingDir);
         if (File.Exists(targetRoot))
@@ -578,11 +673,21 @@ public sealed class AppDataStore
 
     internal void EnsureNoPendingRestoreJournal()
     {
-        if (File.Exists(RecoveryRoot))
-            throw new IOException($"恢复 journal 路径被文件占用：{RecoveryRoot}");
-        if (!Directory.Exists(RecoveryRoot)) return;
-        EnsureNoReparsePath(RecoveryRoot, includeLeaf: true, "恢复 journal 目录");
-        var entries = Directory.EnumerateFileSystemEntries(RecoveryRoot).ToList();
+        if (string.Equals(Root, AppPaths.Current.AccountsDir, StringComparison.OrdinalIgnoreCase))
+            EnsureRecoveryRootEmpty(Path.Combine(AppPaths.Current.LegacyRoot, "accounts.recovery"));
+        EnsureRecoveryRootEmpty(RecoveryRoot);
+    }
+
+    internal static void EnsureRecoveryRootEmpty(string recoveryRoot)
+    {
+        EnsureNoReparsePath(recoveryRoot, includeLeaf: true, "恢复 journal 目录");
+        FileAttributes attributes;
+        try { attributes = File.GetAttributes(recoveryRoot); }
+        catch (FileNotFoundException) { return; }
+        catch (DirectoryNotFoundException) { return; }
+        if (!attributes.HasFlag(FileAttributes.Directory))
+            throw new IOException($"恢复 journal 路径被文件占用：{recoveryRoot}");
+        var entries = Directory.EnumerateFileSystemEntries(recoveryRoot).ToList();
         if (entries.Count > 0)
         {
             var pending = entries.First();
@@ -693,6 +798,8 @@ public sealed class AppDataStore
         if (manifest.Version != SupportedManifestVersion)
             throw new InvalidDataException($"manifest Version={manifest.Version} 不受支持。");
         if (!Directory.Exists(data)) throw new DirectoryNotFoundException("账号备份数据目录不存在。");
+        if (!manifest.Entries.Any(entry => !entry.IsDirectory))
+            throw new InvalidDataException("账号快照没有可恢复的配置文件；请登录后重新保存。");
 
         var entriesByPath = new Dictionary<string, BattleNetAccountSnapshotEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in manifest.Entries)
@@ -779,15 +886,11 @@ public sealed class AppDataStore
         {
             // Only committed account directories own managed paths; staging,
             // previous and nested user files must never expand deletion scope.
-            if (!long.TryParse(Path.GetFileName(profile), out var id) || id <= 0) continue;
+            if (!long.TryParse(Path.GetFileName(profile), out var id) || id <= 0 ||
+                Path.GetFileName(profile) != id.ToString(CultureInfo.InvariantCulture)) continue;
             try
             {
-                EnsureNoReparsePath(profile, true, "账号备份目录");
-                var data = Path.Combine(profile, "BattleNet");
-                var text = ReadOptionalFile(Path.Combine(profile, "manifest.json"));
-                var manifest = CanonicalizeManifest(text is null
-                    ? BuildLegacyManifest(data) : ParseManifestJson(text, profile));
-                ValidateManifest(data, manifest);
+                var (_, manifest, _) = ValidateSnapshotDirectory(profile, id);
                 foreach (var path in manifest.ManagedPaths) result.Add(path);
             }
             catch

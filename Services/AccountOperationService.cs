@@ -227,9 +227,10 @@ internal sealed class AccountOperationService(AccountOperationGate gate, Account
         {
             ResolveTarget = id =>
             {
-                var meta = profiles.ReadMeta(id);
-                if (!profiles.HasProfile(id) || meta is null || meta.AccountId != id)
-                    throw new InvalidDataException("目标账号没有有效的本地备份或账号元数据不匹配。");
+                var profile = profiles.InspectProfile(id);
+                var meta = profile.Meta;
+                if (!profile.CanRestore || meta is null)
+                    throw new InvalidDataException(profile.Detail + "\n请重新登录该账号后保存；不要删除原快照。\n位置：" + profiles.Root);
                 var rows = reader.ReadAccounts(out _).Where(a => a.AccountId == id).ToList();
                 var environment = rows.FirstOrDefault(a => a.Environment.Contains("battlenet.com.cn", StringComparison.OrdinalIgnoreCase))?.Environment
                     ?? rows.Select(a => a.Environment).FirstOrDefault(e => !string.IsNullOrWhiteSpace(e)) ?? "";

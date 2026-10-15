@@ -5,6 +5,7 @@ namespace CloudLightBlizzard;
 
 public partial class SnapshotConfirmWindow : Window
 {
+    public bool ClientLoginConfirmed => ConfirmedLoginBox.IsChecked == true;
     public SnapshotConfirmWindow(string accountName)
     {
         InitializeComponent();
