@@ -36,7 +36,7 @@ PASS 包含真实业务、真实文件系统隔离、真实 Host/JSONL/进程加
 | YouTube 公共页可能选中推荐视频 | 全页 regex 取最后一个 videoId，可能与当前直播无关 | 只解析当前 ytInitialPlayerResponse 的 videoDetails 与 liveBroadcastDetails；无有效播放器不判断频道离线；误导推荐和 consent 页回归 |
 | YouTube 部分频道 /live 不再指向当前直播 | 多条正在直播时，/live 返回空/旧页面，/streams 仍列出正在直播条目 | yt-dlp 2026.10.26，增加有界 /streams 回退，只选 is_live；真实发现当前直播，fixture 不选第一条旧回放 |
 | CDP 消息/标签页及代理干扰播放检测 | 原先读取第一条 WS 帧/第一个含 youtube.com 的标签，可能读到事件或错误视频；WS 缺少明确本地 no_proxy | 按 CDP id 匹配响应、严格官方主机与视频ID、本地直连、释放HTTP Session；事件先于响应、伪域名、不同视频等测试 |
-| YouTube 官方要求登录时只显示通用等待 | 实际匿名 Chrome player 返回 LOGIN_REQUIRED，媒体位置始终0 | 增加登录要求/不可播放状态及原因提示；真实受阻保持0时长，新测试确认即使假 playing 字段为true也不累计。没有绕过登录或反机器人限制 |
+| YouTube 官方要求登录时只显示通用等待 | 实际匿名 Chrome player 返回 LOGIN_REQUIRED，媒体位置始终0 | 增加登录要求/不可播放状态及原因提示；真实受阻保持0时长，新测试确认即使假 playing 字段为true也不累计。没有绕过登录或反机器人限制；WPF快照/增量/周期事件均保留该提示，恢复后清除，多Profile分别显示 |
 | SOOP 新领取协议参数与认证分类 | 上游 v1.0.3 要求 use 请求带 itemCodeIdx/itemIdx；业务 result=-1 不证明 Session 过期 | 在本项目 api_compat 适配层覆盖对应方法；保留原 Core 哈希和响应+背包状态变化验证；双ID及HTTP401/业务拒绝测试。不提交真实Claim |
 | SOOP 缓存奖励在最新背包消失后仍可进入领取 | 手动领取重新读取背包，但没有在 current_item 缺失时提前终止 | 缺失/绑定未知/未绑定/过期/二次发放等待均停止；所属UID重新读背包；未来有效期不因 expFlag=Y 被错误禁止；模拟验证无 use 请求 |
 | 新用户未准备快照被诊断成错误 | Empty/Preparing 落入默认Error；Ready但不可用仍使用“可切换”文案 | Empty/Preparing为信息，Stale/Legacy为警告，损坏/不可用Ready仍为错误；回归保持坏快照不被降级 |
@@ -80,7 +80,7 @@ PASS 包含真实业务、真实文件系统隔离、真实 Host/JSONL/进程加
 
 本地原始证据位于 Git 忽略的 `test-output/maintenance-2026-11-14/`，其中包含隔离Session副本，禁止整目录提交或上传。报告只引用不含凭据的摘要；原始日志/会话不会随源码推送。
 
-本轮预提交Worker测试：Shared3、Twitch24、SOOP43、Bilibili21；YouTube增加登录限制测试后8项通过，最终全量应为99项。早期Twitch测试有既存unclosed event loop ResourceWarning，未以它证明生产没有资源问题。完整FeatureSelfTest、账号安全、区服VerifiedDifference、更新安全、退出安全及SOOP七分支超时/崩溃测试均有本轮通过记录。早期UA固定断言及隔离探针失败记录保留，没有删除失败日志。
+本轮预提交Worker测试：Shared3、Twitch25、SOOP43、Bilibili21；YouTube增加登录限制测试后8项通过，最终全量为100项。早期Twitch测试有既存unclosed event loop ResourceWarning，未以它证明生产没有资源问题。完整FeatureSelfTest、账号安全、区服VerifiedDifference、更新安全、退出安全及SOOP七分支超时/崩溃测试均有本轮通过记录。早期UA固定断言及隔离探针失败记录保留，没有删除失败日志。
 
 最终候选构建入口：
 
@@ -90,7 +90,7 @@ PASS 包含真实业务、真实文件系统隔离、真实 Host/JSONL/进程加
   -BuildPurpose Local
 ```
 
-必须先提交并保持tracked工作区干净。脚本创建带版本/commit/用途的新目录，重新构建四Worker、WPF Release、Inno安装包，校验SSL、来源、SHA256、JSONL、组件/UI及安装包payload/settings测试；安装器测试在隔离数据目录执行专用入口并在安装前Abort，不安装到系统。既有候选非空则拒绝覆盖。最终结果生成 `candidate.json`，UI若BLOCKED会保留BLOCKED，不把打包成功当完整验收通过。
+必须先提交；最终构建使用无未跟踪文件的独立干净检出，保留原目录已有artifacts/。原目录仅tracked干净时，Worker清单仍会如实显示dirty=true，不能用它冒充完全干净的构建。脚本创建带版本/commit/用途的新目录，重新构建四Worker、WPF Release、Inno安装包，校验SSL、来源、SHA256、JSONL、组件/UI及安装包payload/settings测试；安装器测试在隔离数据目录执行专用入口并在安装前Abort，不安装到系统。既有候选非空则拒绝覆盖。最终结果生成 `candidate.json`，UI若BLOCKED会保留BLOCKED，不把打包成功当完整验收通过。
 
 ## 仍未完成的验收
 
@@ -102,3 +102,10 @@ PASS 包含真实业务、真实文件系统隔离、真实 Host/JSONL/进程加
 - 精确逐控件业务点击仍以ui-controls.csv的未执行项为准。整个系统没有“全部功能彻底正常”的结论。
 
 以上限制不得从最终交付摘要或矩阵中省略。
+
+
+## 交付前反向审查补充
+
+- YouTube端到端状态：修复ViewModel会将Worker的LOGIN_REQUIRED覆盖为通用等待的问题。快照、增量playback、周期stream三路均检查；一个Profile被限制不覆盖另一个已播放Profile的总状态；恢复后清除旧提示。新增实际WPF组件回归记录在ui-youtube-review-final.txt。
+- 干净检出实际发现Twitch Translator在source import时无条件重写English.json，将LF改为CRLF，触发构建源状态门禁。没有忽略门禁或改成无条件通过；现在仅语义内容确实需要更新时才写模板，新测试验证等价模板的字节与mtime均不变。
+- 原有未跟踪artifacts/保留；已提交的main与干净构建检出分开。最终候选及最新指针写在release/candidates/，以实际最终BuildCommit及来源摘要确认身份；旧6457923预检目录均不作为包含此补充修复的最终交付。

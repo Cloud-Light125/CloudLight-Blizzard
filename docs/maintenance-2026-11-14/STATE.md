@@ -55,3 +55,12 @@
 恢复入口：本文件保存的是提交前检查点，之后的构建验收写入release/candidates/2.1.10-<当前HEAD前12位>-Local/。恢复时先查candidate.json及FINAL-ACCEPTANCE.md和远端HEAD；若它们已完成，不要重新执行本文件历史“仍需”步骤。最终候选报告、matrix.csv、验证日志保留在该候选目录，tracked源码应保持干净。
 
 - NuGet升级后的ui-security-final整体PASS（剪贴板已可用），all-security-final整体PASS；早期剪贴板BLOCKED记录仍保留。
+
+
+## 最后反向审查补充
+
+- 第一修复提交64579231e079cf2f8518b728143665e93b0ac089已安全push并核对远端；原main只剩原有artifacts/未跟踪，随后正在补充以下修复。
+- 实际WPF状态链发现Worker的YouTube登录提示会被ViewModel通用状态覆盖；新增快照/增量/周期事件和多Profile状态恢复检查（5个断言），测试无FAIL，外部剪贴板可能BLOCKED。
+- 通过Git原生worktree建立D:/code/CloudLight Blizzard/.audit-upstreams/blizzard-clean-64579231e079；托管worktree创建工具未及时返回，未继续依赖它。是同一主代理的干净构建目录，没有子代理。构建venv为本任务现有venv的独立副本。
+- 645预检有完整安装包/组件/UI/SSL/来源检查；干净检出最后门禁发现English.json因Translator导入改LF为CRLF（JSON语义相同），按要求失败；未冒充最终通过。
+- 现已修复Translator不重写等价模板，25项Twitch测试PASS；最终Python合计100项。需要提交本轮补充、push，然后让干净worktree前进到最新提交并重建最终候选。

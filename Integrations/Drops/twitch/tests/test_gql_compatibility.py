@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
+import tempfile
 import sys
 import unittest
 from contextlib import asynccontextmanager
@@ -28,6 +30,17 @@ from exceptions import GQLException
 
 
 class TwitchGqlCompatibilityTests(unittest.TestCase):
+    def test_source_translator_does_not_rewrite_equivalent_english_template(self) -> None:
+        import translate
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            template = path / 'English.json'
+            template.write_bytes(json.dumps(translate.default_translation, indent=4).encode('utf-8'))
+            before = template.read_bytes(), template.stat().st_mtime_ns
+            with patch.object(translate, 'IS_PACKAGED', False), patch.object(translate, 'LANG_PATH', path):
+                translate.Translator()
+            self.assertEqual((template.read_bytes(), template.stat().st_mtime_ns), before)
+
     def test_unchanged_official_minutes_reset_estimates_and_timer(self) -> None:
         from inventory import TimedDrop
         notified = []

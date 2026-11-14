@@ -2436,7 +2436,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "sessions", Accounts, item => new DropsRow
         {
             Id = Text(item, "profile"), Primary = Text(item, "profile"), Secondary = Text(item, "url"),
-            Status = Bool(item, "playing") && streamAvailable ? "已确认播放" : Bool(item, "running") ? "浏览器已启动，播放待确认" : "未运行", Payload = item.Clone(),
+            Status = YouTubeSessionStatus(item, streamAvailable), Payload = item.Clone(),
         });
         if (state.TryGetProperty("config", out var config))
         {
@@ -2467,7 +2467,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                 Status = FormatSeconds(Number(item, "watch_seconds")), Payload = item.Clone(),
             });
         var enabledChannels = Channels.Count(row => row.Enabled);
-        vm.Status = vm.Running ? (sessions.Any(session => Bool(session, "playing")) ? "正在观看" : Tasks.Count > 0 ? "等待播放确认" : "正在检查频道") : "未运行";
+        var playing = sessions.Any(session => Bool(session, "playing") && Text(session, "playbackState") is not ("login_required" or "blocked"));
+        var restricted = sessions.FirstOrDefault(session => Text(session, "playbackState") is "login_required" or "blocked");
+        var restriction = restricted.ValueKind == JsonValueKind.Object ? Text(restricted, "playbackState") : "";
+        vm.Status = vm.Running ? (playing ? "正在观看" : restriction == "login_required" ? "YouTube 要求登录" :
+            restriction == "blocked" ? "YouTube 拒绝播放" : Tasks.Count > 0 ? "等待播放确认" : "正在检查频道") : "未运行";
         if (Tasks.Count > 0)
         {
             var seconds = History.Where(row => row.Id == Tasks[0].Id).Sum(row => Number(row.Payload, "watch_seconds"));
@@ -2477,8 +2481,17 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             vm.Summary = vm.Running
                 ? $"正在检查 {enabledChannels} 个已启用频道"
                 : $"{Accounts.Count} 个观看账号 · {enabledChannels} 个启用频道";
+        if (vm.Running && !playing && restriction.Length > 0)
+            vm.Summary = Text(restricted, "playbackMessage", "请手动打开该观看账号查看官方提示；未播放时不会累计本地时长。");
         UpdateYouTubeQuickStart(state, enabledChannels);
     }
+
+    private static string YouTubeSessionStatus(JsonElement session, bool streamAvailable) => Text(session, "playbackState") switch
+    {
+        "login_required" => "YouTube 要求登录",
+        "blocked" => "YouTube 拒绝播放",
+        _ => Bool(session, "playing") && streamAvailable ? "已确认播放" : Bool(session, "running") ? "浏览器已启动，播放待确认" : "未运行",
+    };
 
     private void ApplyTwitchWatchRequest(JsonElement watch)
     {
@@ -3204,20 +3217,37 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             {
                 var fields = row.Payload.ValueKind == JsonValueKind.Object
                     ? row.Payload.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone()) : new Dictionary<string, JsonElement>();
-                fields["playing"] = JsonSerializer.SerializeToElement(Bool(message.Payload, "playing"));
+                var playbackState = Text(message.Payload, "playbackState");
+                fields["playing"] = JsonSerializer.SerializeToElement(Bool(message.Payload, "playing") && playbackState is not ("login_required" or "blocked"));
                 fields["running"] = JsonSerializer.SerializeToElement(true);
+                fields["playbackState"] = JsonSerializer.SerializeToElement(playbackState);
+                fields["playbackMessage"] = JsonSerializer.SerializeToElement(Text(message.Payload, "message"));
+                var updatedPayload = JsonSerializer.SerializeToElement(fields);
                 rows[rows.IndexOf(row)] = new DropsRow { Id = row.Id, Primary = row.Primary, Secondary = row.Secondary,
-                    Status = Bool(message.Payload, "playing") ? "已确认播放" : "浏览器已启动，播放待确认", Payload = JsonSerializer.SerializeToElement(fields) };
+                    Status = YouTubeSessionStatus(updatedPayload, streamAvailable: true), Payload = updatedPayload };
             }
-            YouTube.Status = rows.Any(item => item.Payload.ValueKind == JsonValueKind.Object && Bool(item.Payload, "playing")) ? "正在观看" : "等待播放确认";
+            var playing = rows.Any(item => item.Payload.ValueKind == JsonValueKind.Object && Bool(item.Payload, "playing"));
+            var blocked = rows.FirstOrDefault(item => item.Payload.ValueKind == JsonValueKind.Object && Text(item.Payload, "playbackState") is "login_required" or "blocked");
+            YouTube.Status = playing ? "正在观看" : blocked is not null ? blocked.Status : "等待播放确认";
+            if (playing) YouTube.Summary = $"{_youtubeCurrentLabel} · 已确认媒体播放，时长仅记为本地历史";
+            else if (blocked is not null) YouTube.Summary = Text(blocked.Payload, "playbackMessage",
+                "请手动打开该观看账号查看官方提示；未播放时不会累计本地时长。");
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "stream" && YouTube.Running)
         {
             _lastYouTubeSuccessfulAt = DateTimeOffset.Now;
             RefreshTemporalStatus(DateTimeOffset.Now);
             _youtubeCurrentLabel = Text(message.Payload, "channel", Text(message.Payload, "title", "YouTube"));
-            if (YouTube.Running) YouTube.Status = "等待播放确认";
-            YouTube.Summary = $"{_youtubeCurrentLabel} · 已发现直播，等待确认播放";
+            var incomingUrl = Text(message.Payload, "url");
+            var changedStream = incomingUrl.Length > 0 && incomingUrl != _youtubeWatchUrl;
+            if (incomingUrl.Length > 0) _youtubeWatchUrl = incomingUrl;
+            var playing = !changedStream && _rows[DropsPlatform.YouTube].Accounts.Any(item =>
+                item.Payload.ValueKind == JsonValueKind.Object && Bool(item.Payload, "playing"));
+            var blocked = !changedStream && !playing ? _rows[DropsPlatform.YouTube].Accounts.FirstOrDefault(item =>
+                item.Payload.ValueKind == JsonValueKind.Object && Text(item.Payload, "playbackState") is "login_required" or "blocked") : null;
+            YouTube.Status = playing ? "正在观看" : blocked?.Status ?? "等待播放确认";
+            YouTube.Summary = playing ? $"{_youtubeCurrentLabel} · 已确认媒体播放，时长仅记为本地历史" : blocked is not null ? Text(blocked.Payload, "playbackMessage",
+                "请手动打开该观看账号查看官方提示；未播放时不会累计本地时长。") : $"{_youtubeCurrentLabel} · 已发现直播，等待确认播放";
         }
         if (message.Platform == DropsPlatform.YouTube && message.Name == "watch_time" && YouTube.Running)
         {

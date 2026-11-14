@@ -92,3 +92,7 @@ credentials. Do not commit these runtime files to a public repository.
 The original project is developed by DevilXD and licensed under the MIT License.
 This repository is not an official release from Twitch, Amazon, or the upstream
 author. See [LICENSE](LICENSE).
+
+
+CloudLight source Worker 维护补充：Translator仅在English模板语义变化时写回；
+启动/契约测试不因Windows换行符差异重写未变化的资源，保持干净检出可验证。

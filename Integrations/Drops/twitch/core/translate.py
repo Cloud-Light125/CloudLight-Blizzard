@@ -481,7 +481,14 @@ class Translator:
         # if we're in dev, update the template English.json file
         if not IS_PACKAGED:
             default_langpath = LANG_PATH.joinpath(f"{DEFAULT_LANG}.json")
-            json_save(default_langpath, default_translation)
+            # Importing a headless/source Worker must not rewrite an unchanged
+            # tracked resource just to change its line endings on Windows.
+            try:
+                update_template = json_load(default_langpath, {}, merge=False) != default_translation
+            except (OSError, ValueError):
+                update_template = True
+            if update_template:
+                json_save(default_langpath, default_translation)
         self._translation["language_name"] = DEFAULT_LANG
         # load available translation names
         for filepath in LANG_PATH.glob("*.json"):

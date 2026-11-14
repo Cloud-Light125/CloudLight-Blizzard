@@ -247,6 +247,36 @@ internal static class DropsReliabilitySelfTest
             stream = new { videoId = "fixture-live", title = "测试直播" },
             sessions = new[] { new { profile = "fixture", running = true, playing = true, playbackState = "playing" } } }));
         Check(vm.YouTube.Status == "正在观看" && vm.Accounts[0].Status == "已确认播放", "YouTube 已确认播放事件正确投影到账号与页面状态");
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = true,
+            stream = new { videoId = "fixture-live", title = "测试直播" },
+            sessions = new[] { new { profile = "fixture", running = true, playing = false,
+                playbackState = "login_required", playbackMessage = "请手动登录；不会累计本地时长" } } }));
+        Check(vm.YouTube.Status == "YouTube 要求登录" && vm.Accounts[0].Status == "YouTube 要求登录" &&
+              vm.YouTube.Summary.Contains("不会累计"), "YouTube 官方登录限制经快照投影到账号卡、总状态和原因");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "playback", State(new {
+            profile = "fixture", playing = false, playbackState = "login_required", message = "请手动登录；不会累计本地时长" })) });
+        Check(vm.YouTube.Status == "YouTube 要求登录" && vm.Accounts[0].Status == "YouTube 要求登录",
+            "YouTube 登录限制增量事件不会被通用等待播放状态覆盖");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "stream", State(new {
+            videoId = "fixture-live", title = "测试直播" })) });
+        Check(vm.YouTube.Status == "YouTube 要求登录" && vm.YouTube.Summary.Contains("不会累计"),
+            "同一YouTube直播的周期发现事件保留官方登录限制");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "playback", State(new {
+            profile = "fixture", playing = true, playbackState = "playing" })) });
+        Check(vm.YouTube.Status == "正在观看" && vm.Accounts[0].Status == "已确认播放" &&
+              !vm.YouTube.Summary.Contains("手动登录"), "YouTube 媒体恢复后清除旧登录限制提示");
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = true,
+            stream = new { videoId = "fixture-live", title = "测试直播", url = "https://www.youtube.com/watch?v=fixture-live" },
+            sessions = new[] {
+                new { profile = "fixture", running = true, playing = true, playbackState = "playing" },
+                new { profile = "blocked", running = true, playing = false, playbackState = "login_required" } } }));
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "stream", State(new {
+            videoId = "fixture-live", title = "测试直播", url = "https://www.youtube.com/watch?v=fixture-live" })) });
+        Check(vm.YouTube.Status == "正在观看" && vm.Accounts.Any(row => row.Status == "YouTube 要求登录"),
+            "YouTube 一个Profile被登录限制不覆盖另一个Profile已确认播放的总状态");
+        vm.ApplyState(DropsPlatform.YouTube, State(new { running = true,
+            stream = new { videoId = "fixture-live", title = "测试直播" },
+            sessions = new[] { new { profile = "fixture", running = true, playing = true, playbackState = "playing" } } }));
         applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "playback", State(new {
             profile = "fixture", playing = false, playbackState = "buffering" })) });
         applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.YouTube, "watch_time", State(new { seconds = 15,
