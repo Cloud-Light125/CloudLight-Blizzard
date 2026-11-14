@@ -1,0 +1,210 @@
+﻿ID,模块,功能,状态,故障症状,根因,修复状态,验证证据,验证层级
+01-01,Battle.net,账号识别,PASS,,,保留现有实现,manual-ui 实际账号页；未将本地指针当作认证证据,真实只读
+01-02,Battle.net,账号列表,PASS,,,保留现有实现,manual-ui 实际账号页；未将本地指针当作认证证据,真实只读
+01-03,Battle.net,添加账号,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-04,Battle.net,重新登录,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-05,Battle.net,切换账号,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-06,Battle.net,账号备份,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-07,Battle.net,更新备份,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-08,Battle.net,备份恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-09,Battle.net,删除备份,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-10,Battle.net,隐藏账号,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-11,Battle.net,自定义名称,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-12,Battle.net,备注,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-13,Battle.net,区服识别,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-14,Battle.net,登录确认,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-15,Battle.net,认证过期识别,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-16,Battle.net,CLI切换,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-17,Battle.net,CLI添加,BLOCKED,保护正在运行的真实客户端；没有执行新的真实登录/账号切换,,未作通过声明,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt,真实客户端未操作；隔离组件已验证
+01-18,Battle.net,单实例跨进程互斥,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-19,Battle.net,旧备份迁移,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-20,Battle.net,损坏manifest拒绝,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-21,Battle.net,空目录拒绝,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+01-22,Battle.net,事务回滚与journal,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/account-safety/feature-selftest.txt；all-fixed/feature-selftest.txt；exit-safety/feature-selftest.txt,真实文件系统隔离/模拟客户端
+02-01,守望先锋区服,状态检测,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-02,守望先锋区服,安装目录识别,PASS,product.db 二进制控制字节导致自动查找失败；已修复,,已修复并定向验证,Battle.net 2.53.8.17986；.build.info 2.25.1.0.155284；_retail_/Overwatch.exe；manual-ui；region-locator-fixed/feature-selftest.txt,真实客户端只读 + 实际WPF
+02-03,守望先锋区服,区服备份,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-04,守望先锋区服,自定义备份路径,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-05,守望先锋区服,文件差异,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-06,守望先锋区服,VerifiedDifference,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-07,守望先锋区服,FullSnapshot,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-08,守望先锋区服,区服预检,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-09,守望先锋区服,国服转国际服,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-10,守望先锋区服,国际服转国服,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-11,守望先锋区服,备份恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-12,守望先锋区服,版本更新兼容,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-13,守望先锋区服,游戏运行门禁,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-14,守望先锋区服,部分失败恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-15,守望先锋区服,进度与日志,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/region-locator-fixed/feature-selftest.txt；all-final-preview/feature-selftest.txt；手工WPF只读,隔离真实文件系统 + 模拟双区文件；未改真实游戏
+02-16,守望先锋区服,真实客户端文件结构,PASS,product.db 二进制控制字节导致自动查找失败；已修复,,已修复并定向验证,Battle.net 2.53.8.17986；.build.info 2.25.1.0.155284；_retail_/Overwatch.exe；manual-ui；region-locator-fixed/feature-selftest.txt,真实客户端只读 + 实际WPF
+03-01,Twitch,Smartbox OAuth,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；oauth契约测试；不是新授权交换完成,真实官方接口，仅device字段
+03-02,Twitch,Device Code授权,BLOCKED,,,未作通过声明,需要用户完成一次新device授权；没有模拟已授权,真实device API通过；完整人工授权未执行
+03-03,Twitch,Session恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-04,Twitch,Token验证,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-05,Twitch,登录状态,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-06,Twitch,Campaigns,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-07,Twitch,Inventory,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-08,Twitch,当前活动,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-09,Twitch,频道发现,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-10,Twitch,频道资格,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-11,Twitch,在线状态,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-12,Twitch,自动选择频道,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-13,Twitch,自动切换频道,NOT TESTED,,,,本轮没有足以判定该项完整通过的直接证据；保留原实现，后续定向验收,
+03-14,Twitch,观看请求,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-15,Twitch,播放列表及分片,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-16,Twitch,WebSocket,NOT TESTED,,,,本轮没有足以判定该项完整通过的直接证据；保留原实现，后续定向验收,
+03-17,Twitch,官方奖励进度增长,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-18,Twitch,手动刷新,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-19,Twitch,手动停止,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-20,Twitch,网络恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/python-twitch.log；changed-twitch.log（早期UA固定断言失败已更新至官方新版本）；ui-baseline.txt；未提交Claim,真实禁用领取 + 契约/Host故障注入
+03-21,Twitch,代理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+03-22,Twitch,奖励领取,BLOCKED,,,未作通过声明,本轮明确禁用自动领取，未提交任何Claim；NoAutoClaim与结果验证契约保留,禁止真实领取
+03-23,Twitch,NoAutoClaim,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/python-twitch.log；changed-twitch.log（早期UA固定断言失败已更新至官方新版本）；ui-baseline.txt；未提交Claim,真实禁用领取 + 契约/Host故障注入
+03-24,Twitch,提醒和日志,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/python-twitch.log；changed-twitch.log（早期UA固定断言失败已更新至官方新版本）；ui-baseline.txt；未提交Claim,真实禁用领取 + 契约/Host故障注入
+03-25,Twitch,重启状态恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/twitch-live-frozen.json；twitch-direct-official-verification.json；验证开始3分钟→结束5分钟→独立官方6分钟；停止退出；重启Session为源码轮→冻结轮,真实冻结Worker/API + 隔离Session副本
+04-01,SOOP,多账号登录,BLOCKED,,,未作通过声明,真实恢复1账号；没有第二个真实账号；并发另有真实Host+模拟双UID证据,仅一个真实账号
+04-02,SOOP,Cookie Session,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-03,SOOP,DPAPI,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-04,SOOP,认证失效恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-05,SOOP,Mission,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-06,SOOP,Event,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-07,SOOP,Inventory,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-08,SOOP,直播发现,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-09,SOOP,观看资格,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-10,SOOP,Bridge,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-11,SOOP,心跳,NOT TESTED,,,,本轮没有足以判定该项完整通过的直接证据；保留原实现，后续定向验收,
+04-12,SOOP,官方viewTime增长,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-13,SOOP,奖励阶段,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-14,SOOP,自动观看,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-15,SOOP,频道切换,NOT TESTED,,,未作通过声明,既有实现保留；不能以初始选台代替运行中频道切换,本轮验证自动选台；未强制切换两条真实合格直播
+04-16,SOOP,多账号同时运行,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-17,SOOP,单账号启动停止,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-18,SOOP,单账号刷新,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-19,SOOP,全局停止,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-live-frozen.json；soop-direct-official-verification.json；11个远端进度记录，mission14907为3→4→6；官方背包90条；未Claim,真实冻结Worker/API + 隔离Session副本
+04-20,SOOP,网络恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-21,SOOP,代理切换,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-22,SOOP,历史高水位分离,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-23,SOOP,回退诊断,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-24,SOOP,自动领取保护,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-25,SOOP,游戏账号绑定,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-26,SOOP,UID独立恢复意图,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-27,SOOP,UID只读请求取消,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-28,SOOP,共享Worker恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-29,SOOP,领取前UID背包重读,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+04-30,SOOP,ingameGiveYn itemType4 acctConn,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/soop-timeout/feature-selftest.txt；changed-soop.log；workers-build-final-precommit.log（SOOP43）；新增api_compat测试；不等于真实双账号或实际领取,真实Host/JSONL + 模拟UID/网络/领取；DPAPI真实隔离
+05-01,YouTube,yt-dlp直播发现,PASS,定向更新yt-dlp 2026.10.26；避免错误推荐videoId与失效/live入口,,已修复并定向验证,test-output/maintenance-2026-11-14/anonymous-live-discovery.json；youtube-anonymous-result.json；/live失败后/streams发现当前直播,真实匿名请求
+05-02,YouTube,持久化Profile,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-03,YouTube,Chromium Brave,BLOCKED,,,未作通过声明,Chrome已测；Brave没有本轮可执行证据，不合并为通过,Chrome实际运行；Brave未覆盖
+05-04,YouTube,CDP直连,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-05,YouTube,直播页面打开,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-06,YouTube,实际媒体播放,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；playability.status=LOGIN_REQUIRED，要求登录确认不是机器人；遵守暂停真实登录的授权边界,真实Chrome：官方LOGIN_REQUIRED
+05-07,YouTube,播放位置前进,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-final-source.log；test_history_requires_advancing_playback_and_stops_with_user；真实阻断保持0，不算真实播放通过,真实受阻时0秒 + 模拟推进与非零历史恢复
+05-08,YouTube,本地观看时长,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-final-source.log；test_history_requires_advancing_playback_and_stops_with_user；真实阻断保持0，不算真实播放通过,真实受阻时0秒 + 模拟推进与非零历史恢复
+05-09,YouTube,观看历史,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-final-source.log；test_history_requires_advancing_playback_and_stops_with_user；真实阻断保持0，不算真实播放通过,真实受阻时0秒 + 模拟推进与非零历史恢复
+05-10,YouTube,代理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-11,YouTube,停止,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-12,YouTube,浏览器清理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-anonymous-result.json；匿名profile；currentTime=0/readyState=0仍能正确读取；停止回收浏览器,真实隔离匿名Chrome/CDP
+05-13,YouTube,重启历史恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-final-source.log；test_history_requires_advancing_playback_and_stops_with_user；真实阻断保持0，不算真实播放通过,真实受阻时0秒 + 模拟推进与非零历史恢复
+05-14,YouTube,本地与官方进度标识,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/youtube-final-source.log；test_history_requires_advancing_playback_and_stops_with_user；真实阻断保持0，不算真实播放通过,真实受阻时0秒 + 模拟推进与非零历史恢复
+06-01,Bilibili,扫码登录,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/official-public-probes.json；QR code0、nav -101（未登录）；不把QR生成当完整登录；实际任务/观看需Session和活动,未授权真实登录；公开API与契约已测
+06-02,Bilibili,二维码过期刷新,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-03,Bilibili,Session保存,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-04,Bilibili,账号信息,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/official-public-probes.json；QR code0、nav -101（未登录）；不把QR生成当完整登录；实际任务/观看需Session和活动,未授权真实登录；公开API与契约已测
+06-05,Bilibili,直播间发现,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-06,Bilibili,任务读取,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/official-public-probes.json；QR code0、nav -101（未登录）；不把QR生成当完整登录；实际任务/观看需Session和活动,未授权真实登录；公开API与契约已测
+06-07,Bilibili,官方进度读取,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/official-public-probes.json；QR code0、nav -101（未登录）；不把QR生成当完整登录；实际任务/观看需Session和活动,未授权真实登录；公开API与契约已测
+06-08,Bilibili,观看Session,BLOCKED,,,未作通过声明,test-output/maintenance-2026-11-14/official-public-probes.json；QR code0、nav -101（未登录）；不把QR生成当完整登录；实际任务/观看需Session和活动,未授权真实登录；公开API与契约已测
+06-09,Bilibili,自动继续,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-10,Bilibili,手动停止,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-11,Bilibili,Poller,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-12,Bilibili,代理策略,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-13,Bilibili,HTTP412诊断,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-14,Bilibili,领取开关,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-15,Bilibili,任务状态,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+06-16,Bilibili,Worker退出,PASS,扁平EraTasklistPc解析缺陷已定向同步；真实登录后的官方任务仍BLOCKED,,已修复并定向验证,test-output/maintenance-2026-11-14/official-public-probes.json；changed-bilibili.log；exit-safety/feature-selftest.txt；ui-baseline.txt,公开直播间真实读取 + 隔离/模拟账号组件
+07-01,网络更新器,全局代理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-02,网络更新器,平台独立代理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-03,网络更新器,FallbackDirect,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-04,网络更新器,HTTP HTTPS,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-05,网络更新器,WebSocket,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-06,网络更新器,DNS TLS,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-07,网络更新器,超时,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-08,网络更新器,自动重试,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-09,网络更新器,断点续传,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-10,网络更新器,ETag LastModified,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-11,网络更新器,SHA256,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-12,网络更新器,更新检查,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-13,网络更新器,更新下载,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-14,网络更新器,更新安装,BLOCKED,,,未作通过声明,账号事务/清理/installer launcher门禁的隔离回归PASS；最终候选仅构建与无安装selftest,未执行真实系统安装
+07-15,网络更新器,版本比较,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-16,网络更新器,GitHubReleases,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-17,网络更新器,更新日志,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/official-public-probes.json；manual-ui/logs/network.log；manual-ui/logs/update.log；Twitch/SOOP冻结smoke,真实HTTP/TLS/Bridge + WPF/契约
+07-18,网络更新器,失败恢复,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-19,网络更新器,安装等待事务清理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+07-20,网络更新器,环境依赖与许可证,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/update-safety/feature-selftest.txt；exit-safety/feature-selftest.txt；构建manifest/SSL检查；release-range-probe.json 不代替整包远端SHA；nuget-vulnerabilities.json发现2项，nuget-vulnerabilities-fixed.json修复后无已知漏洞；account-native-updated/feature-selftest.txt原生SQLite回归,真实本地HTTP/文件系统 + 故障注入；部分公开请求
+08-01,WPF系统,账号页,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-02,WPF系统,区服页,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-03,WPF系统,掉宝页,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-04,WPF系统,战绩页,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-05,WPF系统,设置页,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-06,WPF系统,日志诊断,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-07,WPF系统,通知中心,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-08,WPF系统,弹窗,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-09,WPF系统,主题,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-10,WPF系统,代理设置,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；手工账号→掉宝→设置→主题→区服→诊断，实际自动识别路径；无破坏性按钮,实际WPF操作 + 控件/绑定集成
+08-11,WPF系统,自动启动,BLOCKED,,,未作通过声明,自动启动仅只读观察注册表状态；Windows toast/多显示器实际交互尚未验收,未修改系统设置/未安装注册/缺少实机覆盖
+08-12,WPF系统,最小化托盘,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/exit-safety/feature-selftest.txt：actual window close-to-tray preserves lifecycle,真实WPF窗口组件关闭事件，不等于物理托盘点击
+08-13,WPF系统,托盘退出,NOT TESTED,,,,本轮没有足以判定该项完整通过的直接证据；保留原实现，后续定向验收,
+08-14,WPF系统,Windows通知,BLOCKED,,,未作通过声明,自动启动仅只读观察注册表状态；Windows toast/多显示器实际交互尚未验收,未修改系统设置/未安装注册/缺少实机覆盖
+08-15,WPF系统,关闭重启,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-16,WPF系统,更新设置保留,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-17,WPF系统,DPI100,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-18,WPF系统,DPI125模拟,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-19,WPF系统,DPI150模拟,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-20,WPF系统,1366x768,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-21,WPF系统,1920x1080,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-22,WPF系统,2560x1440,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-23,WPF系统,多显示器,BLOCKED,,,未作通过声明,自动启动仅只读观察注册表状态；Windows toast/多显示器实际交互尚未验收,未修改系统设置/未安装注册/缺少实机覆盖
+08-24,WPF系统,按钮响应,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-25,WPF系统,绑定与加载错误,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+08-26,WPF系统,反馈公告,PASS,,,保留现有实现,真实manual-ui公告/诊断请求；Feedback测试没有向他人发送或上传内容,真实公告读取 + 反馈仅Mock
+08-27,WPF系统,旧数据导入,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；all-final-preview/feature-selftest.txt；exit-safety/feature-selftest.txt；243控件清单不代表243按钮已全部点击,WPF组件/模拟事件/文件系统；尺寸缩放仅DIP模拟
+09-01,WorkerHost,请求ID,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-02,WorkerHost,Sequence,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-03,WorkerHost,Generation,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-04,WorkerHost,SnapshotCaptureTime,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-05,WorkerHost,异步取消,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-06,WorkerHost,请求超时,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-07,WorkerHost,重启,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-08,WorkerHost,退出清理,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-09,WorkerHost,旧事件拒绝,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-10,WorkerHost,平台切换,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-11,WorkerHost,多账号隔离,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-12,WorkerHost,控制命令优先,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-13,WorkerHost,手停不复活,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-14,WorkerHost,旧Worker不覆盖,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-15,WorkerHost,错误不变空活动,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+09-16,WorkerHost,刷新不归零,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/ui-baseline.txt；soop-timeout/feature-selftest.txt；all-final-preview/feature-selftest.txt；DropsReliabilitySelfTest,真实Host/JSONL/Worker进程 + 可控账号业务模拟
+10-01,构建,WPF Release,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-02,构建,Twitch冻结Worker,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-03,构建,SOOP冻结Worker,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-04,构建,YouTube冻结Worker,NOT TESTED,,,未作通过声明,新增登录要求提示后，需要最终干净提交全量冻结；最终结果写入候选candidate.json/validation，不将预提交包冒充最终包,最终干净提交构建待执行
+10-05,构建,Bilibili冻结Worker,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-06,构建,SSL OpenSSL,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-07,构建,JSONL协议,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-08,构建,第三方来源,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-09,构建,Worker SHA256,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-10,构建,BuildCommit,NOT TESTED,,,未作通过声明,新增登录要求提示后，需要最终干净提交全量冻结；最终结果写入候选candidate.json/validation，不将预提交包冒充最终包,最终干净提交构建待执行
+10-11,构建,安装依赖,NOT TESTED,,,未作通过声明,新增登录要求提示后，需要最终干净提交全量冻结；最终结果写入候选candidate.json/validation，不将预提交包冒充最终包,最终干净提交构建待执行
+10-12,构建,主程序启动退出,PASS,,,保留现有实现,test-output/maintenance-2026-11-14/build-final-preview.log；workers-build-final-precommit.log；core-source-recovery.json；实际WPF正常退出,本轮预提交构建与实际运行
+10-13,构建,干净提交重建,NOT TESTED,,,未作通过声明,新增登录要求提示后，需要最终干净提交全量冻结；最终结果写入候选candidate.json/validation，不将预提交包冒充最终包,最终干净提交构建待执行
+X-01,Battle.net,真实账号A-B-A认证往返,BLOCKED,,,未作通过声明,没有覆盖真实配置、关闭用户客户端或声明本地指针=登录,真实客户端
+X-02,守望先锋区服,当前版本真实国服国际服文件往返,BLOCKED,,,未作通过声明,只有当前已安装国际服只读结构；双区恢复用隔离文件验收,真实游戏
+X-03,Twitch,未领取前置奖励后的服务端继续推进,BLOCKED,,,未作通过声明,不提交Claim；不能承诺绕过平台的前置领取规则,官方前置领取限制
+X-04,SOOP,真实双账号并发,BLOCKED,,,未作通过声明,只有一个真实账号；真实Host+模拟双UID并发PASS,真实业务
+X-05,SOOP,真实自动领取,BLOCKED,,,未作通过声明,默认关闭，未提交Claim；协议更新与绑定保护仅模拟验证,真实业务
+X-06,WPF系统,真实战绩查询与生涯数据展示,BLOCKED,,,未作通过声明,官方overwatch.blizzard.com请求TLS EOF；页面构造/导航通过，不伪造生涯数据,真实公开接口
+X-07,WPF系统,真实剪贴板复制,PASS,早期系统剪贴板占用，后续已释放,,未强关占用程序；保留早期BLOCKED证据,ui-baseline.txt为BLOCKED；ui-security-final.txt整体PASS，真实复制按钮验证通过,真实STA剪贴板写入/读回与WPF按钮路径
+X-08,YouTube,官方奖励进度,NOT APPLICABLE,,,未作通过声明,该Watcher没有官方奖励进度接口，不将本地时长当官方奖励,本地观看记录
+X-09,Twitch,新Worker独占产生官方进度增长,BLOCKED,既有用户Worker并行运行,不能为归因测试强停用户已有实例或更换未授权真实账号,未作独占归因声明,已观测官方增长并核对独立API；20:48启动的既有主程序和四组Worker均保留,真实业务因果归因受限
+X-10,SOOP,新Worker独占产生官方进度增长,BLOCKED,既有用户Worker并行运行,不能为归因测试强停用户已有实例或更换未授权真实账号,未作独占归因声明,已观测官方增长并核对独立API；20:48启动的既有主程序和四组Worker均保留,真实业务因果归因受限

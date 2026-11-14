@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace CloudLightBlizzard.Services.OverwatchRegion;
 
@@ -16,7 +17,10 @@ public static class OverwatchGameLocator
         {
             foreach (var candidate in ReadCandidates(file))
             {
-                var root = NormalizeCandidate(candidate);
+                string root;
+                try { root = NormalizeCandidate(candidate); }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                { continue; }
                 if (OverwatchRegionManager.IsValidGameRoot(root)) return root;
             }
         }
@@ -26,7 +30,9 @@ public static class OverwatchGameLocator
     private static IEnumerable<string> ReadCandidates(string file)
     {
         if (!File.Exists(file)) yield break;
-        var text = File.ReadAllText(file);
+        string text;
+        try { text = File.ReadAllText(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { yield break; }
         JsonDocument? doc = null;
         try { doc = JsonDocument.Parse(text); } catch { }
         if (doc is not null)
@@ -38,6 +44,13 @@ public static class OverwatchGameLocator
         }
         else
         {
+            // Agent product.db is protobuf, not newline-delimited text. Its
+            // length/tag bytes can surround a valid installation path. Extract
+            // absolute paths without retaining those control bytes, then keep
+            // the executable validation in Detect/NormalizeCandidate.
+            foreach (Match match in Regex.Matches(text, @"[A-Za-z]:[\\/][^\x00-\x1F""<>|?*]+"))
+                if (match.Value.Contains("Overwatch", StringComparison.OrdinalIgnoreCase))
+                    yield return match.Value.Trim();
             foreach (var part in text.Split('\0', '\r', '\n', '"'))
                 if (part.Contains("Overwatch", StringComparison.OrdinalIgnoreCase))
                     yield return part.Trim();
@@ -62,6 +75,8 @@ public static class OverwatchGameLocator
     private static string NormalizeCandidate(string value)
     {
         value = Environment.ExpandEnvironmentVariables(value.Trim());
+        if (!Path.IsPathFullyQualified(value)) return value;
+        value = Path.GetFullPath(value);
         if (File.Exists(value)) value = Path.GetDirectoryName(value)!;
         var current = value;
         for (var i = 0; i < 4 && !string.IsNullOrWhiteSpace(current); i++)

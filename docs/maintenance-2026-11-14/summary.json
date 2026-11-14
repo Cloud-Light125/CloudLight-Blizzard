@@ -1,0 +1,45 @@
+{
+  "Battle.net": {
+    "PASS": 16,
+    "BLOCKED": 7
+  },
+  "守望先锋区服": {
+    "PASS": 16,
+    "BLOCKED": 1
+  },
+  "Twitch": {
+    "PASS": 21,
+    "BLOCKED": 4,
+    "NOT TESTED": 2
+  },
+  "SOOP": {
+    "BLOCKED": 4,
+    "PASS": 27,
+    "NOT TESTED": 2
+  },
+  "YouTube": {
+    "PASS": 12,
+    "BLOCKED": 2,
+    "NOT APPLICABLE": 1
+  },
+  "Bilibili": {
+    "BLOCKED": 5,
+    "PASS": 11
+  },
+  "网络更新器": {
+    "PASS": 19,
+    "BLOCKED": 1
+  },
+  "WPF系统": {
+    "PASS": 24,
+    "BLOCKED": 4,
+    "NOT TESTED": 1
+  },
+  "WorkerHost": {
+    "PASS": 16
+  },
+  "构建": {
+    "PASS": 9,
+    "NOT TESTED": 4
+  }
+}

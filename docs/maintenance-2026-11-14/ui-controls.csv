@@ -1,0 +1,244 @@
+﻿页面,控件,内容,事件,命令,启用,状态,说明
+Views/AccountSettingsWindow.xaml,,取消,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/AccountSettingsWindow.xaml,,保存,OnSave,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/AnnouncementWindow.xaml,,关闭,OnClose,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/CloseChoiceWindow.xaml,,,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/CloseChoiceWindow.xaml,OptTray,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/CloseChoiceWindow.xaml,OptExit,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/CloseChoiceWindow.xaml,Remember,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/CloseChoiceWindow.xaml,,确定,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/DeleteConfirmWindow.xaml,,,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/DeleteConfirmWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/DeleteConfirmWindow.xaml,,,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/ExitConfirmationDialog.xaml,,×,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/ExitConfirmationDialog.xaml,,取消,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/ExitConfirmationDialog.xaml,,最小化到托盘,OnMinimizeToTray,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/ExitConfirmationDialog.xaml,,退出,OnExit,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/LoginNewWindow.xaml,,,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/LoginNewWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/LoginNewWindow.xaml,,继续,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,AccountsNav,账号,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,RegionNav,区服切换,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,StatsNav,战绩,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,DropsNav,掉宝,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,SnapshotsNav,区服快照,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,DiagnosticsNav,诊断中心,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,SettingsNav,设置,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,AboutNav,关于,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/MainWindow.xaml,,刷新账号,OnRefresh,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AboutPage.xaml,,打开上游项目,OnOpenSource,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AboutPage.xaml,,打开许可证,OnOpenLocalPath,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AboutPage.xaml,,打开第三方说明,OnOpenLocalPath,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,打开 Battle.net,OnLaunchClient,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,更新账号备份,OnSaveCurrent,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,登录新账号,OnAddAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,打开账号快照目录,OnOpenSnapshots,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,{Binding SwitchText},OnSwitchCard,,{Binding CanSwitch},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,战绩,OnStats,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,编辑,OnEdit,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,删除,OnDelete,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,隐藏,OnHide,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/AccountsPage.xaml,,重新登录并保存,OnSwitchCard,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DiagnosticsPage.xaml,,开始诊断,OnStart,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DiagnosticsPage.xaml,,复制诊断结果,OnCopy,,{Binding CanExport},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DiagnosticsPage.xaml,,导出诊断包,OnExport,,{Binding CanExport},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DiagnosticsPage.xaml,,取消诊断,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,{Binding TwitchClaimButtonText},OnClaimTwitchDrop,,{Binding CanStartTwitchClaim},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,{Binding ActionText},OnQuickStartAction,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,{Binding ClaimButtonText},,"{Binding DataContext.BilibiliDetails.ClaimRewardCommand, ElementName=DropsRoot}",{Binding CanClaim},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,,,"{Binding DataContext.BilibiliDetails.SetRoomEnabledCommand, ElementName=DropsRoot}",,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,删除,,"{Binding DataContext.BilibiliDetails.RemoveRoomCommand, ElementName=DropsRoot}",,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,刷新,OnRefresh,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopTab,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeTab,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchTab,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliTab,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,DropsActiveStartButton,{Binding ActiveStartText},OnActiveStart,,{Binding CanActiveStart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,DropsActiveStopButton,停止,OnActiveStop,,{Binding CanActiveStop},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,刷新当前平台,OnRefresh,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,官方背包 / 平台,OnActiveInventory,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,打开直播间,OnOpenCurrentWatch,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,重试连接 / 刷新,OnActiveRetry,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,查看日志,OnShowDropsLog,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,DropsDismissNoticeButton,关闭提醒,OnDismissNotice,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,立即重试,OnSoopRetryNow,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,打开背包,OnOpenSoopInventory,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,"{Binding SelectedItem.SoopClaimButtonText, ElementName=SoopInventoryList, TargetNullValue=领取选中奖励, FallbackValue=领取选中奖励}",OnClaimSoopReward,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,复制选中兑换码,OnCopySoopCode,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加账号,OnSoopAddAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,启动选中账号,OnSoopStartAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,停止选中账号,OnSoopStopAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,设为主账号,OnSoopSetPrimaryAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,删除选中账号,OnSoopDeleteAccount,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,全部开始,OnStart,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,全部停止,OnStop,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopLowBandwidth,低流量模式,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopAutoClaim,自动领取奖励,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopHangWithoutMissions,没有任务时继续等待,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopAutoStart,启动 CloudLight Blizzard 时自动运行 SOOP,OnAutoStartChanged,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopSaveSettingsButton,保存设置,OnSaveSoop,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,{Binding SoopRefreshButtonText},OnSoopRefresh,,{Binding CanRefreshSoop},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,使用帮助,OnToggleHelp,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加账号,OnYouTubeAddProfile,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,打开登录窗口,OnYouTubeLogin,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,删除账号,OnYouTubeDeleteProfile,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加频道,OnYouTubeAddChannel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,启用 / 停用,OnYouTubeToggleChannel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,删除,OnYouTubeDeleteChannel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,浏览...,OnBrowseYouTubeBrowser,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeHeadless,无头模式,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeMute,静音播放,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeSaveSettingsButton,保存设置,OnSaveYouTube,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,使用帮助,OnToggleHelp,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeStartButton,开始观看,OnStart,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeStopButton,停止观看,OnStop,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,打开 Twitch 授权页面,OnOpenTwitchAuthorization,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchCopyCodeButton,复制授权码,OnCopyTwitchAuthorizationCode,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,使用帮助,OnToggleHelp,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,{Binding TwitchLoginButtonText},OnTwitchLogin,,{Binding CanTwitchLogin},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,清除登录信息,OnTwitchLogout,,{Binding CanClearTwitchLogin},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,重新检测,OnTwitchRetry,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,开始 Twitch 掉宝,OnStart,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,停止 Twitch 掉宝,OnStop,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchRefreshButton,{Binding TwitchRefreshButtonText},OnTwitchReload,,{Binding CanRefreshTwitch},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,立即重试,OnTwitchRetryNow,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchAutoStart,启动 CloudLight Blizzard 时自动运行 Twitch,OnAutoStartChanged,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,打开背包,OnOpenTwitchInventory,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,选择并切换频道,OnTwitchSelectChannel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliQrLoginButton,扫码登录,,{Binding BilibiliDetails.ScanQrLoginCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,退出登录,,{Binding BilibiliDetails.LogoutCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliStartButton,开始掉宝,,{Binding BilibiliDetails.StartCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliStopButton,停止掉宝,,{Binding BilibiliDetails.StopCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliRefreshButton,刷新进度,,{Binding BilibiliDetails.RefreshCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliDiscoverButton,发现活动,,{Binding BilibiliDetails.DiscoverCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliQrCancelButton,取消扫码,,{Binding BilibiliDetails.CancelQrCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,重新获取二维码,,{Binding BilibiliDetails.ReacquireQrCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,导入并验证 Cookie,,{Binding BilibiliDetails.ManualCookieCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加,,{Binding BilibiliDetails.AddRoomCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,前往网络设置,OnOpenProxySettings,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliEnabledCheck,启用哔哩哔哩,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliAutoTaskProgress,自动查询任务进度,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliAutoDiscoverCheck,自动发现当前活动,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliAutoClaimCheck,自动领取奖励,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliTaskNotificationsCheck,任务完成通知,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliReconnectCheck,断线自动重连,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliAutoStart,启动 CloudLight Blizzard 时自动恢复 Worker,OnAutoStartChanged,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliAutoResume,上次正在掉宝时自动恢复掉宝,OnAutoStartChanged,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,保存设置,,{Binding BilibiliDetails.SaveSettingsCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,清除第三方通知,,{Binding BilibiliDetails.ClearNotifierCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,刷新 Session 详情,,{Binding BilibiliDetails.RefreshSessionsCommand},,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加,OnAddPriorityGame,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,↑,OnPriorityUp,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,↓,OnPriorityDown,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,移除,OnRemovePriorityGame,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,添加,OnAddExcludedGame,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,移除,OnRemoveExcludedGame,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchTrayNotifications,托盘通知,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchBadgesEmotes,显示徽章和表情,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchAvailableDrops,检查可用掉宝,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchAutoClaim,自动领取掉宝,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchSaveSettingsButton,保存设置,OnSaveTwitch,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,网络测试,OnNetworkCheck,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,SoopUseProxyCheck,SOOP,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,YouTubeUseProxyCheck,YouTube,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,TwitchUseProxyCheck,Twitch,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,BilibiliUseProxyCheck,哔哩哔哩,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,前往设置,OnOpenProxySettings,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,复制全部,OnCopyAllLogs,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/DropsPage.xaml,,清空显示,OnClearLogDisplay,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,AttachLogsBox,附加运行日志,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,PreviewButton,查看将提交的日志,OnPreviewLogs,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,SubmitButton,提交反馈,OnSubmit,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,CancelUploadButton,取消上传,OnCancelUpload,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,CopyReportButton,复制反馈编号,OnCopyReportId,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,RetryButton,重试,OnSubmit,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/FeedbackPanel.xaml,CopyQqButton,复制QQ群号,OnCopyQqGroup,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,{Binding RegionGuide.SwitchChinaText},OnSwitchChina,,{Binding RegionGuide.CanSwitchChina},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,{Binding RegionGuide.SwitchInternationalText},OnSwitchInternational,,{Binding RegionGuide.CanSwitchInternational},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,检查当前区服文件状态,OnCheckCurrentFiles,,{Binding CanCheckRegionFiles},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,清除临时文件,OnClearTemporary,,{Binding CanClearTemporaryFiles},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重设当前区服状态,OnResetCurrentRegion,,{Binding CanResetCurrentRegion},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,自动查找,OnDetectGame,,{Binding RegionGuide.CanChangePaths},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,更改位置,OnChooseGame,,{Binding RegionGuide.CanChangePaths},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,更改位置,OnChooseStorage,,{Binding RegionGuide.CanChangePaths},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,打开备份文件夹,OnOpenStorage,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,VerifiedModeRadio,智能差异备份（推荐）,OnVerifiedMode,,{Binding RegionGuide.CanChangePaths},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,FullModeRadio,完整备份,OnFullMode,,{Binding RegionGuide.CanChangePaths},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,当前游戏是国服,OnCaptureChina,,{Binding RegionGuide.CanChooseCurrentRegion},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,当前游戏是国际服,OnCaptureInternational,,{Binding RegionGuide.CanChooseCurrentRegion},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,{Binding RegionGuide.ContinueButtonText},OnComplete,,{Binding RegionGuide.CanContinueOtherRegion},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新执行步骤 1,OnRedoStep1,,{Binding RegionGuide.CanRedoStep1},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新执行步骤 2,OnRedoStep2,,{Binding RegionGuide.CanRedoStep2},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,返回步骤 1,OnReturnStep1,,{Binding RegionGuide.CanReturnToStep1},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新开始准备,OnReprepare,,{Binding RegionGuide.CanRestart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,取消,OnCancel,,{Binding RegionGuide.CanCancel},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新准备区服文件,OnReprepare,,{Binding RegionGuide.CanRestart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,打开备份文件夹,OnOpenStorage,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新准备区服文件,OnReprepare,,{Binding RegionGuide.CanRestart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,恢复到国服,OnSwitchChina,,{Binding RegionGuide.CanRestore},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,恢复到国际服,OnSwitchInternational,,{Binding RegionGuide.CanRestore},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新准备,OnReprepare,,{Binding RegionGuide.CanRestart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重试,OnRetry,,{Binding RegionGuide.CanRetry},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新执行步骤 2,OnRedoStep2,,{Binding RegionGuide.CanRedoStep2},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,返回步骤 1,OnReturnStep1,,{Binding RegionGuide.CanReturnToStep1},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,改用完整备份,OnUseFullSnapshot,,{Binding RegionGuide.CanUseFullSnapshot},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,打开日志文件夹,OnOpenLogs,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,重新准备区服文件,OnReprepare,,{Binding RegionGuide.CanRestart},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/RegionFilesPage.xaml,,删除所有区服备份,OnClear,,{Binding RegionGuide.CanClear},NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,CloseToTrayBox,关闭主窗口时最小化到托盘,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,StartMinimizedBox,启动时进入托盘,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,StartupBox,开机自动启动,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,DarkModeBox,深色模式,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,自动检测,OnAutoDetect,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,更改,OnChooseExe,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,EnableProxyBox,启用网络代理,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,FallbackDirectBox,代理连接失败时允许直连,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,保存代理设置,OnSaveProxy,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,NetworkTestButton,测试连接,OnTestNetwork,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,CopyDiagnosticButton,复制诊断结果,OnCopyDiagnostic,,False,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,AnnouncementBadgeBox,有新公告时显示小蓝点,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,EnableWindowsNotificationsBox,启用 Windows 通知,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,NotifyRegionSwitchBox,区服切换,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,NotifyDropsBox,Drops,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,NotifyUpdatesBox,软件更新,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,NotifyAnnouncementsBox,公告,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,CheckUpdateButton,检查更新,OnCheckUpdate,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,OpenUpdateLinkButton,打开更新链接,OnOpenUpdateLink,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,OnlineUpdateButton,在线更新,OnOnlineUpdate,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,恢复此版本提示,OnRestoreSkippedUpdate,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,打开数据文件夹,OnOpenData,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SettingsPage.xaml,,清理战绩缓存,OnClearCache,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,查看详情,OnSnapshotAction,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,重新生成,OnSnapshotAction,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,打开目录,OnSnapshotAction,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,删除,OnSnapshotAction,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,刷新,OnRefresh,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,关闭,OnCloseDetails,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/Pages/SnapshotsPage.xaml,,前往区服切换,OnOpenRegion,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/PlatformErrorWindow.xaml,,查看日志,OnViewLogs,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/PlatformErrorWindow.xaml,,关闭,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionActionConfirmWindow.xaml,,×,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionActionConfirmWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionActionConfirmWindow.xaml,ConfirmButton,,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionSwitchChoiceWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionSwitchChoiceWindow.xaml,,仅切换账号,OnAccountOnly,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/RegionSwitchChoiceWindow.xaml,,前往区服文件,OnSettings,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SnapshotConfirmWindow.xaml,,,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SnapshotConfirmWindow.xaml,ConfirmedLoginBox,,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SnapshotConfirmWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SnapshotConfirmWindow.xaml,,,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SoopNoticeWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SoopNoticeWindow.xaml,ConfirmButton,,OnConfirm,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SwitchPreviewWindow.xaml,,×,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SwitchPreviewWindow.xaml,,取消,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/SwitchPreviewWindow.xaml,StartButton,开始切换,OnStart,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,CloseButton,×,OnLater,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,SkipVersionBox,不再提示此版本,,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,CancelDownloadButton,取消,OnCancelDownload,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,LaterButton,稍后提醒,OnLater,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,OpenReleaseButton,打开更新链接,OnOpenRelease,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UpdateDialog.xaml,OnlineUpdateButton,在线更新,OnOnlineUpdate,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UploadStalledWindow.xaml,,继续等待,OnWait,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据
+Views/UploadStalledWindow.xaml,,取消上传,OnCancel,,,NOT TESTED,控件清单；绑定声明不构成功能通过证据

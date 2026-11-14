@@ -465,6 +465,10 @@ class SoopWorker(WorkerBase):
             auth.COOKIES_PATH = self.data_dir / "cookies.json"
             channel = importlib.import_module("cloudlight_soop_core.channel")
             drops = importlib.import_module("cloudlight_soop_core.drops")
+            from api_compat import install_drops_compat
+            install_drops_compat(drops, lambda raw: _claim_block_status(
+                _inventory_game_account_requirement(raw),
+                _game_account_link_state(_inventory_game_account_requirement(raw), raw)))
             multi = importlib.import_module("cloudlight_soop_core.multi_miner")
             miner = importlib.import_module("cloudlight_soop_core.miner")
             network = importlib.import_module("cloudlight_soop_core.network")
@@ -2420,6 +2424,8 @@ class SoopWorker(WorkerBase):
                     (item for item in current if str(item.item_code_idx) == item_id),
                     None,
                 )
+                if current_item is None:
+                    return None, current, "not_claimable"
                 if current_item is not None:
                     raw = getattr(current_item, "raw", {}) or {}
                     requirement = _inventory_game_account_requirement(raw)
@@ -2427,6 +2433,9 @@ class SoopWorker(WorkerBase):
                     blocked = _claim_block_status(requirement, link_state)
                     if blocked is not None:
                         return None, current, blocked
+                    from api_compat import inventory_unavailable
+                    if inventory_unavailable(raw, _parse_soop_datetime):
+                        return None, current, "not_claimable"
                 result = await client.claim_and_verify(item_id, max_attempts=2)
                 try:
                     refreshed = await client.get_inventory(with_codes=True)
@@ -2450,6 +2459,8 @@ class SoopWorker(WorkerBase):
             self.logger.warning(
                 "[SOOP] 奖励需要游戏账号绑定，当前无法确认绑定状态，跳过领取 uid=%s", uid
             )
+            return {"id": item_id, "status": blocked, "success": False}
+        if blocked is not None:
             return {"id": item_id, "status": blocked, "success": False}
         assert result is not None
         status = result.status.value

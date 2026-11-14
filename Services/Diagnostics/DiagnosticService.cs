@@ -335,16 +335,31 @@ public sealed class DiagnosticService
         {
             var status = await _vm.GetRegionStatusAsync(verifyFiles: true,
                 persistStateChanges: false).ConfigureAwait(false);
-            var severity = status.State == RegionBackupState.Ready &&
-                           status.SwitchEligibility != RegionSwitchEligibility.BackupUnavailable
-                ? DiagnosticSeverity.Healthy
-                : status.State == RegionBackupState.Stale ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error;
+            var severity = SnapshotAvailabilitySeverity(status);
+            var summary = status.State switch
+            {
+                RegionBackupState.Empty => "尚未准备区服快照，可到区服页面完成准备",
+                RegionBackupState.Preparing => "区服快照正在准备",
+                RegionBackupState.Ready when severity == DiagnosticSeverity.Healthy => "当前快照可用于区服切换",
+                RegionBackupState.Ready => "当前快照缺少可用文件，需要重新检查或准备",
+                RegionBackupState.Stale => "游戏版本已变化，需要重新准备区服快照",
+                RegionBackupState.Legacy => "旧格式快照需要重新准备",
+                _ => "区服快照存在错误，请查看详细诊断",
+            };
             return NewCheck("snapshot.availability", "快照", "当前快照可用性", severity,
-                status.State == RegionBackupState.Ready ? "当前快照可用于区服切换" : $"当前状态：{status.State}",
+                summary,
                 $"兼容性={status.GenerationCompatibility}; 文件异常={status.BackupFileIssueCount}; 缺失文件={status.SkippedFileCount}");
         }
         catch (Exception ex) { return NewCheck("snapshot.availability", "快照", "当前快照可用性", DiagnosticSeverity.Warning, "无法读取当前快照", ex.Message); }
     }
+
+    internal static DiagnosticSeverity SnapshotAvailabilitySeverity(RegionSnapshotStatus status) => status.State switch
+    {
+        RegionBackupState.Empty or RegionBackupState.Preparing => DiagnosticSeverity.Info,
+        RegionBackupState.Stale or RegionBackupState.Legacy => DiagnosticSeverity.Warning,
+        RegionBackupState.Ready when status.SwitchEligibility != RegionSwitchEligibility.BackupUnavailable => DiagnosticSeverity.Healthy,
+        _ => DiagnosticSeverity.Error,
+    };
 
     private async Task<DiagnosticCheck> CheckNetworkAsync(CancellationToken token)
     {

@@ -30,6 +30,19 @@ upstream 的 Tk GUI、Linux AppIndicator 与启动入口改动不属于 headless
 
 ## 补丁行为 / Patch behavior
 
+### 2026-11-15 兼容性维护
+
+- UA 定向同步 upstream `69a4ff9e1d76e84d4243ded21f6e48df46e170ec` 的
+  Web / Mobile Web / Smartbox Chrome 156 数据。
+- 采纳 `378697a3f35380e87b62b1e6059e18f6669a98b1` 的零增量刷新思路：
+  相同官方分钟值仍清除本地估计并重置计时器；负值单独钳制，避免重复减去增量。
+- 保留已验证的 playlist / segment HEAD 观看路径及 NoAutoClaim；没有改回 Spade。
+- 查询 hash 来源仍为上述 `22d0c61`。新版上游浏览器授权未整包移入：
+  本轮真实 Smartbox device 返回完整字段，既有 Session 恢复、官方 Inventory
+  与真实进度增长均可验证；浏览器授权的人工步骤没有被模拟成通过。
+
+详细边界与证据见仓库 `docs/maintenance-2026-11-14/REPORT.md`。
+
 补丁在设置界面加入“自动领取掉宝”开关，默认开启并持久化到原有设置文件。
 关闭后，程序不发送自动领取请求，并尝试跳过已经完成观看要求但尚未领取的掉宝。
 重新开启后，程序会在后续库存刷新时恢复原有领取流程。

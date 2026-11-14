@@ -145,6 +145,8 @@ class TwitchWorker(WorkerBase):
         queries = constants.GQL_QUERIES
         return {
             "upstreamCommit": "22d0c6134f9291d1e904012c465504a22bd3f97c",
+            "clientUpstreamCommit": "69a4ff9e1d76e84d4243ded21f6e48df46e170ec",
+            "progressTimerUpstreamCommit": "378697a3f35380e87b62b1e6059e18f6669a98b1",
             "watchPathUpstreamCommit": "f693b0ca41301ac2282f3978713479efebe0490e",
             "watchTransport": "playlist",
             "watchIntervalSeconds": constants.WATCH_INTERVAL.total_seconds(),

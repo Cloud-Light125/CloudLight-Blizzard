@@ -2,6 +2,22 @@
 
 CloudLight Blizzard is licensed separately under GNU GPLv3. The following notices describe components whose authorship and license status remain independent of that project license.
 
+## Windows data and drawing dependencies (2026-11-15 maintenance)
+
+- Microsoft.Data.Sqlite 8.0.33 and System.Drawing.Common 8.0.33: Microsoft/.NET
+  Foundation components, MIT. The .NET MIT notice is included as
+  `THIRD_PARTY_LICENSES/System.Drawing.Common-MIT.txt`.
+- SQLitePCLRaw.bundle_e_sqlite3/config/provider/core 3.0.5:
+  <https://github.com/ericsink/SQLitePCL.raw>, Apache-2.0; complete license in
+  `THIRD_PARTY_LICENSES/SQLitePCLRaw-Apache-2.0.txt`.
+- The bundle uses the `SQLite` NuGet package 3.53.4 for the native e_sqlite3
+  binary. SQLite is public domain: <https://sqlite.org/copyright.html>.
+  The package's original notice is preserved as
+  `THIRD_PARTY_LICENSES/SQLite-Public-Domain.txt`.
+- Versions were selected to remove the reported vulnerable native SQLite 2.1.6
+  package and System.Drawing.Common 4.7.0 dependency; this does not change the
+  licenses or redistribution scope of the Drops cores below.
+
 ## TwitchDropsMiner-NoAutoClaim / DevilXD TwitchDropsMiner
 
 - Integration source: <https://github.com/yundan125/TwitchDropsMiner-NoAutoClaim>

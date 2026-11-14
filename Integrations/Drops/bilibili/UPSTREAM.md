@@ -22,3 +22,9 @@ upstream native notifier when configured.
 The upstream project is MIT licensed; the exact notice is preserved in
 `LICENSE` beside this file.  Dependency license metadata is recorded in
 `THIRD_PARTY_NOTICES.md` at the repository root.
+
+On 2026-11-15, selectively ported the flat `EraTasklistPc` discovery fix from
+upstream `2c102efa89` (included in v1.7.1 / main `0200d60f15`). This supports
+activity pages without `EvaTabs.Panel`, while retaining CloudLight's existing
+nested-layer traversal, explicit proxy routing, cancellation and claim gates.
+The upstream web UI, Docker stack and miner loop were not substituted.

@@ -713,6 +713,12 @@ class SoopWorkerContractTests(unittest.TestCase):
                 self.assertIn(("claim", ("reward", 2)), calls)
                 self.assertIn(("refresh", True), calls)
                 self.assertIn(("closed", True), calls)
+                calls.clear()
+                with mock.patch.object(FakeDropsClient, "get_inventory", new=mock.AsyncMock(return_value=[])):
+                    absent = worker.claim_reward({"userid": "account", "id": "reward"})
+                self.assertEqual(absent, {"id": "reward", "status": "not_claimable", "success": False})
+                self.assertFalse(any(name == "claim" for name, _ in calls))
+                self.assertIn(("closed", True), calls)
             finally:
                 self._close(worker)
 

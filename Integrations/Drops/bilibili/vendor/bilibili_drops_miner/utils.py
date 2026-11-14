@@ -318,6 +318,15 @@ def _extract_task_groups_from_state(state: dict) -> list[dict[str, object]]:
     if not isinstance(position_boxes, list):
         position_boxes = []
 
+    # Upstream 2c102efa: newer activity pages use task lists without tab panels.
+    if not panels:
+        task_ids: list[str] = []
+        seen: set[str] = set()
+        for task_group in task_groups:
+            if isinstance(task_group, dict):
+                task_ids.extend(_extract_task_ids_from_task_group(task_group, seen))
+        return [{"label": "直播间任务", "task_ids": task_ids, "active": True}] if task_ids else []
+
     active_panel_id = ""
     if tabs and isinstance(tabs[0], dict):
         active_panel_id = str(tabs[0].get("activatedTabPanelId") or "")

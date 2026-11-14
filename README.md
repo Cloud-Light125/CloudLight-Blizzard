@@ -36,17 +36,20 @@ CloudLight Blizzard 起源于开源项目 [qiyh99/BnetSwitch](https://github.com
 - 切换账号时自动联动目标区服文件
 - 使用本地文件快速恢复守望先锋国服或国际服版本
 - 查询国际服公开生涯数据
-- 在统一“掉宝”页面管理 SOOP、YouTube 与 Twitch Worker
+- 在统一“掉宝”页面管理 SOOP、YouTube、Twitch 与 Bilibili Worker
 - 共用一套 HTTP/HTTPS 代理地址，可为四个掉宝平台分别选择是否使用，并统一托盘生命周期、日志和 Documents 数据目录
 - 支持深色模式、托盘运行和开机自动启动
 
 ## 掉宝与观赛整合
 
-“掉宝”是单一一级导航，页面内切换 SOOP、YouTube 和 Twitch。三个平台的网络业务运行在独立无窗口 Worker 中，通过 UTF-8 JSON Lines 与 WPF 交换结构化状态；Worker 异常不会结束主程序，退出 CloudLight Blizzard 时会先请求 Worker 正常停止。
+“掉宝”是单一一级导航，页面内切换 SOOP、YouTube、Twitch 和 Bilibili。四个平台的网络业务运行在独立无窗口 Worker 中，通过 UTF-8 JSON Lines 与 WPF 交换结构化状态；Worker 异常不会结束主程序，退出 CloudLight Blizzard 时会先请求 Worker 正常停止。
 
 - SOOP：多账号 Session 隔离、自动/手动/仅 owesports 选台、优先任务、固定/抽奖/随机任务、背包、自动领取、低流量轮询，以及基于 Windows DPAPI 保存凭据的 Session 失效持续自动重登。
 - YouTube：Chrome/Brave 独立 Profile、自动频道/手动 URL、Headless、静音、播放恢复、实际观看时间与历史。Chrome DevTools 的 `127.0.0.1` 连接始终直连。
 - Twitch：Device OAuth、cookies session、Campaign/Inventory/Channel、Priority/Exclude/PriorityMode、连接质量、通知、徽章表情、可用 Drop 检查和自动领取开关。
+- Bilibili：扫码授权、DPAPI Session、直播间任务发现、官方任务进度、观看 Session、停止与领取开关；遇到平台风控或登录要求时显示实际失败原因。
+
+YouTube 本地时长仅在媒体播放位置确实前进时累计，不代表官方奖励进度。频道 `/live` 失效时会检查 `/streams` 的当前直播；官方要求登录时保留手动登录入口，不累计未播放时间。
 
 三个平台都提供“导入旧版数据”，执行 Copy → SHA-256 Verify，保留原目录；同名数据由用户选择跳过、覆盖或取消。
 

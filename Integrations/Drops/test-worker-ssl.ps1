@@ -119,7 +119,9 @@ try {
                 $upstreamCommit -ne '22d0c6134f9291d1e904012c465504a22bd3f97c' -or
                 $inventoryHash -ne '8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404' -or
                 $campaignsHash -ne 'c16bb890cc8ce7647a96ee69cd313d423a378a3dedadf630a1017cde18975feb' -or
-                $webUserAgent -notmatch 'Chrome/153' -or
+                $webUserAgent -notmatch 'Chrome/156\.0\.0\.0' -or
+                (Get-CloudLightJsonProperty -Object $compatResult -Name 'clientUpstreamCommit') -ne '69a4ff9e1d76e84d4243ded21f6e48df46e170ec' -or
+                (Get-CloudLightJsonProperty -Object $compatResult -Name 'progressTimerUpstreamCommit') -ne '378697a3f35380e87b62b1e6059e18f6669a98b1' -or
                 (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchPathUpstreamCommit') -ne 'f693b0ca41301ac2282f3978713479efebe0490e' -or
                 (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchTransport') -ne 'playlist' -or
                 (Get-CloudLightJsonProperty -Object $compatResult -Name 'watchIntervalSeconds') -ne 20) {

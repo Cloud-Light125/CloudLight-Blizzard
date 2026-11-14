@@ -28,6 +28,18 @@ from exceptions import GQLException
 
 
 class TwitchGqlCompatibilityTests(unittest.TestCase):
+    def test_unchanged_official_minutes_reset_estimates_and_timer(self) -> None:
+        from inventory import TimedDrop
+        notified = []
+        drop = SimpleNamespace(real_current_minutes=10, required_minutes=60,
+                               extra_current_minutes=5, _on_state_changed=lambda: notified.append(True))
+        drop.campaign = SimpleNamespace(_update_real_minutes=lambda delta: TimedDrop._update_real_minutes(drop, delta))
+        TimedDrop.update_minutes(drop, 10)
+        self.assertEqual((drop.real_current_minutes, drop.extra_current_minutes), (10, 0))
+        self.assertEqual(notified, [True])
+        TimedDrop._update_real_minutes(drop, -100)
+        self.assertEqual(drop.real_current_minutes, 0)
+
     EXPECTED_QUERY_HASHES = {
         "GetStreamInfo": "198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d",
         "ClaimCommunityPoints": "46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0",
@@ -53,10 +65,10 @@ class TwitchGqlCompatibilityTests(unittest.TestCase):
         }
         self.assertEqual(actual, self.EXPECTED_QUERY_HASHES)
 
-    def test_web_user_agent_matches_upstream_chrome_153(self) -> None:
-        self.assertIn("Chrome/153.0.0.0", constants.ClientType.WEB.USER_AGENT)
-        self.assertIn("Chrome/153.0.0.0", constants.ClientType.SMARTBOX.USER_AGENT)
-        self.assertIn("Chrome/153.", constants.ClientType.MOBILE_WEB.USER_AGENT)
+    def test_web_user_agent_matches_upstream_69a4ff9_chrome_156(self) -> None:
+        self.assertIn("Chrome/156.0.0.0", constants.ClientType.WEB.USER_AGENT)
+        self.assertIn("Chrome/156.0.0.0", constants.ClientType.SMARTBOX.USER_AGENT)
+        self.assertIn("Chrome/156.0.8078.54", constants.ClientType.MOBILE_WEB.USER_AGENT)
 
     @staticmethod
     def _client_with_responses(responses: list[dict[str, object]]):

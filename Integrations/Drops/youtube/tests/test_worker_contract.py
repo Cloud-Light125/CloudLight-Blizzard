@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import sys
 import tempfile
@@ -38,6 +39,87 @@ class _NotLiveYoutubeDL:
 
 
 class YouTubeWorkerContractTests(unittest.TestCase):
+    def test_official_login_barrier_is_visible_and_never_accumulates_time(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = YouTubeWorker(root / 'data', root / 'youtube.log')
+            session = youtube_worker.BrowserSession('test', types.SimpleNamespace(poll=lambda: None), 1,
+                                                      'https://www.youtube.com/watch?v=abcdefghijk')
+            stream = {'url': session.url, 'videoId': 'abcdefghijk'}
+            worker.running = True
+            worker.current_stream = stream
+            worker.sessions['test'] = session
+            try:
+                with patch.object(worker, '_video_state', return_value={'playabilityStatus': 'LOGIN_REQUIRED',
+                        'playing': True, 'currentTime': 15, 'url': session.url}):
+                    worker._sample_playback(session, stream)
+                    worker._sample_playback(session, stream)
+                self.assertEqual(worker.get_history({})['todayTotal'], 0)
+                self.assertEqual(session.playback['state'], 'login_required')
+                self.assertIn('登录', worker._state()['status'])
+                self.assertIn('不会累计', worker._state()['browserStatus'])
+            finally: self._close(worker)
+
+    def test_live_redirect_falls_back_to_current_streams_not_first_old_video(self) -> None:
+        class Listing(_NotLiveYoutubeDL):
+            def extract_info(self, url, download=False):
+                if url.endswith('/live'):
+                    raise RuntimeError('The channel is not currently live')
+                return {'_type': 'playlist', 'entries': [
+                    {'id': 'oldvideo123', 'live_status': 'was_live'},
+                    {'id': 'abcdefghijk', 'live_status': 'is_live', 'title': 'Current stream'}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = YouTubeWorker(root / 'data', root / 'youtube.log')
+            try:
+                with patch.dict(sys.modules, {'yt_dlp': types.SimpleNamespace(YoutubeDL=Listing)}):
+                    stream, no_live, error = worker._detect_with_ytdlp({'name': 'test'}, 'https://www.youtube.com/@test/live')
+                self.assertEqual(stream['videoId'], 'abcdefghijk')
+                self.assertFalse(no_live)
+                self.assertIsNone(error)
+            finally: self._close(worker)
+
+    def test_public_discovery_uses_player_identity_and_rejects_challenges(self) -> None:
+        player = {"videoDetails": {"videoId": "abcdefghijk", "title": "Current stream"},
+                  "microformat": {"playerMicroformatRenderer": {"liveBroadcastDetails": {"isLiveNow": True}}}}
+        html = "var ytInitialPlayerResponse = " + json.dumps(player) + '; {"videoId":"wrongvideo1","isLiveNow":true}'
+        result, checked = youtube_worker.parse_live_player(html)
+        self.assertTrue(checked)
+        self.assertEqual(result["videoId"], "abcdefghijk")
+        player["microformat"]["playerMicroformatRenderer"]["liveBroadcastDetails"]["isLiveNow"] = False
+        self.assertEqual(youtube_worker.parse_live_player("ytInitialPlayerResponse=" + json.dumps(player)), (None, True))
+        self.assertEqual(youtube_worker.parse_live_player('<html>Consent required</html>'), (None, False))
+
+    def test_cdp_ignores_events_and_bypasses_inherited_proxy(self) -> None:
+        connection = types.SimpleNamespace(
+            send=lambda *_: None, settimeout=lambda *_: None, close=lambda: None,
+            recv=iter([json.dumps({"method": "Runtime.executionContextCreated"}),
+                       json.dumps({"id": 1, "result": {"result": {"value": {"currentTime": 5}}}})]).__next__)
+        fake = types.SimpleNamespace(create_connection=lambda *args, **kwargs: connection)
+        with patch.dict(sys.modules, {"websocket": fake}):
+            self.assertEqual(YouTubeWorker._evaluate('ws://127.0.0.1:1234/devtools/page/test', '1'), {"currentTime": 5})
+        from unittest.mock import Mock
+        create = Mock(return_value=connection)
+        fake.create_connection = create
+        with patch.dict(sys.modules, {"websocket": fake}):
+            YouTubeWorker._evaluate('ws://127.0.0.1:1234/devtools/page/test', '1')
+        self.assertIn('127.0.0.1', create.call_args.kwargs['http_no_proxy'])
+
+    def test_playback_selects_expected_video_tab(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worker = YouTubeWorker(root / 'data', root / 'youtube.log')
+            try:
+                session = youtube_worker.BrowserSession('test', types.SimpleNamespace(poll=lambda: None), 1, '')
+                tabs = [{'url': 'https://www.youtube.com/watch?v=wrongvideo1', 'webSocketDebuggerUrl': 'wrong'},
+                        {'url': 'https://youtube.com.invalid/watch?v=abcdefghijk', 'webSocketDebuggerUrl': 'spoof'},
+                        {'url': 'https://www.youtube.com/watch?v=abcdefghijk', 'webSocketDebuggerUrl': 'correct'}]
+                with patch.object(worker, '_tabs', return_value=tabs), patch.object(worker, '_evaluate', return_value={
+                        'url': tabs[2]['url'], 'paused': False, 'ended': False, 'readyState': 4, 'currentTime': 10}) as evaluate:
+                    self.assertTrue(worker._video_state(session, 'abcdefghijk')['playing'])
+                    self.assertEqual(evaluate.call_args.args[0], 'correct')
+            finally: self._close(worker)
+
     def test_history_requires_advancing_playback_and_stops_with_user(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

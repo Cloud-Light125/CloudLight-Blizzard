@@ -340,12 +340,9 @@ class TimedDrop(BaseDrop):
         self._twitch.gui.inv.update_drop(self)
 
     def _update_real_minutes(self, delta: int) -> None:
-        if delta == 0 or self.real_current_minutes + delta < 0:
-            return
-        if self.real_current_minutes + delta < self.required_minutes:
-            self.real_current_minutes += delta
-        else:
-            self.real_current_minutes = self.required_minutes
+        # Even an unchanged official sample resets local estimates and the UI
+        # countdown (upstream 378697a). Clamp before notifying sibling drops.
+        self.real_current_minutes = max(0, min(self.required_minutes, self.real_current_minutes + delta))
         self.extra_current_minutes = 0
         self._on_state_changed()
 
@@ -374,9 +371,7 @@ class TimedDrop(BaseDrop):
 
     def update_minutes(self, new_minutes: int):
         delta: int = new_minutes - self.real_current_minutes
-        if delta == 0:
-            return
-        elif self.real_current_minutes + delta < 0:
+        if self.real_current_minutes + delta < 0:
             delta = -self.real_current_minutes
         elif self.real_current_minutes + delta > self.required_minutes:
             delta = self.required_minutes - self.real_current_minutes

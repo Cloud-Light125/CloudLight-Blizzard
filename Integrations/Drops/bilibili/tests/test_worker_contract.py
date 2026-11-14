@@ -58,6 +58,17 @@ from bilibili_drops_miner.client_parts.http import request_with_network_fallback
 
 
 class BilibiliWorkerContractTests(unittest.TestCase):
+    def test_flat_activity_pages_discover_tasks_without_panels(self) -> None:
+        from bilibili_drops_miner.utils import extract_bili_live_task_groups
+        props = {"tasklist": [{"taskId": "task-a"}, {"taskId": "task-b"}, {"taskId": "task-a"}]}
+        legacy = 'window.__initialState = ' + json.dumps({"EraTasklistPc": [props]}) + ';'
+        layer = 'window.__BILIACT_EVAPAGEDATA__ = ' + json.dumps({"layerTree": [
+            {"type": "Component", "name": "EraTasklistPc", "props": props}]}) + ';'
+        for html in (legacy, layer):
+            with self.subTest(html=html):
+                groups = extract_bili_live_task_groups(html)
+                self.assertEqual(groups, [{"label": "直播间任务", "task_ids": ["task-a", "task-b"], "active": True}])
+
     def test_stopping_progress_poller_cancels_inflight_request(self) -> None:
         entered = threading.Event()
         released = threading.Event()

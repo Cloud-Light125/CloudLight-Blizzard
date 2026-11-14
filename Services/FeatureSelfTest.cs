@@ -84,6 +84,7 @@ public static class FeatureSelfTest
             }
             if (string.Equals(test, "region-verified", StringComparison.OrdinalIgnoreCase))
             {
+                RunGameLocatorTest(workspace, report);
                 RunVerifiedDifferenceRegionTest(workspace, report).GetAwaiter().GetResult();
                 RunRegionMaintenanceTests(workspace, report).GetAwaiter().GetResult();
                 report.AppendLine("OVERALL: PASS");
@@ -113,6 +114,7 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            RunGameLocatorTest(workspace, report);
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
             RunTwitchConnectionStateTest(report);
@@ -142,6 +144,27 @@ public static class FeatureSelfTest
             RegionSwitchLog.FileOverride = null;
             try { Directory.Delete(workspace, true); } catch { }
         }
+    }
+
+    private static void RunGameLocatorTest(string workspace, StringBuilder report)
+    {
+        var game = Path.Combine(workspace, "Overwatch locator", "安装目录");
+        Directory.CreateDirectory(Path.Combine(game, "_retail_"));
+        File.WriteAllText(Path.Combine(game, "_retail_", "Overwatch.exe"), "isolated executable");
+        var local = Path.Combine(workspace, "locator-local");
+        var roaming = Path.Combine(workspace, "locator-roaming");
+        Directory.CreateDirectory(local);
+        var file = Path.Combine(local, "Battle.net.config");
+        var paths = new BattleNetPaths(local, roaming);
+        foreach (var path in new[] { game, game.Replace('\\', '/') })
+        {
+            File.WriteAllText(file, "\u001aV\n\u001d" + path + "\u0012\u0002kr\u0018\u0002", Encoding.UTF8);
+            Assert(string.Equals(OverwatchGameLocator.Detect(paths), game, StringComparison.OrdinalIgnoreCase),
+                "binary Agent path surrounded by protobuf fields resolves the validated retail game root");
+        }
+        File.WriteAllText(file, JsonSerializer.Serialize(new { InstallPath = game }));
+        Assert(OverwatchGameLocator.Detect(paths) == game, "JSON game path remains compatible");
+        report.AppendLine("Game locator: PASS (binary tags, forward/back slashes, spaces/Unicode, retail executable, JSON compatibility)");
     }
 
     private static void RunAccountSnapshotTest(string workspace, StringBuilder report)
@@ -2169,7 +2192,9 @@ public static class FeatureSelfTest
         File.WriteAllText(Path.Combine(game, "Overwatch.exe"), "stable executable");
         File.WriteAllText(Path.Combine(game, "region.dat"), "CN");
         File.WriteAllText(Path.Combine(game, ".build.info"), "build-1");
-        var manager = new OverwatchRegionManager(storeRoot, () => false, 0);
+        var battleNetRunning = false;
+        var manager = new OverwatchRegionManager(storeRoot, () => false, 0,
+            processRunning: name => name == "Battle.net" && battleNetRunning);
         Assert(await manager.StartPreparationAsync(game, GameRegion.China) == RegionBackupState.Preparing,
             "productization fixture starts source capture");
         File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
@@ -2324,6 +2349,13 @@ public static class FeatureSelfTest
             "stale switch plan is revalidated and stops before changing files or active generation");
         File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
 
+        battleNetRunning = true;
+        var runningClientBlocked = false;
+        try { await manager.ExecuteSwitchPlanAsync(game, plan); }
+        catch (InvalidDataException) { runningClientBlocked = true; }
+        Assert(runningClientBlocked && File.ReadAllText(Path.Combine(game, "region.dat")) == "INT",
+            "client starting after preview blocks execution before any isolated game file is changed");
+        battleNetRunning = false;
         var executed = await manager.ExecuteSwitchPlanAsync(game, plan);
         Assert(executed.Outcome == RegionSwitchOutcome.Success && File.ReadAllText(Path.Combine(game, "region.dat")) == "CN",
             "executor applies the exact preview plan after confirmation");
@@ -2347,6 +2379,13 @@ public static class FeatureSelfTest
 
     private static async Task RunDiagnosticsAndNotificationTests(string workspace, StringBuilder report)
     {
+        foreach (var state in new[] { RegionBackupState.Empty, RegionBackupState.Preparing })
+            Assert(DiagnosticService.SnapshotAvailabilitySeverity(new RegionSnapshotStatus { State = state }) == DiagnosticSeverity.Info,
+                "a new or unfinished snapshot is information, not evidence of damaged user data");
+        Assert(DiagnosticService.SnapshotAvailabilitySeverity(new RegionSnapshotStatus {
+                   State = RegionBackupState.Ready, SwitchEligibility = RegionSwitchEligibility.BackupUnavailable }) == DiagnosticSeverity.Error &&
+               DiagnosticService.SnapshotAvailabilitySeverity(new RegionSnapshotStatus { State = RegionBackupState.Error }) == DiagnosticSeverity.Error,
+            "an unavailable ready snapshot or corrupted snapshot remains an error");
         const string secretDetails = "Authorization: Bearer abcdef\n" +
             "ProxyUrl=http://user:password@127.0.0.1:7897\n" +
             "token=abcdef\naccess_token=abcdef\nrefresh_token=abcdef\n" +

@@ -10,6 +10,7 @@ public sealed class OverwatchRegionManager
     private readonly OverwatchRegionScanner _scanner = new();
     private readonly OverwatchRegionBackupStore _store;
     private readonly Func<bool> _isGameRunning;
+    private readonly Func<string, bool> _isProcessRunning;
     private readonly int _quiescenceMilliseconds;
 
     public string BackupRoot => _store.Root;
@@ -17,10 +18,11 @@ public sealed class OverwatchRegionManager
     public bool HasActiveGeneration => _store.LoadActive() is not null;
 
     public OverwatchRegionManager(string? storageRoot = null, Func<bool>? gameRunning = null,
-        int quiescenceMilliseconds = 6000)
+        int quiescenceMilliseconds = 6000, Func<string, bool>? processRunning = null)
     {
         _store = new OverwatchRegionBackupStore(storageRoot);
         _isGameRunning = gameRunning ?? IsGameRunning;
+        _isProcessRunning = processRunning ?? IsProcessRunning;
         _quiescenceMilliseconds = quiescenceMilliseconds;
     }
 
@@ -405,8 +407,8 @@ public sealed class OverwatchRegionManager
         var eligibility = await EvaluateSwitchEligibilityAsync(generation, compatibility, target, true,
             cancellationToken, progress: null).ConfigureAwait(false);
         var running = _isGameRunning();
-        var battleNetRunning = IsProcessRunning("Battle.net");
-        var agentRunning = IsProcessRunning("Agent");
+        var battleNetRunning = _isProcessRunning("Battle.net");
+        var agentRunning = _isProcessRunning("Agent");
         var detection = DetectionResult.Unknown;
         if (battleNetRunning && !running && eligibility.Status == RegionSwitchEligibility.Normal)
         {
@@ -533,7 +535,7 @@ public sealed class OverwatchRegionManager
         (ActiveGenerationPointer Pointer, OverwatchRegionGeneration Generation) active,
         OverwatchRegion target, SwitchPlan plan, CancellationToken token)
     {
-        if (_isGameRunning() || IsProcessRunning("Battle.net"))
+        if (_isGameRunning() || _isProcessRunning("Battle.net"))
             throw new InvalidDataException("预览后检测到游戏或 Battle.net 仍在运行，请关闭后重新生成切换预览。");
         if (!string.Equals(plan.GenerationId, active.Generation.GenerationId, StringComparison.OrdinalIgnoreCase) ||
             plan.TargetRegion != target || plan.BackupMode != active.Generation.BackupMode ||

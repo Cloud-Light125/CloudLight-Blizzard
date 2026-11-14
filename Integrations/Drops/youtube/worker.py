@@ -108,6 +108,36 @@ def video_id(url: str) -> str:
     return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate) else ""
 
 
+def parse_live_player(page: str) -> tuple[dict[str, Any] | None, bool]:
+    """Read the current player, never unrelated recommendations on the page."""
+    for marker in re.finditer(r'(?:var\s+)?ytInitialPlayerResponse\s*=\s*', page):
+        try:
+            player, _ = json.JSONDecoder().raw_decode(page[marker.end():])
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(player, dict):
+            continue
+        details = player.get("videoDetails") or {}
+        microformat = player.get("microformat") or {}
+        if not isinstance(microformat, dict):
+            continue
+        micro = microformat.get("playerMicroformatRenderer") or {}
+        if not isinstance(micro, dict):
+            continue
+        live = micro.get("liveBroadcastDetails") or {}
+        if not isinstance(details, dict) or not isinstance(live, dict):
+            continue
+        identifier = str(details.get("videoId") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", identifier):
+            continue
+        if live.get("isLiveNow") is not True:
+            return None, True
+        return {"videoId": identifier, "url": f"https://www.youtube.com/watch?v={identifier}",
+                "title": str(details.get("title") or "正在直播"), "source": "public-page"}, True
+    # A consent, challenge or error page cannot prove that the channel is offline.
+    return None, False
+
+
 def free_local_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -204,6 +234,7 @@ class YouTubeWorker(WorkerBase):
             sessions = [
                 {"profile": profile, "running": session.alive(), "url": session.url, "debugPort": session.port,
                  "playbackState": session.playback.get("state", "unconfirmed"),
+                 "playbackMessage": session.playback.get("message", ""),
                  "playing": session.alive() and session.playback.get("state") == "playing" and
                     time.monotonic() - session.playback.get("checkedAt", 0) <= 15}
                 for profile, session in self.sessions.items()
@@ -216,6 +247,7 @@ class YouTubeWorker(WorkerBase):
             "_snapshotStarted": captured_at,
             "running": self.running,
             "status": ("正在观看（已确认播放）" if self.current_stream and self.running and any(s["playing"] for s in sessions)
+                       else "YouTube 要求登录" if self.current_stream and self.running and any(s["playbackState"] == "login_required" for s in sessions)
                        else "等待播放确认" if self.current_stream and self.running and any(s["running"] for s in sessions)
                        else "等待观看账号" if self.current_stream and self.running
                        else "正在检测" if self.running else "已停止"),
@@ -562,7 +594,7 @@ class YouTubeWorker(WorkerBase):
         return any(marker in message for marker in NO_LIVE_MARKERS)
 
     def _detect_with_ytdlp(
-        self, channel: dict[str, Any], url: str
+        self, channel: dict[str, Any], url: str, *, flat_listing: bool = False
     ) -> tuple[dict[str, Any] | None, bool, BaseException | None]:
         try:
             import yt_dlp
@@ -570,13 +602,15 @@ class YouTubeWorker(WorkerBase):
                 "quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True,
                 "ignore_no_formats_error": True, "socket_timeout": 15, "retries": 1,
                 "extractor_retries": 1, "cachedir": False, "logger": _YtDlpLogBridge(self.logger),
+                "proxy": self.proxy["proxyUrl"] if self.proxy["enableProxy"] else "",
             }
-            if self.proxy["enableProxy"]:
-                options["proxy"] = self.proxy["proxyUrl"]
+            if flat_listing:
+                options.update(extract_flat=True, playlistend=8, noplaylist=False)
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=False)
             if info and info.get("_type") == "playlist":
-                info = next((entry for entry in info.get("entries") or [] if entry), {})
+                info = next((entry for entry in info.get("entries") or []
+                             if entry and (entry.get("is_live") or entry.get("live_status") == "is_live")), {})
             if info and (info.get("is_live") or info.get("live_status") == "is_live"):
                 found_id = str(info.get("id") or "")
                 return ({
@@ -585,6 +619,8 @@ class YouTubeWorker(WorkerBase):
                     "url": str(info.get("webpage_url") or (f"https://www.youtube.com/watch?v={found_id}" if found_id else url)),
                     "videoId": found_id, "source": "yt-dlp",
                 }, False, None)
+            if not flat_listing and url.rstrip("/").endswith("/live"):
+                return self._detect_with_ytdlp(channel, url.rstrip("/")[:-5] + "/streams", flat_listing=True)
             return None, True, None
         except Exception as exc:
             if is_ssl_runtime_error(exc):
@@ -597,6 +633,8 @@ class YouTubeWorker(WorkerBase):
                 self._report_runtime_error(runtime_error)
                 raise runtime_error from exc
             if self._is_no_live_error(exc):
+                if not flat_listing and url.rstrip("/").endswith("/live"):
+                    return self._detect_with_ytdlp(channel, url.rstrip("/")[:-5] + "/streams", flat_listing=True)
                 return None, True, None
             self.logger.debug("yt-dlp detection failed for %s: %s", channel.get("name", ""), exc)
             return None, False, exc
@@ -606,18 +644,15 @@ class YouTubeWorker(WorkerBase):
     ) -> tuple[dict[str, Any] | None, bool]:
         try:
             import requests
-            session = requests.Session()
-            session.trust_env = False
             proxies = {"http": self.proxy["proxyUrl"], "https": self.proxy["proxyUrl"]} if self.proxy["enableProxy"] else None
-            response = session.get(url, timeout=15, proxies=proxies, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "zh-CN,zh;q=0.9"})
-            response.raise_for_status()
-            if not re.search(r'"isLiveNow"\s*:\s*true', response.text):
-                return None, True
-            ids = re.findall(r'"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"', response.text)
-            if not ids:
-                return None, True
-            found = ids[-1]
-            return ({"title": "正在直播", "channel": channel.get("name", ""), "url": f"https://www.youtube.com/watch?v={found}", "videoId": found, "source": "public-page"}, True)
+            with requests.Session() as session:
+                session.trust_env = False
+                response = session.get(url, timeout=15, proxies=proxies, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "zh-CN,zh;q=0.9"})
+                response.raise_for_status()
+                found, checked = parse_live_player(response.text)
+            if found:
+                found["channel"] = channel.get("name", "")
+            return found, checked
         except Exception as exc:
             if is_ssl_runtime_error(exc):
                 runtime_error = RuntimeDependencyError(
@@ -644,7 +679,9 @@ class YouTubeWorker(WorkerBase):
                     # play() is a request, not confirmation that playback resumed.
                     event("playback_resume_requested", {"profile": profile, "url": stream["url"]})
             snapshot = self._state()
-            self.last_browser_status = "已确认播放，本地时长累计中" if any(s["playing"] for s in snapshot["sessions"]) else "浏览器已启动，播放未确认或已暂停"
+            blocked = next((s["playbackMessage"] for s in snapshot["sessions"] if s["playbackMessage"]), "")
+            self.last_browser_status = ("已确认播放，本地时长累计中" if any(s["playing"] for s in snapshot["sessions"])
+                                        else blocked or "浏览器已启动，播放未确认或已暂停")
             self.status(snapshot["status"], self.last_browser_status)
             self._stop.wait(5)
 
@@ -653,7 +690,14 @@ class YouTubeWorker(WorkerBase):
         now = time.monotonic()
         previous = session.playback_sample
         seconds = 0.0
-        if state and isinstance(state.get("currentTime"), (int, float)):
+        restriction = str((state or {}).get("playabilityStatus") or "")
+        message = ""
+        if restriction in {"LOGIN_REQUIRED", "UNPLAYABLE", "ERROR"}:
+            session.playback_sample = None
+            status = "login_required" if restriction == "LOGIN_REQUIRED" else "blocked"
+            message = ("YouTube 要求登录；请手动打开该观看账号完成登录，本地时长不会累计。"
+                       if restriction == "LOGIN_REQUIRED" else "YouTube 当前拒绝播放；请打开直播页面查看官方提示。")
+        elif state and isinstance(state.get("currentTime"), (int, float)):
             media = float(state["currentTime"])
             url = str(state.get("url", ""))
             playing = bool(state.get("playing")) and not bool(state.get("adPlaying"))
@@ -667,15 +711,15 @@ class YouTubeWorker(WorkerBase):
             session.playback_sample = None
             status = "unavailable"
         previous_status = session.playback.get("state")
-        session.playback = {"state": status, "checkedAt": now}
+        session.playback = {"state": status, "checkedAt": now, "message": message}
         with self._lock:
             if (previous_status != status and self.running and not self._stop.is_set()
                     and self.sessions.get(session.profile) is session):
                 event("playback", {"profile": session.profile, "playing": status == "playing",
-                                   "playbackState": status, "url": stream["url"]})
+                                   "playbackState": status, "message": message, "url": stream["url"]})
         if seconds > 0:
             self._record_watch(session.profile, stream, seconds)
-        self.last_browser_status = "已确认播放，本地时长累计中" if status == "playing" else "浏览器已启动，播放未确认或已暂停"
+        self.last_browser_status = "已确认播放，本地时长累计中" if status == "playing" else message or "浏览器已启动，播放未确认或已暂停"
         return state
 
     def _browser_binary(self) -> Path:
@@ -766,9 +810,10 @@ class YouTubeWorker(WorkerBase):
 
     def _tabs(self, session: BrowserSession) -> list[dict[str, Any]]:
         try:
-            response = self._direct_session().get(f"http://127.0.0.1:{session.port}/json", timeout=1)
-            response.raise_for_status()
-            value = response.json()
+            with self._direct_session() as http:
+                response = http.get(f"http://127.0.0.1:{session.port}/json", timeout=1)
+                response.raise_for_status()
+                value = response.json()
             return value if isinstance(value, list) else []
         except Exception:
             return []
@@ -779,15 +824,17 @@ class YouTubeWorker(WorkerBase):
             self._evaluate(tabs[0].get("webSocketDebuggerUrl", ""), f"location.href={json.dumps(url)}")
 
     def _video_state(self, session: BrowserSession, expected_id: str) -> dict[str, Any] | None:
-        tabs = [tab for tab in self._tabs(session) if "youtube.com" in str(tab.get("url", ""))]
+        tabs = [tab for tab in self._tabs(session)
+                if (urlparse(str(tab.get("url", ""))).hostname or "").lower() in {"www.youtube.com", "youtube.com", "m.youtube.com"}
+                and (not expected_id or video_id(str(tab.get("url", ""))) == expected_id)]
         if not tabs:
             return None
-        expression = "(()=>{const v=document.querySelector('video');return v?{paused:v.paused,ended:v.ended,currentTime:v.currentTime,readyState:v.readyState,adPlaying:!!document.querySelector('.ad-showing'),url:location.href}:null})()"
+        expression = "(()=>{const v=document.querySelector('video'),p=window.ytInitialPlayerResponse?.playabilityStatus;return v?{paused:v.paused,ended:v.ended,currentTime:v.currentTime,readyState:v.readyState,adPlaying:!!document.querySelector('.ad-showing'),playabilityStatus:p?.status||'',url:location.href}:null})()"
         result = self._evaluate(tabs[0].get("webSocketDebuggerUrl", ""), expression)
         if not isinstance(result, dict):
             return None
         current = str(result.get("url", ""))
-        if expected_id and expected_id not in current:
+        if expected_id and video_id(current) != expected_id:
             return None
         paused = bool(result.get("paused", True))
         ended = bool(result.get("ended", False))
@@ -805,11 +852,17 @@ class YouTubeWorker(WorkerBase):
             return None
         try:
             import websocket
-            ws = websocket.create_connection(websocket_url, timeout=2, origin="http://127.0.0.1", http_proxy_host=None)
+            ws = websocket.create_connection(websocket_url, timeout=2, origin="http://127.0.0.1",
+                                             http_proxy_host=None, http_no_proxy=["127.0.0.1", "localhost", "::1"])
             try:
                 ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}}))
-                data = json.loads(ws.recv())
-                return data.get("result", {}).get("result", {}).get("value")
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    ws.settimeout(max(0.01, deadline - time.monotonic()))
+                    data = json.loads(ws.recv())
+                    if data.get("id") == 1:
+                        return data.get("result", {}).get("result", {}).get("value")
+                return None
             finally:
                 ws.close()
         except Exception:
@@ -870,7 +923,8 @@ class YouTubeWorker(WorkerBase):
             # Chromium has several children. Closing only the parent PID can
             # orphan renderers; first ask this isolated profile's browser to exit.
             import websocket
-            version = self._direct_session().get(f"http://127.0.0.1:{session.port}/json/version", timeout=2).json()
+            with self._direct_session() as http:
+                version = http.get(f"http://127.0.0.1:{session.port}/json/version", timeout=2).json()
             with websocket.create_connection(version["webSocketDebuggerUrl"], timeout=2,
                                              http_proxy_host=None, http_no_proxy=["127.0.0.1", "localhost"]) as ws:
                 ws.send(json.dumps({"id": 1, "method": "Browser.close"}))

@@ -48,7 +48,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.7" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.33" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.33" />
     <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
   </ItemGroup>
 
@@ -59,6 +61,9 @@
 
   <ItemGroup>
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\Licenses\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest">
+      <Link>THIRD_PARTY_LICENSES\%(Filename)%(Extension)</Link>
+    </Content>
     <Content Include="Integrations\Drops\soop\redistribution-authorization.json">
       <Link>THIRD_PARTY_LICENSES\SOOP-Redistribution-Authorization.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
