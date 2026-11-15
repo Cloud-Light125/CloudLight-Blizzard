@@ -105,6 +105,20 @@ public partial class DropsPage : UserControl
     public DropsPage()
     {
         InitializeComponent();
+        SizeChanged += (_, _) =>
+        {
+            var compact = ActualHeight < 620;
+            DropsPageHeader.IsCompact = compact;
+            DropsLayout.Margin = compact ? new Thickness(18, 10, 18, 10) : new Thickness(24, 22, 24, 16);
+            PlatformTabsBar.Margin = compact ? new Thickness(0, 4, 0, 2) : new Thickness(0, 18, 0, 4);
+            TwitchIntro.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            TwitchLoginCard.Padding = compact ? new Thickness(12) : new Thickness(18);
+            foreach (var tab in WorkspaceNavigation.Children.OfType<RadioButton>())
+            {
+                tab.MinHeight = compact ? 30 : 40;
+                tab.Padding = compact ? new Thickness(10, 4, 10, 4) : new Thickness(16, 8, 16, 8);
+            }
+        };
         TrackSettingsDrafts(DropsPlatform.Soop, "SoopChannelMode", "SoopManualChannel", "SoopPriorityMission",
             "SoopPreferredChannel", "SoopAutoClaim", "SoopLowBandwidth", "SoopHangWithoutMissions",
             "SoopMissionInterval", "SoopInventoryInterval", "SoopChannelInterval", "SoopReauthInterval");

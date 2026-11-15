@@ -223,6 +223,13 @@ internal sealed class UiRedesignReview
             }
         }
         Walk(_window);
+        if (scenario == 5 && width == 1366 && scale == 1.5 && _page.FindName("TwitchLoginAction") is Button login)
+        {
+            var bounds = login.TransformToAncestor(_window).TransformBounds(new Rect(0,0,login.ActualWidth,login.ActualHeight));
+            var scroll = (ScrollViewer)_page.FindName("DropsScrollViewer");
+            var viewport = scroll.TransformToAncestor(_window).TransformBounds(new Rect(0,0,scroll.ActualWidth,scroll.ActualHeight));
+            _checks.Add(bounds.Bottom <= viewport.Bottom+1 ? "PASS narrow Twitch login primary action visible without scrolling" : "FAIL narrow Twitch login below first viewport");
+        }
     }
     private async Task CheckDraftsAsync()
     {

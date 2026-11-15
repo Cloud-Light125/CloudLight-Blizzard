@@ -110,6 +110,12 @@ public partial class MainWindow : Window
         if (!isolatedReview) _notificationService.Initialize(action => Dispatcher.BeginInvoke(() => HandleNotificationAction(action)));
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _pagesReady = true;
+        SizeChanged += (_, _) =>
+        {
+            if (_isExiting) return;
+            Dispatcher.BeginInvoke(() => new[] { OverviewNav, AccountsNav, RegionNav, StatsNav, DropsNav, SnapshotsNav, DiagnosticsNav, SettingsNav, AboutNav }
+                .FirstOrDefault(nav => nav.IsChecked == true)?.BringIntoView(), DispatcherPriority.Loaded);
+        };
         SelectSavedSection();
 
         if (isolatedReview) return;
@@ -540,6 +546,7 @@ public partial class MainWindow : Window
         _vm.Settings.Save();
         await Dispatcher.Yield(DispatcherPriority.Render);
         if (_isExiting) return;
+        ((RadioButton)sender).BringIntoView();
         if (section == "region") await _regionPage.RefreshAsync();
         if (section == "stats") _statsPage.OnPageOpened();
         if (section == "drops") await _dropsPage.RefreshAsync();

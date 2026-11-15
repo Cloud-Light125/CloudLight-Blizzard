@@ -6,8 +6,8 @@
             <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Top">
-            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType={x:Type ctrl:PageHeader}}}" Style="{StaticResource PageTitle}" TextWrapping="Wrap" Margin="0,0,16,4"/>
-            <TextBlock Text="{Binding Description, RelativeSource={RelativeSource AncestorType={x:Type ctrl:PageHeader}}}" Style="{StaticResource PageDescription}" TextWrapping="Wrap" Margin="0,0,16,4"/>
+            <TextBlock x:Name="TitleLine" Text="{Binding Title, RelativeSource={RelativeSource AncestorType={x:Type ctrl:PageHeader}}}" Style="{StaticResource PageTitle}" TextWrapping="Wrap" Margin="0,0,16,4"/>
+            <TextBlock x:Name="DescriptionLine" Text="{Binding Description, RelativeSource={RelativeSource AncestorType={x:Type ctrl:PageHeader}}}" Style="{StaticResource PageDescription}" TextWrapping="Wrap" Margin="0,0,16,4"/>
         </StackPanel>
         <ContentPresenter Grid.Column="1" Content="{Binding HeaderActions,                               RelativeSource={RelativeSource AncestorType={x:Type ctrl:PageHeader}}}" VerticalAlignment="Top"/>
         <ctrl:AnnouncementBell Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Top"/>

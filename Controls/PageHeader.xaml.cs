@@ -12,7 +12,17 @@ public partial class PageHeader : UserControl
     public static readonly DependencyProperty HeaderActionsProperty = DependencyProperty.Register(
         nameof(HeaderActions), typeof(object), typeof(PageHeader), new PropertyMetadata(null));
 
-    public PageHeader() => InitializeComponent();
+    public static readonly DependencyProperty IsCompactProperty = DependencyProperty.Register(
+        nameof(IsCompact), typeof(bool), typeof(PageHeader), new PropertyMetadata(false, (d, _) => ((PageHeader)d).ApplyCompact()));
+
+    public PageHeader() { InitializeComponent(); ApplyCompact(); }
+    public bool IsCompact { get => (bool)GetValue(IsCompactProperty); set => SetValue(IsCompactProperty, value); }
+    private void ApplyCompact()
+    {
+        if (TitleLine is null || DescriptionLine is null) return;
+        DescriptionLine.Visibility = IsCompact ? Visibility.Collapsed : Visibility.Visible;
+        if (IsCompact) TitleLine.FontSize = 22; else TitleLine.ClearValue(TextBlock.FontSizeProperty);
+    }
 
     public string Title
     {

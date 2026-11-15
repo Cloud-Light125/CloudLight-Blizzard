@@ -407,7 +407,7 @@
         </DataTemplate>
         <BooleanToVisibilityConverter x:Key="PresentationBoolVisibility"/>
     </UserControl.Resources>
-    <Grid Margin="24,22,24,16">
+    <Grid x:Name="DropsLayout" Margin="24,22,24,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -822,7 +822,7 @@
                                     <ctrl:PlatformIcon Platform="Twitch" Width="40" Height="40" Margin="0,0,14,0"/>
                                     <TextBlock Text="Twitch 掉宝" Style="{StaticResource SectionTitle}" FontSize="24" VerticalAlignment="Center"/>
                                 </DockPanel>
-                                <TextBlock Text="连接 Twitch 账号后，配置游戏偏好并开始观看。登录资料仅保存在本机。" Style="{StaticResource FieldHint}"/>
+                                <TextBlock x:Name="TwitchIntro" Text="连接 Twitch 账号后，配置游戏偏好并开始观看。登录资料仅保存在本机。" Style="{StaticResource FieldHint}"/>
                                 <TextBlock Text="{Binding ActiveAccountText, StringFormat=账号：{0}}" Visibility="{Binding TwitchAuthenticatedVisibility}" FontSize="14" Margin="0,4,0,8"/>
                                 <Grid Margin="0,14,0,0">
                                     <Grid.ColumnDefinitions>
@@ -880,7 +880,7 @@
                                     <StackPanel Orientation="Horizontal" Visibility="{Binding TwitchAuthenticatedVisibility}">
                                         <Button Content="开始 Twitch 掉宝" IsEnabled="{Binding IsTwitchCoreAvailable}" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStart"/>
                                     </StackPanel>
-                                    <Button Content="{Binding TwitchLoginButtonText}" IsEnabled="{Binding CanTwitchLogin}" Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin" Margin="0,0,8,8"/>
+                                    <Button x:Name="TwitchLoginAction" Content="{Binding TwitchLoginButtonText}" IsEnabled="{Binding CanTwitchLogin}" Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin" Margin="0,0,8,8"/>
                                     <Button Content="重新检测" Visibility="{Binding TwitchRetryVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnTwitchRetry"/>
                                     <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStop"/>
                                     <Button x:Name="TwitchRefreshButton" Content="{Binding TwitchRefreshButtonText}" IsEnabled="{Binding CanRefreshTwitch}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnTwitchReload"/>
