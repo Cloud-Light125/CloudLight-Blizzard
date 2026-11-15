@@ -211,4 +211,3 @@
 ### Views/UploadStalledWindow.xaml.cs
 
 `OnWait`, `OnCancel`
-

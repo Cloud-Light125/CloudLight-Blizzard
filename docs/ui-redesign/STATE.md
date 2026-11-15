@@ -12,8 +12,13 @@
 - [x] computer-use 实际打开并人工复核 17 类页面，修复授权重复主按钮、未登录观看入口、空快照布局等。
 - [x] 首轮 35 状态、315 等效 DIP 布局，0 binding error；真实 DPI 为 120（125%）。
 - [x] 首轮 FeatureSelfTest PASS；UI/Host 345 PASS、0 FAIL、1 BLOCKED（外部剪贴板占用）。
-- [ ] 最终来源一致候选：40 状态、360 布局、Feature / Host / Dispatcher / 持久化 / 启动退出复验。
-- [ ] 最终报告提交与安全推送。
+- [x] 最终来源一致候选：c6ad4cf，40 状态、360 等效 DIP 布局、Feature / Host / Dispatcher / 持久化 / 启动退出复验；Host 仍有剪贴板 BLOCKED。
+- [x] 最终报告、测试矩阵、视觉记录与运行计数口径写入 docs/ui-redesign/。
+- [x] 分支交付资料已归档；最终文档提交 SHA、安全推送及远端核对结果以本地候选 delivery-receipt.json 和最终交付回复为准。
+
+最终候选：test-output/ui-redesign-release-candidate；不要使用先前候选替代。程序源码 c6ad4cfc5b8dfdf15b9faa2ec179de95178b8460，Feature PASS，UI/Host 345 PASS / 0 FAIL / 1 BLOCKED，Presentation PASS，binding errors 0。四个 Worker 哈希与已验证来源完全相同。
+
+Computer Use 17 类页面与深色共 18 张历史实际截图保留；收尾工具误识别测试窗口，最终整套桌面重拍未完成。最终 40 状态 WPF 渲染单独保存，已复核关键改动；不把两类证据混称。
 
 打包核查发现默认 artifacts/drops 是旧 bffdb7d 清单，不能用作本次最终来源。已定位经过验证的 release/candidates/2.1.10-813e6deda6de-Twitch-Network-Local；Twitch 为 813e6de，另三个 Worker 明确继承 e32ceb0。Build-UiCandidate.ps1 将验证源差异与四个 SHA256，不重新构建 Core，也不复制任何真实 Session 验收目录。
 
