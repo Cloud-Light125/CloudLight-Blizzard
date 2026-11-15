@@ -37,7 +37,7 @@
                 <ItemsControl.ItemTemplate><DataTemplate>
                     <Border Style="{StaticResource SectionCard}" Padding="16" Margin="0,0,10,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="85"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <StackPanel Grid.Column="1" Margin="8,0,16,0"><TextBlock Text="{Binding Status}" FontWeight="SemiBold"/><TextBlock Text="{Binding Summary}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
+                        <StackPanel Grid.Column="1" Margin="8,0,16,0"><TextBlock Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Summary}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
                         <Button Grid.Column="2" Content="查看平台" Tag="{Binding Platform}" Click="OnPlatform" Style="{StaticResource SecondaryButton}" Padding="12,0" VerticalAlignment="Center"/>
                     </Grid></Border>
                 </DataTemplate></ItemsControl.ItemTemplate>
