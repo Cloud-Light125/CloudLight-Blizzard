@@ -4,7 +4,7 @@ from typing import Any, TypedDict, TYPE_CHECKING
 
 from yarl import URL
 
-from utils import json_load, json_save
+from settings_store import SettingsStore
 from constants import SETTINGS_PATH, DEFAULT_LANG, PriorityMode
 
 if TYPE_CHECKING:
@@ -71,17 +71,12 @@ class Settings:
     # TDM_CLAIM_TOGGLE_PATCH_END: settings-model
     priority_mode: PriorityMode
 
-    PASSTHROUGH = ("_settings", "_args", "_altered")
+    PASSTHROUGH = ("_settings", "_args", "_altered", "_store")
 
     def __init__(self, args: ParsedArgs):
         # TDM_CLAIM_TOGGLE_PATCH_BEGIN: settings-migration
-        _loaded_settings: dict[str, Any] = json_load(SETTINGS_PATH, default_settings, merge=False)
-        for _setting_name, _default_value in default_settings.items():
-            if (
-                _setting_name not in _loaded_settings
-                or type(_loaded_settings[_setting_name]) is not type(_default_value)
-            ):
-                _loaded_settings[_setting_name] = _default_value
+        self._store = SettingsStore(SETTINGS_PATH, default_settings)
+        _loaded_settings: dict[str, Any] = self._store.load()
         self._settings: SettingsFile = _loaded_settings  # type: ignore[assignment]
         # TDM_CLAIM_TOGGLE_PATCH_END: settings-migration
         self._args: ParsedArgs = args
@@ -121,4 +116,5 @@ class Settings:
 
     def save(self, *, force: bool = False) -> None:
         if self._altered or force:
-            json_save(SETTINGS_PATH, self._settings, sort=True)
+            self._store.save(self._settings)
+            self._altered = False

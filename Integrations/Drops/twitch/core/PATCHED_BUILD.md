@@ -97,3 +97,12 @@ author. See [LICENSE](LICENSE).
 
 CloudLight source Worker 维护补充：Translator仅在English模板语义变化时写回；
 启动/契约测试不因Windows换行符差异重写未变化的资源，保持干净检出可验证。
+
+2026-11-15 Twitch配置维护：Settings使用独立settings_store，不改变utils.json_load的
+其它调用者。正式文件优先，严格JSON/字段验证；无效时验证.lkg/.bak/旧.new，保全原始
+字节后恢复。无可信副本则安全失败，仅显式确认才能备份并恢复默认，未知领取偏好为false。
+保存采用进程内/进程间锁、唯一临时文件、fsync、验证、原子替换、前一版本和LKG。
+乐观版本校验拒绝陈旧设置对象覆盖；新Worker对数据目录持有生命周期锁。旧版本不理解
+新锁，不能声称该锁能排除仍在运行的旧Worker；升级需正常退出旧程序。
+唯一.tmp是未提交证据，不自动晋升；旧固定.new仅在正式文件无效且自身严格有效时恢复。
+cookies.jar、OAuth、GQL、播放列表/分片传输、Chrome156/Android31.8.0均保留。

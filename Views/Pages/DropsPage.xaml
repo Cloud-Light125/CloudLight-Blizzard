@@ -803,7 +803,8 @@
                         <Button Content="重新检测" Visibility="{Binding TwitchRetryVisibility}"
                                 Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0"
                                 Click="OnTwitchRetry"/>
-                        <Button Content="开始 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
+                        <Button Content="备份并恢复默认配置" Visibility="{Binding TwitchConfigRepairVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnRepairTwitchSettings"/>
+                        <Button Content="开始 Twitch 掉宝" IsEnabled="{Binding IsTwitchCoreAvailable}" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="18,0,0,0" Click="OnStart"/>
                         <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnStop"/>
                         <Button x:Name="TwitchRefreshButton" Content="{Binding TwitchRefreshButtonText}"
                                 IsEnabled="{Binding CanRefreshTwitch}" Style="{StaticResource SecondaryButton}"
@@ -1109,7 +1110,7 @@
                     </Grid>
                     <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed"/>
                     <WrapPanel Margin="0,14,0,0"><CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource ThemeCheckBox}" Content="托盘通知" Margin="0,0,18,0"/><CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource ThemeCheckBox}" Content="显示徽章和表情" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource ThemeCheckBox}" Content="检查可用掉宝" Margin="0,0,18,0"/><CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource ThemeCheckBox}" Content="自动领取掉宝"/></WrapPanel>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" x:Name="TwitchSaveSettingsButton" Click="OnSaveTwitch"/>
+                    <Button Content="保存设置" IsEnabled="{Binding IsTwitchCoreAvailable}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,14,0,0" x:Name="TwitchSaveSettingsButton" Click="OnSaveTwitch"/>
                 </StackPanel></Border>
 
             <Expander x:Name="DropsDiagnosticsExpander" Header="网络、代理与诊断" Margin="0,14,0,0"

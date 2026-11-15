@@ -254,7 +254,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         ? TwitchLoginButtonText : SelectedPlatform == DropsPlatform.Bilibili && !BilibiliDetails.LoggedIn
             ? "扫码登录" : SelectedPlatform == DropsPlatform.YouTube ? "开始观看" : "开始掉宝";
     public bool CanActiveStart => SelectedPlatform == DropsPlatform.Twitch
-        ? !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !Twitch.Running
+        ? IsTwitchCoreAvailable && !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !Twitch.Running
         : !ActivePlatform.Running;
     public bool CanActiveStop => ActivePlatform.Running || SelectedPlatform == DropsPlatform.Twitch &&
         (IsTwitchLoginInProgress || TwitchAuthState == "authorization_required");
@@ -415,7 +415,11 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
         }
     }
-    public bool CanClearTwitchLogin => !IsClearingTwitchLogin;
+    private bool _twitchCoreBlocked;
+    private bool _canRepairTwitchSettings;
+    public bool IsTwitchCoreAvailable => !_twitchCoreBlocked;
+    public Visibility TwitchConfigRepairVisibility => _canRepairTwitchSettings ? Visibility.Visible : Visibility.Collapsed;
+    public bool CanClearTwitchLogin => IsTwitchCoreAvailable && !IsClearingTwitchLogin;
     private bool _isTwitchLoginInProgress;
     public bool IsTwitchLoginInProgress
     {
@@ -429,8 +433,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(ActiveStartText)); Raise(nameof(CanActiveStart)); Raise(nameof(CanActiveStop));
         }
     }
-    public bool CanTwitchLogin => !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !_twitchLoggedIn;
-    public string TwitchLoginButtonText => IsClearingTwitchLogin ? "正在清除…"
+    public bool CanTwitchLogin => IsTwitchCoreAvailable && !IsTwitchLoginInProgress && !IsClearingTwitchLogin && !_twitchLoggedIn;
+    public string TwitchLoginButtonText => !IsTwitchCoreAvailable ? "初始化未完成" : IsClearingTwitchLogin ? "正在清除…"
         : !string.IsNullOrWhiteSpace(TwitchAuthorizationUrl) ? "打开授权页面"
         : IsTwitchLoginInProgress ? _twitchConnectionStage == TwitchConnectionStage.RequestingAuthorization
             ? "正在获取授权码…" : _twitchAuthState == "checking" && Twitch.Status.Contains("确认")
@@ -630,7 +634,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             Raise(nameof(TwitchRefreshProgressVisibility));
         }
     }
-    public bool CanRefreshTwitch => !IsTwitchRefreshing;
+    public bool CanRefreshTwitch => IsTwitchCoreAvailable && !IsTwitchRefreshing;
     public string TwitchRefreshButtonText => IsTwitchRefreshing ? "刷新中…" : "刷新进度";
     public Visibility TwitchRefreshProgressVisibility => IsTwitchRefreshing ? Visibility.Visible : Visibility.Collapsed;
     private string _twitchRefreshStatus = "";
@@ -1529,7 +1533,10 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         _host.RequestAsync(platform, "load_state", cancellationToken: token);
 
     public Task<JsonElement> RequestAsync(DropsPlatform platform, string command, object? payload = null,
-        CancellationToken token = default) => _host.RequestAsync(platform, command, payload, token);
+        CancellationToken token = default) => platform == DropsPlatform.Twitch && _twitchCoreBlocked &&
+            command is "login" or "start" or "auto_start" or "clear_auth" or "logout" or "refresh" or "save_settings" or "claim_drop"
+            ? Task.FromException<JsonElement>(new InvalidOperationException(Twitch.Summary))
+            : _host.RequestAsync(platform, command, payload, token);
 
     public Task<JsonElement> StartAsync(DropsPlatform platform) => _host.StartAsync(platform);
     public Task<JsonElement> StopAsync(DropsPlatform platform) => _host.StopAsync(platform);
@@ -1800,6 +1807,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     private static TwitchConnectionFailureKind ClassifyTwitchFailure(string code, string message)
     {
         var value = $"{code} {message}".ToLowerInvariant();
+        if (value.Contains("配置异常") || value.Contains("数据目录正在被另一后台"))
+            return TwitchConnectionFailureKind.Worker;
         if (value.Contains("ssl_runtime_unavailable") || value.Contains("_ssl") ||
             value.Contains("ssl is not supported") || value.Contains("python ssl"))
             return TwitchConnectionFailureKind.SslRuntime;
@@ -1831,7 +1840,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             TwitchConnectionFailureKind.Authentication) return false;
         if (kind != TwitchConnectionFailureKind.Worker) return true;
         var value = message.ToLowerInvariant();
-        return !(value.Contains("modulenotfounderror") || value.Contains("no module named") ||
+        return !(value.Contains("配置异常") || value.Contains("数据目录正在被另一后台") || value.Contains("modulenotfounderror") || value.Contains("no module named") ||
                  value.Contains("业务核心加载失败") || value.Contains("业务核心不可用") ||
                  value.Contains("未找到 twitchdropsminer") || value.Contains("配置格式") ||
                  value.Contains("顶层必须是对象") || value.Contains("settings 必须是对象") ||
@@ -2507,6 +2516,40 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void ApplyTwitch(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (state.TryGetProperty("coreAvailable", out var coreAvailable))
+        {
+            var wasBlocked = _twitchCoreBlocked;
+            _twitchCoreBlocked = coreAvailable.ValueKind == JsonValueKind.False;
+            _canRepairTwitchSettings = _twitchCoreBlocked && state.TryGetProperty("configuration", out var config) && Bool(config, "canReset");
+            Raise(nameof(IsTwitchCoreAvailable));
+            Raise(nameof(TwitchConfigRepairVisibility));
+            Raise(nameof(CanTwitchLogin));
+            Raise(nameof(CanClearTwitchLogin));
+            Raise(nameof(CanActiveStart));
+            Raise(nameof(CanRefreshTwitch));
+            Raise(nameof(TwitchLoginButtonText));
+            if (_twitchCoreBlocked)
+            {
+                CancelTwitchRetry();
+                _twitchConnectionIntent = _twitchStartIntent = _twitchManualIntent = false;
+                vm.Running = false;
+                IsTwitchLoginInProgress = false;
+                SetTwitchAuthState("core_unavailable");
+                SetTwitchStage(TwitchConnectionStage.WorkerError,
+                    Text(state, "coreErrorKind") == "configuration" ? "Twitch 配置异常" : "Twitch 后台组件异常",
+                    Text(state, "coreError", "请检查组件或配置后重新检测；Session 未清除。"));
+                if (state.TryGetProperty("accounts", out var saved) && saved.ValueKind == JsonValueKind.Array && saved.GetArrayLength() > 0)
+                    Accounts.Add(new DropsRow { Primary = "已保存 Session（尚未验证）", Status = "初始化受阻" });
+                TwitchCurrentProgressText = "初始化尚未完成，暂不能读取官方观看任务。";
+                TwitchQuickStart.Steps[0].Update("incomplete", "配置或组件尚未就绪；Session 未清除", false, "");
+                return;
+            }
+            if (wasBlocked)
+            {
+                ClearTwitchFailure();
+                SetTwitchAuthState("logged_out");
+            }
+        }
         if (!vm.Running) TwitchWatchRequestText = "观看已停止。";
         else if (state.TryGetProperty("watchRequests", out var watch)) ApplyTwitchWatchRequest(watch);
         if (state.TryGetProperty("currentChannel", out var watchChannel))
@@ -2811,6 +2854,12 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void UpdateTwitchQuickStart(JsonElement state, bool loggedIn)
     {
+        if (_twitchCoreBlocked)
+        {
+            TwitchQuickStart.Steps[0].Update("incomplete", "配置或组件尚未就绪；Session 未清除", false, "");
+            TwitchQuickStart.RefreshSummary();
+            return;
+        }
         if (state.ValueKind == JsonValueKind.Object)
             _twitchSettingsReady = state.TryGetProperty("settings", out var settings) &&
                                    settings.ValueKind == JsonValueKind.Object;

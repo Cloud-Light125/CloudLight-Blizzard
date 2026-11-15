@@ -374,7 +374,7 @@ public partial class DropsPage : UserControl
         TwitchTrayNotifications.IsChecked = Bool(settings, "tray_notifications", true);
         TwitchBadgesEmotes.IsChecked = Bool(settings, "enable_badges_emotes");
         TwitchAvailableDrops.IsChecked = Bool(settings, "available_drops_check");
-        TwitchAutoClaim.IsChecked = Bool(settings, "auto_claim_drops", true);
+        TwitchAutoClaim.IsChecked = Bool(settings, "auto_claim_drops", false);
         PopulateTwitchGames(state, settings);
         }
         finally { _populatingSettings = false; }
@@ -1328,6 +1328,13 @@ public partial class DropsPage : UserControl
         if (_vm == null || _vm.IsTwitchLoginInProgress || _vm.IsClearingTwitchLogin) return;
         try
         {
+            if (!_vm.IsTwitchCoreAvailable)
+            {
+                var rechecked = await _vm.RequestAsync(DropsPlatform.Twitch, "retry_core");
+                _vm.ApplyState(DropsPlatform.Twitch, rechecked);
+                PopulateSettings(DropsPlatform.Twitch, rechecked);
+                return;
+            }
             await _vm.RequestAsync(DropsPlatform.Twitch, "ssl_check");
             if (_vm.IsTwitchLoggedIn)
             {
@@ -1342,6 +1349,23 @@ public partial class DropsPage : UserControl
         }
         catch (Exception ex) { _vm.SetTwitchFailure(ex.Message); }
             });
+    }
+
+    private async void OnRepairTwitchSettings(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null || MessageBox.Show(
+            "未找到可恢复的有效配置。是否先保存并校验损坏文件的原始备份，再恢复默认设置？\n\nSession/Cookies 不会清除。优先/排除游戏、语言、观看模式、连接质量等需要重新确认；自动领取将关闭。全局代理设置不变。",
+            "恢复 Twitch 配置", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await RunButtonAsync(sender, async () =>
+        {
+            try
+            {
+                var repaired = await _vm.RequestAsync(DropsPlatform.Twitch, "repair_settings", new { confirmDefaults = true });
+                _vm.ApplyState(DropsPlatform.Twitch, repaired);
+                PopulateSettings(DropsPlatform.Twitch, repaired);
+            }
+            catch (Exception ex) { _vm.ReportMessage(DropsPlatform.Twitch, ex.Message, "配置恢复失败"); }
+        });
     }
 
     private void OnSoopRetryNow(object sender, RoutedEventArgs e) => _vm?.RetrySoopNow();

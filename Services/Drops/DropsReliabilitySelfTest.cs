@@ -64,6 +64,23 @@ internal static class DropsReliabilitySelfTest
         Check(vm.Inventory.Count == 1, "采集较早但送达较晚的快照不能覆盖更新状态");
         vm.ApplyState(DropsPlatform.Soop, State(new { inventory = Array.Empty<object>(), _workerGeneration = 2L, _workerSequence = 1L }));
         Check(vm.Inventory.Count == 0, "新 Worker 的成功空背包可替换旧快照");
+        vm.ApplyState(DropsPlatform.Twitch, State(new { coreAvailable = false, coreErrorKind = "configuration",
+            coreError = "Twitch 配置异常 [InvalidJson]：settings.json。Session 未清除。",
+            configuration = new { state = "InvalidJson", canReset = true },
+            accounts = new[] { new { sessionSaved = true, loggedIn = false } }, running = false }));
+        Check(!vm.CanTwitchLogin && !vm.CanClearTwitchLogin && !vm.CanRefreshTwitch && !vm.IsTwitchCoreAvailable,
+            "Twitch 配置损坏阻止授权、清除登录、刷新和开始操作");
+        Check(vm.Twitch.Status == "Twitch 配置异常" && vm.Twitch.Summary.Contains("settings.json") &&
+              vm.TwitchConfigRepairVisibility == Visibility.Visible && vm.TwitchAuthState != "needs_login",
+            "Twitch 配置错误独立分类，提供受控恢复入口，不判定认证过期");
+        var blockedLogin = vm.RequestAsync(DropsPlatform.Twitch, "login");
+        Check(blockedLogin.IsFaulted && blockedLogin.Exception is not null,
+            "Twitch 未初始化时重复授权在 ViewModel 门禁终止，不创建新的 Worker");
+        vm.ApplyState(DropsPlatform.Twitch, State(new { coreAvailable = true, coreError = "", coreErrorKind = "",
+            configuration = new { state = "Valid", canReset = false }, accounts = Array.Empty<object>(),
+            authState = "logged_out", running = false }));
+        Check(vm.IsTwitchCoreAvailable && vm.CanTwitchLogin && vm.TwitchConfigRepairVisibility == Visibility.Collapsed,
+            "Twitch 配置恢复成功清除旧错误和修复入口，重新允许 Session 验证");
         vm.SetTwitchAuthorization("https://www.twitch.tv.evil/activate", "TEST", false);
         Check(vm.TwitchAuthorizationVisibility == Visibility.Collapsed, "不可信授权网址不会显示验证码操作区");
         vm.SetTwitchAuthorization("https://www.twitch.tv/activate", "TEST", automatic: true);

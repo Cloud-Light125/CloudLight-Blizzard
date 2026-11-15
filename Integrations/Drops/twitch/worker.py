@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import importlib
 import json
 import logging
@@ -33,6 +34,9 @@ class TwitchWorker(WorkerBase):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._core: dict[str, Any] = {}
         self._core_error = ""
+        self._core_error_kind = ""
+        self._config_state: dict[str, Any] = {"state": "Missing", "canReset": False}
+        self._data_lease: Any = None
         self._settings: Any = None
         self._client: Any = None
         self._client_task: Any = None
@@ -70,12 +74,19 @@ class TwitchWorker(WorkerBase):
             "network_check": self.network_check,
             "clear_auth": self.clear_auth,
             "compatibility_check": self.compatibility_check,
+            "retry_core": self.retry_core,
+            "repair_settings": self.repair_settings,
         })
         self._migrate_legacy_proxy()
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            if self._data_lease is not None:
+                self._data_lease.close()
+                self._data_lease = None
 
     def _core_path(self) -> Path | None:
         configured = os.environ.get("CLOUDLIGHT_TWITCH_CORE", "").strip()
@@ -87,9 +98,15 @@ class TwitchWorker(WorkerBase):
         return next((path.resolve() for path in candidates if (path / "twitch.py").is_file()), None)
 
     def _load_core(self) -> None:
+        self._core = {}
+        self._settings = None
+        self._core_error = ""
+        self._core_error_kind = ""
+        self._config_state = {"state": "Missing", "canReset": False}
         root = self._core_path()
         if root is None:
             self._core_error = "未找到 TwitchDropsMiner MIT 业务核心。"
+            self._core_error_kind = "core_missing"
             return
         try:
             sys.path.insert(0, str(root))
@@ -107,6 +124,13 @@ class TwitchWorker(WorkerBase):
             constants.SETTINGS_PATH = self.settings_path
             settings_module = importlib.import_module("settings")
             settings_module.SETTINGS_PATH = self.settings_path
+            from settings_store import FileLease
+            if self._data_lease is None:
+                try:
+                    self._data_lease = FileLease(self.data_dir / 'worker.lock').acquire()
+                except OSError:
+                    self._core_error_kind = "data_in_use"
+                    raise RuntimeError("Twitch 数据目录正在被另一后台使用或无法访问；请正常退出旧实例后重新检测。") from None
             twitch_module = importlib.import_module("twitch")
             twitch_module.COOKIES_PATH = self.cookies_path
             args = SimpleNamespace(
@@ -115,6 +139,9 @@ class TwitchWorker(WorkerBase):
             )
             had_settings = self.settings_path.is_file()
             self._settings = settings_module.Settings(args)
+            self._config_state = {"state": self._settings._store.state,
+                                  "recoveredFrom": self._settings._store.recovered_from,
+                                  "canReset": False}
             if not had_settings and (root / "lang" / "简体中文.json").is_file():
                 self._settings.language = "简体中文"
                 self._settings.save(force=True)
@@ -130,8 +157,38 @@ class TwitchWorker(WorkerBase):
                 root_logger.addHandler(self.logger.handlers[0])
             self.logger.debug("Twitch core loaded from %s", root)
         except Exception as exc:
-            self._core_error = f"Twitch 业务核心加载失败: {exc}"
-            self.logger.exception(self._core_error)
+            settings_error = getattr(sys.modules.get('settings_store'), 'SettingsError', ())
+            if isinstance(exc, settings_error):
+                self._core_error_kind = "configuration"
+                self._config_state = {"state": exc.state, "file": exc.path.name,
+                                      "canReset": exc.state in {"InvalidJson", "InvalidSchema"}}
+                self._core_error = str(exc) + " 请重新检测；无可用副本时可备份后恢复默认配置，自动领取将关闭。"
+                # No exception document/value is exposed through JSONL or logs.
+                self.logger.error("Twitch settings initialization failed [%s] file=%s", exc.state, exc.path.name)
+            else:
+                self._core_error_kind = self._core_error_kind or "core_load"
+                self._core_error = (str(exc) if self._core_error_kind == 'data_in_use' else
+                                    "Twitch 业务核心加载失败：" + type(exc).__name__ + "；请检查组件和本地诊断日志。")
+                self.logger.exception("Twitch core initialization failed")
+
+    def retry_core(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._client_stopped.is_set():
+            raise RuntimeError("Twitch 正在运行或清理，请先停止。")
+        if not self._core:
+            self._load_core()
+            if self._core:
+                self.on_proxy_changed()
+        return self.load_state({})
+
+    def repair_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get('confirmDefaults') is not True:
+            raise ValueError("恢复默认配置需要明确确认；不会清除 Session，自动领取保持关闭。")
+        if not self._client_stopped.is_set() or self._core_error_kind != 'configuration' or not self._config_state.get('canReset'):
+            raise RuntimeError("当前配置状态不允许恢复默认。")
+        from settings_store import SettingsStore
+        from settings import default_settings
+        SettingsStore(self.settings_path, default_settings).reset_defaults()
+        return self.retry_core({})
 
     def _require_core(self) -> None:
         self.require_runtime()
@@ -441,6 +498,7 @@ class TwitchWorker(WorkerBase):
             "websockets": self._websocket_state(), "languages": self.get_languages({}),
             "watchRequests": dict(getattr(self._client, "_cloudlight_watch_requests", {})),
             "coreAvailable": bool(self._core), "coreError": self._core_error,
+            "coreErrorKind": self._core_error_kind, "configuration": dict(self._config_state),
             "authState": auth_state, "authRequired": auth_required,
             "loginError": self._login_error,
             "loginErrorCode": self._login_error_code,
@@ -595,6 +653,8 @@ class TwitchWorker(WorkerBase):
             "connection_quality", "tray_notifications", "enable_badges_emotes",
             "available_drops_check", "auto_claim_drops", "priority_mode",
         }
+        previous = copy.deepcopy(self._settings._settings)
+        staged = copy.deepcopy(previous)
         for key in fields:
             if key not in changes:
                 continue
@@ -606,8 +666,14 @@ class TwitchWorker(WorkerBase):
                 value = self._core["PriorityMode"][mode_name]
             elif key == "connection_quality":
                 value = max(1, min(6, int(value)))
-            setattr(self._settings, key, value)
-        self._settings.save(force=True)
+            staged[key] = value
+        self._settings._store.encode(staged)
+        self._settings._settings = staged
+        try:
+            self._settings.save(force=True)
+        except Exception:
+            self._settings._settings = previous
+            raise
         if self._client is not None:
             self.reload({})
         return self._settings_dict()
@@ -619,8 +685,7 @@ class TwitchWorker(WorkerBase):
         global_proxy = URL(self.proxy["proxyUrl"]) if self.proxy["enableProxy"] else URL()
         object.__setattr__(self._settings, "_cloudlight_global_proxy", global_proxy)
         object.__setattr__(self._settings, "_cloudlight_fallback_direct", bool(self.proxy["fallbackDirect"]))
-        self._settings._settings["proxy"] = URL()
-        self._settings.save(force=True)
+        # Global proxy is a runtime override; preserve the saved Core preference.
         if self.running:
             event("notice", {"message": "Twitch 代理设置将在后台服务重启后生效。"})
             self.stop({})
@@ -923,6 +988,12 @@ class TwitchWorker(WorkerBase):
         except Exception:
             self.logger.exception("Twitch event loop finalization failed")
         self._loop.call_soon_threadsafe(self._loop.stop)
+        self._loop_thread.join(timeout=5)
+        if not self._loop_thread.is_alive():
+            self._loop.close()
+        if self._data_lease is not None:
+            self._data_lease.close()
+            self._data_lease = None
         return result
 
     async def _finish_loop(self) -> None:
