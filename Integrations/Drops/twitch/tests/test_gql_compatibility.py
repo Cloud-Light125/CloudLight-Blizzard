@@ -82,6 +82,7 @@ class TwitchGqlCompatibilityTests(unittest.TestCase):
         self.assertIn("Chrome/156.0.0.0", constants.ClientType.WEB.USER_AGENT)
         self.assertIn("Chrome/156.0.0.0", constants.ClientType.SMARTBOX.USER_AGENT)
         self.assertIn("Chrome/156.0.8078.54", constants.ClientType.MOBILE_WEB.USER_AGENT)
+        self.assertIn("tv.twitch.android.app/31.8.0/3108006", constants.ClientType.ANDROID_APP.USER_AGENT)
 
     @staticmethod
     def _client_with_responses(responses: list[dict[str, object]]):

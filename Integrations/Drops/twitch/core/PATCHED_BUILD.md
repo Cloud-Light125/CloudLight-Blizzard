@@ -33,7 +33,8 @@ upstream 的 Tk GUI、Linux AppIndicator 与启动入口改动不属于 headless
 ### 2026-11-15 兼容性维护
 
 - UA 定向同步 upstream `69a4ff9e1d76e84d4243ded21f6e48df46e170ec` 的
-  Web / Mobile Web / Smartbox Chrome 156 数据。
+  Web / Mobile Web / Smartbox Chrome 156 数据，并补齐 ANDROID_APP `31.8.0/3108006` 标识。
+  上游最新 `99d12fd` 的其余核心改动（浏览器隐式授权）未直接合并，保留已验证的 Smartbox Device Grant。
 - 采纳 `378697a3f35380e87b62b1e6059e18f6669a98b1` 的零增量刷新思路：
   相同官方分钟值仍清除本地估计并重置计时器；负值单独钳制，避免重复减去增量。
 - 保留已验证的 playlist / segment HEAD 观看路径及 NoAutoClaim；没有改回 Spade。
