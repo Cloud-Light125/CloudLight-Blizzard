@@ -211,31 +211,31 @@ class ClientType:
         [
             (
                 "Dalvik/2.1.0 (Linux; U; Android 16; SM-S911B Build/TP1A.220624.014) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; U; Android 16; SM-S938B Build/BP2A.250605.031) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; Android 16; SM-X716N Build/UP1A.231005.007) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; U; Android 15; SM-G990B Build/AP3A.240905.015.A2) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; U; Android 15; SM-G970F Build/AP3A.241105.008) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; U; Android 15; SM-A566E Build/AP3A.240905.015.A2) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
             (
                 "Dalvik/2.1.0 (Linux; U; Android 14; SM-X306B Build/UP1A.231005.007) "
-                "tv.twitch.android.app/25.3.0/2503006"
+                "tv.twitch.android.app/31.8.0/3108006"
             ),
         ]
     )
