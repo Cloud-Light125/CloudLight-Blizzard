@@ -1,20 +1,20 @@
 # 前端功能盘点
 
-基线 UI 契约 754 条，包含所有 Views、Controls 与 Stats XAML、绑定、交互控件和确认/命令代码入口。
+基线 UI 契约 763 条，包含所有 Views、Controls 与 Stats XAML、绑定、交互控件和确认/命令代码入口。
 这是可审计的声明条目数，不是互不重复的业务功能数。每条入口可能包含多项状态或保护。
 
 | 源文件 | 契约数量 |
 |---|---|
 | Controls/AnnouncementBell.xaml | 2 |
 | Controls/PageHeader.xaml | 3 |
-| Stats/CareerWindow.xaml | 51 |
+| Stats/CareerWindow.xaml | 52 |
 | Stats/HeroDetailWindow.xaml | 14 |
 | Views/AccountSettingsWindow.xaml | 5 |
 | Views/AnnouncementWindow.xaml | 6 |
-| Views/CloseChoiceWindow.xaml | 5 |
-| Views/DeleteConfirmWindow.xaml | 3 |
-| Views/ExitConfirmationDialog.xaml | 4 |
-| Views/LoginNewWindow.xaml | 3 |
+| Views/CloseChoiceWindow.xaml | 6 |
+| Views/DeleteConfirmWindow.xaml | 4 |
+| Views/ExitConfirmationDialog.xaml | 5 |
+| Views/LoginNewWindow.xaml | 4 |
 | Views/MainWindow.xaml | 11 |
 | Views/MainWindow.xaml.cs | 9 |
 | Views/Pages/AboutPage.xaml | 13 |
@@ -34,13 +34,13 @@
 | Views/Pages/SnapshotsPage.xaml | 43 |
 | Views/Pages/SnapshotsPage.xaml.cs | 2 |
 | Views/PlatformErrorWindow.xaml | 2 |
-| Views/RegionActionConfirmWindow.xaml | 3 |
+| Views/RegionActionConfirmWindow.xaml | 4 |
 | Views/RegionSwitchChoiceWindow.xaml | 3 |
 | Views/RegionSwitchChoiceWindow.xaml.cs | 1 |
-| Views/SnapshotConfirmWindow.xaml | 4 |
+| Views/SnapshotConfirmWindow.xaml | 5 |
 | Views/SoopNoticeWindow.xaml | 2 |
-| Views/SwitchPreviewWindow.xaml | 3 |
-| Views/UpdateDialog.xaml | 6 |
+| Views/SwitchPreviewWindow.xaml | 4 |
+| Views/UpdateDialog.xaml | 7 |
 | Views/UpdateDialog.xaml.cs | 1 |
 | Views/UploadStalledWindow.xaml | 2 |
 

@@ -563,17 +563,6 @@ public partial class DropsPage : UserControl
         await LoadPlatformAsync(platform);
     }
 
-    private async void OnOpenPlatform(object sender, RoutedEventArgs e)
-    {
-        if (_shutdownStarted) return;
-        if (sender is not Button { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
-        if (platform == DropsPlatform.Soop) SoopTab.IsChecked = true;
-        else if (platform == DropsPlatform.YouTube) YouTubeTab.IsChecked = true;
-        else if (platform == DropsPlatform.Twitch) TwitchTab.IsChecked = true;
-        else BilibiliTab.IsChecked = true;
-        if (_platform == platform) await LoadPlatformAsync(platform);
-    }
-
     private async void OnStart(object sender, RoutedEventArgs e)
     {
         await RunButtonAsync(sender, async () =>

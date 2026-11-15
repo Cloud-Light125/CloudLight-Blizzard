@@ -38,7 +38,8 @@ def inventory(files):
                 if el.get('Tag','').startswith('workspace:'):
                     location += ' / '+el.get('Tag')[10:]
                 attrs = {k.split('}')[-1]: v for k, v in el.attrib.items()}
-                contracts = {k: v for k, v in attrs.items() if k in EVENTS or 'Command' in k or ('{Binding ' in v)}
+                contracts = {k: v for k, v in attrs.items() if k in EVENTS or 'Command' in k or ('{Binding ' in v)
+                    or (k not in ('Content','Text','Header','Title','ToolTip','Tag','Name') and re.fullmatch(r'On[A-Za-z0-9_]+',v))}
                 if kind in CONTROLS or contracts:
                     name = el.get(X+'Name', el.get('Name', ''))
                     # Layout and visual copy may change; behavior and data paths may not disappear.

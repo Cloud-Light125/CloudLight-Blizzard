@@ -5,7 +5,7 @@
 - [x] Git fetch（命令级代理 127.0.0.1:7897），本地与远端 HEAD 一致。
 - [x] 建立独立 ui/fluent-redesign 分支；未跟踪 artifacts/ 保留。
 - [x] 读取 computer-use 技能、guidance、api、confirmations。
-- [x] 旧 UI 盘点：754 条 UI 契约，53 个 AppSettings 字段；静态迁移 754/754。
+- [x] 旧 UI 盘点：763 条 UI 契约（含拖动、鼠标事件），53 个 AppSettings 字段；静态迁移 763/763。
 - [x] 共享设计系统、九项一级导航、真实服务数据总览。
 - [x] SOOP / Twitch / Bilibili / YouTube 分组；Twitch 授权流程、固定保存区与草稿保留。
 - [x] 账号、区服、战绩、快照、诊断、设置、关于及共享窗口样式。

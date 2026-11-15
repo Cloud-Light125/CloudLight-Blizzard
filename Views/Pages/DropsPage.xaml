@@ -1694,6 +1694,20 @@
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Tag="workspace:network">
+                    <Border Style="{StaticResource SectionCard}">
+                        <Expander Header="旧版数据导入（高级）" IsExpanded="False">
+                            <StackPanel Margin="0,12,0,0">
+                                <TextBlock Text="导入所选平台的旧版设置、账号或 Session 与缓存。同名文件继续由原有对话框逐项确认覆盖、跳过或取消；原目录保留。请先停止当前平台。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,12"/>
+                                <StackPanel>
+                                    <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="IsEnabled" Value="True"/><Style.Triggers><DataTrigger Binding="{Binding ActivePlatform.Running}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                                    <Button Content="导入 SOOP 旧版数据" Tag="Soop" Visibility="{Binding SoopPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
+                                    <Button Content="导入 Twitch 旧版数据" Tag="Twitch" Visibility="{Binding TwitchPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
+                                    <Button Content="导入 Bilibili 旧版数据" Tag="Bilibili" Visibility="{Binding BilibiliPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
+                                    <Button Content="导入 YouTube 旧版数据" Tag="YouTube" Visibility="{Binding YouTubePanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander>
+                    </Border>
                     <Expander x:Name="DropsDiagnosticsExpander" Header="网络、代理与诊断" Margin="0,14,0,0" Foreground="{DynamicResource Text.Primary}" IsExpanded="True">
                         <Border x:Name="DropsNetworkSummary" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="14,11" CornerRadius="14">
                             <Grid>
