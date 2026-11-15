@@ -282,6 +282,19 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
     public string TwitchCurrentProgressText { get => _twitchCurrentProgressText; private set => Set(ref _twitchCurrentProgressText, value); }
     private string _twitchWatchRequestText = "观看请求尚未确认；以官方奖励进度为准。";
     public string TwitchWatchRequestText { get => _twitchWatchRequestText; private set => Set(ref _twitchWatchRequestText, value); }
+    private string _twitchNetworkRouteText = "尚无 Twitch 业务请求证据；设置页连通性不等于 Session 已验证。";
+    public string TwitchNetworkRouteText { get => _twitchNetworkRouteText; private set => Set(ref _twitchNetworkRouteText, value); }
+
+    private void ApplyTwitchNetworkDiagnostic(JsonElement data)
+    {
+        TwitchNetworkRouteText = $"{Text(data, "method")} {Text(data, "host")}{Text(data, "path")} · {Text(data, "route")}" +
+            $" {Text(data, "proxy")} · {Text(data, "stage")} · HTTP {Number(data, "http"):0} · {Text(data, "exception")}" +
+            $" · {Number(data, "elapsedMs"):0} ms · 第 {Number(data, "attempt"):0} 次";
+        if (Text(data, "stage") == "HTTP" && _twitchLastFailureKind is TwitchConnectionFailureKind.Network or
+            TwitchConnectionFailureKind.Proxy or TwitchConnectionFailureKind.ProxyAndDirect or
+            TwitchConnectionFailureKind.Timeout or TwitchConnectionFailureKind.Dns)
+            ClearTwitchFailure();
+    }
     private double _twitchCurrentProgress;
     public double TwitchCurrentProgress { get => _twitchCurrentProgress; private set => Set(ref _twitchCurrentProgress, value); }
     private string _twitchDataSourceText = "尚未成功读取活动与背包";
@@ -1969,6 +1982,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         else if (stage == TwitchConnectionStage.LoginSucceeded && !_twitchStartIntent)
         {
+            ClearTwitchFailure();
             CancelTwitchRetry();
         }
         else if (stage is TwitchConnectionStage.WaitingAuthorization or TwitchConnectionStage.AuthenticationExpired)
@@ -2516,6 +2530,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     private void ApplyTwitch(JsonElement state, DropsPlatformViewModel vm)
     {
+        if (state.TryGetProperty("networkDiagnostics", out var requests) && requests.ValueKind == JsonValueKind.Array && requests.GetArrayLength() > 0)
+            ApplyTwitchNetworkDiagnostic(requests[requests.GetArrayLength() - 1]);
         if (state.TryGetProperty("coreAvailable", out var coreAvailable))
         {
             var wasBlocked = _twitchCoreBlocked;
@@ -2657,7 +2673,14 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         else if (!loggedIn)
         {
-            if (authState == "checking")
+            if (authState == "checking" && _twitchLastFailureKind != TwitchConnectionFailureKind.None &&
+                _twitchConnectionStage is TwitchConnectionStage.RetryWaiting or TwitchConnectionStage.NetworkFailed or TwitchConnectionStage.ProxyUnavailable)
+            {
+                // A read snapshot can be captured between request failure and
+                // the coroutine's auth_state=failed. Keep the terminal state.
+                IsTwitchLoginInProgress = false;
+            }
+            else if (authState == "checking")
                 SetTwitchStage(TwitchConnectionStage.CheckingSession,
                     "正在检查 Twitch 登录状态…", "正在检查本机保存的登录信息", monitor: true);
             else if (!_twitchConnectionIntent)
@@ -2785,10 +2808,21 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
                     "Twitch 代理连接失败，仍在尝试…", _twitchLastError, monitor: true);
                 break;
             case "proxy_and_direct_failed":
-                RecordTwitchFailure(TwitchConnectionFailureKind.ProxyAndDirect,
-                    FriendlyTwitchFailure(TwitchConnectionFailureKind.ProxyAndDirect, ""), retryable: true);
-                SetTwitchStage(TwitchConnectionStage.Connecting,
-                    "Twitch 无法连接，仍在尝试…", _twitchLastError, monitor: true);
+                SetTwitchTemporaryFailure(TwitchConnectionFailureKind.ProxyAndDirect,
+                    "Twitch 代理和直连回退均失败；Session 尚未验证。");
+                break;
+            case "request_failed":
+                SetTwitchTemporaryFailure(detail == "proxy_and_direct_failure"
+                    ? TwitchConnectionFailureKind.ProxyAndDirect : TwitchConnectionFailureKind.Network,
+                    "网络连接失败，Session 尚未验证；已保存的登录信息保留。");
+                break;
+            case "proxy_auth_failed":
+                SetTwitchFailure(TwitchConnectionFailureKind.Proxy, "Twitch 代理认证失败（407），请检查代理凭据。Session 已保留。",
+                    retryable: false, scheduleRetry: false);
+                break;
+            case "unsafe_request_failed":
+                SetTwitchFailure(TwitchConnectionFailureKind.Network, "请求结果无法确认；未自动重复提交，Session已保留，请手动重试。",
+                    retryable: false, scheduleRetry: false);
                 break;
             case "network_failed":
             {
@@ -3096,7 +3130,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
             (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" or "watch_request" ||
              message.Name == "status" && Bool(message.Payload, "running"))) return;
         if (message.Name is "state" or "account_status" or "auth_state" or "auth_required" or "login_status" or "error" or "status" or
-            "connection_status" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward" or "stream" or "watch_time" or "playback" or "watch_request")
+            "connection_status" or "network_request" or "proxy_policy" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward" or "stream" or "watch_time" or "playback" or "watch_request")
             if (!AcceptState(message.Platform, message.Payload)) return;
         var previousProjection = _projectionPlatform;
         _projectionPlatform = message.Platform;
@@ -3104,6 +3138,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         {
         if (message.Platform == DropsPlatform.Twitch && message.Name == "watch_request")
             ApplyTwitchWatchRequest(message.Payload);
+        if (message.Platform == DropsPlatform.Twitch && message.Name == "network_request")
+            ApplyTwitchNetworkDiagnostic(message.Payload);
         if (message.Platform == DropsPlatform.Soop && message.Name == "account_operation_timeout")
         {
             if (message.Payload.TryGetProperty("_workerGeneration", out var failedGeneration) &&

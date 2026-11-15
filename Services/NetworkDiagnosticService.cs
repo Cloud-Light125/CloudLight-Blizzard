@@ -20,7 +20,7 @@ public sealed record NetworkDiagnosticReport(
         Format("公告服务", Announcement),
         Format("更新服务", Update),
         Soop is null ? "SOOP：未执行" : Format("SOOP", Soop),
-        Twitch is null ? "Twitch：未执行" : Format("Twitch", Twitch),
+        Twitch is null ? "Twitch：未执行" : Format("Twitch", Twitch) + " · 仅 www.twitch.tv 网页连通性，未验证 Session/GQL",
         Bilibili is null ? "哔哩哔哩：未执行" : Format("哔哩哔哩", Bilibili));
 
     public IEnumerable<string> ToCopyLines()
@@ -30,6 +30,7 @@ public sealed record NetworkDiagnosticReport(
         yield return CopyLine("更新服务", Update);
         if (Soop is not null) yield return CopyLine("SOOP", Soop);
         if (Twitch is not null) yield return CopyLine("Twitch", Twitch);
+        if (Twitch is not null) yield return "Twitch probe: www.twitch.tv only; Session/GQL not verified";
         if (Bilibili is not null) yield return CopyLine("哔哩哔哩", Bilibili);
     }
 

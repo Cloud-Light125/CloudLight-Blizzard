@@ -81,6 +81,32 @@ internal static class DropsReliabilitySelfTest
             authState = "logged_out", running = false }));
         Check(vm.IsTwitchCoreAvailable && vm.CanTwitchLogin && vm.TwitchConfigRepairVisibility == Visibility.Collapsed,
             "Twitch 配置恢复成功清除旧错误和修复入口，重新允许 Session 验证");
+        vm.BeginTwitchStart(false);
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch,"connection_status",
+            State(new { phase="request_failed",detail="proxy_and_direct_failure" })) });
+        Check(!vm.IsTwitchLoginInProgress && vm.TwitchAuthState != "needs_login" && vm.Twitch.Status != "正在检查 Twitch 登录状态…",
+            "Twitch 网络终态退出等待状态，不误判 Session 失效");
+        vm.ApplyState(DropsPlatform.Twitch,State(new {authState="checking",accounts=Array.Empty<object>(),running=false}));
+        Check(vm.Twitch.Status != "正在检查 Twitch 登录状态…", "失败后采集到的checking快照不能掩盖网络终态");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch,"network_request",
+            State(new { host="id.twitch.tv",path="/oauth2/validate",route="Proxy",method="GET",stage="HTTP",http=200,attempt=1,elapsedMs=123 })) });
+        Check(vm.TwitchNetworkRouteText.Contains("id.twitch.tv") && vm.TwitchNetworkRouteText.Contains("Proxy") && vm.TwitchLastError.Length==0,
+            "Twitch 安全路由诊断可见，恢复后清除旧网络错误但不据HTTP200宣布登录");
+        applyEvent.Invoke(vm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch,"connection_status",
+            State(new { phase="proxy_auth_failed",detail="proxy_authentication_required" })) });
+        Check(vm.Twitch.Summary.Contains("407") && vm.TwitchAuthState != "needs_login", "Twitch 407为代理认证失败，保持Session不要求Twitch重新授权");
+        var diagnosticHost = new DropsHostService();
+        using (var diagnosticVm = new DropsViewModel(diagnosticHost))
+        {
+            applyEvent.Invoke(diagnosticVm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch,"network_request",
+                State(new { _workerGeneration=2,_workerSequence=2,host="id.twitch.tv",path="/oauth2/validate",route="Proxy",stage="HTTP",http=200 })) });
+            var latestRoute = diagnosticVm.TwitchNetworkRouteText;
+            applyEvent.Invoke(diagnosticVm, new object?[] { null, new WorkerEvent(DropsPlatform.Twitch,"network_request",
+                State(new { _workerGeneration=1,_workerSequence=3,host="obsolete.invalid",route="Direct",stage="TCP" })) });
+            Check(diagnosticVm.TwitchNetworkRouteText==latestRoute,"旧Generation网络失败事件不能覆盖新路由成功证据");
+        }
+        diagnosticHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        vm.BeginTwitchLogin();
         vm.SetTwitchAuthorization("https://www.twitch.tv.evil/activate", "TEST", false);
         Check(vm.TwitchAuthorizationVisibility == Visibility.Collapsed, "不可信授权网址不会显示验证码操作区");
         vm.SetTwitchAuthorization("https://www.twitch.tv/activate", "TEST", automatic: true);

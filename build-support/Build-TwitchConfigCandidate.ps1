@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$BaselineCandidate,
-    [Parameter(Mandatory)][string]$OutputRoot
+    [Parameter(Mandatory)][string]$OutputRoot,
+    [switch]$NetworkAcceptance
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,10 +46,18 @@ try {
     $python = Join-Path $repo '.worker-build-venv\Scripts\python.exe'
     & $python (Join-Path $repo 'Integrations\Drops\twitch\tests\frozen_config_smoke.py') --worker (Join-Path $workers 'twitch\twitch-worker.exe') --output (Join-Path $validation 'frozen-config') *> (Join-Path $validation 'frozen-config.log')
     if ($LASTEXITCODE -ne 0) { throw 'Frozen Twitch configuration regression failed.' }
+    if ($NetworkAcceptance) {
+        & $python (Join-Path $repo 'Integrations\Drops\twitch\tests\frozen_network_smoke.py') --worker (Join-Path $workers 'twitch\twitch-worker.exe') --output (Join-Path $validation 'frozen-network') *> (Join-Path $validation 'frozen-network.log')
+        if ($LASTEXITCODE -ne 0) { throw 'Frozen Twitch network regression failed.' }
+    }
     $env:MSBuildEnableWorkloadResolver = 'false'
     & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained false -o $app "-p:BuildCommit=$commit" "-p:BuildTimestamp=$([DateTimeOffset]::Now.ToString('o'))" '-p:DropsBuildPurpose=Local' "-p:DropsArtifactsRoot=$workers" *> (Join-Path $validation 'publish.log')
     if ($LASTEXITCODE -ne 0) { throw 'Release publish failed.' }
     $dll = Join-Path $app 'CloudLight Blizzard.dll'
+    if ($NetworkAcceptance) {
+        & dotnet $dll --feature-selftest (Join-Path $validation 'twitch-network-host') twitch-network *> (Join-Path $validation 'host-console.log')
+        if ($LASTEXITCODE -ne 0 -or -not (Get-Content -Raw -LiteralPath (Join-Path $validation 'twitch-network-host\feature-selftest.txt')).Contains('OVERALL: PASS')) { throw 'Twitch Host network regression failed.' }
+    }
     & dotnet $dll --ui-selftest (Join-Path $validation 'ui.txt') *> (Join-Path $validation 'ui-console.log')
     $uiExit = $LASTEXITCODE
     $ui = Get-Content -Raw -LiteralPath (Join-Path $validation 'ui.txt')

@@ -19,6 +19,7 @@ from Shared.protocol import (
     WorkerBase,
     event,
     is_ssl_runtime_error,
+    validate_proxy_url,
     run_worker,
 )
 
@@ -52,6 +53,8 @@ class TwitchWorker(WorkerBase):
         self._last_snapshot: dict[str, Any] = {}
         self._snapshot_user_id: int | None = None
         self._inventory_sync_at = ""
+        self._last_network_trace: list[dict[str, Any]] = []
+        self._proxy_configured = False
         self._login_error_code = ""
         self._login_error_retryable = False
         self._continue_after_login = False
@@ -76,6 +79,7 @@ class TwitchWorker(WorkerBase):
             "compatibility_check": self.compatibility_check,
             "retry_core": self.retry_core,
             "repair_settings": self.repair_settings,
+            "network_probe": self.network_probe,
         })
         self._migrate_legacy_proxy()
 
@@ -243,6 +247,8 @@ class TwitchWorker(WorkerBase):
 
     @staticmethod
     def _connection_error(exc: BaseException) -> tuple[str, str, str, bool]:
+        if getattr(exc, 'category', '') == 'network_route':
+            return 'network', exc.code, str(exc), exc.retryable
         if getattr(exc, "category", "") == "oauth":
             return "oauth", exc.code, str(exc), exc.retryable
         name = exc.__class__.__name__.casefold()
@@ -255,9 +261,11 @@ class TwitchWorker(WorkerBase):
             )
         if "certificate_verify_failed" in message or "certificate" in name:
             return "ssl_certificate", "certificate_verify_failed", "Twitch HTTPS 证书验证失败。", False
+        if "sslerror" in name:
+            return "ssl_certificate", "tls_handshake_failed", "Twitch TLS 握手失败；证书验证保持开启，请检查代理和证书链。", False
         if "proxy" in name and getattr(exc, "status", None) == 407:
             return "proxy", "proxy_authentication_required", "Twitch 代理要求认证，请检查代理账号和密码。", False
-        if exc.__class__.__name__ in {"LoginException", "CaptchaRequired"} or getattr(exc, "status", None) == 401:
+        if exc.__class__.__name__ in {"LoginException", "CaptchaRequired"}:
             return "authentication", "authentication_expired", "Twitch 登录信息已失效，请重新登录。", False
         if "timeout" in name or isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
             return "network", "connection_timeout", "Twitch 连接失败：连接超时。", True
@@ -438,6 +446,7 @@ class TwitchWorker(WorkerBase):
             await asyncio.sleep(0.25)
 
     def _capture_snapshot(self, client: Any) -> None:
+        self._last_network_trace = list(getattr(client, '_cloudlight_network_diagnostics', self._last_network_trace))
         auth = getattr(client, "_auth_state", None)
         if hasattr(auth, "user_id"):
             self._authenticated_user_id = int(auth.user_id)
@@ -498,6 +507,8 @@ class TwitchWorker(WorkerBase):
             "websockets": self._websocket_state(), "languages": self.get_languages({}),
             "watchRequests": dict(getattr(self._client, "_cloudlight_watch_requests", {})),
             "coreAvailable": bool(self._core), "coreError": self._core_error,
+            "networkDiagnostics": list(getattr(self._client, '_cloudlight_network_diagnostics', self._last_network_trace)),
+            "proxyPolicy": self._safe_proxy_policy(),
             "coreErrorKind": self._core_error_kind, "configuration": dict(self._config_state),
             "authState": auth_state, "authRequired": auth_required,
             "loginError": self._login_error,
@@ -686,10 +697,60 @@ class TwitchWorker(WorkerBase):
         object.__setattr__(self._settings, "_cloudlight_global_proxy", global_proxy)
         object.__setattr__(self._settings, "_cloudlight_fallback_direct", bool(self.proxy["fallbackDirect"]))
         # Global proxy is a runtime override; preserve the saved Core preference.
-        if self.running:
+        watching, connecting = self.running, not self._client_stopped.is_set()
+        continue_watching = self._continue_after_login
+        event('proxy_policy', self._safe_proxy_policy())
+        if watching or connecting:
             event("notice", {"message": "Twitch 代理设置将在后台服务重启后生效。"})
             self.stop({})
-            self.start({})
+            if watching: self.start({})
+            else: self.login({'continueWatching':continue_watching})
+
+    def set_proxy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        enabled = bool(payload.get('enableProxy', payload.get('EnableProxy',False)))
+        url = str(payload.get('proxyUrl',payload.get('ProxyUrl',''))).strip()
+        fallback = bool(payload.get('fallbackDirect',payload.get('FallbackDirect',False)))
+        if enabled: url = validate_proxy_url(url)
+        policy = {'enableProxy':enabled,'proxyUrl':url,'fallbackDirect':fallback}
+        if self._proxy_configured and policy == self.proxy: return self.proxy
+        self.proxy = policy
+        self._proxy_configured = True
+        self.on_proxy_changed()
+        return self.proxy
+
+    def _safe_proxy_policy(self) -> dict[str, Any]:
+        if not self._core: return {'enabled':self.proxy['enableProxy'],'fallbackDirect':self.proxy['fallbackDirect']}
+        from network_policy import safe_proxy
+        return {'enabled':self.proxy['enableProxy'],'proxy':safe_proxy(self.proxy['proxyUrl']),
+                'fallbackDirect':self.proxy['fallbackDirect']}
+
+    def network_probe(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._require_core()
+        return self._submit(self._network_probe(str(payload.get('endpoint','all'))), timeout=100)
+
+    async def _network_probe(self, endpoint: str = 'all') -> dict[str, Any]:
+        import aiohttp
+        from network_policy import request
+        from utils import ExponentialBackoff
+        async def unless(coro): return await coro
+        async def wait_closed(): await asyncio.sleep(3600)
+        gui = SimpleNamespace(close_requested=False,coro_unless_closed=unless,wait_until_closed=wait_closed,
+                              connection=SimpleNamespace(update=lambda *args: None))
+        rows = []
+        async with aiohttp.ClientSession(trust_env=False,cookie_jar=aiohttp.DummyCookieJar(),
+                                         timeout=aiohttp.ClientTimeout(total=15,sock_connect=10)) as session:
+            async def get_session(): return session
+            client = SimpleNamespace(settings=self._settings,gui=gui,get_session=get_session)
+            endpoints = {'validate':'https://id.twitch.tv/oauth2/validate','gql':'https://gql.twitch.tv/gql','web':'https://www.twitch.tv/'}
+            if endpoint != 'all' and endpoint not in endpoints: raise ValueError('未知Twitch诊断目标')
+            for url in endpoints.values() if endpoint == 'all' else (endpoints[endpoint],):
+                try:
+                    async with request(client,'GET',url,None,{},ExponentialBackoff) as response:
+                        rows.append({'host':url.split('/')[2],'http':response.status,'reached':True})
+                except Exception as exc:
+                    rows.append({'host':url.split('/')[2],'exception':type(exc).__name__,'reached':False})
+            return {'policy':self._safe_proxy_policy(),'endpoints':rows,
+                    'requests':getattr(client,'_cloudlight_network_diagnostics',[]),'authenticated':False}
 
     def refresh(self, payload: dict[str, Any]) -> dict[str, Any]:
         client = self._client

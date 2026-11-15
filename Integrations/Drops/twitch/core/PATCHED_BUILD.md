@@ -106,3 +106,11 @@ CloudLight source Worker 维护补充：Translator仅在English模板语义变�
 新锁，不能声称该锁能排除仍在运行的旧Worker；升级需正常退出旧程序。
 唯一.tmp是未提交证据，不自动晋升；旧固定.new仅在正式文件无效且自身严格有效时恢复。
 cookies.jar、OAuth、GQL、播放列表/分片传输、Chrome156/Android31.8.0均保留。
+
+2026-11-15网络维护：network_policy将请求尝试次数与ExponentialBackoff秒数上限分离。
+旧maximum=3会使steps停在2，不能用steps>=3终止请求；新的尝试计数严格最多3次。
+安全读取可Proxy→DirectFallback→Proxy，下一请求仍使用配置的路由。GQL只读操作
+按实际persisted operationName白名单识别；OAuth/Claim/通知变更不自动重放。
+407及证书错误不回退；完整TLS验证、trust_env=False；脱敏网络诊断仅记录host、
+安全路径、路由、异常类别、阶段、耗时、尝试，不记录请求头/参数/签名/正文。
+只有官方validate的明确invalid access token响应认定认证失效，无法确认的401保留Session。

@@ -19,6 +19,8 @@ public sealed class DropsHostService : IAsyncDisposable
         public required Task ErrorLoop { get; set; }
         public SemaphoreSlim WriteGate { get; } = new(1, 1);
         public SemaphoreSlim CommandGate { get; } = new(1, 1);
+        public SemaphoreSlim TwitchProxyGate { get; } = new(1, 1);
+        public DropsProxySettings? TwitchProxyApplied { get; set; }
         public ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> Pending { get; } = new();
         public WorkerLifecycle Lifecycle { get; set; } = WorkerLifecycle.Starting;
         public string Status { get; set; } = "正在启动";
@@ -40,7 +42,7 @@ public sealed class DropsHostService : IAsyncDisposable
         .ToDictionary(platform => platform, _ => new SemaphoreSlim(1, 1));
     private volatile bool _disposing;
     private readonly CancellationTokenSource _connectionLifetime = new();
-    private DropsProxySettings _proxySettings = new(false, "", false);
+    private volatile DropsProxySettings _proxySettings = new(false, "", false);
     private Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? _requestOverrideForSelfTest;
     private Func<DropsPlatform, ProcessStartInfo>? _startInfoOverrideForSelfTest;
     private Func<DropsPlatform, string, TimeSpan?>? _timeoutOverrideForSelfTest;
@@ -98,6 +100,11 @@ public sealed class DropsHostService : IAsyncDisposable
             return await requestOverride(platform, command, payload, cancellationToken).ConfigureAwait(false);
 
         var worker = await EnsureConnectedAsync(platform, cancellationToken).ConfigureAwait(false);
+        if (platform == DropsPlatform.Twitch && command is not ("hello" or "set_proxy" or "stop" or "shutdown"))
+        {
+            await worker.Ready.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            await ApplyLatestTwitchProxyAsync(worker, cancellationToken).ConfigureAwait(false);
+        }
         return await SendAsync(worker, command, payload, cancellationToken).ConfigureAwait(false);
     }
 
@@ -132,6 +139,7 @@ public sealed class DropsHostService : IAsyncDisposable
             accountScoped ? CancellationToken.None : cancellationToken, worker.Lifetime.Token);
         timeout.CancelAfter(_timeoutOverrideForSelfTest?.Invoke(platform, command) ?? TimeSpan.FromSeconds(command switch
         {
+            "network_probe" => 110,
             "refresh" when platform == DropsPlatform.Twitch => 90,
             "refresh" when platform == DropsPlatform.Soop => 180,
             "auto_start" when platform == DropsPlatform.Twitch => 270,
@@ -355,6 +363,11 @@ public sealed class DropsHostService : IAsyncDisposable
             if (worker.Process.HasExited) continue;
             try
             {
+                if (worker.Platform == DropsPlatform.Twitch)
+                {
+                    await ApplyLatestTwitchProxyAsync(worker, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
                 await RequestAsync(worker.Platform, "set_proxy", settings.ForWorker(worker.Platform), cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -368,6 +381,25 @@ public sealed class DropsHostService : IAsyncDisposable
     }
 
     public void ConfigureProxy(DropsProxySettings settings) => _proxySettings = settings;
+
+    private async Task ApplyLatestTwitchProxyAsync(WorkerConnection worker, CancellationToken token)
+    {
+        await worker.TwitchProxyGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                var current = _proxySettings.ForWorker(DropsPlatform.Twitch);
+                if (worker.TwitchProxyApplied == current) return;
+                await SendAsync(worker, "set_proxy", current, token).ConfigureAwait(false);
+                worker.TwitchProxyApplied = current;
+                // Coalesce updates that arrived during an in-flight command.
+                if (current == _proxySettings.ForWorker(DropsPlatform.Twitch)) return;
+            }
+        }
+        finally { worker.TwitchProxyGate.Release(); }
+    }
 
     internal void ConfigureRequestOverrideForSelfTest(
         Func<DropsPlatform, string, object?, CancellationToken, Task<JsonElement>>? handler) =>
@@ -455,8 +487,11 @@ public sealed class DropsHostService : IAsyncDisposable
         try
         {
             await SendAsync(worker, "hello", new { protocol = 1 }, cancellationToken).ConfigureAwait(false);
-            await SendAsync(worker, "set_proxy", _proxySettings.ForWorker(platform), cancellationToken)
-                .ConfigureAwait(false);
+            if (platform == DropsPlatform.Twitch)
+                await ApplyLatestTwitchProxyAsync(worker, cancellationToken).ConfigureAwait(false);
+            else
+                await SendAsync(worker, "set_proxy", _proxySettings.ForWorker(platform), cancellationToken)
+                    .ConfigureAwait(false);
             worker.Lifecycle = WorkerLifecycle.Running;
             worker.Status = "就绪";
             worker.Ready.TrySetResult();

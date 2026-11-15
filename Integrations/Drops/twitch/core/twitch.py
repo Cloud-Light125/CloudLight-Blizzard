@@ -185,6 +185,10 @@ class _AuthState:
                 async with self._twitch.request(method, url, **kwargs) as response:
                     return await read_oauth(response, stage)
             except OAuthException as exc:
+                if method.upper() not in {'GET', 'HEAD'} and exc.retryable:
+                    raise OAuthException('oauth_post_not_replayed',
+                        'Twitch 授权请求暂时失败；为避免重复授权，未自动重发 POST。Session 已保留，请稍后手动重试。',
+                        retryable=False) from exc
                 if not exc.retryable or attempt == 2:
                     raise
                 await self._twitch.gui.coro_unless_closed(asyncio.sleep(5 * (attempt + 1)))
@@ -517,6 +521,7 @@ class Twitch:
         # create session, limited to 50 connections at maximum
         connector = aiohttp.TCPConnector(limit=50)
         self._session = aiohttp.ClientSession(
+            trust_env=False,
             timeout=timeout,
             connector=connector,
             cookie_jar=cookie_jar,
@@ -1429,91 +1434,9 @@ class Twitch:
     async def request(
         self, method: str, url: URL | str, *, invalidate_after: datetime | None = None, **kwargs
     ) -> abc.AsyncIterator[aiohttp.ClientResponse]:
-        session = await self.get_session()
-        method = method.upper()
-        if self.settings.proxy and "proxy" not in kwargs:
-            kwargs["proxy"] = self.settings.proxy
-        proxy_fallback_pending = bool(
-            kwargs.get("proxy") and getattr(self.settings, "_cloudlight_fallback_direct", False)
-        )
-        proxy_failure_logged = False
-        direct_failure_logged = False
-        logger.debug("Request method=%s host=%s path=%s route=%s", method, URL(url).host, URL(url).path, "proxy" if kwargs.get("proxy") else "direct")
-        session_timeout = timedelta(seconds=session.timeout.total or 0)
-        # The host owns reconnects. Each request must finish before its monitor
-        # can replace this attempt; do not hide an unbounded retry loop here.
-        kwargs.setdefault("timeout", aiohttp.ClientTimeout(total=15, sock_connect=10))
-        backoff = ExponentialBackoff(maximum=3)
-        last_error = None
-        for delay in backoff:
-            if self.gui.close_requested:
-                raise ExitRequest()
-            elif (
-                invalidate_after is not None
-                # account for the expiration landing during the request
-                and datetime.now(timezone.utc) >= (invalidate_after - session_timeout)
-            ):
-                raise RequestInvalid()
-            try:
-                response: aiohttp.ClientResponse | None = None
-                response = await self.gui.coro_unless_closed(
-                    session.request(method, url, **kwargs)
-                )
-                assert response is not None
-                logger.debug("Response HTTP=%s host=%s", response.status, URL(url).host)
-                if response.status < 500 or URL(url).host == "id.twitch.tv":
-                    # pre-read the response to avoid getting errors outside of the context manager
-                    raw_response = await response.read()  # noqa
-                    yield response
-                    return
-                last_error = RequestException(f"Twitch HTTP {response.status}: 服务器暂时不可用")
-                self.print(_("error", "site_down").format(seconds=round(delay)))
-            except aiohttp.ClientConnectorCertificateError:
-                # for a case where SSL verification fails
-                self.gui.connection.update("ssl_certificate_failed", "certificate_verify_failed")
-                raise
-            except (
-                aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError,
-                aiohttp.ClientHttpProxyError,
-            ) as exc:
-                last_error = exc
-                if proxy_fallback_pending:
-                    proxy_fallback_pending = False
-                    kwargs.pop("proxy", None)
-                    proxy_failure_logged = True
-                    logger.warning("Twitch 代理连接失败，正在尝试直连。")
-                    self.print("代理连接失败，本次请求回退直连。")
-                    self.gui.connection.update("proxy_fallback", "proxy_failure")
-                    continue
-                if kwargs.get("proxy") and not proxy_failure_logged:
-                    proxy_failure_logged = True
-                    logger.warning("Twitch 代理连接失败。")
-                    self.gui.connection.update("proxy_failed", "proxy_failure")
-                elif not kwargs.get("proxy") and not direct_failure_logged:
-                    direct_failure_logged = True
-                    logger.warning("Twitch 直连失败。")
-                    error_name = exc.__class__.__name__.casefold()
-                    if proxy_failure_logged:
-                        self.gui.connection.update("proxy_and_direct_failed", "proxy_and_direct_failure")
-                    elif isinstance(exc, asyncio.TimeoutError) or "timeout" in error_name:
-                        self.gui.connection.update("network_failed", "connection_timeout")
-                    elif "dns" in error_name or "gaierror" in error_name:
-                        self.gui.connection.update("network_failed", "dns_failure")
-                    else:
-                        self.gui.connection.update("network_failed", "network_unavailable")
-                # connection problems, retry
-                if backoff.steps > 1:
-                    # just so that quick retries that sometimes happen, aren't shown
-                    self.print(
-                        _("error", "no_connection").format(seconds=round(delay), url=f"https://{URL(url).host}/")
-                    )
-            finally:
-                if response is not None:
-                    response.release()
-            if backoff.steps >= 3:
-                raise last_error or RequestException("Twitch 请求失败")
-            with suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.gui.wait_until_closed(), timeout=delay)
+        from network_policy import request
+        async with request(self, method, url, invalidate_after, kwargs, ExponentialBackoff) as response:
+            yield response
 
     @overload
     async def gql_request(self, ops: GQLOperation) -> JsonType:
@@ -1526,6 +1449,8 @@ class Twitch:
     async def gql_request(
         self, ops: GQLOperation | list[GQLOperation]
     ) -> JsonType | list[JsonType]:
+        from network_policy import replayable
+        safe_query = replayable('POST', 'https://gql.twitch.tv/gql', {'json': ops})
         gql_logger.debug(f"GQL Request: {ops}")
         backoff = ExponentialBackoff(maximum=60)
         # Use a flag to retry the request a single time, if a specific set of errors is encountered
@@ -1552,6 +1477,9 @@ class Twitch:
             for response_json in response_list:
                 # GQL error handling
                 if "errors" in response_json:
+                    if not safe_query:
+                        # A mutation may already have committed on the server.
+                        raise GQLException('Twitch mutation result is uncertain; not replayed')
                     for error_dict in response_json["errors"]:
                         if "message" in error_dict:
                             if (

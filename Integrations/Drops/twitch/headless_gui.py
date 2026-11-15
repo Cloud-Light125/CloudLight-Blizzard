@@ -281,6 +281,9 @@ class LoginForm:
 
 
 class GUIManager:
+    def network_request(self, record: dict[str, Any]) -> None:
+        event('network_request', record)
+
     def __init__(self, twitch: Any) -> None:
         self._twitch = twitch
         self.close_requested = False

@@ -42,7 +42,9 @@ async def read_oauth(response, stage: str) -> dict:
     if response.status >= 500:
         raise OAuthException("oauth_server_error", f"Twitch 授权服务器暂时故障（HTTP {response.status}），稍后自动重试。", retryable=True)
     if stage == "validate" and response.status == 401:
-        raise OAuthException("invalid_token", _ERROR_MESSAGES["invalid_token"])
+        if isinstance(data,dict) and data.get('status') == 401 and str(data.get('message','')).casefold() == 'invalid access token':
+            raise OAuthException("invalid_token", _ERROR_MESSAGES["invalid_token"])
+        raise OAuthException('oauth_invalid_response', 'Twitch 验证接口返回无法确认身份的401响应；Session保留，请检查网络或代理。', retryable=True)
     if stage == "token" and code in {"authorization_pending", "slow_down"} and response.status == 400:
         return {"error": code}
     if response.status != 200 or code:

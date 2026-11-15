@@ -179,7 +179,7 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
             async def request(*args, **kwargs):
                 status = statuses.pop(0)
                 yield SimpleNamespace(status=status, json=AsyncMock(return_value={
-                    "client_id": constants.ClientType.SMARTBOX.CLIENT_ID, "user_id": "1"}))
+                    "status":401,"message":"invalid access token"} if status == 401 else {"client_id": constants.ClientType.SMARTBOX.CLIENT_ID, "user_id": "1"}))
             client = SimpleNamespace(_client_type=constants.ClientType.SMARTBOX, request=request,
                                      get_session=AsyncMock(return_value=SimpleNamespace(cookie_jar=jar)),
                                      gui=SimpleNamespace(login=SimpleNamespace(phase=Mock(), update=Mock()),
@@ -252,20 +252,20 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
         async def unless(coro): return await coro
         client.gui.coro_unless_closed = unless
         with patch.object(twitch.asyncio, "sleep", new=AsyncMock()) as sleep:
-            result = await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+            result = await auth._oauth_request("validate", "GET", "https://id.twitch.tv/oauth2/validate")
             self.assertEqual(result["access_token"], "fixture-token")
             self.assertEqual([c.args[0] for c in sleep.call_args_list], [5, 10])
         responses[:] = [429, 429, 429]
         with patch.object(twitch.asyncio, "sleep", new=AsyncMock()):
             with self.assertRaises(OAuthException):
-                await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+                await auth._oauth_request("validate", "GET", "https://id.twitch.tv/oauth2/validate")
         responses[:] = [429]
         async def cancel(coro):
             coro.close()
             raise asyncio.CancelledError()
         client.gui.coro_unless_closed = cancel
         with self.assertRaises(asyncio.CancelledError):
-            await auth._oauth_request("token", "POST", "https://id.twitch.tv/oauth2/token")
+            await auth._oauth_request("validate", "GET", "https://id.twitch.tv/oauth2/validate")
 
         from worker import TwitchWorker
         worker = object.__new__(TwitchWorker)
@@ -315,10 +315,10 @@ class OAuthRecoveryTests(unittest.IsolatedAsyncioTestCase):
                                                   (), status=407, message="proxy authentication required")
         client.settings = SimpleNamespace(proxy="http://127.0.0.1:9", _cloudlight_fallback_direct=True)
         session.request = AsyncMock(side_effect=[proxy_error, response])
-        async with client.request("GET", "https://id.twitch.tv/oauth2/validate") as result:
-            self.assertIs(result, response)
-        self.assertIn("proxy", session.request.call_args_list[0].kwargs)
-        self.assertNotIn("proxy", session.request.call_args_list[1].kwargs)
+        with self.assertRaises(aiohttp.ClientHttpProxyError):
+            async with client.request("GET", "https://id.twitch.tv/oauth2/validate"):
+                self.fail("407 must not silently bypass proxy authentication")
+        self.assertEqual(session.request.await_count, 1)
 
 
 if __name__ == "__main__":
