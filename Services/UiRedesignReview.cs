@@ -197,7 +197,7 @@ internal sealed class UiRedesignReview
                     // Explicit DIP layout testing; this does not claim to change the monitor DPI.
                     _window.Width = width / scale;_window.Height = height / scale;
                     _window.UpdateLayout();
-                    await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+                    await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                     _checks.Add($"layout {i+1:00} {width}x{height} @{scale*100:0}% equivalent-DIP");
                     CheckVisibleBounds(i, width, height, scale);
                     if (width == 1366 && scale == 1.5 && i is 1 or 5 or 9 or 10 or 12 or 13 or 16)

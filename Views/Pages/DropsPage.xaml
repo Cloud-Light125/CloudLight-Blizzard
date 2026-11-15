@@ -1461,25 +1461,26 @@
                     </StackPanel>
                     <StackPanel Tag="workspace:automation">
                         <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="自动化与通知" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,10,0,0">
-                                    <StackPanel>
-                                        <WrapPanel>
-                                            <CheckBox x:Name="BilibiliEnabledCheck" Style="{StaticResource ThemeCheckBox}" Content="启用哔哩哔哩" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.Enabled, Mode=TwoWay}"/>
-                                            <CheckBox x:Name="BilibiliAutoTaskProgress" Style="{StaticResource ThemeCheckBox}" Content="自动查询任务进度" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.AutoTaskProgress, Mode=TwoWay}"/>
-                                            <CheckBox x:Name="BilibiliAutoDiscoverCheck" Style="{StaticResource ThemeCheckBox}" Content="自动发现当前活动" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.AutoDiscover, Mode=TwoWay}"/>
-                                            <CheckBox x:Name="BilibiliAutoClaimCheck" Style="{StaticResource ThemeCheckBox}" Content="自动领取奖励" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.AutoClaim, Mode=TwoWay}"/>
-                                            <CheckBox x:Name="BilibiliTaskNotificationsCheck" Style="{StaticResource ThemeCheckBox}" Content="任务完成通知" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.TaskNotifications, Mode=TwoWay}"/>
-                                            <CheckBox x:Name="BilibiliReconnectCheck" Style="{StaticResource ThemeCheckBox}" Content="断线自动重连" IsChecked="{Binding BilibiliDetails.ReconnectEnabled, Mode=TwoWay}" Margin="0,4,18,4"/>
-                                        </WrapPanel>
-                                        <WrapPanel Margin="0,6,0,0">
-                                            <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource ThemeCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,4,18,4" IsChecked="{Binding BilibiliDetails.AutoRestore, Mode=TwoWay}" Click="OnAutoStartChanged"/>
-                                            <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource ThemeCheckBox}" Content="上次正在掉宝时自动恢复掉宝" IsChecked="{Binding BilibiliDetails.AutoResume, Mode=TwoWay}" Click="OnAutoStartChanged" Margin="0,4,18,4"/>
-                                        </WrapPanel>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
+                            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <CheckBox x:Name="BilibiliEnabledCheck" Style="{StaticResource SwitchCheckBox}" Content="启用哔哩哔哩" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.Enabled, Mode=TwoWay}" Grid.Column="0" Grid.Row="0"/>
+                                <CheckBox x:Name="BilibiliAutoTaskProgress" Style="{StaticResource SwitchCheckBox}" Content="自动查询任务进度" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoTaskProgress, Mode=TwoWay}" Grid.Column="1" Grid.Row="0"/>
+                                <CheckBox x:Name="BilibiliAutoDiscoverCheck" Style="{StaticResource SwitchCheckBox}" Content="自动发现当前活动" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoDiscover, Mode=TwoWay}" Grid.Column="0" Grid.Row="1"/>
+                                <CheckBox x:Name="BilibiliAutoClaimCheck" Style="{StaticResource SwitchCheckBox}" Content="自动领取奖励" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoClaim, Mode=TwoWay}" Grid.Column="1" Grid.Row="1"/>
+                                <CheckBox x:Name="BilibiliTaskNotificationsCheck" Style="{StaticResource SwitchCheckBox}" Content="任务完成通知" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.TaskNotifications, Mode=TwoWay}" Grid.Column="0" Grid.Row="2"/>
+                                <CheckBox x:Name="BilibiliReconnectCheck" Style="{StaticResource SwitchCheckBox}" Content="断线自动重连" IsChecked="{Binding BilibiliDetails.ReconnectEnabled, Mode=TwoWay}" Margin="0,4,16,4" Grid.Column="1" Grid.Row="2"/>
+                                <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource SwitchCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoRestore, Mode=TwoWay}" Click="OnAutoStartChanged" Grid.Column="0" Grid.Row="3"/>
+                                <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource SwitchCheckBox}" Content="上次正在掉宝时自动恢复掉宝" IsChecked="{Binding BilibiliDetails.AutoResume, Mode=TwoWay}" Click="OnAutoStartChanged" Margin="0,4,16,4" Grid.Column="1" Grid.Row="3"/>
+                            </Grid>
                         </Border>
                         <Border Style="{StaticResource SectionCard}">
                             <StackPanel>
