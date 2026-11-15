@@ -417,7 +417,7 @@ class _AuthState:
                             continue
                         raise
                     if not isinstance(validate_response.get("user_id"), str) or not validate_response["user_id"].isdigit() or int(validate_response["user_id"]) <= 0 or not isinstance(validate_response.get("client_id"), str) or not validate_response["client_id"]:
-                        raise OAuthException("oauth_invalid_identity", "Twitch 未返回有效账号信息，请重新授权。")
+                        raise OAuthException("oauth_invalid_response", "Twitch 返回账号身份字段异常；Session 保留，请重试网络验证。", retryable=True)
                     break
                 else:
                     raise OAuthException("invalid_token", "Twitch 登录信息未通过验证，请重新授权。")
@@ -435,7 +435,6 @@ class _AuthState:
                 # Unsupported identity is not evidence that the saved credential
                 # itself is corrupt. Preserve it for explicit user action.
                 logger.debug("Twitch cookie client ID mismatch")
-                jar.clear()
                 self._delattrs("access_token", "user_id")
                 raise OAuthException("invalid_client", "已保存的 Twitch Session 属于不支持的 Client ID，请手动重新登录。")
             else:

@@ -200,6 +200,28 @@ class NetworkPolicyTests(unittest.IsolatedAsyncioTestCase):
             await read_oauth(SimpleNamespace(status=401,json=AsyncMock(return_value={'status':401,'message':'invalid access token'})), 'validate')
         self.assertEqual(error.exception.code,'invalid_token')
 
+    async def test_valid_unknown_client_and_malformed_identity_keep_cookiejar(self):
+        import headless_gui
+        sys.modules['gui']=headless_gui
+        import constants
+        constants.LANG_PATH=ROOT/'core/lang'
+        import twitch
+        for body, code in (({'user_id':'42','client_id':'unsupported-fixture-client'},'invalid_client'),
+                           ({'user_id':None,'client_id':'fixture'},'oauth_invalid_response')):
+            jar=aiohttp.CookieJar()
+            jar.update_cookies({'auth-token':'preserved-fixture-token'},constants.ClientType.WEB.CLIENT_URL)
+            @asynccontextmanager
+            async def fake(*args,**kwargs):
+                yield SimpleNamespace(status=200,json=AsyncMock(return_value=body))
+            client=SimpleNamespace(_client_type=constants.ClientType.SMARTBOX,request=fake,
+                get_session=AsyncMock(return_value=SimpleNamespace(cookie_jar=jar)),
+                gui=SimpleNamespace(login=SimpleNamespace(phase=Mock(),update=Mock()),
+                                    help=SimpleNamespace(_invalidate_button=SimpleNamespace(config=Mock()))))
+            auth=twitch._AuthState(client)
+            with self.assertRaises(OAuthException) as error:await auth.validate()
+            self.assertEqual(error.exception.code,code)
+            self.assertEqual(jar.filter_cookies(constants.ClientType.WEB.CLIENT_URL)['auth-token'].value,'preserved-fixture-token')
+
     async def test_oauth_post_5xx_not_replayed_by_auth_layer(self):
         import headless_gui
         sys.modules['gui']=headless_gui

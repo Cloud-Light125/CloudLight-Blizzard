@@ -22,7 +22,7 @@
 
 ## 已执行验证
 
-- Twitch78测试通过（原53，新25），涵盖真实退避上限、路由恢复/关闭回退/独立请求、407/TLS/401/403/429/5xx、响应释放、取消、OAuth POST/Claim及外层GQL变更不重放、脱敏及配置保护。旧测试中OAuth POST自动重试与407绕过代理的断言根据本轮明确安全要求改为GET安全读取/407直接失败，未降低原读取重试、响应清理断言。
+- Twitch79测试通过（原53，新26），涵盖真实退避上限、路由恢复/关闭回退/独立请求、407/TLS/401/403/429/5xx、响应释放、取消、OAuth POST/Claim及外层GQL变更不重放、脱敏及配置保护。旧测试中OAuth POST自动重试与407绕过代理的断言根据本轮明确安全要求改为GET安全读取/407直接失败，未降低原读取重试、响应清理断言。
 - 真实Host+JSONL模拟Worker10项通过：AppSettings→Main→Host三种范围组合，快速两次更新、无效地址、立即启动、重复开始同PID、真实崩溃后正确策略、手动停止不复活、退出无孤立Worker。此处账号与网络为模拟，不冒称真实API通过。
 - .NET Release编译0警告错误；WPF五项网络状态检查通过（含checking快照/旧Generation），整套因剪贴板外部占用BLOCKED；最终以候选结果为准。
 - 预提交冻结真实Session副本：代理公开三接口可达；官方validate200、113活动/409奖励、inventorySource=remote、启动/停止exit0，原文件摘要不变。此样本不替代最终干净构建和最终官方分钟证据。
@@ -30,5 +30,7 @@
 ## 交付边界与后续
 
 保留settings_store、NoAutoClaim、Chrome156/Android31.8.0、Smartbox、hash、HLS/HEAD、官方分钟与估计分离及手动停止。未修改YouTube/SOOP/Bilibili/Shared业务、未改全局代理/系统/证书、无真实Claim、无子代理。实际权限danger-full-access/never未改变；具体任务模型/推理强度无独立查询接口。
+
+反向审查补充：unsupported Client ID的官方200身份不证明Token失效，移除该分支jar.clear，避免退出保存覆盖凭据；身份字段异常改为可重试响应异常，不误标认证过期。两种真实CookieJar模型均验证原token保留，未调用真实认证失败接口。0bc27fa预检已完成8组冻结网络、10组Host、WPF无FAIL（剪贴板BLOCKED）和安装包，但不含此补充；最终另从新提交重建。
 
 仍需反向审查、提交push、干净最终构建（仅新Twitch与app，三个未改Worker明确继承原提交/hash）、8组冻结网络故障验收、最终Host/WPF、真实Session/官方进度与实际窗口、哈希和最终收据。所有本轮真实Session副本在结束后仅清理本轮创建的凭据；原始用户数据和之前任务数据保留。本地原始证据含隐私，不整目录上传。
