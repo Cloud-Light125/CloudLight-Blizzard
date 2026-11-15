@@ -90,9 +90,9 @@ public static class UiVisualTreeSelfTest
                 Assert(control is not null && string.Equals(control.Tag as string, item.Tag, StringComparison.Ordinal),
                     checks, $"导航 {item.Tag} 存在且 Tag 正确");
             }
-            Assert(FindNamed(window, "OverviewNav") is null &&
-                   typeof(MainWindow).GetField("_overviewPage", BindingFlags.Instance | BindingFlags.NonPublic) is null,
-                checks, "概览导航和 MainWindow 概览页面生命周期已完全移除");
+            Assert(FindNamed(window, "OverviewNav") is RadioButton &&
+                   typeof(MainWindow).GetField("_overviewPage", BindingFlags.Instance | BindingFlags.NonPublic) is not null,
+                checks, "总览导航绑定真实聚合页面");
 
             var pageHost = FindNamed(window, "PageHost") as ContentControl;
             var accountFooter = FindNamed(window, "AccountFooter") as Border;
@@ -113,12 +113,11 @@ public static class UiVisualTreeSelfTest
                    FindNamed(accountSettingsPage, "AccountSnapshotPathText") is TextBlock settingsSnapshotPath &&
                    settingsSnapshotPath.Text == windowViewModel?.AccountSnapshotPath,
                 checks, "设置页与账号页展示同一个实际快照路径");
-            Assert(windowViewModel?.Settings.LastMainSection == "accounts" &&
-                   FindNamed(window, "AccountsNav") is RadioButton { IsChecked: true } &&
-                   ReferenceEquals(pageHost?.Content, accountsPage),
-                checks, "旧 LastMainSection=overview 安全迁移到 accounts 并默认打开账号页面");
-            Assert(accountFooter?.Visibility == Visibility.Visible,
-                checks, "AccountFooter 在账号页面可见");
+            Assert(windowViewModel?.Settings.LastMainSection == "overview" &&
+                   FindNamed(window, "OverviewNav") is RadioButton { IsChecked: true },
+                checks, "LastMainSection=overview 打开总览并保留设置");
+            Assert(accountFooter?.Visibility == Visibility.Collapsed,
+                checks, "总览不显示账号页专用 footer");
             Assert(window.MinWidth > 0 && window.MinHeight > 0 &&
                    window.MinWidth <= SystemParameters.WorkArea.Width && window.MinHeight <= SystemParameters.WorkArea.Height,
                 checks, "主窗口最小尺寸适应当前 DPI 工作区");
@@ -390,6 +389,8 @@ public static class UiVisualTreeSelfTest
                 var youtubePanel = FindNamed(dropsPage, "YouTubePanel");
                 var twitchPanel = FindNamed(dropsPage, "TwitchPanel");
                 var soopReauthInterval = FindNamed(dropsPage, "SoopReauthInterval");
+                dropsPage.ShowWorkspace("network");
+                dropsPage.UpdateLayout();
                 Assert(dropsHeader is not null && dropsNetworkSummary is Border networkSummary &&
                        networkSummary.ActualHeight > 0 && platformTabsBar is Grid tabsGrid &&
                        tabsGrid.ColumnDefinitions.Count == 4,
@@ -411,6 +412,8 @@ public static class UiVisualTreeSelfTest
                 }
                 catch { }
                 Assert(proxyRowBelowHeader, checks, "掉宝页网络代理摘要位于标题区下方且不与右上操作区重叠");
+                dropsPage.ShowWorkspace("overview");
+                dropsPage.UpdateLayout();
                 Assert(bilibiliPanel is StackPanel && bilibiliPanel.Visibility == Visibility.Visible,
                     checks, "Checked 事件链更新 BilibiliPanel.Visibility=Visible");
                 Assert(bilibiliPanel is StackPanel && bilibiliPanel.IsVisible && bilibiliPanel.ActualHeight > 0,
@@ -432,9 +435,11 @@ public static class UiVisualTreeSelfTest
                 Assert(bilibiliQuickStart is Expander &&
                        FindVisual(bilibiliQuickStart, value => value is ItemsControl) is not null,
                     checks, "Bilibili 页面包含复用 QuickStartStepTemplate 的快速开始卡片");
-                Assert(dropsNetworkSummary is Border &&
-                       proxyScopeChecks.All(value => value is CheckBox { IsVisible: true }),
-                    checks, "顶部网络卡片包含 SOOP、YouTube、Twitch、哔哩哔哩四个独立代理选项");
+                dropsPage.ShowWorkspace("network");
+                dropsPage.UpdateLayout();
+                Assert(dropsNetworkSummary is Border && proxyScopeChecks.All(value => value is CheckBox { IsVisible: true }),
+                    checks, "网络与维护分类包含四个独立代理选项");
+                dropsPage.ShowWorkspace("overview");
                 Assert(bilibiliNetwork is Border &&
                        FindVisual(bilibiliNetwork, value => value is CheckBox) is null,
                     checks, "Bilibili 网络卡片不再重复显示代理开关");
@@ -524,18 +529,18 @@ public static class UiVisualTreeSelfTest
                 Assert(twitchSettings is Border && twitchSettings.Visibility == Visibility.Collapsed,
                     checks, "哔哩哔哩选中时不会显示 Twitch 通用活动和设置卡片");
 
-                var logTitle = FindVisual(dropsPage, value => value is TextBlock text && text.Text == "运行日志");
-                var contentOrder = bilibiliPanel is not null && logTitle is not null
-                    ? CompareVisualOrder(bilibiliPanel, logTitle)
-                    : null;
-                Assert(contentOrder is { IsAfter: true }, checks,
-                    $"运行日志区域位于真实 Bilibili 内容之后（panelPath={contentOrder?.FirstPath ?? "?"}, logPath={contentOrder?.SecondPath ?? "?"}）");
+                dropsPage.ShowWorkspace("logs");
+                dropsPage.UpdateLayout();
+                Assert(FindNamed(dropsPage, "LogTextBox") is TextBox { IsVisible: true }, checks,
+                    "运行日志分类可达且显示原有日志控件");
+                dropsPage.ShowWorkspace("activities");
+                dropsPage.UpdateLayout();
 
                 var roomList = FindNamed(dropsPage, "BilibiliRoomList") as ListBox;
                 var roomInput = FindNamed(dropsPage, "BilibiliRoomInput") as TextBox;
                 var roomNameInput = FindNamed(dropsPage, "BilibiliRoomNameInput") as TextBox;
                 var addRoomButton = FindVisual(dropsPage, value =>
-                    value is Button button && string.Equals(button.Content as string, "添加", StringComparison.Ordinal)) as Button;
+                    value is Button button && button.Command == bilibiliDetails.AddRoomCommand) as Button;
                 var bindingErrorsBeforeRoom = BindingErrorCount(bindingListener);
                 var dispatcherErrorsBeforeRoom = dispatcherExceptions.Count;
                 const long testRoomId = 24681357;

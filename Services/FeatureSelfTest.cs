@@ -1843,11 +1843,11 @@ public static class FeatureSelfTest
         var legacyNavigationPath = Path.Combine(workspace, "legacy-navigation-settings.json");
         File.WriteAllText(legacyNavigationPath, "{\"LastMainSection\":\"overview\"}");
         var legacyNavigation = AppSettings.LoadFrom(legacyNavigationPath);
-        Assert(legacyNavigation.LastMainSection == "accounts" &&
+        Assert(legacyNavigation.LastMainSection == "overview" &&
                AppSettings.NormalizeMainSection("not-a-page") == "accounts" &&
                legacyNavigation.SoopUseProxy && legacyNavigation.YouTubeUseProxy &&
                legacyNavigation.TwitchUseProxy && !legacyNavigation.BilibiliUseProxy,
-            "legacy settings keep prior Drops proxy defaults and removed navigation falls back safely");
+            "legacy settings keep prior Drops proxy defaults and overview resolves to a supported page");
         var legacyBetaPath = Path.Combine(workspace, "legacy-beta-settings.json");
         File.WriteAllText(legacyBetaPath,
             "{\"EnableProxy\":true,\"ProxyUrl\":\"http://127.0.0.1:7897\",\"CloseToTray\":false,\"UpdateChannel\":\"Beta\"}");

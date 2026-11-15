@@ -12,7 +12,16 @@ public partial class RegionFilesPage : UserControl
 {
     private MainViewModel? _vm;
 
-    public RegionFilesPage() => InitializeComponent();
+    public RegionFilesPage() { InitializeComponent(); ShowWorkspace("switch"); }
+    internal void ShowWorkspace(string section)
+    {
+        CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);
+        foreach (var tab in RegionWorkspaceNavigation.Children.OfType<RadioButton>()) tab.IsChecked = tab.Tag as string == section;
+    }
+    private void OnRegionWorkspaceChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string section } && RegionWorkspaceNavigation is not null) ShowWorkspace(section);
+    }
 
     public void Initialize(MainViewModel vm)
     {

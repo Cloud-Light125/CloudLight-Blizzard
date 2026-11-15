@@ -20,6 +20,7 @@ public partial class MainWindow : Window
 {
     internal static readonly TimeSpan AnnouncementRefreshInterval = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _vm;
+    private readonly OverviewPage _overviewPage = new();
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
     private readonly StatsPage _statsPage = new();
@@ -62,7 +63,7 @@ public partial class MainWindow : Window
 
     public MainWindow(bool startHidden = false, Services.Drops.PlatformLogSession? logSession = null,
         IInstallerLauncher? installerLauncher = null, AppSettings? settings = null, BattleNetPaths? paths = null,
-        TimeSpan? exitBudgetForSelfTest = null)
+        TimeSpan? exitBudgetForSelfTest = null, bool isolatedReview = false)
     {
         _vm = new MainViewModel(logSession, settings, paths);
         if (exitBudgetForSelfTest is not null) _exitLifecycleCoordinator = new(exitBudgetForSelfTest);
@@ -96,6 +97,7 @@ public partial class MainWindow : Window
         _regionPage.Initialize(_vm);
         _statsPage.Initialize(_vm);
         _dropsPage.Initialize(_vm);
+        _overviewPage.Initialize(_vm, (DropsViewModel)_dropsPage.DataContext);
         _snapshotsPage.Initialize(_vm);
         _diagnosticsPage.Initialize(_vm);
         _settingsPage.Initialize(_vm);
@@ -105,11 +107,12 @@ public partial class MainWindow : Window
         _settingsPage.InitializeNotificationSettings(_vm);
         _vm.RegionSwitchCompleted += OnRegionSwitchCompleted;
         _vm.DropsHost.EventReceived += OnDropsEventForNotification;
-        _notificationService.Initialize(action => Dispatcher.BeginInvoke(() => HandleNotificationAction(action)));
+        if (!isolatedReview) _notificationService.Initialize(action => Dispatcher.BeginInvoke(() => HandleNotificationAction(action)));
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _pagesReady = true;
         SelectSavedSection();
 
+        if (isolatedReview) return;
         SetupTray();
         if (startHidden)
         {
@@ -179,6 +182,7 @@ public partial class MainWindow : Window
                 string.Equals(old.Id, item.Id, StringComparison.Ordinal) && old.Revision >= item.Revision))
             : null;
         _announcements = announcements;
+        _overviewPage.UpdateAnnouncements(announcements);
         if (newAnnouncement is not null)
             Notify(new NotificationRequest("CloudLight Blizzard 公告", newAnnouncement.Title,
                 NotificationCategory.Announcements, "accounts", $"announcement:{newAnnouncement.Id}:{newAnnouncement.Revision}"));
@@ -503,6 +507,7 @@ public partial class MainWindow : Window
         }
         switch (section)
         {
+            case "overview": OverviewNav.IsChecked = true; break;
             case "accounts": AccountsNav.IsChecked = true; break;
             case "region": RegionNav.IsChecked = true; break;
             case "stats": StatsNav.IsChecked = true; break;
@@ -520,6 +525,7 @@ public partial class MainWindow : Window
         if (_isExiting || !_pagesReady || sender is not RadioButton { Tag: string section }) return;
         PageHost.Content = section switch
         {
+            "overview" => _overviewPage,
             "region" => _regionPage,
             "stats" => _statsPage,
             "drops" => _dropsPage,
@@ -572,6 +578,23 @@ public partial class MainWindow : Window
     internal void OpenDrops()
     {
         DropsNav.IsChecked = true;
+    }
+
+    internal void NavigateTo(string section)
+    {
+        var nav = section switch
+        {
+            "overview" => OverviewNav, "accounts" => AccountsNav, "region" => RegionNav,
+            "stats" => StatsNav, "drops" => DropsNav, "snapshots" => SnapshotsNav,
+            "diagnostics" => DiagnosticsNav, "settings" => SettingsNav, _ => AboutNav,
+        };
+        nav.IsChecked = true;
+    }
+
+    internal void OpenDropsPlatform(DropsPlatform platform)
+    {
+        DropsNav.IsChecked = true;
+        _dropsPage.SelectPlatform(platform);
     }
 
     internal void OpenRegion()

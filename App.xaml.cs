@@ -22,6 +22,14 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length >= 2 && e.Args[0] is "--ui-review" or "--ui-review-test")
+        {
+            IsHeadlessSelfTest = true;
+            base.OnStartup(e);
+            UiRedesignReview.Open(e.Args[1], e.Args[0] == "--ui-review-test",
+                int.TryParse(e.Args.ElementAtOrDefault(2), out var reviewScenario) ? reviewScenario : 0);
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--account-gate-probe")
         {
             try { using var lease = new AccountOperationGate(Path.GetFullPath(e.Args[1])).Enter(); Shutdown(0); }

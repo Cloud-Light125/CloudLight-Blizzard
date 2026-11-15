@@ -84,6 +84,16 @@ public sealed class DiagnosticsViewModel : ObservableObject, IDisposable
         }
     }
 
+    internal void ApplyReviewReport(DiagnosticRunReport report)
+    {
+        if (!App.IsHeadlessSelfTest) throw new InvalidOperationException("Only isolated acceptance can inject a diagnostic report.");
+        Report = report;
+        StatusText = "模拟诊断已完成 · 请按分类查看需要处理的项目。";
+        ProgressText = $"已完成 {report.Checks.Count} / {report.Checks.Count}";
+        Completed = Total = report.Checks.Count;
+        Raise(nameof(SummaryText)); Raise(nameof(CanExport));
+    }
+
     public void Cancel()
     {
         if (IsRunning) _runCancellation?.Cancel();

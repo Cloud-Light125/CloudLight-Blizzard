@@ -12,6 +12,19 @@ namespace CloudLightBlizzard.Views.Pages;
 
 public partial class SettingsPage : UserControl
 {
+    internal void ShowWorkspace(string section)
+    {
+        CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);
+        foreach (var tab in SettingsWorkspaceNavigation.Children.OfType<RadioButton>())
+            tab.IsChecked = tab.Tag as string == section;
+        SettingsScrollViewer.ScrollToTop();
+    }
+
+    private void OnSettingsWorkspaceChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string section } && SettingsWorkspaceNavigation is not null)
+            ShowWorkspace(section);
+    }
     public event EventHandler? AnnouncementBadgeSettingChanged;
     private MainViewModel? _vm;
     private bool _loading = true;
@@ -26,6 +39,7 @@ public partial class SettingsPage : UserControl
     public SettingsPage()
     {
         InitializeComponent();
+        ShowWorkspace("general");
         Unloaded += OnUnloaded;
     }
 
@@ -96,6 +110,7 @@ public partial class SettingsPage : UserControl
 
     internal void FocusUpdateSection()
     {
+        ShowWorkspace("updates");
         Dispatcher.BeginInvoke(new Action(() =>
         {
             UpdateSettingsCard.BringIntoView();
@@ -104,6 +119,7 @@ public partial class SettingsPage : UserControl
     }
     public void FocusProxySection()
     {
+        ShowWorkspace("network");
         Dispatcher.BeginInvoke(new Action(() =>
         {
             NetworkProxyCard.BringIntoView();

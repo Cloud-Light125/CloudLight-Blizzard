@@ -3,12 +3,31 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using CloudLightBlizzard.ViewModels;
+using CloudLightBlizzard.Services.Diagnostics;
+using System.Windows.Data;
 
 namespace CloudLightBlizzard.Views.Pages;
 
 public partial class DiagnosticsPage : UserControl
 {
     private DiagnosticsViewModel? _vm;
+    private string _filter = "all";
+
+    private void OnDiagnosticFilterChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RadioButton { Tag: string filter }) return;
+        _filter = filter;
+        if (_vm is null) return;
+        CollectionViewSource.GetDefaultView(_vm.Checks).Filter = value => value is DiagnosticCheck check && (_filter switch
+        {
+            "issues" => check.Status is DiagnosticSeverity.Error or DiagnosticSeverity.Warning,
+            "network" => check.Category.Contains("网络") || check.Category.Contains("代理"),
+            "workers" => check.Category.Contains("Drops") || check.Category.Contains("Worker"),
+            "data" => check.Category.Contains("区服") || check.Category.Contains("账号") || check.Category.Contains("Battle"),
+            "environment" => check.Category.Contains("更新") || check.Category.Contains("环境") || check.Category.Contains("应用"),
+            _ => true,
+        });
+    }
 
     public DiagnosticsPage() => InitializeComponent();
 

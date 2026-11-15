@@ -6,7 +6,7 @@ using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.ViewModels;
 
-public sealed class DropsRow : ObservableObject
+public sealed partial class DropsRow : ObservableObject
 {
     public string Id { get; init; } = "";
     public string Primary { get; init; } = "";
@@ -224,7 +224,7 @@ public sealed class DropsPlatformViewModel : ObservableObject
     public DropsPlatformViewModel(DropsPlatform platform, string name) { Platform = platform; Name = name; }
 }
 
-public sealed class DropsViewModel : ObservableObject, IDisposable
+public sealed partial class DropsViewModel : ObservableObject, IDisposable
 {
     private enum SoopFailureKind
     {
@@ -771,6 +771,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
 
     public void RefreshTemporalStatus(DateTimeOffset now)
     {
+        Raise(nameof(TwitchAuthorizationRemainingText));
         if (_soopNextRetryAt is { } soopDeadline)
         {
             var seconds = Math.Max(0, (int)Math.Ceiling((soopDeadline - now).TotalSeconds));
@@ -1686,6 +1687,8 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         TwitchAuthorizationExpiryText = DateTimeOffset.TryParse(expiresAt, out var expiry)
             ? $"验证码有效至 {expiry.ToLocalTime():HH:mm:ss}" : "请在官方页面提示的有效期内完成授权";
+        _twitchDeviceExpiry = expiry == default ? null : expiry;
+        Raise(nameof(TwitchAuthorizationRemainingText));
         SetTwitchLoggedIn(false);
         TwitchAuthorizationUrl = url;
         TwitchAuthorizationCode = code;
@@ -1798,6 +1801,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         if (_twitchLoggedIn == value) return;
         _twitchLoggedIn = value;
         Raise(nameof(IsTwitchLoggedIn));
+        Raise(nameof(TwitchAuthenticatedVisibility));
         Raise(nameof(TwitchLoginVisibility));
         Raise(nameof(TwitchLogoutVisibility));
         Raise(nameof(CanTwitchLogin));
@@ -1932,6 +1936,7 @@ public sealed class DropsViewModel : ObservableObject, IDisposable
         }
         Raise(nameof(TwitchAuthState));
         Raise(nameof(TwitchAuthorizationVisibility));
+        Raise(nameof(TwitchLoginCardVisibility));
         Raise(nameof(CanTwitchLogin));
         Raise(nameof(TwitchLoginButtonText));
     }

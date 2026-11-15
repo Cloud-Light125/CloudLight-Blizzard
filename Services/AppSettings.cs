@@ -147,9 +147,7 @@ public sealed class AppSettings
 
     internal static string NormalizeMainSection(string? section) => section switch
     {
-        "accounts" or "region" or "stats" or "drops" or "snapshots" or "diagnostics" or "settings" or "about" => section,
-        // "overview" was removed in 2.1.0; old settings must open a real page.
-        "overview" => "accounts",
+        "overview" or "accounts" or "region" or "stats" or "drops" or "snapshots" or "diagnostics" or "settings" or "about" => section,
         _ => "accounts",
     };
 

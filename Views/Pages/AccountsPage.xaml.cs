@@ -11,7 +11,16 @@ public partial class AccountsPage : UserControl
     private MainViewModel? _vm;
     public event Action<AccountRow>? OpenStatsRequested;
 
-    public AccountsPage() => InitializeComponent();
+    public AccountsPage() { InitializeComponent(); ShowWorkspace("library"); }
+    internal void ShowWorkspace(string section)
+    {
+        CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);
+        foreach (var tab in AccountWorkspaceNavigation.Children.OfType<RadioButton>()) tab.IsChecked = tab.Tag as string == section;
+    }
+    private void OnAccountWorkspaceChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string section } && AccountWorkspaceNavigation is not null) ShowWorkspace(section);
+    }
     public void Initialize(MainViewModel vm) { _vm = vm; DataContext = vm; }
 
     private void OnOpenSnapshots(object sender, RoutedEventArgs e)

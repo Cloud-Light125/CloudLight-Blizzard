@@ -14,6 +14,69 @@ namespace CloudLightBlizzard.Views.Pages;
 
 public partial class DropsPage : UserControl
 {
+    private readonly Dictionary<DropsPlatform, string> _workspaceSections = new();
+    internal string WorkspaceSection => _workspaceSections.GetValueOrDefault(_platform, "overview");
+    internal void SelectPlatform(DropsPlatform platform)
+    {
+        var tab = platform switch { DropsPlatform.Soop => SoopTab, DropsPlatform.Twitch => TwitchTab,
+            DropsPlatform.Bilibili => BilibiliTab, _ => YouTubeTab };
+        tab.IsChecked = true;
+    }
+
+    internal void ShowWorkspace(string section)
+    {
+        _workspaceSections[_platform] = section;
+        CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);
+        foreach (var tab in WorkspaceNavigation.Children.OfType<RadioButton>())
+        {
+            if (tab.Tag as string == "games")
+                tab.Visibility = _platform == DropsPlatform.Twitch ? Visibility.Visible : Visibility.Collapsed;
+            if (tab.Tag as string == "automation")
+                tab.Visibility = _platform is DropsPlatform.Twitch or DropsPlatform.Bilibili ? Visibility.Visible : Visibility.Collapsed;
+            if (tab.Tag as string == "advanced")
+                tab.Visibility = _platform == DropsPlatform.Soop ? Visibility.Visible : Visibility.Collapsed;
+            if (tab.Tag as string == "settings") tab.Content = _platform == DropsPlatform.Twitch ? "基础偏好" : "观看配置";
+            tab.IsChecked = tab.Tag as string == section;
+        }
+        PlatformSettingsFooter.Visibility = section is "settings" or "games" or "automation" or "advanced"
+            ? Visibility.Visible : Visibility.Collapsed;
+        DropsScrollViewer.ScrollToTop();
+        UpdateDraftHint();
+    }
+
+    private void OnWorkspaceChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string section } && WorkspaceNavigation is not null)
+            ShowWorkspace(section);
+    }
+
+    private void UpdateDraftHint()
+    {
+        if (PlatformDraftHint is not null)
+            PlatformDraftHint.Text = _settingsDrafts.Contains(_platform) || _platform == DropsPlatform.Bilibili && (_vm?.BilibiliDetails.SettingsDirty == true || BilibiliNotifierUrlBox.Password.Length > 0)
+                ? "有未保存的更改 · 切换页面仍会保留，点击保存后应用。"
+                : "设置已同步 · 自动启动选项即时保存，其余更改点击保存后应用。";
+    }
+
+    private void OnNotifierDraftChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_populatingSettings) UpdateDraftHint();
+    }
+
+    private async void OnCancelTwitchAuthorization(object sender, RoutedEventArgs e) =>
+        await RunButtonAsync(sender, () => StopPlatformAsync(DropsPlatform.Twitch));
+
+    private async void OnRenewTwitchAuthorization(object sender, RoutedEventArgs e) =>
+        await RunButtonAsync(sender, async () =>
+        {
+            if (_vm is null || _shutdownStarted) return;
+            await StopPlatformAsync(DropsPlatform.Twitch);
+            if (_shutdownStarted) return;
+            // BeginTwitchLogin clears the previous device code; login uses the existing worker protocol.
+            _vm.BeginTwitchLogin();
+            try { await _vm.RequestAsync(DropsPlatform.Twitch, "login", new { continueWatching = _main?.Settings.AutoStartTwitch == true }); await LoadPlatformAsync(DropsPlatform.Twitch); }
+            catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
+        });
     private const string SoopInventoryUrl = "https://drops.sooplive.com/inventory";
     private const string TwitchInventoryUrl = "https://www.twitch.tv/drops/inventory";
     private MainViewModel? _main;
@@ -62,7 +125,7 @@ public partial class DropsPage : UserControl
 
     private void TrackSettingsDrafts(DropsPlatform platform, params string[] names)
     {
-        void Changed() { if (!_populatingSettings) _settingsDrafts.Add(platform); }
+        void Changed() { if (!_populatingSettings) { _settingsDrafts.Add(platform); UpdateDraftHint(); } }
         foreach (var name in names)
             switch (FindName(name))
             {
@@ -79,8 +142,9 @@ public partial class DropsPage : UserControl
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
-        _vm.TwitchPriorityGames.CollectionChanged += (_, _) => { if (!_populatingSettings) _settingsDrafts.Add(DropsPlatform.Twitch); };
-        _vm.TwitchExcludedGames.CollectionChanged += (_, _) => { if (!_populatingSettings) _settingsDrafts.Add(DropsPlatform.Twitch); };
+        _vm.TwitchPriorityGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
+        _vm.TwitchExcludedGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
+        _vm.BilibiliDetails.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(BilibiliDropsViewModel.SettingsDirty)) UpdateDraftHint(); };
         _vm.BilibiliDetails.ConfigureCommands(new(
             ScanQrLogin: StartBilibiliQrLoginAsync,
             CancelQr: CancelBilibiliQrAsync,
@@ -126,6 +190,7 @@ public partial class DropsPage : UserControl
         _vm.RefreshTemporalStatus(DateTimeOffset.Now);
         _retryDisplayTimer.Start();
         _initialized = true;
+        ShowWorkspace("overview");
     }
 
     public void StartAutomaticPlatforms()
@@ -473,6 +538,7 @@ public partial class DropsPage : UserControl
         if (_shutdownStarted || !_initialized || sender is not RadioButton { Tag: string tag } || !Enum.TryParse(tag, out DropsPlatform platform)) return;
         _platform = platform;
         _vm?.SelectPlatform(platform);
+        ShowWorkspace(_workspaceSections.GetValueOrDefault(platform, "overview"));
         await EnsureLogTailStartedAsync();
         if (_logTail is not null) await _logTail.RefreshAsync(platform);
         RenderLogBuffer();
@@ -536,6 +602,7 @@ public partial class DropsPage : UserControl
 
     private void OnShowDropsLog(object sender, RoutedEventArgs e)
     {
+        ShowWorkspace("logs");
         LogTextBox.BringIntoView();
         LogTextBox.ScrollToEnd();
     }
@@ -750,9 +817,17 @@ public partial class DropsPage : UserControl
     private async void OnQuickStartAction(object sender, RoutedEventArgs e)
     {
         if (_vm == null || sender is not Button { Tag: string action }) return;
+        ShowWorkspace(action switch
+        {
+            "soop_add_account" or "soop_start" or "youtube_account" => "accounts",
+            "soop_settings" or "youtube_browser" or "twitch_settings" or "bilibili_settings" => "settings",
+            "youtube_channel" or "bilibili_room" => "activities",
+            _ => "overview",
+        });
         switch (action)
         {
             case "soop_add_account":
+                SoopAddAccountExpander.IsExpanded = true;
                 SoopAccountsCard.BringIntoView();
                 SoopUserId.Focus();
                 break;
@@ -861,6 +936,7 @@ public partial class DropsPage : UserControl
                 ["reauth_retry_interval"] = ParseInt(SoopReauthInterval, 300),
             }});
             _settingsDrafts.Remove(DropsPlatform.Soop);
+            UpdateDraftHint();
             await LoadPlatformAsync(DropsPlatform.Soop);
             _vm.ReportMessage(DropsPlatform.Soop, "SOOP 设置已保存并应用。", "成功");
         }
@@ -1119,6 +1195,7 @@ public partial class DropsPage : UserControl
                 ["check_interval"] = ParseInt(YouTubeInterval, 300),
             }});
             _settingsDrafts.Remove(DropsPlatform.YouTube);
+            UpdateDraftHint();
             await LoadPlatformAsync(DropsPlatform.YouTube);
             _vm.ReportMessage(DropsPlatform.YouTube, "YouTube 设置已保存并应用。", "成功");
         }
@@ -1866,6 +1943,7 @@ public partial class DropsPage : UserControl
                 ["language"] = SelectedTag(TwitchLanguage, "简体中文"),
             }});
             _settingsDrafts.Remove(DropsPlatform.Twitch);
+            UpdateDraftHint();
             await LoadPlatformAsync(DropsPlatform.Twitch);
             _vm.ReportMessage(DropsPlatform.Twitch, "Twitch 设置已保存并应用。", "成功");
         }
