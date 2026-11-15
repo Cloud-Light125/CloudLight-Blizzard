@@ -67,16 +67,20 @@ public partial class DropsPage : UserControl
         await RunButtonAsync(sender, () => StopPlatformAsync(DropsPlatform.Twitch));
 
     private async void OnRenewTwitchAuthorization(object sender, RoutedEventArgs e) =>
-        await RunButtonAsync(sender, async () =>
-        {
-            if (_vm is null || _shutdownStarted) return;
-            await StopPlatformAsync(DropsPlatform.Twitch);
-            if (_shutdownStarted) return;
-            // BeginTwitchLogin clears the previous device code; login uses the existing worker protocol.
-            _vm.BeginTwitchLogin();
-            try { await _vm.RequestAsync(DropsPlatform.Twitch, "login", new { continueWatching = _main?.Settings.AutoStartTwitch == true }); await LoadPlatformAsync(DropsPlatform.Twitch); }
-            catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
-        });
+        await RunButtonAsync(sender, RenewTwitchAuthorizationAsync);
+
+    private int _authorizationRevision;
+    private async Task RenewTwitchAuthorizationAsync()
+    {
+        var revision = Interlocked.Increment(ref _authorizationRevision);
+        if (_vm is null || _shutdownStarted) return;
+        await StopPlatformAsync(DropsPlatform.Twitch, preserveAuthorizationRevision: true);
+        if (_shutdownStarted || revision != Volatile.Read(ref _authorizationRevision)) return;
+        // BeginTwitchLogin clears the previous device code; login uses the existing worker protocol.
+        _vm.BeginTwitchLogin();
+        try { await _vm.RequestAsync(DropsPlatform.Twitch, "login", new { continueWatching = _main?.Settings.AutoStartTwitch == true }); await LoadPlatformAsync(DropsPlatform.Twitch); }
+        catch (Exception ex) { _vm.SetTwitchTemporaryNetworkFailure(ex.Message); }
+    }
     private const string SoopInventoryUrl = "https://drops.sooplive.com/inventory";
     private const string TwitchInventoryUrl = "https://www.twitch.tv/drops/inventory";
     private MainViewModel? _main;
@@ -704,8 +708,9 @@ public partial class DropsPage : UserControl
             });
     }
 
-    private async Task StopPlatformAsync(DropsPlatform platform)
+    private async Task StopPlatformAsync(DropsPlatform platform, bool preserveAuthorizationRevision = false)
     {
+        if (platform == DropsPlatform.Twitch && !preserveAuthorizationRevision) Interlocked.Increment(ref _authorizationRevision);
         if (_shutdownStarted || _vm == null) return;
         if (platform == DropsPlatform.Soop) _vm.StopSoopByUser();
         if (platform == DropsPlatform.Twitch) _vm.StopTwitchByUser();
@@ -1392,6 +1397,7 @@ public partial class DropsPage : UserControl
 
     private async void OnTwitchLogout(object sender, RoutedEventArgs e)
     {
+        Interlocked.Increment(ref _authorizationRevision);
         await RunButtonAsync(sender, async () =>
         {
         if (_vm == null || !_vm.CanClearTwitchLogin ||

@@ -20,6 +20,7 @@ public partial class MainWindow : Window
 {
     internal static readonly TimeSpan AnnouncementRefreshInterval = TimeSpan.FromMinutes(30);
     private readonly MainViewModel _vm;
+    private readonly bool _isolatedReview;
     private readonly OverviewPage _overviewPage = new();
     private readonly AccountsPage _accountsPage = new();
     private readonly RegionFilesPage _regionPage = new();
@@ -65,6 +66,7 @@ public partial class MainWindow : Window
         IInstallerLauncher? installerLauncher = null, AppSettings? settings = null, BattleNetPaths? paths = null,
         TimeSpan? exitBudgetForSelfTest = null, bool isolatedReview = false)
     {
+        _isolatedReview = isolatedReview;
         _vm = new MainViewModel(logSession, settings, paths);
         if (exitBudgetForSelfTest is not null) _exitLifecycleCoordinator = new(exitBudgetForSelfTest);
         _installerLaunchCoordinator = new UpdateInstallerLaunchCoordinator(
@@ -547,6 +549,7 @@ public partial class MainWindow : Window
         await Dispatcher.Yield(DispatcherPriority.Render);
         if (_isExiting) return;
         ((RadioButton)sender).BringIntoView();
+        if (_isolatedReview) return;
         if (section == "region") await _regionPage.RefreshAsync();
         if (section == "stats") _statsPage.OnPageOpened();
         if (section == "drops") await _dropsPage.RefreshAsync();

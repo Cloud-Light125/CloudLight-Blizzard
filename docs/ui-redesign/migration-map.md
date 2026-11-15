@@ -111,15 +111,15 @@
 | UI-0105 | MainWindow / CloudLight Blizzard / {Binding AppVersion} | TextBlock  {"Text": "{Binding AppVersion}"} | MainWindow / CloudLight Blizzard | 是 | 静态契约匹配 |
 | UI-0106 | MainWindow / CloudLight Blizzard / 刷新账号 | Button  {"Click": "OnRefresh"} | MainWindow / CloudLight Blizzard | 是 | 静态契约匹配 |
 | UI-0107 | MainWindow / CloudLight Blizzard / {Binding StatusText} | TextBlock  {"Text": "{Binding StatusText}"} | MainWindow / CloudLight Blizzard | 是 | 静态契约匹配 |
-| UI-0108 | Views/MainWindow.xaml.cs:191 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:201 | 是 | 静态契约匹配 |
-| UI-0109 | Views/MainWindow.xaml.cs:224 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:234 | 是 | 静态契约匹配 |
-| UI-0110 | Views/MainWindow.xaml.cs:242 / MessageBox.Show($"当前版本：{_vm.UpdateChecks.CurrentVersion}", "已是最新版本", | confirmation/command  {} | Views/MainWindow.xaml.cs:252 | 是 | 静态契约匹配 |
-| UI-0111 | Views/MainWindow.xaml.cs:245 / MessageBox.Show("当前没有可用的正式更新。", "软件更新", | confirmation/command  {} | Views/MainWindow.xaml.cs:255 | 是 | 静态契约匹配 |
-| UI-0112 | Views/MainWindow.xaml.cs:248 / MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新", | confirmation/command  {} | Views/MainWindow.xaml.cs:258 | 是 | 静态契约匹配 |
-| UI-0113 | Views/MainWindow.xaml.cs:261 / MessageBox.Show("无法打开系统浏览器，请稍后重试。", "打开更新链接", | confirmation/command  {} | Views/MainWindow.xaml.cs:271 | 是 | 静态契约匹配 |
-| UI-0114 | Views/MainWindow.xaml.cs:434 / MessageBox.Show("安装包不存在或设置无法保存，已取消安装。", "在线更新"); | confirmation/command  {} | Views/MainWindow.xaml.cs:444 | 是 | 静态契约匹配 |
-| UI-0115 | Views/MainWindow.xaml.cs:482 / else MessageBox.Show(message, "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning); | confirmation/command  {} | Views/MainWindow.xaml.cs:492 | 是 | 静态契约匹配 |
-| UI-0116 | Views/MainWindow.xaml.cs:681 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:711 | 是 | 静态契约匹配 |
+| UI-0108 | Views/MainWindow.xaml.cs:191 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:203 | 是 | 静态契约匹配 |
+| UI-0109 | Views/MainWindow.xaml.cs:224 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:236 | 是 | 静态契约匹配 |
+| UI-0110 | Views/MainWindow.xaml.cs:242 / MessageBox.Show($"当前版本：{_vm.UpdateChecks.CurrentVersion}", "已是最新版本", | confirmation/command  {} | Views/MainWindow.xaml.cs:254 | 是 | 静态契约匹配 |
+| UI-0111 | Views/MainWindow.xaml.cs:245 / MessageBox.Show("当前没有可用的正式更新。", "软件更新", | confirmation/command  {} | Views/MainWindow.xaml.cs:257 | 是 | 静态契约匹配 |
+| UI-0112 | Views/MainWindow.xaml.cs:248 / MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新", | confirmation/command  {} | Views/MainWindow.xaml.cs:260 | 是 | 静态契约匹配 |
+| UI-0113 | Views/MainWindow.xaml.cs:261 / MessageBox.Show("无法打开系统浏览器，请稍后重试。", "打开更新链接", | confirmation/command  {} | Views/MainWindow.xaml.cs:273 | 是 | 静态契约匹配 |
+| UI-0114 | Views/MainWindow.xaml.cs:434 / MessageBox.Show("安装包不存在或设置无法保存，已取消安装。", "在线更新"); | confirmation/command  {} | Views/MainWindow.xaml.cs:446 | 是 | 静态契约匹配 |
+| UI-0115 | Views/MainWindow.xaml.cs:482 / else MessageBox.Show(message, "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning); | confirmation/command  {} | Views/MainWindow.xaml.cs:494 | 是 | 静态契约匹配 |
+| UI-0116 | Views/MainWindow.xaml.cs:681 / dialog.ShowDialog(); | confirmation/command  {} | Views/MainWindow.xaml.cs:714 | 是 | 静态契约匹配 |
 | UI-0117 | AboutPage / {Binding AppVersion} | TextBlock  {"Text": "{Binding AppVersion}"} | AboutPage | 是 | 静态契约匹配 |
 | UI-0118 | AboutPage /  | ItemsControl ThirdPartyComponentsList {"ItemsSource": "{Binding Components, ElementName=AboutRoot}"} | AboutPage / 开源组件与许可证 | 是 | 静态契约匹配 |
 | UI-0119 | AboutPage / {Binding License} | TextBlock  {"Text": "{Binding License}"} | AboutPage / 开源组件与许可证 | 是 | 静态契约匹配 |
@@ -529,18 +529,18 @@
 | UI-0523 | DropsPage /  | TextBox LogTextBox {"TextChanged": "OnLogTextChanged"} | DropsPage / logs | 是 | 静态契约匹配 |
 | UI-0524 | DropsPage / 复制 / 复制 | MenuItem  {"Command": "Copy", "CommandTarget": "{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"} | DropsPage / logs / 复制 | 是 | 静态契约匹配 |
 | UI-0525 | DropsPage / 全选 / 全选 | MenuItem  {"Command": "SelectAll", "CommandTarget": "{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"} | DropsPage / logs / 全选 | 是 | 静态契约匹配 |
-| UI-0526 | Views/Pages/DropsPage.xaml.cs:884 / }.ShowDialog() == true; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:974 | 是 | 静态契约匹配 |
-| UI-0527 | Views/Pages/DropsPage.xaml.cs:943 / if (MessageBox.Show($"删除 SOOP 账号「{row.Primary}」的本地登录信息？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1033 | 是 | 静态契约匹配 |
-| UI-0528 | Views/Pages/DropsPage.xaml.cs:985 / if (MessageBox.Show($"确认领取奖励「{row.Primary}」？", "领取奖励", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1075 | 是 | 静态契约匹配 |
-| UI-0529 | Views/Pages/DropsPage.xaml.cs:1104 / if (dialog.ShowDialog() == true) YouTubeBrowserPath.Text = dialog.FileName; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1194 | 是 | 静态契约匹配 |
-| UI-0530 | Views/Pages/DropsPage.xaml.cs:1157 / var result = MessageBox.Show("是否同时删除该观看账号的浏览器登录数据？\n\n选择“否”只从列表移除，浏览器资料目录仍保留。", "删除观看账号", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1248 | 是 | 静态契约匹配 |
-| UI-0531 | Views/Pages/DropsPage.xaml.cs:1307 / MessageBox.Show("清除 Twitch 本地登录信息并停止当前登录/连接尝试？\n\n优先游戏、排除游戏、自动启动、代理和其它界面设置都会保留。", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1398 | 是 | 静态契约匹配 |
-| UI-0532 | Views/Pages/DropsPage.xaml.cs:1356 / if (_vm == null \|\| MessageBox.Show( | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1447 | 是 | 静态契约匹配 |
-| UI-0533 | Views/Pages/DropsPage.xaml.cs:1539 / if (_vm == null \|\| MessageBox.Show("退出哔哩哔哩登录并删除本机加密凭据？\n\n直播间和其它设置会保留。", "退出哔哩哔哩登录", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1630 | 是 | 静态契约匹配 |
-| UI-0534 | Views/Pages/DropsPage.xaml.cs:1604 / if (_vm == null \|\| MessageBox.Show("删除已保存的 Gotify / Server 酱通知配置？", "清除第三方通知", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1695 | 是 | 静态契约匹配 |
-| UI-0535 | Views/Pages/DropsPage.xaml.cs:2046 / if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2138 | 是 | 静态契约匹配 |
-| UI-0536 | Views/Pages/DropsPage.xaml.cs:2053 / var choice = MessageBox.Show($"目标已有「{relative}」。\n\n是：覆盖\n否：跳过\n取消：终止导入", "同名数据", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2145 | 是 | 静态契约匹配 |
-| UI-0537 | Views/Pages/DropsPage.xaml.cs:2058 / MessageBox.Show(message, "导入旧版数据", MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2150 | 是 | 静态契约匹配 |
+| UI-0526 | Views/Pages/DropsPage.xaml.cs:884 / }.ShowDialog() == true; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:979 | 是 | 静态契约匹配 |
+| UI-0527 | Views/Pages/DropsPage.xaml.cs:943 / if (MessageBox.Show($"删除 SOOP 账号「{row.Primary}」的本地登录信息？", "删除账号", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1038 | 是 | 静态契约匹配 |
+| UI-0528 | Views/Pages/DropsPage.xaml.cs:985 / if (MessageBox.Show($"确认领取奖励「{row.Primary}」？", "领取奖励", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1080 | 是 | 静态契约匹配 |
+| UI-0529 | Views/Pages/DropsPage.xaml.cs:1104 / if (dialog.ShowDialog() == true) YouTubeBrowserPath.Text = dialog.FileName; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1199 | 是 | 静态契约匹配 |
+| UI-0530 | Views/Pages/DropsPage.xaml.cs:1157 / var result = MessageBox.Show("是否同时删除该观看账号的浏览器登录数据？\n\n选择“否”只从列表移除，浏览器资料目录仍保留。", "删除观看账号", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1253 | 是 | 静态契约匹配 |
+| UI-0531 | Views/Pages/DropsPage.xaml.cs:1307 / MessageBox.Show("清除 Twitch 本地登录信息并停止当前登录/连接尝试？\n\n优先游戏、排除游戏、自动启动、代理和其它界面设置都会保留。", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1404 | 是 | 静态契约匹配 |
+| UI-0532 | Views/Pages/DropsPage.xaml.cs:1356 / if (_vm == null \|\| MessageBox.Show( | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1453 | 是 | 静态契约匹配 |
+| UI-0533 | Views/Pages/DropsPage.xaml.cs:1539 / if (_vm == null \|\| MessageBox.Show("退出哔哩哔哩登录并删除本机加密凭据？\n\n直播间和其它设置会保留。", "退出哔哩哔哩登录", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1636 | 是 | 静态契约匹配 |
+| UI-0534 | Views/Pages/DropsPage.xaml.cs:1604 / if (_vm == null \|\| MessageBox.Show("删除已保存的 Gotify / Server 酱通知配置？", "清除第三方通知", | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:1701 | 是 | 静态契约匹配 |
+| UI-0535 | Views/Pages/DropsPage.xaml.cs:2046 / if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return; | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2144 | 是 | 静态契约匹配 |
+| UI-0536 | Views/Pages/DropsPage.xaml.cs:2053 / var choice = MessageBox.Show($"目标已有「{relative}」。\n\n是：覆盖\n否：跳过\n取消：终止导入", "同名数据", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2151 | 是 | 静态契约匹配 |
+| UI-0537 | Views/Pages/DropsPage.xaml.cs:2058 / MessageBox.Show(message, "导入旧版数据", MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning); | confirmation/command  {} | Views/Pages/DropsPage.xaml.cs:2156 | 是 | 静态契约匹配 |
 | UI-0538 | FeedbackPanel /  | TextBox TitleBox {} | FeedbackPanel | 是 | 静态契约匹配 |
 | UI-0539 | FeedbackPanel /  | TextBox DescriptionBox {} | FeedbackPanel | 是 | 静态契约匹配 |
 | UI-0540 | FeedbackPanel /  | TextBox ContactBox {} | FeedbackPanel | 是 | 静态契约匹配 |

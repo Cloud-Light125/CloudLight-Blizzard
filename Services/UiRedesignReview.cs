@@ -25,6 +25,7 @@ internal sealed class UiRedesignReview
     private readonly string _output;
     private readonly MainWindow _window;
     private readonly MainViewModel _main;
+    private readonly RegionPreparationGuide _defaultRegionGuide;
     private readonly DropsPage _page;
     private readonly DropsViewModel _drops;
     private readonly Dictionary<DropsPlatform, JsonElement> _states = new();
@@ -69,6 +70,7 @@ internal sealed class UiRedesignReview
         Application.Current.MainWindow = _window;
         _window.Title = "CloudLight Blizzard · 隔离界面验收（模拟数据）";
         _main = Field<MainViewModel>(_window, "_vm");
+        _defaultRegionGuide = _main.RegionGuide;
         _page = Field<DropsPage>(_window, "_dropsPage");
         _drops = (DropsViewModel)_page.DataContext;
         _main.DropsHost.ConfigureRequestOverrideForSelfTest((platform, command, payload, token) =>
@@ -129,6 +131,8 @@ internal sealed class UiRedesignReview
     private void Apply(int index)
     {
         if (index < 0) return;
+        _main.StatusText = "隔离验收：账号、授权和奖励均为模拟数据。";
+        if (index != 27) typeof(MainViewModel).GetProperty(nameof(MainViewModel.RegionGuide))!.SetValue(_main, _defaultRegionGuide);
         foreach (var p in Enum.GetValues<DropsPlatform>()) _drops.DismissMessage(p);
         _states[DropsPlatform.Twitch] = Twitch(index is 7 or 8 or 9 or 28 or 29 or 31 or 33 or 34, index == 8);
         _states[DropsPlatform.Soop] = Raw("""{"running":true,"settings":{"channel_mode":"smart","priority_mission_id":"auto","auto_claim_enabled":false,"low_bandwidth_mode":true,"hang_without_missions":true,"mission_poll_interval":90,"inventory_poll_interval":300,"channel_refresh_interval":300,"reauth_retry_interval":300},"accounts":[{"uid":"模拟主账号","primary":true,"loggedIn":true,"running":true,"channelName":"模拟赛事频道","missionTitle":"模拟任务"},{"uid":"模拟副账号","primary":false,"loggedIn":true,"running":false,"channelName":"尚未进入","missionTitle":"等待任务"}]}""");
@@ -157,7 +161,14 @@ internal sealed class UiRedesignReview
             if (index == 25) _drops.SetTwitchTemporaryNetworkFailure("模拟：代理服务器 127.0.0.1:7897 不可用，Session 已保留。");
         }
         if (index == 26) _main.StatusText = "模拟：账号切换失败，原账号数据保留。请先重新检测 Battle.net。";
-        if (index == 27) { _main.GameRegionTitle = "模拟：区服切换失败"; _main.GameRegionSummary = "原有恢复 journal 保留，请检查文件状态后使用已有恢复流程。"; }
+        if (index == 27)
+        {
+            typeof(MainViewModel).GetProperty(nameof(MainViewModel.RegionGuide))!.SetValue(_main, new RegionPreparationGuide {
+                State = RegionPreparationState.Error, ShowError = true, Title = "区服切换失败（模拟）",
+                BackupStateText = "切换失败（模拟）", CurrentFileText = "待重新检查（模拟）", CanChangePaths = true,
+                Description = "模拟：区服切换失败，恢复 journal 已保留。请检查目录与备份后通过已有恢复流程处理。隔离验收不执行游戏文件覆盖。",
+            });
+        }
         if (index == 38) Field<SettingsPage>(_window, "_settingsPage").ShowWorkspace("network");
         if (index == 39) Field<AccountsPage>(_window, "_accountsPage").ShowWorkspace("storage");
         if (index == 15)
@@ -198,6 +209,7 @@ internal sealed class UiRedesignReview
             }
             ThemeManager.Apply(true);_scenarios.SelectedIndex = 8;_window.UpdateLayout();Capture(Path.Combine(renders,"dark.png"));ThemeManager.Apply(false);
             await CheckDraftsAsync();
+            await CheckAuthorizationCancellationAsync();
             var dpi = VisualTreeHelper.GetDpi(_window);
             File.WriteAllLines(Path.Combine(_output, "matrix-results.txt"), _checks.Append($"binding-errors={_bindings.Errors.Count}").Append($"physical-monitor-dpi={dpi.PixelsPerInchX:0}/{dpi.PixelsPerInchY:0}").Append("DPI method: equivalent DIP sizes, not physical monitor switching"));
             Environment.ExitCode = _bindings.Errors.Count > 0 || _checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
@@ -269,6 +281,25 @@ internal sealed class UiRedesignReview
         }
         var bitmap=BitmapSource.Create(side*unit,side*unit,96,96,PixelFormats.Gray8,null,pixels,side*unit);
         var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(path);png.Save(file);
+    }
+    private async Task CheckAuthorizationCancellationAsync()
+    {
+        _page.SelectPlatform(DropsPlatform.Twitch);
+        var stopped = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loginRequests = 0;
+        _main.DropsHost.ConfigureRequestOverrideForSelfTest((platform, command, payload, token) =>
+        {
+            if (platform == DropsPlatform.Twitch && command == "stop") { entered.TrySetResult(); return stopped.Task; }
+            if (platform == DropsPlatform.Twitch && command == "login") loginRequests++;
+            return Task.FromResult(_states.GetValueOrDefault(platform, Json(new { })));
+        });
+        var renewing = (Task)typeof(DropsPage).GetMethod("RenewTwitchAuthorizationAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_page, null)!;
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var cancel = (Task)typeof(DropsPage).GetMethod("StopPlatformAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_page, [DropsPlatform.Twitch, false])!;
+        stopped.SetResult(Twitch());
+        await Task.WhenAll(renewing, cancel).WaitAsync(TimeSpan.FromSeconds(5));
+        _checks.Add(loginRequests == 0 ? "PASS cancel/stop prevents in-flight device-code renewal from restarting login" : "FAIL device authorization restarted after cancel");
     }
     private void Capture(string path)
     {

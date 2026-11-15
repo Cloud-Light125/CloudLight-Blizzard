@@ -1492,7 +1492,7 @@
     "identity": "dialog.ShowDialog();",
     "id": "UI-0108",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:201"
+    "new_location": "Views/MainWindow.xaml.cs:203"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1504,7 +1504,7 @@
     "identity": "dialog.ShowDialog();",
     "id": "UI-0109",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:234"
+    "new_location": "Views/MainWindow.xaml.cs:236"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1516,7 +1516,7 @@
     "identity": "MessageBox.Show($\"当前版本：{_vm.UpdateChecks.CurrentVersion}\", \"已是最新版本\",",
     "id": "UI-0110",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:252"
+    "new_location": "Views/MainWindow.xaml.cs:254"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1528,7 +1528,7 @@
     "identity": "MessageBox.Show(\"当前没有可用的正式更新。\", \"软件更新\",",
     "id": "UI-0111",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:255"
+    "new_location": "Views/MainWindow.xaml.cs:257"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1540,7 +1540,7 @@
     "identity": "MessageBox.Show(outcome.Result?.ErrorMessage ?? \"暂时无法连接更新服务器。\", \"暂时无法检查更新\",",
     "id": "UI-0112",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:258"
+    "new_location": "Views/MainWindow.xaml.cs:260"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1552,7 +1552,7 @@
     "identity": "MessageBox.Show(\"无法打开系统浏览器，请稍后重试。\", \"打开更新链接\",",
     "id": "UI-0113",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:271"
+    "new_location": "Views/MainWindow.xaml.cs:273"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1564,7 +1564,7 @@
     "identity": "MessageBox.Show(\"安装包不存在或设置无法保存，已取消安装。\", \"在线更新\");",
     "id": "UI-0114",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:444"
+    "new_location": "Views/MainWindow.xaml.cs:446"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1576,7 +1576,7 @@
     "identity": "else MessageBox.Show(message, \"在线更新\", MessageBoxButton.OK, MessageBoxImage.Warning);",
     "id": "UI-0115",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:492"
+    "new_location": "Views/MainWindow.xaml.cs:494"
   },
   {
     "file": "Views/MainWindow.xaml.cs",
@@ -1588,7 +1588,7 @@
     "identity": "dialog.ShowDialog();",
     "id": "UI-0116",
     "preserved": true,
-    "new_location": "Views/MainWindow.xaml.cs:711"
+    "new_location": "Views/MainWindow.xaml.cs:714"
   },
   {
     "file": "Views/Pages/AboutPage.xaml",
@@ -7333,7 +7333,7 @@
     "identity": "}.ShowDialog() == true;",
     "id": "UI-0526",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:974"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:979"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7345,7 +7345,7 @@
     "identity": "if (MessageBox.Show($\"删除 SOOP 账号「{row.Primary}」的本地登录信息？\", \"删除账号\", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;",
     "id": "UI-0527",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1033"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1038"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7357,7 +7357,7 @@
     "identity": "if (MessageBox.Show($\"确认领取奖励「{row.Primary}」？\", \"领取奖励\",",
     "id": "UI-0528",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1075"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1080"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7369,7 +7369,7 @@
     "identity": "if (dialog.ShowDialog() == true) YouTubeBrowserPath.Text = dialog.FileName;",
     "id": "UI-0529",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1194"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1199"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7381,7 +7381,7 @@
     "identity": "var result = MessageBox.Show(\"是否同时删除该观看账号的浏览器登录数据？\\n\\n选择“否”只从列表移除，浏览器资料目录仍保留。\", \"删除观看账号\", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);",
     "id": "UI-0530",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1248"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1253"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7393,7 +7393,7 @@
     "identity": "MessageBox.Show(\"清除 Twitch 本地登录信息并停止当前登录/连接尝试？\\n\\n优先游戏、排除游戏、自动启动、代理和其它界面设置都会保留。\",",
     "id": "UI-0531",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1398"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1404"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7405,7 +7405,7 @@
     "identity": "if (_vm == null || MessageBox.Show(",
     "id": "UI-0532",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1447"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1453"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7417,7 +7417,7 @@
     "identity": "if (_vm == null || MessageBox.Show(\"退出哔哩哔哩登录并删除本机加密凭据？\\n\\n直播间和其它设置会保留。\", \"退出哔哩哔哩登录\",",
     "id": "UI-0533",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1630"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1636"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7429,7 +7429,7 @@
     "identity": "if (_vm == null || MessageBox.Show(\"删除已保存的 Gotify / Server 酱通知配置？\", \"清除第三方通知\",",
     "id": "UI-0534",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:1695"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:1701"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7441,7 +7441,7 @@
     "identity": "if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;",
     "id": "UI-0535",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:2138"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:2144"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7453,7 +7453,7 @@
     "identity": "var choice = MessageBox.Show($\"目标已有「{relative}」。\\n\\n是：覆盖\\n否：跳过\\n取消：终止导入\", \"同名数据\", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);",
     "id": "UI-0536",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:2145"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:2151"
   },
   {
     "file": "Views/Pages/DropsPage.xaml.cs",
@@ -7465,7 +7465,7 @@
     "identity": "MessageBox.Show(message, \"导入旧版数据\", MessageBoxButton.OK, result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);",
     "id": "UI-0537",
     "preserved": true,
-    "new_location": "Views/Pages/DropsPage.xaml.cs:2150"
+    "new_location": "Views/Pages/DropsPage.xaml.cs:2156"
   },
   {
     "file": "Views/Pages/FeedbackPanel.xaml",
