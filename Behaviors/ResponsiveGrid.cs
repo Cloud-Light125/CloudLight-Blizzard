@@ -10,6 +10,9 @@ public static class ResponsiveGrid
         "IsEnabled", typeof(bool), typeof(ResponsiveGrid), new PropertyMetadata(false, Changed));
     public static bool GetIsEnabled(DependencyObject value) => (bool)value.GetValue(IsEnabledProperty);
     public static void SetIsEnabled(DependencyObject value, bool enabled) => value.SetValue(IsEnabledProperty, enabled);
+    public static readonly DependencyProperty BreakpointProperty=DependencyProperty.RegisterAttached("Breakpoint",typeof(double),typeof(ResponsiveGrid),new PropertyMetadata(760d));
+    public static double GetBreakpoint(DependencyObject value)=>(double)value.GetValue(BreakpointProperty);
+    public static void SetBreakpoint(DependencyObject value,double width)=>value.SetValue(BreakpointProperty,width);
     private static readonly DependencyProperty StateProperty = DependencyProperty.RegisterAttached(
         "State", typeof(LayoutState), typeof(ResponsiveGrid));
 
@@ -39,7 +42,7 @@ public static class ResponsiveGrid
                 Children = grid.Children.Cast<UIElement>().Select(c => (c, Grid.GetRow(c), Grid.GetColumn(c), Grid.GetColumnSpan(c))).ToArray() };
             grid.SetValue(StateProperty, state);
         }
-        var narrow = grid.ActualWidth < 760;
+        var narrow = grid.ActualWidth < GetBreakpoint(grid);
         if (narrow == state.Narrow) return;
         state.Narrow = narrow;
         grid.ColumnDefinitions.Clear(); grid.RowDefinitions.Clear();

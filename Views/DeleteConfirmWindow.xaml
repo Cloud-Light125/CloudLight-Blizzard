@@ -22,17 +22,17 @@
             </Grid>
 
             <StackPanel Margin="15,10,15,0">
-                <TextBlock Foreground="{DynamicResource Tx2}" FontSize="12.5" TextWrapping="Wrap" LineHeight="20">
+                <TextBlock Foreground="{DynamicResource Tx2}" FontSize="13" TextWrapping="Wrap" LineHeight="20">
                     <Run x:Name="BodyPrefix" Text="确定删除 " /><Run x:Name="NameRun" Foreground="{DynamicResource Tx1}" FontWeight="SemiBold" /><Run x:Name="BodySuffix" Text=" 的账号备份吗?" />
                 </TextBlock>
                 <TextBlock x:Name="SubText" Text="这不会影响 Battle.net 登录；之后要切换到它，需要重新保存一次账号备份。"
-                           Foreground="{DynamicResource Tx3}" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap" LineHeight="17" />
+                           Foreground="{DynamicResource Tx3}" FontSize="13" Margin="0,7,0,0" TextWrapping="Wrap" LineHeight="17" />
             </StackPanel>
 
             <Grid Margin="15,15,15,15">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource GhostButton}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="OnCancel" Content="取消" FontSize="12.5" />
-                    <Button Style="{StaticResource DangerButton}" Height="32" Padding="18,0" Click="OnConfirm" FontSize="12.5">
+                    <Button Style="{StaticResource GhostButton}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="OnCancel" Content="取消" FontSize="13" />
+                    <Button Style="{StaticResource DangerButton}" Height="32" Padding="18,0" Click="OnConfirm" FontSize="13">
                         <StackPanel Orientation="Horizontal">
                             <ctrl:IconView Geometry="{StaticResource GeoDelete}" Stroke="{DynamicResource OnAcc}" Thickness="2" IconSize="13" Margin="0,0,6,0" />
                             <TextBlock x:Name="ConfirmText" Text="删除" />

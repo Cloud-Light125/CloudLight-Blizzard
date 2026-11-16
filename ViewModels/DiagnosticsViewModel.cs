@@ -5,7 +5,7 @@ using CloudLightBlizzard.Services.Diagnostics;
 
 namespace CloudLightBlizzard.ViewModels;
 
-public sealed class DiagnosticsViewModel : ObservableObject, IDisposable
+public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
 {
     private readonly MainViewModel _main;
     private readonly DiagnosticService _service;
@@ -24,10 +24,11 @@ public sealed class DiagnosticsViewModel : ObservableObject, IDisposable
         _service = new DiagnosticService(main);
         _context = SynchronizationContext.Current;
         _service.ProgressChanged += OnProgress;
+        Checks.CollectionChanged+=(_,_)=>RaiseVisualCounts();
     }
 
     public ObservableCollection<DiagnosticCheck> Checks { get; } = new();
-    public DiagnosticRunReport? Report { get => _report; private set => Set(ref _report, value); }
+    public DiagnosticRunReport? Report { get => _report; private set { Set(ref _report, value);RaiseVisualCounts(); } }
     public bool IsRunning { get => _isRunning; private set { Set(ref _isRunning, value); Raise(nameof(NotRunning)); Raise(nameof(CanExport)); } }
     public bool NotRunning => !IsRunning;
     public bool CanExport => !IsRunning && Report is not null;

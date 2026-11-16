@@ -1,0 +1,58 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.YouTube.YouTubeOverview">
+    <StackPanel>
+        <Border Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}">
+            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                    <ctrl:PlatformIcon Platform="YouTube" Width="52" Height="52" Margin="0,0,16,0" />
+                    <StackPanel>
+                        <TextBlock Text="YouTube 观看工作台" FontSize="26" FontWeight="SemiBold" />
+                        <TextBlock Text="保留独立浏览器账号、频道与观看历史。" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0" />
+                    </StackPanel>
+                </DockPanel>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button x:Name="YouTubeStartButton" Content="开始观看" Tag="YouTube" ctrl:WorkspaceAction.Name="legacy:OnStart" Style="{DynamicResource PrimaryButton}" Visibility="{Binding YouTube.StartVisibility}" Margin="0,0,8,0" x:FieldModifier="internal" />
+                    <Button x:Name="YouTubeStopButton" Content="停止观看" Tag="YouTube" ctrl:WorkspaceAction.Name="legacy:OnStop" Style="{DynamicResource SecondaryButton}" Visibility="{Binding YouTube.StopVisibility}" Margin="0,0,8,0" x:FieldModifier="internal" />
+                    <Button Content="刷新" ctrl:WorkspaceAction.Name="legacy:OnRefresh" Style="{DynamicResource SecondaryButton}" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+        <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.7*" />
+                <ColumnDefinition />
+            </Grid.ColumnDefinitions>
+            <Border Style="{DynamicResource HeroCard}" Margin="0,0,16,16">
+                <StackPanel>
+                    <TextBlock Text="直播与浏览器会话" Style="{DynamicResource VisualHeading}" />
+                    <ItemsControl ItemsSource="{Binding Tasks}" ItemTemplate="{DynamicResource DropsRowTemplate}" />
+                    <TextBlock Text="{Binding YouTube.Status}" FontSize="22" FontWeight="SemiBold" Margin="0,12,0,8" />
+                    <TextBlock Text="{Binding YouTube.Summary}" Style="{DynamicResource VisualCaption}" />
+                    <Button Content="查看频道与观看历史 →" ctrl:WorkspaceAction.Name="section:activities" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,24,0,0" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{DynamicResource HeroCard}">
+                <StackPanel>
+                    <TextBlock Text="准备观看环境" Style="{DynamicResource VisualHeading}" />
+                    <Button Content="01  观看账号" ctrl:WorkspaceAction.Name="section:accounts" Style="{DynamicResource SecondaryButton}" Margin="0,6,0,12" />
+                    <Button Content="02  选择频道" ctrl:WorkspaceAction.Name="section:activities" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,12" />
+                    <Button Content="03  浏览器与观看设置" ctrl:WorkspaceAction.Name="section:settings" Style="{DynamicResource SecondaryButton}" />
+                    <TextBlock Text="Chrome / Brave、自定义路径、无头模式与静音沿用原设置。" Style="{DynamicResource VisualCaption}" Margin="0,20,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+        <Button Content="使用帮助" Tag="YouTube" ctrl:WorkspaceAction.Name="legacy:OnToggleHelp" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,0,0,16" />
+        <Border x:Name="YouTubeHelp" Style="{DynamicResource HeroCard}" Visibility="Collapsed" x:FieldModifier="internal">
+            <TextBlock Text="添加观看账号，在浏览器完成登录，再选择频道与播放模式。需要指定浏览器时，可进入观看配置选择 Chrome、Brave 或自定义路径。" Style="{DynamicResource VisualBody}" />
+        </Border>
+        <Expander Header="{Binding YouTubeQuickStart.Summary}" IsExpanded="{Binding YouTubeQuickStart.IsExpanded,Mode=TwoWay}" Margin="0,8,0,16">
+            <StackPanel Margin="8,12">
+                <ItemsControl ItemsSource="{Binding YouTubeQuickStart.Steps}" ItemTemplate="{DynamicResource QuickStartStepTemplate}" />
+                <TextBlock Text="{Binding YouTubeLastSuccessText}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0" Visibility="{Binding YouTubeLastSuccessVisibility}" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

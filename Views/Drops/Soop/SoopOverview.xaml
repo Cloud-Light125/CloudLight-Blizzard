@@ -1,0 +1,142 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.Soop.SoopOverview">
+    <StackPanel>
+        <Border Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}">
+            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                    <ctrl:PlatformIcon Platform="Soop" Width="48" Height="48" Margin="0,0,16,0" />
+                    <StackPanel>
+                        <TextBlock Text="SOOP 多账号工作台" FontSize="26" FontWeight="SemiBold" />
+                        <TextBlock Text="各账号独立观看，进度按 UID 分别确认。" Style="{DynamicResource VisualCaption}" Margin="0,7,0,0" />
+                    </StackPanel>
+                </DockPanel>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button Content="添加账号" ctrl:WorkspaceAction.Name="quick:soop_add_account" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />
+                    <Button Content="刷新状态" ctrl:WorkspaceAction.Name="legacy:OnSoopRefresh" Style="{DynamicResource SecondaryButton}" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+        <UniformGrid Columns="3">
+            <ctrl:MetricTile Label="已登录账号" Value="{Binding SoopVisual.AccountCount}" Caption="保留各自 Session" />
+            <ctrl:MetricTile Label="奖励背包" Value="{Binding SoopVisual.RewardCount}" Caption="UID 隔离与绑定保护" />
+            <ctrl:MetricTile Label="可领取奖励" Value="{Binding SoopVisual.ClaimableCount}" Caption="领取前仍重新验证" />
+        </UniformGrid>
+        <DockPanel Margin="0,0,0,10">
+            <WrapPanel DockPanel.Dock="Right">
+                <Button Content="全部开始" Tag="Soop" ctrl:WorkspaceAction.Name="legacy:OnStart" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" />
+                <Button Content="全部停止" Tag="Soop" ctrl:WorkspaceAction.Name="legacy:OnStop" Style="{DynamicResource SecondaryButton}" />
+            </WrapPanel>
+            <TextBlock Text="账号与当前任务" Style="{DynamicResource VisualHeading}" />
+        </DockPanel>
+        <ItemsControl ItemsSource="{Binding SoopVisual.Accounts}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <UniformGrid Columns="2" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Style="{DynamicResource HeroCard}" Margin="0,0,16,16">
+                        <StackPanel>
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Style="{DynamicResource Badge}">
+                                    <TextBlock Text="{Binding RoleText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                                </Border>
+                                <ctrl:VisualImage SourceUrl="{Binding ImageUrl}" Brand="Soop" Width="46" Height="46" Margin="0,0,12,0" />
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" Margin="0,5,0,0" />
+                                </StackPanel>
+                            </DockPanel>
+                            <Grid Margin="0,20,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition />
+                                </Grid.ColumnDefinitions>
+                                <ctrl:VisualImage SourceUrl="{Binding Reward.ImageUrl}" Brand="Soop" Width="76" Height="80" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Task}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,8" />
+                                    <TextBlock Text="{Binding ProgressText}" FontSize="18" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold" />
+                                    <ProgressBar Maximum="100" Value="{Binding Percent,Mode=OneWay}" Style="{DynamicResource ThemeProgressBar}" Height="8" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <WrapPanel>
+                                <Button Content="启动账号" Visibility="{Binding StartVisibility}" ctrl:WorkspaceAction.Name="soop:start" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />
+                                <Button Content="停止账号" Visibility="{Binding StopVisibility}" ctrl:WorkspaceAction.Name="soop:stop" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" />
+                                <Button Content="详情" ctrl:WorkspaceAction.Name="soop:details" Style="{DynamicResource SecondaryButton}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.6*" />
+                <ColumnDefinition />
+            </Grid.ColumnDefinitions>
+            <Border Style="{DynamicResource HeroCard}" Margin="0,0,16,16">
+                <StackPanel>
+                    <TextBlock Text="当前官方进度" Style="{DynamicResource VisualHeading}" />
+                    <TextBlock Text="尚无当前官方进度。连接账号并刷新任务后，这里会显示各账号独立的确认进度。" Margin="0,8,0,16">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource VisualCaption}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SoopCurrentProgress.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <ItemsControl ItemsSource="{Binding SoopCurrentProgress}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Account}" FontSize="14" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Reward}" Style="{DynamicResource VisualCaption}" Margin="0,4,0,0" />
+                                        <TextBlock Text="{Binding SyncState}" Style="{DynamicResource VisualCaption}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding ProgressText}" FontSize="16" Foreground="{DynamicResource Accent.Primary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{DynamicResource HeroCard}">
+                <StackPanel>
+                    <TextBlock Text="运行与策略" Style="{DynamicResource VisualHeading}" />
+                    <TextBlock Text="{Binding Soop.Status}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Soop.Summary}" Style="{DynamicResource VisualCaption}" Margin="0,10,0,10" />
+                    <TextBlock Text="{Binding SoopVisual.AutoClaimText}" Style="{DynamicResource VisualCaption}" />
+                    <TextBlock Text="{Binding SoopRetryStatusText}" Style="{DynamicResource VisualCaption}" Margin="0,12,0,12" Visibility="{Binding SoopRetryStatusVisibility}" />
+                    <Button Content="观看与任务设置" ctrl:WorkspaceAction.Name="section:settings" Style="{DynamicResource SecondaryButton}" />
+                    <Button Content="立即重试" ctrl:WorkspaceAction.Name="legacy:OnSoopRetryNow" Visibility="{Binding SoopRetryNowVisibility}" Style="{DynamicResource SecondaryButton}" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+        <Button Content="使用帮助" Tag="Soop" ctrl:WorkspaceAction.Name="legacy:OnToggleHelp" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,0,0,16" />
+        <Border x:Name="SoopHelp" Visibility="Collapsed" Style="{DynamicResource HeroCard}" x:FieldModifier="internal">
+            <TextBlock Text="添加账号并设置主账号后，可独立启动或停止。官方 currentProgress 与历史诊断分开；奖励领取继续进行 UID 与账号绑定检查。" Style="{DynamicResource VisualBody}" />
+        </Border>
+        <Expander Header="{Binding SoopQuickStart.Summary}" IsExpanded="{Binding SoopQuickStart.IsExpanded,Mode=TwoWay}" Margin="0,8,0,16">
+            <StackPanel Margin="8,12">
+                <ItemsControl ItemsSource="{Binding SoopQuickStart.Steps}" ItemTemplate="{DynamicResource QuickStartStepTemplate}" />
+                <TextBlock Text="{Binding SoopWatchStatusText}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0" />
+                <TextBlock Text="{Binding SoopRetryStatusText}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0" Visibility="{Binding SoopRetryStatusVisibility}" />
+                <TextBlock Text="{Binding SoopLastSuccessText}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0" Visibility="{Binding SoopLastSuccessVisibility}" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

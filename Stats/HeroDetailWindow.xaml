@@ -15,9 +15,9 @@
         <DataTemplate x:Key="StatCell" DataType="{x:Type local:StatItem}">
             <Border BorderBrush="{DynamicResource Stats.Divider}" BorderThickness="0,1,0,0" Padding="12,9">
                 <Grid>
-                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource Stats.Tx2}"
+                    <TextBlock Text="{Binding Name}" FontSize="13" Foreground="{DynamicResource Stats.Tx2}"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                    <TextBlock Text="{Binding Value}" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"
+                    <TextBlock Text="{Binding Value}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"
                                HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
@@ -41,22 +41,22 @@
                     <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/>
-                            <TextBlock Text="{Binding LevelText}" FontSize="12" VerticalAlignment="Center" Margin="9,4,0,0"
+                            <TextBlock Text="{Binding LevelText}" FontSize="13" VerticalAlignment="Center" Margin="9,4,0,0"
                                        Foreground="{DynamicResource Stats.Tx3}" Visibility="{Binding HasLevel, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0"
                                     Visibility="{Binding HasRank, Converter={StaticResource BoolToVis}}">
-                                <TextBlock FontSize="11.5"><Run Text="段位 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding RankText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/></TextBlock>
+                                <TextBlock FontSize="13"><Run Text="段位 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding RankText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Tx1}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.AccentSoft}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0">
-                                <TextBlock FontSize="11.5"><Run Text="胜率 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding WinRateText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Accent}"/></TextBlock>
+                                <TextBlock FontSize="13"><Run Text="胜率 " Foreground="{DynamicResource Stats.Tx3}"/><Run Text="{Binding WinRateText, Mode=OneWay}" FontWeight="Bold" Foreground="{DynamicResource Stats.Accent}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3" Margin="0,0,7,0">
-                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding MatchsText, Mode=OneWay}"/></TextBlock>
+                                <TextBlock FontSize="13" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding MatchsText, Mode=OneWay}"/></TextBlock>
                             </Border>
                             <Border Background="{DynamicResource Stats.Hover}" CornerRadius="6" Padding="8,3">
-                                <TextBlock FontSize="11.5" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding HoursText, Mode=OneWay}"/></TextBlock>
+                                <TextBlock FontSize="13" Foreground="{DynamicResource Stats.Tx2}"><Run Text="{Binding HoursText, Mode=OneWay}"/></TextBlock>
                             </Border>
                         </StackPanel>
                     </StackPanel>
@@ -84,7 +84,7 @@
                 </ItemsControl>
             </Border>
 
-            <TextBlock x:Name="EmptyHint" Text="该英雄暂无明细数据" FontSize="12" Margin="4,10,0,0"
+            <TextBlock x:Name="EmptyHint" Text="该英雄暂无明细数据" FontSize="13" Margin="4,10,0,0"
                        Foreground="{DynamicResource Stats.Tx3}" Visibility="Collapsed"/>
 
         </StackPanel>

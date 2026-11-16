@@ -109,14 +109,19 @@ public partial class DropsPage : UserControl
     public DropsPage()
     {
         InitializeComponent();
+        ConnectVisualWorkspaces();
         SizeChanged += (_, _) =>
         {
             var compact = ActualHeight < 620;
             DropsPageHeader.IsCompact = compact;
             DropsLayout.Margin = compact ? new Thickness(18, 10, 18, 10) : new Thickness(24, 22, 24, 16);
-            PlatformTabsBar.Margin = compact ? new Thickness(0, 4, 0, 2) : new Thickness(0, 18, 0, 4);
+            PlatformTabsBar.Margin = new Thickness(0, 0, 0, 6);
+            var narrowTabs = ActualWidth < 860;
+            PlatformTabsBar.ColumnDefinitions[0].Width = narrowTabs ? new GridLength(0) : new GridLength(160);
+            PlatformPageTitle.Visibility = narrowTabs ? Visibility.Collapsed : Visibility.Visible;
             TwitchIntro.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             TwitchLoginCard.Padding = compact ? new Thickness(12) : new Thickness(18);
+            TwitchWorkspace.TwitchOverview.ApplyCompact(compact);
             foreach (var tab in WorkspaceNavigation.Children.OfType<RadioButton>())
             {
                 tab.MinHeight = compact ? 30 : 40;
@@ -156,6 +161,7 @@ public partial class DropsPage : UserControl
 
     public void Initialize(MainViewModel main)
     {
+        CloudLightBlizzard.Services.Visuals.VisualImageCache.ConfigureNetwork(main.Settings);
         _main = main;
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;

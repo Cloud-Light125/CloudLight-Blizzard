@@ -22,6 +22,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if(e.Args.Length>=2&&e.Args[0]=="--ui-v2-selftest")
+        {
+            IsHeadlessSelfTest=true;ShutdownMode=ShutdownMode.OnExplicitShutdown;base.OnStartup(e);
+            Dispatcher.BeginInvoke(new Action(async()=>
+            {
+                try{Shutdown(await CloudLightBlizzard.Services.Visuals.UiV2SelfTest.RunAsync(e.Args[1]));}
+                catch{Shutdown(1);}
+            }));
+            return;
+        }
         if (e.Args.Length >= 2 && e.Args[0] is "--ui-review" or "--ui-review-test")
         {
             IsHeadlessSelfTest = true;

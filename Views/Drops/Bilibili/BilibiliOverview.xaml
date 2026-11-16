@@ -1,0 +1,91 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.Bilibili.BilibiliOverview">
+    <StackPanel>
+        <Border x:Name="BilibiliAccountCard" Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}" x:FieldModifier="internal">
+            <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="750">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                    <ctrl:PlatformIcon Platform="Bilibili" Width="48" Height="48" Margin="0,0,16,0" />
+                    <StackPanel>
+                        <TextBlock Text="哔哩哔哩 · 直播任务" FontSize="26" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" FontSize="14" Margin="0,8,0,0" />
+                    </StackPanel>
+                </DockPanel>
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button x:Name="BilibiliStartButton" Content="开始观看" Command="{Binding BilibiliDetails.StartCommand}" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" x:FieldModifier="internal" />
+                    <Button x:Name="BilibiliStopButton" Content="停止" Command="{Binding BilibiliDetails.StopCommand}" Visibility="{Binding Bilibili.StopVisibility}" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" x:FieldModifier="internal" />
+                    <Button x:Name="BilibiliRefreshButton" Content="刷新任务" Command="{Binding BilibiliDetails.RefreshCommand}" Style="{DynamicResource SecondaryButton}" x:FieldModifier="internal" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+        <Border Style="{DynamicResource HeroCard}" Visibility="{Binding BilibiliDetails.LoginVisibility}">
+            <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="680">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.6*" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="8,14,28,14">
+                    <TextBlock Text="扫码连接你的 Bilibili" FontSize="25" FontWeight="SemiBold" />
+                    <TextBlock Text="使用哔哩哔哩 App 扫描右侧二维码，在手机端确认登录。" Style="{DynamicResource VisualCaption}" Margin="0,14,0,24" />
+                    <TextBlock Text="01   获取官方二维码" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="02   用 Bilibili App 扫描" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
+                    <TextBlock Text="03   手机确认后自动连接" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,22" />
+                    <WrapPanel>
+                        <Button x:Name="BilibiliQrLoginButton" Content="扫码登录 / 刷新二维码" Command="{Binding BilibiliDetails.ScanQrLoginCommand}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,8" x:FieldModifier="internal" />
+                        <Button Content="高级 Cookie 导入" ctrl:WorkspaceAction.Name="section:accounts" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,8" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding BilibiliDetails.NetworkModeText}" Style="{DynamicResource VisualCaption}" Margin="0,12,0,0" />
+                </StackPanel>
+                <Border x:Name="BilibiliQrCard" Grid.Column="1" Background="{DynamicResource App.SurfaceAlt}" Padding="20" CornerRadius="14" x:FieldModifier="internal">
+                    <StackPanel VerticalAlignment="Center">
+                        <ctrl:PlatformIcon Platform="Bilibili" Width="42" Height="42" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                        <Image Source="{Binding BilibiliDetails.QrImagePath}" Visibility="{Binding BilibiliDetails.QrImageVisibility}" Width="188" Height="188" Stretch="Uniform" />
+                        <TextBlock Text="{Binding BilibiliDetails.QrStateText}" Style="{DynamicResource VisualCaption}" TextAlignment="Center" Margin="0,14,0,10" />
+                        <Button x:Name="BilibiliQrCancelButton" Content="取消扫码" Command="{Binding BilibiliDetails.CancelQrCommand}" Visibility="{Binding BilibiliDetails.QrCancelVisibility}" Style="{DynamicResource SecondaryButton}" x:FieldModifier="internal" />
+                        <Button Content="重新获取二维码" Command="{Binding BilibiliDetails.ReacquireQrCommand}" Visibility="{Binding BilibiliDetails.QrRetryVisibility}" Style="{DynamicResource SecondaryButton}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+        <StackPanel Visibility="{Binding BilibiliDetails.LogoutVisibility}">
+            <UniformGrid Columns="4">
+                <ctrl:MetricTile Label="直播间" Value="{Binding BilibiliDetails.Rooms.Count}" Caption="已添加房间" />
+                <ctrl:MetricTile Label="官方任务" Value="{Binding BilibiliDetails.Tasks.Count}" Caption="官方接口返回" />
+                <ctrl:MetricTile Label="观看 Session" Value="{Binding BilibiliDetails.Sessions.Count}" Caption="独立连接状态" />
+                <ctrl:MetricTile Label="奖励记录" Value="{Binding BilibiliDetails.Rewards.Count}" Caption="原领取结果" />
+            </UniformGrid>
+            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.7*" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{DynamicResource HeroCard}" Margin="0,0,16,16">
+                    <StackPanel>
+                        <TextBlock Text="当前任务与官方进度" Style="{DynamicResource VisualHeading}" />
+                        <ItemsControl ItemsSource="{Binding BilibiliVisual.Rewards}" ItemTemplate="{DynamicResource VisualRewardRow}" />
+                        <Button Content="任务与奖励详情 →" ctrl:WorkspaceAction.Name="section:activities" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,14,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{DynamicResource HeroCard}">
+                    <StackPanel>
+                        <ctrl:PlatformIcon Platform="Bilibili" Width="40" Height="40" HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding BilibiliVisual.Channel}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,16,0,8" />
+                        <TextBlock Text="{Binding Bilibili.Status}" Style="{DynamicResource VisualBody}" />
+                        <TextBlock Text="{Binding Bilibili.Summary}" Style="{DynamicResource VisualCaption}" Margin="0,8,0,16" />
+                        <Button x:Name="BilibiliDiscoverButton" Content="发现当前活动" Command="{Binding BilibiliDetails.DiscoverCommand}" Style="{DynamicResource SecondaryButton}" x:FieldModifier="internal" />
+                        <Button Content="观看配置" ctrl:WorkspaceAction.Name="section:settings" Style="{DynamicResource SecondaryButton}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+        <Expander x:Name="BilibiliQuickStartCard" Header="{Binding BilibiliQuickStart.Summary}" Margin="0,8" IsExpanded="{Binding BilibiliQuickStart.IsExpanded,Mode=TwoWay}" x:FieldModifier="internal">
+            <StackPanel>
+                <TextBlock Text="扫码连接账号 → 添加直播间/发现活动 → 开始观看。高级 Cookie、Session 和全部设置可在各分类中访问；官方进度与请求状态分别显示。" Style="{DynamicResource VisualCaption}" Margin="0,12" />
+                <ItemsControl ItemsSource="{Binding BilibiliQuickStart.Steps}" ItemTemplate="{DynamicResource QuickStartStepTemplate}" />
+            </StackPanel>
+        </Expander>
+        <TextBlock Text="{Binding Bilibili.ConnectionStateText}" Style="{DynamicResource VisualCaption}" Margin="0,8" />
+    </StackPanel>
+</UserControl>

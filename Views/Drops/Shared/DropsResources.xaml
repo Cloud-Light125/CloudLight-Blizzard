@@ -1,0 +1,438 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.Shared.DropsResources">
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style x:Key="FieldHint" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="HintTextBox" TargetType="TextBox" BasedOn="{StaticResource InputBox}">
+        <Setter Property="Padding" Value="9,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{DynamicResource InputBd}" BorderThickness="1">
+                        <Grid>
+                            <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Foreground="{DynamicResource Text.Muted}" Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" TextTrimming="CharacterEllipsis" />
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="9,0" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="Hint" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource Acc}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="SearchComboBox" TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource Input}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InputBd}" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="IsEditable" Value="True" />
+        <Setter Property="IsTextSearchEnabled" Value="True" />
+        <Setter Property="StaysOpenOnEdit" Value="True" />
+        <Setter Property="ItemContainerStyle" Value="{DynamicResource ThemeComboBoxItem}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Box" Background="{DynamicResource Input}" BorderBrush="{DynamicResource InputBd}" BorderThickness="1" CornerRadius="8" Padding="10,0">
+                                        <DockPanel>
+                                            <TextBlock Text="⌄" DockPanel.Dock="Right" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,2" />
+                                            <ContentPresenter Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" VerticalAlignment="Center" TextElement.Foreground="{DynamicResource Text.Primary}" />
+                                        </DockPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent.Primary}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <TextBox x:Name="PART_EditableTextBox" Style="{x:Null}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Text.Primary}" CaretBrush="{DynamicResource Text.Primary}" Margin="10,0,36,0" VerticalContentAlignment="Center" Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource App.SurfaceElevated}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ScrollViewer MaxHeight="320">
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <DataTemplate x:Key="DropsRowTemplate">
+        <Grid Margin="4,7" behaviors:ResponsiveGrid.IsEnabled="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" ToolTip="{Binding Secondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="10,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+            </Border>
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="TwitchDropRowTemplate">
+        <Grid Margin="6,8" behaviors:ResponsiveGrid.IsEnabled="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="150" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ctrl:RewardArtwork DataContext="{Binding Visual}" IsCompact="True" Margin="0,0,14,0" />
+            <StackPanel VerticalAlignment="Center" Grid.Column="1">
+                <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" ToolTip="{Binding Secondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" Height="5" Style="{StaticResource ThemeProgressBar}" Margin="0,10,0,4" />
+                <TextBlock Text="{Binding RewardProgressText}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="13" />
+                <Expander Header="奖励与前置任务详情" Margin="0,10,0,0">
+                    <StackPanel DataContext="{Binding Visual}">
+                        <ctrl:BenefitGallery ItemsSource="{Binding Benefits}" Margin="0,12,0,0" />
+                        <TextBlock Text="{Binding QualificationText}" FontSize="13" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding SyncText}" FontSize="13" Margin="0,8,0,0" Foreground="{DynamicResource Text.Secondary}" />
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+                <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                </Border>
+                <Button Content="{Binding TwitchClaimButtonText}" Visibility="{Binding TwitchClaimVisibility}" IsEnabled="{Binding CanStartTwitchClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnClaimTwitchDrop" />
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="TwitchCampaignRowTemplate">
+        <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="68" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <ctrl:VisualImage SourceUrl="{Binding CampaignImageUrl}" Width="54" Height="72" ImageStretch="UniformToFill" />
+                <Grid Margin="6,8" Grid.Column="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.1*" MinWidth="100" />
+                        <ColumnDefinition Width="1.8*" MinWidth="150" />
+                        <ColumnDefinition Width="0.8*" />
+                        <ColumnDefinition Width="1.2*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Secondary}" ToolTip="{Binding Secondary}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding Primary}" ToolTip="{Binding Primary}" Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="2" Style="{StaticResource Badge}" Margin="14,0,10,0" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                    </Border>
+                    <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Height="5" Background="{DynamicResource App.SurfaceElevated}" Foreground="{DynamicResource Accent.Primary}" />
+                        <TextBlock Text="{Binding Detail}" ToolTip="{Binding Detail}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+            <Expander Header="活动奖励物品" Margin="68,8,0,10">
+                <ItemsControl ItemsSource="{Binding CampaignRewards}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,12,0,0">
+                                <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" />
+                                <ctrl:RewardArtwork IsCompact="True" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
+        </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="YouTubeChannelRowTemplate">
+        <Grid Margin="4,7">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Ellipse Grid.Column="0" Width="8" Height="8" Margin="2,0,10,0" VerticalAlignment="Center">
+                <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                        <Setter Property="Fill" Value="{DynamicResource Text.Muted}" />
+                        <Setter Property="ToolTip" Value="已停用" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Enabled}" Value="True">
+                                <Setter Property="Fill" Value="{DynamicResource Status.Success}" />
+                                <Setter Property="ToolTip" Value="已启用" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Ellipse.Style>
+            </Ellipse>
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Secondary}" ToolTip="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="QuickStartStepTemplate">
+        <Grid Margin="0,5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="34" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Top" />
+            <StackPanel Grid.Column="1" Margin="0,0,16,0">
+                <WrapPanel>
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding StateText}" FontSize="13" FontWeight="SemiBold">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StateKind}" Value="complete">
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Success}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StateKind}" Value="progress">
+                                        <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </WrapPanel>
+                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Text.Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+            <Button Grid.Column="2" Content="{Binding ActionText}" Tag="{Binding ActionKey}" Visibility="{Binding ActionVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" VerticalAlignment="Center" Click="OnQuickStartAction" />
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="SoopProgressRowTemplate">
+        <Grid Margin="6,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Campaign}" ToolTip="{Binding Campaign}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
+                    <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                </Border>
+            </Grid>
+            <TextBlock Grid.Row="1" Margin="0,5,0,0" TextTrimming="CharacterEllipsis">
+                <Run Text="当前奖励：" />
+                <Run Text="{Binding Reward, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="13" TextTrimming="CharacterEllipsis">
+                <Run Text="账号：" />
+                <Run Text="{Binding Account, Mode=OneWay}" />
+                <Run Text="　直播间：" />
+                <Run Text="{Binding Channel, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Grid.Row="3" Text="{Binding GameAccountBindingText}" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="13" />
+            <ProgressBar Grid.Row="4" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}" Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0" />
+            <StackPanel Grid.Row="5" Margin="0,7,0,0">
+                <TextBlock Text="{Binding WatchPathText}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding SyncState}" Foreground="{DynamicResource Accent.Primary}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding RemainingText}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ConfirmationText}" Foreground="{DynamicResource Text.Muted}" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Diagnostic}" Foreground="{DynamicResource Status.Warning}" FontSize="13" TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="BilibiliTaskRowTemplate">
+        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="8" Margin="3,4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid behaviors:ResponsiveGrid.IsEnabled="True">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
+                        <TextBlock Text="{Binding OfficialText}" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
+                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                    </Border>
+                </Grid>
+                <Grid Grid.Row="1" Margin="0,7,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="6" Style="{StaticResource ThemeProgressBar}" />
+                        <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="{Binding ClaimButtonText}" Visibility="{Binding ClaimVisibility}" IsEnabled="{Binding CanClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="12,0,0,0" Command="{Binding DataContext.BilibiliDetails.ClaimRewardCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                </Grid>
+            </Grid>
+        </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="BilibiliRoomRowTemplate">
+        <Grid Margin="3,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Style="{StaticResource ThemeCheckBox}" VerticalAlignment="Center" Command="{Binding DataContext.BilibiliDetails.SetRoomEnabledCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+            <StackPanel Grid.Column="1" Margin="8,0,6,0">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
+                <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,3,0,0">
+                    <Run Text="Room ID：" />
+                    <Run Text="{Binding RoomIdText, Mode=OneWay}" />
+                    <Run Text=" · " />
+                    <Run Text="{Binding Status, Mode=OneWay}" />
+                    <Run Text=" · " />
+                    <Run Text="{Binding SessionText, Mode=OneWay}" />
+                </TextBlock>
+            </StackPanel>
+            <Button Grid.Column="2" Content="删除" Style="{StaticResource DangerButton}" Height="28" Padding="10,0" Command="{Binding DataContext.BilibiliDetails.RemoveRoomCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="BilibiliSessionRowTemplate">
+        <Grid Margin="3,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}" />
+            <TextBlock Grid.Column="1" Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" Margin="12,0" />
+            <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="{DynamicResource Text.Muted}" FontSize="13" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" />
+        </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="BilibiliActivityRowTemplate">
+        <StackPanel Margin="4,4">
+            <DockPanel>
+                <Border DockPanel.Dock="Right" Style="{StaticResource Badge}" Padding="7,2" Margin="8,0,0,0">
+                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
+                </Border>
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
+            </DockPanel>
+            <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding RoomText, Mode=OneWay}" />
+                <Run Text=" · " />
+                <Run Text="{Binding TaskText, Mode=OneWay}" />
+            </TextBlock>
+        </StackPanel>
+    </DataTemplate>
+    <Style x:Key="PlatformStatusDot" TargetType="Ellipse">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="Fill" Value="{DynamicResource Text.Muted}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Connected">
+                <Setter Property="Fill" Value="{DynamicResource Status.Success}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Connecting">
+                <Setter Property="Fill" Value="{DynamicResource Accent.Primary}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Recovering">
+                <Setter Property="Fill" Value="{DynamicResource Status.Warning}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="WaitingRetry">
+                <Setter Property="Fill" Value="{DynamicResource Status.Warning}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Degraded">
+                <Setter Property="Fill" Value="{DynamicResource Status.Warning}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Failed">
+                <Setter Property="Fill" Value="{DynamicResource Status.Error}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ConnectionState}" Value="Stopped">
+                <Setter Property="Fill" Value="{DynamicResource Accent.Primary}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="PlatformTab" TargetType="RadioButton" BasedOn="{StaticResource NavigationButton}">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Frame" CornerRadius="10" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="0,0,0,2" Padding="14,10">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Frame" Property="Background" Value="{DynamicResource AccSoft}" />
+                            <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource Accent.Primary}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Frame" Property="Background" Value="{DynamicResource Hover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style TargetType="ListBox">
+        <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    </Style>
+    <Style TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style TargetType="PasswordBox">
+        <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="MinHeight" Value="34" />
+    </Style>
+    <DataTemplate x:Key="SoopAccountRowTemplate">
+        <Grid Margin="4,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="{Binding Primary}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Secondary}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource StatusBadge}" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="12,0">
+                <TextBlock Text="{Binding Status}" />
+            </Border>
+            <TextBlock Grid.Column="2" Text="{Binding SoopProgressSummary}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" />
+        </Grid>
+    </DataTemplate>
+    <BooleanToVisibilityConverter x:Key="PresentationBoolVisibility" />
+</ResourceDictionary>

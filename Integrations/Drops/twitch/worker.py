@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from visual_metadata import campaign_visual, drop_visual
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from Shared.protocol import (
@@ -855,6 +856,7 @@ class TwitchWorker(WorkerBase):
                 availability = "unavailable"
             result.append({
                 "id": campaign.id, "name": campaign.name, "game": game_name,
+                **campaign_visual(campaign),
                 "linked": campaign.linked, "active": campaign.active,
                 "upcoming": campaign.upcoming, "expired": campaign.expired,
                 "eligible": campaign.eligible, "finished": campaign.finished,
@@ -866,6 +868,7 @@ class TwitchWorker(WorkerBase):
                 "claimedDrops": campaign.claimed_drops, "totalDrops": campaign.total_drops,
                 "requiredMinutes": required_minutes, "remainingMinutes": remaining_minutes,
                 "progress": progress,
+                "drops": [{"id": drop.id, "name": str(getattr(drop, "name", "")), **drop_visual(drop, campaign)} for drop in drops],
             })
         return result
 
@@ -876,18 +879,30 @@ class TwitchWorker(WorkerBase):
         result = []
         for campaign in self._client.inventory:
             for drop in campaign.drops:
-                result.append({
-                    "id": drop.id, "campaignId": campaign.id, "campaign": campaign.name,
-                    "game": campaign.game.name, "name": drop.name,
-                    "currentMinutes": drop.real_current_minutes, "requiredMinutes": drop.required_minutes,
-                    "estimatedExtraMinutes": drop.extra_current_minutes,
-                    "progressSource": "remote_with_estimate" if drop.extra_current_minutes else "remote",
-                    "progress": min(1, drop.real_current_minutes / drop.required_minutes) if drop.required_minutes > 0 else 0,
-                    "completed": drop.watch_requirement_completed,
-                    "claimed": drop.is_claimed, "canClaim": drop.can_claim,
-                    "startsAt": drop.starts_at.isoformat(), "endsAt": drop.ends_at.isoformat(),
-                })
+                result.append(self._drop_snapshot(drop, campaign))
         return result
+
+    def _drop_snapshot(self, drop: Any, campaign: Any = None) -> dict[str, Any]:
+        """Additive read-only DTO, shared by campaign, inventory and current drop."""
+        confirmed, estimated = drop.real_current_minutes, drop.extra_current_minutes
+        campaign = campaign if campaign is not None else getattr(drop, "campaign", None)
+        return {
+            "id": drop.id, "campaignId": str(getattr(campaign, "id", "")), "campaign": str(getattr(campaign, "name", "")),
+            **drop_visual(drop, campaign), "name": drop.name,
+            "currentMinutes": confirmed, "requiredMinutes": drop.required_minutes,
+            "estimatedExtraMinutes": estimated,
+            "progressSource": "remote_with_estimate" if estimated else "remote",
+            "progress": min(1, confirmed / drop.required_minutes) if drop.required_minutes > 0 else 0,
+            "completed": getattr(drop, "watch_requirement_completed", False),
+            "claimed": getattr(drop, "is_claimed", False), "canClaim": getattr(drop, "can_claim", False),
+            "preconditionDropIds": list(getattr(drop, "precondition_drops", ())),
+            "preconditionsMet": getattr(drop, "preconditions_met", None),
+            "preconditionsSatisfiedForMining": getattr(drop, "preconditions_satisfied_for_mining", None),
+            "eligible": getattr(campaign, "eligible", None),
+            "startsAt": getattr(drop, "starts_at", None).isoformat() if getattr(drop, "starts_at", None) else "",
+            "endsAt": getattr(drop, "ends_at", None).isoformat() if getattr(drop, "ends_at", None) else "",
+            "lastInventorySyncAt": str(getattr(self._client, "_cloudlight_inventory_updated_at", getattr(self, "_inventory_sync_at", ""))),
+        }
 
     @staticmethod
     def _remote_remaining_minutes(drop: Any, visited: frozenset[str] = frozenset()) -> int:
@@ -920,14 +935,7 @@ class TwitchWorker(WorkerBase):
         drop = getattr(getattr(getattr(client, "gui", None), "progress", None), "drop", None)
         if drop is None or not self.running:
             return None
-        confirmed = drop.real_current_minutes
-        estimated = drop.extra_current_minutes
-        return {"id": drop.id, "name": drop.name, "campaign": drop.campaign.name,
-                "currentMinutes": confirmed, "requiredMinutes": drop.required_minutes,
-                "estimatedExtraMinutes": estimated,
-                "progress": min(1, confirmed / drop.required_minutes) if drop.required_minutes > 0 else 0,
-                "progressSource": "remote_with_estimate" if estimated else "remote",
-                "lastInventorySyncAt": str(getattr(client, "_cloudlight_inventory_updated_at", ""))}
+        return self._drop_snapshot(drop)
 
     def claim_drop(self, payload: dict[str, Any]) -> dict[str, Any]:
         drop_id = str(payload.get("id", "")).strip()

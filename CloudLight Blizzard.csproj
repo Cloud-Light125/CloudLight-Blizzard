@@ -56,6 +56,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app.png" />
     <Compile Remove="test-output\**\*.cs" />
   </ItemGroup>
 

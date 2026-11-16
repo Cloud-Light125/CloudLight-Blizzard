@@ -80,18 +80,18 @@
             <StackPanel Margin="15,12,15,0">
                 <RadioButton x:Name="OptTray" Style="{StaticResource OptCard}" GroupName="close" IsChecked="True">
                     <StackPanel>
-                        <TextBlock Text="最小化到托盘(推荐)" Foreground="{DynamicResource Tx1}" FontWeight="Medium" FontSize="12.5" />
-                        <TextBlock Text="程序留在后台,切号更快,右下角随时唤出" Foreground="{DynamicResource Tx3}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="最小化到托盘(推荐)" Foreground="{DynamicResource Tx1}" FontWeight="Medium" FontSize="13" />
+                        <TextBlock Text="程序留在后台,切号更快,右下角随时唤出" Foreground="{DynamicResource Tx3}" FontSize="13" Margin="0,2,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton x:Name="OptExit" Style="{StaticResource OptCard}" GroupName="close">
                     <StackPanel>
-                        <TextBlock Text="直接退出程序" Foreground="{DynamicResource Tx1}" FontWeight="Medium" FontSize="12.5" />
-                        <TextBlock Text="完全关闭,下次使用需重新打开" Foreground="{DynamicResource Tx3}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="直接退出程序" Foreground="{DynamicResource Tx1}" FontWeight="Medium" FontSize="13" />
+                        <TextBlock Text="完全关闭,下次使用需重新打开" Foreground="{DynamicResource Tx3}" FontSize="13" Margin="0,2,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </RadioButton>
                 <CheckBox x:Name="Remember" Style="{StaticResource Ck}" IsChecked="True" Margin="2,4,0,0">
-                    <TextBlock Text="记住我的选择,可在设置中更改" Foreground="{DynamicResource Tx2}" FontSize="12" />
+                    <TextBlock Text="记住我的选择,可在设置中更改" Foreground="{DynamicResource Tx2}" FontSize="13" />
                 </CheckBox>
             </StackPanel>
 

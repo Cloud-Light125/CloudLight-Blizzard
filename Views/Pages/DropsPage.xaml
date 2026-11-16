@@ -1,473 +1,69 @@
-<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" x:Class="CloudLightBlizzard.Views.Pages.DropsPage" x:Name="DropsRoot" behaviors:NestedScrollBehavior.IsEnabled="True" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
-    <UserControl.Resources>
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Margin" Value="0,0,0,6"/>
-        </Style>
-        <Style x:Key="FieldHint" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource Text.Muted}"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Margin" Value="0,6,0,0"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-        </Style>
-        <Style x:Key="HintTextBox" TargetType="TextBox" BasedOn="{StaticResource InputBox}">
-            <Setter Property="Padding" Value="9,0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{DynamicResource InputBd}" BorderThickness="1">
-                            <Grid>
-                                <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Foreground="{DynamicResource Text.Muted}" Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" TextTrimming="CharacterEllipsis"/>
-                                <ScrollViewer x:Name="PART_ContentHost" Margin="9,0" VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="Text" Value="">
-                                <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource Acc}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="SearchComboBox" TargetType="ComboBox">
-            <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
-            <Setter Property="Background" Value="{DynamicResource Input}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource InputBd}"/>
-            <Setter Property="MinHeight" Value="36"/>
-            <Setter Property="IsEditable" Value="True"/>
-            <Setter Property="IsTextSearchEnabled" Value="True"/>
-            <Setter Property="StaysOpenOnEdit" Value="True"/>
-            <Setter Property="ItemContainerStyle" Value="{DynamicResource ThemeComboBoxItem}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBox">
-                        <Grid>
-                            <ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
-                                <ToggleButton.Template>
-                                    <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="Box" Background="{DynamicResource Input}" BorderBrush="{DynamicResource InputBd}" BorderThickness="1" CornerRadius="8" Padding="10,0">
-                                            <DockPanel>
-                                                <TextBlock Text="⌄" DockPanel.Dock="Right" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,2"/>
-                                                <ContentPresenter Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" VerticalAlignment="Center" TextElement.Foreground="{DynamicResource Text.Primary}"/>
-                                            </DockPanel>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent.Primary}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </ToggleButton.Template>
-                            </ToggleButton>
-                            <TextBox x:Name="PART_EditableTextBox" Style="{x:Null}" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Text.Primary}" CaretBrush="{DynamicResource Text.Primary}" Margin="10,0,36,0" VerticalContentAlignment="Center" Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
-                                <Border Background="{DynamicResource App.SurfaceElevated}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
-                                    <ScrollViewer MaxHeight="320">
-                                        <ItemsPresenter/>
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <DataTemplate x:Key="DropsRowTemplate">
-            <Grid Margin="4,7" behaviors:ResponsiveGrid.IsEnabled="True">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" ToolTip="{Binding Secondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-                <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="10,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                </Border>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="TwitchDropRowTemplate">
-            <Grid Margin="6,8" behaviors:ResponsiveGrid.IsEnabled="True">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" ToolTip="{Binding Secondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
-                    <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" Height="5" Style="{StaticResource ThemeProgressBar}" Margin="0,10,0,4"/>
-                    <TextBlock Text="{Binding RewardProgressText}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="12"/>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                    </Border>
-                    <Button Content="{Binding TwitchClaimButtonText}" Visibility="{Binding TwitchClaimVisibility}" IsEnabled="{Binding CanStartTwitchClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnClaimTwitchDrop"/>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="TwitchCampaignRowTemplate">
-            <Grid Margin="6,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.1*" MinWidth="100"/>
-                    <ColumnDefinition Width="1.8*" MinWidth="150"/>
-                    <ColumnDefinition Width="0.8*"/>
-                    <ColumnDefinition Width="1.2*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Secondary}" ToolTip="{Binding Secondary}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Column="1" Text="{Binding Primary}" ToolTip="{Binding Primary}" Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                <Border Grid.Column="2" Style="{StaticResource Badge}" Margin="14,0,10,0" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                </Border>
-                <StackPanel Grid.Column="3" VerticalAlignment="Center">
-                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Height="5" Background="{DynamicResource App.SurfaceElevated}" Foreground="{DynamicResource Accent.Primary}"/>
-                    <TextBlock Text="{Binding Detail}" ToolTip="{Binding Detail}" Foreground="{DynamicResource Text.Secondary}" FontSize="10.5" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="YouTubeChannelRowTemplate">
-            <Grid Margin="4,7">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Ellipse Grid.Column="0" Width="8" Height="8" Margin="2,0,10,0" VerticalAlignment="Center">
-                    <Ellipse.Style>
-                        <Style TargetType="Ellipse">
-                            <Setter Property="Fill" Value="{DynamicResource Text.Muted}"/>
-                            <Setter Property="ToolTip" Value="已停用"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Enabled}" Value="True">
-                                    <Setter Property="Fill" Value="{DynamicResource Status.Success}"/>
-                                    <Setter Property="ToolTip" Value="已启用"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Ellipse.Style>
-                </Ellipse>
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Secondary}" ToolTip="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="QuickStartStepTemplate">
-            <Grid Margin="0,5">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="34"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Top"/>
-                <StackPanel Grid.Column="1" Margin="0,0,16,0">
-                    <WrapPanel>
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="0,0,10,0"/>
-                        <TextBlock Text="{Binding StateText}" FontSize="11.5" FontWeight="SemiBold">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{DynamicResource Text.Muted}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding StateKind}" Value="complete">
-                                            <Setter Property="Foreground" Value="{DynamicResource Status.Success}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding StateKind}" Value="progress">
-                                            <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </WrapPanel>
-                    <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
-                </StackPanel>
-                <Button Grid.Column="2" Content="{Binding ActionText}" Tag="{Binding ActionKey}" Visibility="{Binding ActionVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" VerticalAlignment="Center" Click="OnQuickStartAction"/>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="SoopProgressRowTemplate">
-            <Grid Margin="6,8">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding Campaign}" ToolTip="{Binding Campaign}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
-                        <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                    </Border>
-                </Grid>
-                <TextBlock Grid.Row="1" Margin="0,5,0,0" TextTrimming="CharacterEllipsis">
-                    <Run Text="当前奖励："/>
-                    <Run Text="{Binding Reward, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextTrimming="CharacterEllipsis">
-                    <Run Text="账号："/>
-                    <Run Text="{Binding Account, Mode=OneWay}"/>
-                    <Run Text="　直播间："/>
-                    <Run Text="{Binding Channel, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Grid.Row="3" Text="{Binding GameAccountBindingText}" Margin="0,4,0,0" Foreground="{DynamicResource Text.Secondary}" FontSize="11"/>
-                <ProgressBar Grid.Row="4" Minimum="0" Maximum="100" Value="{Binding Percent, Mode=OneWay}" Style="{StaticResource ThemeProgressBar}" Height="6" Margin="0,8,0,0"/>
-                <StackPanel Grid.Row="5" Margin="0,7,0,0">
-                    <TextBlock Text="{Binding WatchPathText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding SyncState}" Foreground="{DynamicResource Accent.Primary}" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding RemainingText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding ConfirmationText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Diagnostic}" Foreground="{DynamicResource Status.Warning}" FontSize="11" TextWrapping="Wrap"/>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="BilibiliTaskRowTemplate">
-            <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="8" Margin="3,4">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid behaviors:ResponsiveGrid.IsEnabled="True">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-                            <TextBlock Text="{Binding OfficialText}" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,3,0,0"/>
-                        </StackPanel>
-                        <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
-                            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                        </Border>
-                    </Grid>
-                    <Grid Grid.Row="1" Margin="0,7,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="6" Style="{StaticResource ThemeProgressBar}"/>
-                            <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,4,0,0"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" Content="{Binding ClaimButtonText}" Visibility="{Binding ClaimVisibility}" IsEnabled="{Binding CanClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="12,0,0,0" Command="{Binding DataContext.BilibiliDetails.ClaimRewardCommand, ElementName=DropsRoot}" CommandParameter="{Binding}"/>
-                    </Grid>
-                </Grid>
-            </Border>
-        </DataTemplate>
-        <DataTemplate x:Key="BilibiliRoomRowTemplate">
-            <Grid Margin="3,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" Style="{StaticResource ThemeCheckBox}" VerticalAlignment="Center" Command="{Binding DataContext.BilibiliDetails.SetRoomEnabledCommand, ElementName=DropsRoot}" CommandParameter="{Binding}"/>
-                <StackPanel Grid.Column="1" Margin="8,0,6,0">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-                    <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,3,0,0">
-                        <Run Text="Room ID："/>
-                        <Run Text="{Binding RoomIdText, Mode=OneWay}"/>
-                        <Run Text=" · "/>
-                        <Run Text="{Binding Status, Mode=OneWay}"/>
-                        <Run Text=" · "/>
-                        <Run Text="{Binding SessionText, Mode=OneWay}"/>
-                    </TextBlock>
-                </StackPanel>
-                <Button Grid.Column="2" Content="删除" Style="{StaticResource DangerButton}" Height="28" Padding="10,0" Command="{Binding DataContext.BilibiliDetails.RemoveRoomCommand, ElementName=DropsRoot}" CommandParameter="{Binding}"/>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="BilibiliSessionRowTemplate">
-            <Grid Margin="3,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}"/>
-                <TextBlock Grid.Column="1" Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" Margin="12,0"/>
-                <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}"/>
-            </Grid>
-        </DataTemplate>
-        <DataTemplate x:Key="BilibiliActivityRowTemplate">
-            <StackPanel Margin="4,4">
-                <DockPanel>
-                    <Border DockPanel.Dock="Right" Style="{StaticResource Badge}" Padding="7,2" Margin="8,0,0,0">
-                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
-                    </Border>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-                </DockPanel>
-                <TextBlock Foreground="{DynamicResource Text.Secondary}" FontSize="10.5" Margin="0,3,0,0" TextTrimming="CharacterEllipsis">
-                    <Run Text="{Binding RoomText, Mode=OneWay}"/>
-                    <Run Text=" · "/>
-                    <Run Text="{Binding TaskText, Mode=OneWay}"/>
-                </TextBlock>
-            </StackPanel>
-        </DataTemplate>
-        <Style x:Key="PlatformStatusDot" TargetType="Ellipse">
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="Height" Value="8"/>
-            <Setter Property="Fill" Value="{DynamicResource Text.Muted}"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Connected">
-                    <Setter Property="Fill" Value="{DynamicResource Status.Success}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Connecting">
-                    <Setter Property="Fill" Value="{DynamicResource Accent.Primary}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Recovering">
-                    <Setter Property="Fill" Value="{DynamicResource Status.Warning}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="WaitingRetry">
-                    <Setter Property="Fill" Value="{DynamicResource Status.Warning}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Degraded">
-                    <Setter Property="Fill" Value="{DynamicResource Status.Warning}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Failed">
-                    <Setter Property="Fill" Value="{DynamicResource Status.Error}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding ConnectionState}" Value="Stopped">
-                    <Setter Property="Fill" Value="{DynamicResource Accent.Primary}"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="PlatformTab" TargetType="RadioButton" BasedOn="{StaticResource NavigationButton}">
-            <Setter Property="MinWidth" Value="0"/>
-            <Setter Property="Height" Value="38"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Padding" Value="16,0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Frame" CornerRadius="10" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="0,0,0,2" Padding="14,10">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource AccSoft}"/>
-                                <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource Accent.Primary}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource Hover}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style TargetType="ListBox">
-            <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}"/>
-            <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource App.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-        </Style>
-        <Style TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        </Style>
-        <Style TargetType="PasswordBox">
-            <Setter Property="Background" Value="{DynamicResource App.SurfaceAlt}"/>
-            <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource App.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="MinHeight" Value="34"/>
-        </Style>
-        <DataTemplate x:Key="SoopAccountRowTemplate">
-            <Grid Margin="4,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.2*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="{Binding Primary}" FontSize="15" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding Secondary}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>
-                </StackPanel>
-                <Border Grid.Column="1" Style="{StaticResource StatusBadge}" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="12,0">
-                    <TextBlock Text="{Binding Status}"/>
-                </Border>
-                <TextBlock Grid.Column="2" Text="{Binding SoopProgressSummary}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}"/>
-            </Grid>
-        </DataTemplate>
-        <BooleanToVisibilityConverter x:Key="PresentationBoolVisibility"/>
-    </UserControl.Resources>
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:bilibili="clr-namespace:CloudLightBlizzard.Views.Drops.Bilibili" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:soop="clr-namespace:CloudLightBlizzard.Views.Drops.Soop" xmlns:twitch="clr-namespace:CloudLightBlizzard.Views.Drops.Twitch" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:youtube="clr-namespace:CloudLightBlizzard.Views.Drops.YouTube" x:Class="CloudLightBlizzard.Views.Pages.DropsPage" x:Name="DropsRoot" behaviors:NestedScrollBehavior.IsEnabled="True" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <Grid x:Name="DropsLayout" Margin="24,22,24,16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <ctrl:PageHeader x:Name="DropsPageHeader" Title="掉宝管理" Description="连接账号、选择活动，让每个平台的观看状态清楚可见。">
+        <ctrl:PageHeader x:Name="DropsPageHeader" Title="掉宝管理" Description="连接账号、选择活动，让每个平台的观看状态清楚可见。" Visibility="Collapsed">
             <ctrl:PageHeader.HeaderActions>
                 <StackPanel Orientation="Horizontal">
-                    <Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0" VerticalAlignment="Top" Click="OnRefresh"/>
+                    <Button Content="刷新" Style="{StaticResource SecondaryButton}" Padding="14,0" VerticalAlignment="Top" Click="OnRefresh" />
                 </StackPanel>
             </ctrl:PageHeader.HeaderActions>
         </ctrl:PageHeader>
-        <Grid x:Name="PlatformTabsBar" Margin="0,18,0,4" Grid.Row="1">
+        <Grid x:Name="PlatformTabsBar" Margin="0,0,0,6" Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition/>
-                <ColumnDefinition/>
-                <ColumnDefinition/>
-                <ColumnDefinition/>
+                <ColumnDefinition Width="160" />
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <RadioButton x:Name="SoopTab" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged" Grid.Column="0">
+            <RadioButton x:Name="SoopTab" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged" Grid.Column="1">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Soop}">
-                    <ctrl:PlatformIcon Platform="Soop" Width="20" Height="20" Margin="0,0,10,0"/>
-                    <Ellipse x:Name="SoopStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}"/>
-                    <TextBlock Text="SOOP"/>
+                    <ctrl:PlatformIcon Platform="Soop" Width="20" Height="20" Margin="0,0,10,0" />
+                    <Ellipse x:Name="SoopStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                    <TextBlock Text="SOOP" />
                 </StackPanel>
             </RadioButton>
-            <RadioButton x:Name="YouTubeTab" Grid.Column="3" Tag="YouTube" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
+            <RadioButton x:Name="YouTubeTab" Grid.Column="4" Tag="YouTube" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding YouTube}">
-                    <ctrl:PlatformIcon Platform="YouTube" Width="20" Height="20" Margin="0,0,10,0"/>
-                    <Ellipse x:Name="YouTubeStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}"/>
-                    <TextBlock Text="YouTube"/>
+                    <ctrl:PlatformIcon Platform="YouTube" Width="20" Height="20" Margin="0,0,10,0" />
+                    <Ellipse x:Name="YouTubeStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                    <TextBlock Text="YouTube" />
                 </StackPanel>
             </RadioButton>
-            <RadioButton x:Name="TwitchTab" Grid.Column="1" Tag="Twitch" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
+            <RadioButton x:Name="TwitchTab" Grid.Column="2" Tag="Twitch" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Twitch}">
-                    <ctrl:PlatformIcon Platform="Twitch" Width="20" Height="20" Margin="0,0,10,0"/>
-                    <Ellipse x:Name="TwitchStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}"/>
-                    <TextBlock Text="Twitch"/>
+                    <ctrl:PlatformIcon Platform="Twitch" Width="20" Height="20" Margin="0,0,10,0" />
+                    <Ellipse x:Name="TwitchStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                    <TextBlock Text="Twitch" />
                 </StackPanel>
             </RadioButton>
-            <RadioButton x:Name="BilibiliTab" Grid.Column="2" Tag="Bilibili" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
+            <RadioButton x:Name="BilibiliTab" Grid.Column="3" Tag="Bilibili" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Bilibili}">
-                    <ctrl:PlatformIcon Platform="Bilibili" Width="20" Height="20" Margin="0,0,10,0"/>
-                    <Ellipse x:Name="BilibiliStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}"/>
-                    <TextBlock Text="哔哩哔哩"/>
+                    <ctrl:PlatformIcon Platform="Bilibili" Width="20" Height="20" Margin="0,0,10,0" />
+                    <Ellipse x:Name="BilibiliStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                    <TextBlock Text="哔哩哔哩" />
                 </StackPanel>
             </RadioButton>
+            <TextBlock x:Name="PlatformPageTitle" Text="掉宝管理" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <ctrl:AnnouncementBell Grid.Column="5" Margin="8,0,0,0" />
         </Grid>
         <WrapPanel x:Name="WorkspaceNavigation" Margin="0,8,0,8" Grid.Row="2">
-            <RadioButton Content="概览" Tag="overview" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="账号管理" Tag="accounts" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="活动与奖励" Tag="activities" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="观看配置" Tag="settings" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="网络与维护" Tag="network" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="运行日志" Tag="logs" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
-            <RadioButton Content="游戏优先级" Tag="games" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed"/>
-            <RadioButton Content="自动化" Tag="automation" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed"/>
-            <RadioButton Content="刷新与恢复" Tag="advanced" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed"/>
+            <RadioButton Content="概览" Tag="overview" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="账号管理" Tag="accounts" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="活动与奖励" Tag="activities" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="观看配置" Tag="settings" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="网络与维护" Tag="network" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="运行日志" Tag="logs" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="游戏优先级" Tag="games" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed" />
+            <RadioButton Content="自动化" Tag="automation" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed" />
+            <RadioButton Content="刷新与恢复" Tag="advanced" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed" />
         </WrapPanel>
         <ScrollViewer x:Name="DropsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Grid.Row="3">
             <StackPanel Margin="0,0,4,12">
@@ -477,1233 +73,57 @@
                             <TextBlock Text="{Binding ActivePlatform.NoticeLevel}" FontWeight="SemiBold">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="成功">
-                                                <Setter Property="Foreground" Value="{DynamicResource Status.Success}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Status.Success}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="警告">
-                                                <Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="错误">
-                                                <Setter Property="Foreground" Value="{DynamicResource Status.Error}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding ActivePlatform.NoticeLevel}" Value="需要操作">
-                                                <Setter Property="Foreground" Value="{DynamicResource Status.Warning}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <TextBlock Text="{Binding ActivePlatform.Notice}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding ActivePlatform.Notice}" TextWrapping="Wrap" Margin="0,4,0,0" />
                             <WrapPanel Margin="0,7,0,0">
-                                <Button Content="重试连接 / 刷新" Style="{StaticResource SecondaryButton}" Padding="10,0" Click="OnActiveRetry"/>
-                                <Button Content="查看日志" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnShowDropsLog"/>
-                                <Button x:Name="DropsDismissNoticeButton" Content="关闭提醒" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnDismissNotice"/>
+                                <Button Content="重试连接 / 刷新" Style="{StaticResource SecondaryButton}" Padding="10,0" Click="OnActiveRetry" />
+                                <Button Content="查看日志" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnShowDropsLog" />
+                                <Button x:Name="DropsDismissNoticeButton" Content="关闭提醒" Style="{StaticResource SecondaryButton}" Padding="10,0" Margin="8,0,0,0" Click="OnDismissNotice" />
                             </WrapPanel>
                         </StackPanel>
                     </Border>
                 </Border>
-                <StackPanel x:Name="SoopPanel" Visibility="{Binding SoopPanelVisibility}">
-                    <StackPanel Tag="workspace:overview">
-                        <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <DockPanel LastChildFill="True">
-                                    <Button Content="立即重试" DockPanel.Dock="Right" Visibility="{Binding SoopRetryNowVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnSoopRetryNow"/>
-                                    <StackPanel>
-                                        <TextBlock Text="当前掉宝进度" Style="{StaticResource SectionTitle}"/>
-                                        <TextBlock Text="{Binding SoopRetryStatusText}" Visibility="{Binding SoopRetryStatusVisibility}" Foreground="{DynamicResource Status.Warning}" Margin="0,5,10,0"/>
-                                        <TextBlock Text="{Binding SoopLastSuccessText}" Visibility="{Binding SoopLastSuccessVisibility}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,10,0"/>
-                                    </StackPanel>
-                                </DockPanel>
-                                <TextBlock Text="{Binding SoopWatchStatusText}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                <Grid Margin="0,10,0,0" MinHeight="92">
-                                    <ListBox ItemsSource="{Binding SoopCurrentProgress}" ItemTemplate="{StaticResource SoopProgressRowTemplate}" MaxHeight="300"/>
-                                    <TextBlock Text="尚未确认有效观看任务，请检查账号、直播间资格和同步状态" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding SoopCurrentProgress.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" CornerRadius="14">
-                            <StackPanel>
-                                <DockPanel>
-                                    <Button Content="使用帮助" Tag="Soop" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
-                                    <StackPanel>
-                                        <TextBlock Text="SOOP" Style="{StaticResource SectionTitle}"/>
-                                        <TextBlock Text="先添加账号并刷新掉宝信息，确认任务后再启动账号。" Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0"/>
-                                    </StackPanel>
-                                </DockPanel>
-                                <Border x:Name="SoopHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <TextBlock Text="添加账号后，先刷新直播间、任务和背包。确认存在可用任务后，再启动账号。程序会按照当前策略自动选择直播间并执行掉宝任务。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
-                                </Border>
-                                <Expander Header="{Binding SoopQuickStart.Summary}" IsExpanded="{Binding SoopQuickStart.IsExpanded, Mode=TwoWay}" Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
-                                    <ItemsControl ItemsSource="{Binding SoopQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}" Margin="12,6,0,0"/>
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:accounts">
-                        <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}"/>
-                                <Border x:Name="SoopMultiAccountWarningCard" Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="SOOP 多账号使用提示" FontWeight="SemiBold" Foreground="{DynamicResource WarnTx}"/>
-                                        <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" LineHeight="19" Foreground="{DynamicResource Text.Secondary}" Text="SOOP 可能对短时间内多个账号登录或同时运行多个账号进行安全检测。账号异常限制时，请联系 SOOP 客服处理。建议避免短时间批量添加大量账号。"/>
-                                    </StackPanel>
-                                </Border>
-                                <Expander x:Name="SoopAddAccountExpander" Header="添加 SOOP 账号" Margin="0,16,0,12" IsExpanded="False">
-                                    <Grid Margin="0,14,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition/>
-                                            <ColumnDefinition/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Margin="0,0,8,0">
-                                            <TextBlock Text="SOOP 账号" Style="{StaticResource FieldLabel}"/>
-                                            <TextBox x:Name="SoopUserId" Style="{StaticResource HintTextBox}" Tag="请输入 SOOP 登录账号"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Margin="0,0,8,0">
-                                            <TextBlock Text="密码" Style="{StaticResource FieldLabel}"/>
-                                            <Grid>
-                                                <PasswordBox x:Name="SoopPassword" PasswordChanged="OnSoopPasswordChanged"/>
-                                                <TextBlock x:Name="SoopPasswordHint" Text="请输入密码" Foreground="{DynamicResource Text.Muted}" VerticalAlignment="Center" Margin="11,0" IsHitTestVisible="False"/>
-                                            </Grid>
-                                        </StackPanel>
-                                        <Button Grid.Column="2" Content="添加账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,23,0,0" Click="OnSoopAddAccount"/>
-                                    </Grid>
-                                </Expander>
-                                <Grid Margin="6,12,6,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.2*"/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="账号与当前任务" Foreground="{DynamicResource Text.Secondary}"/>
-                                    <TextBlock Grid.Column="1" Text="主账号 / 运行状态" Foreground="{DynamicResource Text.Secondary}"/>
-                                    <TextBlock Grid.Column="2" Text="官方进度" Foreground="{DynamicResource Text.Secondary}"/>
-                                </Grid>
-                                <Grid Margin="0,12,0,10" MinHeight="86">
-                                    <ListBox x:Name="SoopAccountsList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource SoopAccountRowTemplate}" MaxHeight="360"/>
-                                    <TextBlock Text="尚未添加 SOOP 账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Accounts.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                                <WrapPanel>
-                                    <Button Content="全部开始" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStart"/>
-                                    <Button Content="全部停止" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStop"/>
-                                    <Button Content="刷新账号状态" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="0,0,8,8" Click="OnSoopRefresh"/>
-                                </WrapPanel>
-                                <Expander Header="选中账号操作" Margin="0,12,0,0">
-                                    <WrapPanel>
-                                        <Button Content="启动选中账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSoopStartAccount" Margin="0,0,8,8"/>
-                                        <Button Content="停止选中账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopStopAccount"/>
-                                        <Button Content="设为主账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopSetPrimaryAccount"/>
-                                        <Button Content="删除选中账号" Style="{StaticResource DangerButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopDeleteAccount"/>
-                                    </WrapPanel>
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:activities">
-                        <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition/>
-                                <ColumnDefinition/>
-                            </Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0" VerticalAlignment="Top" CornerRadius="14">
-                                <StackPanel>
-                                    <TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}"/>
-                                    <Grid Margin="0,10,0,0" MinHeight="120">
-                                        <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280"/>
-                                        <TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Tasks.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0" VerticalAlignment="Top" CornerRadius="14">
-                                <StackPanel>
-                                    <DockPanel LastChildFill="True">
-                                        <Button Content="打开背包" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="26" Padding="10,0" FontSize="11" Click="OnOpenSoopInventory"/>
-                                        <TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                    </DockPanel>
-                                    <Grid Margin="0,10,0,10" MinHeight="96">
-                                        <ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
-                                        <TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Inventory.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                    <WrapPanel>
-                                        <Button Content="{Binding SelectedItem.SoopClaimButtonText, ElementName=SoopInventoryList, TargetNullValue=领取选中奖励, FallbackValue=领取选中奖励}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward"/>
-                                        <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode"/>
-                                    </WrapPanel>
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                        <Expander Header="进度历史与回退诊断" Margin="0,14,0,0">
-                            <StackPanel Margin="8">
-                                <TextBlock Text="这些记录用于排查同步与回退，不代表当前任务进度。重启后先显示历史缓存；最新进度以官方查询为准。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,8"/>
-                                <ListBox ItemsSource="{Binding SoopProgressHistory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/>
-                            </StackPanel>
-                        </Expander>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:settings">
-                        <Border x:Name="SoopSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="直播间与任务策略" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="自动选择适合的直播间，或指定频道；同一账号同一时间只进入一个直播间。" Style="{StaticResource FieldHint}"/>
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="直播间选择" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <ComboBox x:Name="SoopChannelMode" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnSoopChannelModeChanged">
-                                                    <ComboBoxItem Content="自动选择" Tag="smart"/>
-                                                    <ComboBoxItem Content="手动指定" Tag="manual"/>
-                                                    <ComboBoxItem Content="仅守望先锋赛事频道" Tag="owesports"/>
-                                                </ComboBox>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="优先任务" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <ComboBox x:Name="SoopPriorityMission" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <StackPanel x:Name="SoopManualChannelPanel" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <TextBlock Text="直播间地址或频道 ID" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox x:Name="SoopManualChannel" Style="{StaticResource HintTextBox}" Tag="例如 owesports 或 https://play.sooplive.com/owesports"/>
-                                </StackPanel>
-                                <StackPanel x:Name="SoopPreferredChannelPanel" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <TextBlock Text="赛事频道" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox x:Name="SoopPreferredChannel" Style="{StaticResource HintTextBox}" Tag="owesports"/>
-                                </StackPanel>
-                                <StackPanel>
-                                    <CheckBox x:Name="SoopLowBandwidth" Style="{StaticResource SwitchCheckBox}" Content="低流量模式" Margin="0,4,0,4"/>
-                                    <CheckBox x:Name="SoopAutoClaim" Style="{StaticResource SwitchCheckBox}" Content="自动领取奖励" Margin="0,4,0,4"/>
-                                    <CheckBox x:Name="SoopHangWithoutMissions" Style="{StaticResource SwitchCheckBox}" Content="没有任务时继续等待" Margin="0,4,0,4"/>
-                                </StackPanel>
-                                <CheckBox x:Name="SoopAutoStart" Style="{StaticResource SwitchCheckBox}" Content="启动 CloudLight Blizzard 时自动运行 SOOP" Margin="0,4,0,4" Click="OnAutoStartChanged"/>
-                                <TextBlock Text="SOOP 认证失效后，将使用 Windows DPAPI 加密保存的账号密码持续重登，直到成功或手动停止账号。" Style="{StaticResource FieldHint}" Margin="0,7,0,0"/>
-                                <WrapPanel Margin="0,14,0,0">
-                                    <Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh"/>
-                                    <ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/>
-                                    <TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:advanced">
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="刷新与恢复" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="任务刷新间隔" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="SoopMissionInterval" Style="{StaticResource HintTextBox}" Tag="90"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="背包刷新间隔" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="SoopInventoryInterval" Style="{StaticResource HintTextBox}" Tag="300"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="直播间刷新间隔" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="SoopChannelInterval" Style="{StaticResource HintTextBox}" Tag="300"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="失效重登间隔" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="SoopReauthInterval" Style="{StaticResource HintTextBox}" Tag="300"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock Text="任务、背包、频道和失效重登使用各自的刷新间隔。保存后沿用原 Worker 的应用方式。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </StackPanel>
-                <StackPanel x:Name="TwitchPanel" Visibility="{Binding TwitchPanelVisibility}">
-                    <StackPanel Tag="workspace:overview">
-                        <Border x:Name="TwitchLoginCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14" Visibility="{Binding TwitchLoginCardVisibility}">
-                            <StackPanel>
-                                <DockPanel Margin="0,0,0,8">
-                                    <ctrl:PlatformIcon Platform="Twitch" Width="40" Height="40" Margin="0,0,14,0"/>
-                                    <TextBlock Text="Twitch 掉宝" Style="{StaticResource SectionTitle}" FontSize="24" VerticalAlignment="Center"/>
-                                </DockPanel>
-                                <TextBlock x:Name="TwitchIntro" Text="连接 Twitch 账号后，配置游戏偏好并开始观看。登录资料仅保存在本机。" Style="{StaticResource FieldHint}"/>
-                                <TextBlock Text="{Binding ActiveAccountText, StringFormat=账号：{0}}" Visibility="{Binding TwitchAuthenticatedVisibility}" FontSize="14" Margin="0,4,0,8"/>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ProgressBar Width="28" Height="4" Margin="0,0,12,0" VerticalAlignment="Center" IsIndeterminate="True" Foreground="{DynamicResource Accent.Primary}" Background="{DynamicResource App.SurfaceAlt}">
-                                        <ProgressBar.Style>
-                                            <Style TargetType="ProgressBar">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Unconnected">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Connected">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Running">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="LoginSucceeded">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="Stopped">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="AuthenticationExpired">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="NetworkFailed">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="ProxyUnavailable">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="SslCertificateError">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="SslRuntimeError">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding TwitchConnectionStage}" Value="WorkerError">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </ProgressBar.Style>
-                                    </ProgressBar>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Twitch.Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Twitch.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Grid>
-                                <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" Visibility="{Binding TwitchAuthenticatedVisibility}">
-                                        <Button Content="开始 Twitch 掉宝" IsEnabled="{Binding IsTwitchCoreAvailable}" Tag="Twitch" Visibility="{Binding Twitch.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStart"/>
-                                    </StackPanel>
-                                    <Button x:Name="TwitchLoginAction" Content="{Binding TwitchLoginButtonText}" IsEnabled="{Binding CanTwitchLogin}" Visibility="{Binding TwitchLoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnTwitchLogin" Margin="0,0,8,8"/>
-                                    <Button Content="重新检测" Visibility="{Binding TwitchRetryVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnTwitchRetry"/>
-                                    <Button Content="停止 Twitch 掉宝" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStop"/>
-                                    <Button x:Name="TwitchRefreshButton" Content="{Binding TwitchRefreshButtonText}" IsEnabled="{Binding CanRefreshTwitch}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnTwitchReload"/>
-                                    <ProgressBar Width="72" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding TwitchRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}"/>
-                                    <TextBlock Text="{Binding TwitchRefreshStatus}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Text.Secondary}" Visibility="{Binding TwitchRefreshStatusVisibility}"/>
-                                    <Button Content="使用帮助" Tag="Twitch" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
-                                </WrapPanel>
-                                <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="10,8" Margin="0,12,0,0" Visibility="{Binding TwitchRetryStatusVisibility}">
-                                    <DockPanel LastChildFill="True">
-                                        <Button Content="立即重试" DockPanel.Dock="Right" Visibility="{Binding TwitchRetryNowVisibility}" Style="{StaticResource SecondaryButton}" Height="28" Padding="11,0" Click="OnTwitchRetryNow"/>
-                                        <TextBlock Text="{Binding TwitchRetryStatusText}" Foreground="{DynamicResource Status.Warning}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
-                                    </DockPanel>
-                                </Border>
-                                <TextBlock Text="{Binding TwitchLastSuccessText}" Visibility="{Binding TwitchLastSuccessVisibility}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,7,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="14" Margin="0,14,0,0" Visibility="{Binding TwitchAuthorizationVisibility}">
-                            <StackPanel>
-                                <TextBlock Text="Twitch 授权" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="请在 Twitch 官方页面完成授权。" Style="{StaticResource FieldHint}"/>
-                                <TextBlock Text="授权码" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                                <TextBox x:Name="TwitchAuthorizationCodeBox" Text="{Binding TwitchAuthorizationCode, Mode=OneWay}" IsReadOnly="True" FontSize="22" FontWeight="SemiBold" BorderThickness="0" Background="Transparent" Padding="0" Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/>
-                                <TextBlock Text="{Binding TwitchAuthorizationExpiryText}" Margin="0,6,0,0" Foreground="{DynamicResource Text.Secondary}"/>
-                                <WrapPanel Margin="0,12,0,0">
-                                    <Button Content="打开 Twitch 授权页面" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnOpenTwitchAuthorization"/>
-                                    <Button x:Name="TwitchCopyCodeButton" Content="复制授权码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopyTwitchAuthorizationCode"/>
-                                    <TextBlock Text="正在等待授权……" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                </WrapPanel>
-                                <TextBlock Text="1 复制完整授权码　→　2 打开官方页面　→　3 完成授权后自动检测" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                                <WrapPanel Margin="0,12,0,0">
-                                    <Button Content="取消授权" Style="{StaticResource SecondaryButton}" Click="OnCancelTwitchAuthorization" Margin="0,0,8,0"/>
-                                    <Button Content="重新获取授权码" Style="{StaticResource SecondaryButton}" Click="OnRenewTwitchAuthorization"/>
-                                </WrapPanel>
-                                <TextBlock Text="{Binding TwitchAuthorizationRemainingText}" Foreground="{DynamicResource Accent.Primary}" Margin="0,10,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <Border x:Name="TwitchCurrentProgressCard" Style="{StaticResource SurfaceCard}" Margin="0,0,0,12" Visibility="{Binding Twitch.Running, Converter={StaticResource PresentationBoolVisibility}}" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="当前观看与奖励" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="{Binding TwitchChannelText}" TextWrapping="Wrap" Margin="0,7,0,0"/>
-                                <TextBlock Text="{Binding TwitchDataSourceText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding TwitchCurrentProgressText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding TwitchWatchRequestText}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}"/>
-                                <TextBlock Text="{Binding TwitchNetworkRouteText}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}"/>
-                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding TwitchCurrentProgress, Mode=OneWay}" Style="{StaticResource ThemeProgressBar}" Margin="0,9,0,0" Height="6"/>
-                                <Button Content="打开当前直播间" Style="{StaticResource SecondaryButton}" Click="OnOpenCurrentWatch" Padding="12,0" HorizontalAlignment="Left" Margin="0,12,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="首次使用" Style="{StaticResource SectionTitle}"/>
-                                <Border x:Name="TwitchHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <TextBlock Text="首先完成 Twitch 登录。优先游戏决定程序优先处理哪些游戏的掉宝，排除游戏不会被自动选择。启动后，程序会获取掉宝活动、寻找符合条件的频道并持续更新掉宝进度。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
-                                </Border>
-                                <Expander Header="{Binding TwitchQuickStart.Summary}" IsExpanded="{Binding TwitchQuickStart.IsExpanded, Mode=TwoWay}" Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
-                                    <ItemsControl ItemsSource="{Binding TwitchQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}" Margin="12,6,0,0"/>
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:accounts">
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="账号与本地 Session" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <TextBlock Text="{Binding ActiveAccountText}" FontSize="20" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding Twitch.Summary}" TextWrapping="Wrap" Margin="0,8,0,16"/>
-                                <TextBlock Text="清除操作继续使用原有确认流程；游戏偏好、代理与自动启动设置保留。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                                <StackPanel>
-                                    <StackPanel.Style>
-                                        <Style TargetType="StackPanel">
-                                            <Setter Property="IsEnabled" Value="True"/>
-                                            <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding Accounts.Count}" Value="0"/>
-                                                        <Condition Binding="{Binding IsTwitchLoginInProgress}" Value="False"/>
-                                                    </MultiDataTrigger.Conditions>
-                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                </MultiDataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </StackPanel.Style>
-                                    <Button Content="清除登录信息" IsEnabled="{Binding CanClearTwitchLogin}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:activities">
-                        <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" Visibility="{Binding TwitchPanelVisibility}" CornerRadius="14">
-                            <StackPanel>
-                                <DockPanel LastChildFill="True">
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                        <TextBlock Text="显示范围：" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center"/>
-                                        <ComboBox x:Name="TwitchCampaignScopePicker" Width="150" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnTwitchCampaignScopeChanged">
-                                            <ComboBoxItem Content="当前可掉宝" Tag="available"/>
-                                            <ComboBoxItem Content="仅优先游戏" Tag="priority"/>
-                                            <ComboBoxItem Content="全部活动" Tag="all"/>
-                                        </ComboBox>
-                                    </StackPanel>
-                                    <TextBlock Text="掉宝活动" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                </DockPanel>
-                                <Grid Margin="0,12,0,0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <Grid Margin="12,0,18,7">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.1*" MinWidth="100"/>
-                                            <ColumnDefinition Width="1.8*" MinWidth="150"/>
-                                            <ColumnDefinition Width="0.8*"/>
-                                            <ColumnDefinition Width="1.2*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="游戏" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Grid.Column="1" Text="活动或奖励名称" Margin="14,0,0,0" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Grid.Column="2" Text="状态" Margin="14,0,0,0" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Grid.Column="3" Text="进度 / 剩余" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                    </Grid>
-                                    <Grid Grid.Row="1" MinHeight="145">
-                                        <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource TwitchCampaignRowTemplate}" MaxHeight="320" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-                                        <TextBlock Text="{Binding TwitchCampaignsEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Tasks.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Margin="0,14,0,0">
-                            <Border Style="{StaticResource SurfaceCard}" CornerRadius="14">
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="打开背包" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnOpenTwitchInventory"/>
-                                    </Grid>
-                                    <Grid Margin="0,10,0,0" MinHeight="145">
-                                        <ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource TwitchDropRowTemplate}" MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-                                        <TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Inventory.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                            <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                                <StackPanel>
-                                    <TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}"/>
-                                    <Grid Margin="0,10,0,10" MinHeight="145">
-                                        <ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250"/>
-                                        <TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Channels.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                    <Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel"/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:settings">
-                        <Border x:Name="TwitchSettingsCard" Margin="0" Visibility="{Binding TwitchPanelVisibility}" BorderThickness="0">
-                            <StackPanel>
-                                <Border Style="{StaticResource SectionCard}">
-                                    <StackPanel>
-                                        <TextBlock Text="基础偏好" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                        <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}"/>
-                                        <StackPanel>
-                                            <Border Style="{StaticResource SettingRow}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="1.2*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="界面语言" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                                    <StackPanel Grid.Column="1">
-                                                        <ComboBox x:Name="TwitchLanguage" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag"/>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                            <Border Style="{StaticResource SettingRow}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="1.2*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="掉宝优先策略" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                                    <StackPanel Grid.Column="1">
-                                                        <ComboBox x:Name="TwitchPriorityMode" Style="{StaticResource ThemeComboBox}">
-                                                            <ComboBoxItem Content="仅挂机优先游戏" Tag="PRIORITY_ONLY"/>
-                                                            <ComboBoxItem Content="最早结束的活动优先" Tag="ENDING_SOONEST"/>
-                                                            <ComboBoxItem Content="剩余可用时间最少优先" Tag="LOW_AVBL_FIRST"/>
-                                                        </ComboBox>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                            <Border Style="{StaticResource SettingRow}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="1.2*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="连接质量" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                                    <StackPanel Grid.Column="1">
-                                                        <ComboBox x:Name="TwitchConnectionQuality" Style="{StaticResource ThemeComboBox}">
-                                                            <ComboBoxItem Content="等级 1" Tag="1"/>
-                                                            <ComboBoxItem Content="等级 2" Tag="2"/>
-                                                            <ComboBoxItem Content="等级 3" Tag="3"/>
-                                                            <ComboBoxItem Content="等级 4" Tag="4"/>
-                                                            <ComboBoxItem Content="等级 5" Tag="5"/>
-                                                            <ComboBoxItem Content="等级 6" Tag="6"/>
-                                                        </ComboBox>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:network">
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="配置异常恢复" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <Button Content="备份并恢复默认配置" Visibility="{Binding TwitchConfigRepairVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnRepairTwitchSettings"/>
-                                <TextBlock Text="仅当现有恢复流程确认配置损坏时可用；恢复前备份损坏文件，不清除 Session。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:games">
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="游戏优先级" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Margin="0,0,8,0">
-                                        <TextBlock Text="优先游戏" Style="{StaticResource FieldLabel}"/>
-                                        <DockPanel>
-                                            <Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddPriorityGame"/>
-                                            <ComboBox x:Name="TwitchPriorityPicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchPriorityChoices}"/>
-                                        </DockPanel>
-                                        <ListBox x:Name="TwitchPriorityList" ItemsSource="{Binding TwitchPriorityGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0">
-                                            <ListBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <DockPanel Margin="6,4">
-                                                        <WrapPanel DockPanel.Dock="Right">
-                                                            <Button Content="↑" ToolTip="上移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Click="OnPriorityUp"/>
-                                                            <Button Content="↓" ToolTip="下移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Margin="4,0,0,0" Click="OnPriorityDown"/>
-                                                            <Button Content="移除" Tag="{Binding}" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Margin="4,0,0,0" Click="OnRemovePriorityGame"/>
-                                                        </WrapPanel>
-                                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    </DockPanel>
-                                                </DataTemplate>
-                                            </ListBox.ItemTemplate>
-                                        </ListBox>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                                        <TextBlock Text="排除游戏" Style="{StaticResource FieldLabel}"/>
-                                        <DockPanel>
-                                            <Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddExcludedGame"/>
-                                            <ComboBox x:Name="TwitchExcludePicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchExcludeChoices}"/>
-                                        </DockPanel>
-                                        <ListBox x:Name="TwitchExcludeList" ItemsSource="{Binding TwitchExcludedGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0">
-                                            <ListBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <DockPanel Margin="6,4">
-                                                        <Button Content="移除" Tag="{Binding}" DockPanel.Dock="Right" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Click="OnRemoveExcludedGame"/>
-                                                        <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    </DockPanel>
-                                                </DataTemplate>
-                                            </ListBox.ItemTemplate>
-                                        </ListBox>
-                                    </StackPanel>
-                                </Grid>
-                                <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:automation">
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="自动化与通知" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <CheckBox x:Name="TwitchAutoStart" Style="{StaticResource SwitchCheckBox}" Content="启动 CloudLight Blizzard 时自动运行 Twitch" Margin="0,14,0,0" Click="OnAutoStartChanged"/>
-                                <CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource SwitchCheckBox}" Content="托盘通知" Margin="0,4,0,4"/>
-                                <CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource SwitchCheckBox}" Content="显示徽章和表情" Margin="0,4,0,4"/>
-                                <CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource SwitchCheckBox}" Content="检查可用掉宝" Margin="0,4,0,4"/>
-                                <CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource SwitchCheckBox}" Content="自动领取掉宝" Margin="0,4,0,4"/>
-                                <TextBlock Text="自动领取沿用当前 NoAutoClaim 规则与默认值。开启前请确认当前平台的领取策略。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </StackPanel>
-                <StackPanel x:Name="BilibiliPanel" Visibility="{Binding BilibiliPanelVisibility}">
-                    <StackPanel Tag="workspace:overview">
-                        <Border x:Name="BilibiliAccountCard" Style="{StaticResource SurfaceCard}" Padding="14" CornerRadius="14">
-                            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="166"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="哔哩哔哩" Style="{StaticResource SectionTitle}"/>
-                                    <TextBlock Text="官方扫码登录；请求由独立 Worker 按当前网络策略完成。" Style="{StaticResource FieldHint}"/>
-                                    <TextBlock Text="{Binding BilibiliDetails.LoginStateText}" FontWeight="SemiBold" Margin="0,10,0,0"/>
-                                    <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0"/>
-                                    <TextBlock Text="{Binding BilibiliDetails.NetworkModeText}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding BilibiliDetails.NetworkPolicyText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"/>
-                                    <WrapPanel Margin="0,8,0,0">
-                                        <TextBlock Text="运行状态：" Foreground="{DynamicResource Text.Secondary}"/>
-                                        <TextBlock Text="{Binding Bilibili.Status}" FontWeight="SemiBold" Margin="2,0,10,0"/>
-                                        <TextBlock Text="{Binding Bilibili.ConnectionStateText}" Foreground="{DynamicResource Accent.Primary}"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,9,0,0">
-                                        <Button x:Name="BilibiliQrLoginButton" Content="扫码登录" Visibility="{Binding BilibiliDetails.LoginVisibility}" Style="{StaticResource PrimaryButton}" Padding="11,0" Command="{Binding BilibiliDetails.ScanQrLoginCommand}"/>
-                                        <Button Content="退出登录" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{StaticResource DangerButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.LogoutCommand}"/>
-                                        <StackPanel Orientation="Horizontal" Visibility="{Binding BilibiliDetails.LogoutVisibility}">
-                                            <Button x:Name="BilibiliStartButton" Content="开始掉宝" Visibility="{Binding Bilibili.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="11,0" Margin="12,0,0,0" Command="{Binding BilibiliDetails.StartCommand}"/>
-                                        </StackPanel>
-                                        <Button x:Name="BilibiliStopButton" Content="停止掉宝" Visibility="{Binding Bilibili.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.StopCommand}"/>
-                                        <Button x:Name="BilibiliRefreshButton" Content="刷新进度" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.RefreshCommand}"/>
-                                        <Button x:Name="BilibiliDiscoverButton" Content="发现活动" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.DiscoverCommand}"/>
-                                    </WrapPanel>
-                                    <TextBlock Text="{Binding BilibiliDetails.QrStateText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                    <WrapPanel Margin="0,6,0,0">
-                                        <Button x:Name="BilibiliQrCancelButton" Content="取消扫码" Visibility="{Binding BilibiliDetails.QrCancelVisibility}" Style="{StaticResource SecondaryButton}" Padding="11,0" Command="{Binding BilibiliDetails.CancelQrCommand}"/>
-                                        <Button Content="重新获取二维码" Visibility="{Binding BilibiliDetails.QrRetryVisibility}" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.ReacquireQrCommand}"/>
-                                        <TextBlock Text="登录成功后自动保存账号与凭据。" Foreground="{DynamicResource Text.Muted}" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                    </WrapPanel>
-                                </StackPanel>
-                                <Border x:Name="BilibiliQrCard" Grid.Column="1" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="14,0,0,0" Visibility="{Binding BilibiliDetails.QrAreaVisibility}">
-                                    <Image Source="{Binding BilibiliDetails.QrImagePath}" Visibility="{Binding BilibiliDetails.QrImageVisibility}" Width="150" Height="150" Stretch="Uniform"/>
-                                </Border>
-                            </Grid>
-                        </Border>
-                        <Expander x:Name="BilibiliQuickStartCard" Header="{Binding BilibiliQuickStart.Summary}" IsExpanded="{Binding BilibiliQuickStart.IsExpanded, Mode=TwoWay}" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" Padding="12,8" Margin="0,10,0,0">
-                            <ItemsControl ItemsSource="{Binding BilibiliQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}" Margin="8,2,0,0"/>
-                        </Expander>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:accounts">
-                        <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="高级登录（可选）" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="故障排查或无法扫码时使用；Cookie 仅在受控 Worker 内加密保存。" Style="{StaticResource FieldHint}"/>
-                                <TextBlock Text="手动导入 Cookie" Style="{StaticResource FieldLabel}" Margin="0,10,0,5"/>
-                                <PasswordBox x:Name="BilibiliCookieBox"/>
-                                <Button Content="导入并验证 Cookie" Style="{StaticResource SecondaryButton}" Padding="11,0" HorizontalAlignment="Left" Margin="0,8,0,0" Command="{Binding BilibiliDetails.ManualCookieCommand}"/>
-                                <TextBlock Text="不写入 settings.json，不出现在命令行、日志或诊断包中。" Style="{StaticResource FieldHint}"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="会话状态" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="按聚合状态查看每个独立运行的 Session。" Style="{StaticResource FieldHint}"/>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="目标" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Text="{Binding BilibiliDetails.ConfiguredSessions}" FontSize="16" FontWeight="SemiBold"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="6,0,0,0">
-                                        <TextBlock Text="活动" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Text="{Binding BilibiliDetails.ActiveSessions}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Status.Success}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Margin="6,0,0,0">
-                                        <TextBlock Text="连接中" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Text="{Binding BilibiliDetails.ConnectingSessions}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="3" Margin="6,0,0,0">
-                                        <TextBlock Text="重连中" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Text="{Binding BilibiliDetails.RetryingSessions}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Status.Warning}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="4" Margin="6,0,0,0">
-                                        <TextBlock Text="失败" Foreground="{DynamicResource Text.Muted}" FontSize="11"/>
-                                        <TextBlock Text="{Binding BilibiliDetails.FailedSessions}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Status.Error}"/>
-                                    </StackPanel>
-                                </Grid>
-                                <ListBox x:Name="BilibiliSessionList" ItemsSource="{Binding BilibiliDetails.Sessions}" ItemTemplate="{StaticResource BilibiliSessionRowTemplate}" MinHeight="80" MaxHeight="320" Margin="0,8,0,0"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:activities">
-                        <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="活动与直播间" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="自动发现活动；也可手动指定 URL 或房间号。" Style="{StaticResource FieldHint}"/>
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="BilibiliRoomInput" Style="{StaticResource HintTextBox}" Tag="直播间 URL 或 Room ID" Text="{Binding BilibiliDetails.RoomReference, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                    <Button Grid.Column="1" Content="添加" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.AddRoomCommand}"/>
-                                </Grid>
-                                <TextBox x:Name="BilibiliRoomNameInput" Style="{StaticResource HintTextBox}" Tag="直播间名称（可选）" Margin="0,6,0,0" Text="{Binding BilibiliDetails.RoomName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                <ListBox x:Name="BilibiliRoomList" ItemsSource="{Binding BilibiliDetails.Rooms}" ItemTemplate="{StaticResource BilibiliRoomRowTemplate}" MinHeight="58" MaxHeight="170" Margin="0,8,0,0"/>
-                                <TextBlock Text="{Binding BilibiliDetails.Activities.Count, StringFormat=已发现活动：{0} 个}" Foreground="{DynamicResource Text.Secondary}" Margin="0,8,0,0"/>
-                                <ListBox x:Name="BilibiliActivityList" ItemsSource="{Binding BilibiliDetails.Activities}" ItemTemplate="{StaticResource BilibiliActivityRowTemplate}" MinHeight="42" MaxHeight="120" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <DockPanel>
-                                    <TextBlock Text="官方任务进度" Style="{StaticResource SectionTitle}"/>
-                                    <TextBlock DockPanel.Dock="Right" Text="{Binding BilibiliDetails.SessionSummary}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center"/>
-                                </DockPanel>
-                                <TextBlock Text="{Binding BilibiliDetails.LastApiSuccessAt, StringFormat=最近成功 API：{0}}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,0,0"/>
-                                <ListBox x:Name="BilibiliTaskList" ItemsSource="{Binding BilibiliDetails.Tasks}" ItemTemplate="{StaticResource BilibiliTaskRowTemplate}" MinHeight="80" MaxHeight="300" Margin="0,8,0,0"/>
-                                <TextBlock Text="尚未读取到官方任务进度。请先发现活动或填写 Task IDs。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" Margin="8,10" TextWrapping="Wrap">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding BilibiliDetails.Tasks.Count}" Value="0">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                                <TextBlock Text="奖励领取记录" Style="{StaticResource SectionTitle}" Margin="0,10,0,0"/>
-                                <ListBox ItemsSource="{Binding BilibiliDetails.Rewards}" MinHeight="34" MaxHeight="130" Margin="0,4,0,0">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="4,4">
-                                                <DockPanel>
-                                                    <TextBlock Text="{Binding TaskName}" FontWeight="SemiBold"/>
-                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding State}" Foreground="{DynamicResource Accent.Primary}"/>
-                                                </DockPanel>
-                                                <TextBlock Text="{Binding Reward}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,2,0,0"/>
-                                                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:settings">
-                        <Border x:Name="BilibiliSettingsCard" Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,10,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="观看模式与任务设置" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="多线程模式控制每个直播间的 Session 数；每个 Session 独立连接并错峰启动。" Style="{StaticResource FieldHint}"/>
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="观看模式" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <ComboBox x:Name="BilibiliWatchModePicker" Style="{StaticResource ThemeComboBox}" SelectedValue="{Binding BilibiliDetails.WatchMode, Mode=TwoWay}" SelectedValuePath="Tag">
-                                                    <ComboBoxItem Content="标准模式（每房间 1 Session）" Tag="standard"/>
-                                                    <ComboBoxItem Content="多线程加速模式" Tag="multi"/>
-                                                </ComboBox>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="每房间并发 Session" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBox x:Name="BilibiliSessionsPerRoomText" Style="{StaticResource HintTextBox}" Tag="1" Text="{Binding BilibiliDetails.SessionsPerRoomText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="错峰重连延迟" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="BilibiliReconnectDelayText" Style="{StaticResource HintTextBox}" Tag="8" Text="{Binding BilibiliDetails.ReconnectDelayText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock Text="{Binding BilibiliDetails.SessionEstimateText}" Foreground="{DynamicResource Accent.Primary}" Margin="0,10,0,0"/>
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="官方任务查询间隔" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <DockPanel>
-                                                    <TextBlock Text="秒（至少 10）" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    <TextBox x:Name="BilibiliTaskIntervalText" Style="{StaticResource HintTextBox}" Tag="30" Text="{Binding BilibiliDetails.TaskIntervalText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="高级 Task IDs（可选）" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBox x:Name="BilibiliTaskIdsText" Style="{StaticResource HintTextBox}" Tag="多个 ID 用逗号或空格分隔" Text="{Binding BilibiliDetails.TaskIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock Text="{Binding BilibiliDetails.ProxyConfigurationText}" Foreground="{DynamicResource Status.Success}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                <WrapPanel Margin="0,10,0,0">
-                                    <Button Content="刷新 Session 详情" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.RefreshSessionsCommand}"/>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:network">
-                        <Border x:Name="BilibiliNetworkCard" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,10,0,0">
-                            <StackPanel>
-                                <DockPanel LastChildFill="True">
-                                    <Button DockPanel.Dock="Right" Content="前往网络设置" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="12,0,0,0" Click="OnOpenProxySettings"/>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="网络" Style="{StaticResource SectionTitle}"/>
-                                        <TextBlock Text="使用范围在网络与维护分类设置" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="12,1,0,0"/>
-                                    </StackPanel>
-                                </DockPanel>
-                                <WrapPanel Margin="0,5,0,0">
-                                    <TextBlock Text="{Binding BilibiliDetails.NetworkModeText}" Foreground="{DynamicResource Text.Secondary}" FontSize="11" Margin="0,0,12,0" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding BilibiliDetails.NetworkPolicyText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" TextWrapping="Wrap"/>
-                                </WrapPanel>
-                                <TextBlock Text="全局代理尚未启用/配置，哔哩哔哩当前使用直连。" Foreground="{DynamicResource Status.Warning}" FontSize="11" Margin="0,4,0,0" Visibility="{Binding BilibiliDetails.ProxyConfigurationWarningVisibility}" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:automation">
-                        <Border Style="{StaticResource SectionCard}">
-                            <Grid behaviors:ResponsiveGrid.IsEnabled="True">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition/>
-                                    <ColumnDefinition/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <CheckBox x:Name="BilibiliEnabledCheck" Style="{StaticResource SwitchCheckBox}" Content="启用哔哩哔哩" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.Enabled, Mode=TwoWay}" Grid.Column="0" Grid.Row="0"/>
-                                <CheckBox x:Name="BilibiliAutoTaskProgress" Style="{StaticResource SwitchCheckBox}" Content="自动查询任务进度" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoTaskProgress, Mode=TwoWay}" Grid.Column="1" Grid.Row="0"/>
-                                <CheckBox x:Name="BilibiliAutoDiscoverCheck" Style="{StaticResource SwitchCheckBox}" Content="自动发现当前活动" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoDiscover, Mode=TwoWay}" Grid.Column="0" Grid.Row="1"/>
-                                <CheckBox x:Name="BilibiliAutoClaimCheck" Style="{StaticResource SwitchCheckBox}" Content="自动领取奖励" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoClaim, Mode=TwoWay}" Grid.Column="1" Grid.Row="1"/>
-                                <CheckBox x:Name="BilibiliTaskNotificationsCheck" Style="{StaticResource SwitchCheckBox}" Content="任务完成通知" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.TaskNotifications, Mode=TwoWay}" Grid.Column="0" Grid.Row="2"/>
-                                <CheckBox x:Name="BilibiliReconnectCheck" Style="{StaticResource SwitchCheckBox}" Content="断线自动重连" IsChecked="{Binding BilibiliDetails.ReconnectEnabled, Mode=TwoWay}" Margin="0,4,16,4" Grid.Column="1" Grid.Row="2"/>
-                                <CheckBox x:Name="BilibiliAutoStart" Style="{StaticResource SwitchCheckBox}" Content="启动 CloudLight Blizzard 时自动恢复 Worker" Margin="0,4,16,4" IsChecked="{Binding BilibiliDetails.AutoRestore, Mode=TwoWay}" Click="OnAutoStartChanged" Grid.Column="0" Grid.Row="3"/>
-                                <CheckBox x:Name="BilibiliAutoResume" Style="{StaticResource SwitchCheckBox}" Content="上次正在掉宝时自动恢复掉宝" IsChecked="{Binding BilibiliDetails.AutoResume, Mode=TwoWay}" Click="OnAutoStartChanged" Margin="0,4,16,4" Grid.Column="1" Grid.Row="3"/>
-                            </Grid>
-                        </Border>
-                        <Border Style="{StaticResource SectionCard}">
-                            <StackPanel>
-                                <TextBlock Text="第三方通知" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
-                                <TextBlock Text="Gotify / Server 酱 URL（可选，保存后加密）" Style="{StaticResource FieldLabel}" Margin="0,10,0,5"/>
-                                <PasswordBox x:Name="BilibiliNotifierUrlBox" PasswordChanged="OnNotifierDraftChanged"/>
-                                <TextBlock Text="{Binding BilibiliDetails.NotifierText}" Style="{StaticResource FieldHint}"/>
-                                <TextBlock Text="地址通过原有凭据服务保存，界面不回显已保存的敏感内容。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                                <Button Content="清除第三方通知" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.ClearNotifierCommand}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </StackPanel>
-                <StackPanel x:Name="YouTubePanel" Visibility="{Binding YouTubePanelVisibility}">
-                    <StackPanel Tag="workspace:overview">
-                        <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="直播与浏览器状态" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="{Binding YouTubeLastSuccessText}" Visibility="{Binding YouTubeLastSuccessVisibility}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,5,0,0"/>
-                                <Grid Margin="0,10,0,0" MinHeight="110">
-                                    <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
-                                    <TextBlock Text="当前没有正在观看的直播。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Tasks.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" CornerRadius="14">
-                            <StackPanel>
-                                <DockPanel>
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                        <Button Content="使用帮助" Tag="YouTube" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnToggleHelp"/>
-                                        <Button x:Name="YouTubeStartButton" Content="开始观看" Tag="YouTube" Visibility="{Binding YouTube.StartVisibility}" Style="{StaticResource PrimaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnStart"/>
-                                        <Button x:Name="YouTubeStopButton" Content="停止观看" Tag="YouTube" Visibility="{Binding YouTube.StopVisibility}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnStop"/>
-                                    </StackPanel>
-                                    <StackPanel>
-                                        <TextBlock Text="YouTube" Style="{StaticResource SectionTitle}"/>
-                                        <TextBlock Text="CloudLight Blizzard 会使用所选 Chrome / Brave 和独立观看账号检查已启用频道，发现直播后自动开始观看。" Foreground="{DynamicResource Text.Secondary}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </DockPanel>
-                                <Border x:Name="YouTubeHelp" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="12" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <TextBlock Text="选择 Chrome 或 Brave，添加观看账号并通过“打开登录窗口”完成 YouTube 登录。随后添加并启用要监控的频道。启动后，程序会定期检查直播并自动开始观看。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
-                                </Border>
-                                <Expander Header="{Binding YouTubeQuickStart.Summary}" IsExpanded="{Binding YouTubeQuickStart.IsExpanded, Mode=TwoWay}" Foreground="{DynamicResource Text.Primary}" Margin="0,12,0,0">
-                                    <ItemsControl ItemsSource="{Binding YouTubeQuickStart.Steps}" ItemTemplate="{StaticResource QuickStartStepTemplate}" Margin="12,6,0,0"/>
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:accounts">
-                        <Border x:Name="YouTubeAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="观看账号" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="每个观看账号使用独立的 Chrome / Brave 浏览器资料目录，登录状态互不影响。" Style="{StaticResource FieldHint}"/>
-                                <Grid Margin="0,10,0,10" MinHeight="110">
-                                    <ListBox x:Name="YouTubeProfilesList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220"/>
-                                    <TextBlock Text="暂无观看账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Accounts.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                                <TextBlock Text="账号名称" Style="{StaticResource FieldLabel}"/>
-                                <TextBox x:Name="YouTubeProfileName" Style="{StaticResource HintTextBox}" Tag="例如：主账号" Width="240" HorizontalAlignment="Left"/>
-                                <WrapPanel Margin="0,10,0,0">
-                                    <Button Content="添加账号" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddProfile"/>
-                                    <Button Content="打开登录窗口" Style="{StaticResource PrimaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeLogin"/>
-                                    <Button Content="删除账号" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteProfile"/>
-                                </WrapPanel>
-                                <TextBlock Text="首次使用请在打开的浏览器中完成 YouTube 登录。" Style="{StaticResource FieldHint}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:activities">
-                        <Border x:Name="YouTubeChannelsCard" Style="{StaticResource SurfaceCard}" Margin="0,0,0,16" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="频道列表" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="程序只会自动检查已启用的频道。绿色圆点表示启用，灰色圆点表示停用。" Style="{StaticResource FieldHint}"/>
-                                <Grid Margin="0,10,0,10" MinHeight="100">
-                                    <ListBox x:Name="YouTubeChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource YouTubeChannelRowTemplate}" MaxHeight="180"/>
-                                    <TextBlock Text="尚未添加频道。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Channels.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                                <TextBlock Text="频道名称" Style="{StaticResource FieldLabel}"/>
-                                <TextBox x:Name="YouTubeChannelName" Style="{StaticResource HintTextBox}" Tag="例如：Overwatch Esports"/>
-                                <TextBlock Text="频道 ID" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/>
-                                <TextBox x:Name="YouTubeChannelId" Style="{StaticResource HintTextBox}" Tag="例如：UC..."/>
-                                <TextBlock Text="频道地址" Style="{StaticResource FieldLabel}" Margin="0,10,0,6"/>
-                                <TextBox x:Name="YouTubeChannelUrl" Style="{StaticResource HintTextBox}" Tag="也可以直接粘贴频道 URL"/>
-                                <TextBlock Text="频道 ID 与频道地址填写任意一项即可。" Style="{StaticResource FieldHint}"/>
-                                <WrapPanel Margin="0,10,0,0">
-                                    <Button Content="添加频道" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnYouTubeAddChannel"/>
-                                    <Button Content="启用 / 停用" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeToggleChannel"/>
-                                    <Button Content="删除" Style="{StaticResource DangerButton}" Padding="12,0" Margin="8,0,0,0" Click="OnYouTubeDeleteChannel"/>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="观看时间与历史" Style="{StaticResource SectionTitle}"/>
-                                <Grid Margin="0,10,0,0" MinHeight="110">
-                                    <ListBox ItemsSource="{Binding History}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240"/>
-                                    <TextBlock Text="暂无观看记录。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding History.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                    <StackPanel Tag="workspace:settings">
-                        <Border x:Name="YouTubeBrowserCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
-                            <StackPanel>
-                                <TextBlock Text="浏览器与观看设置" Style="{StaticResource SectionTitle}"/>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="220"/>
-                                        <ColumnDefinition/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Margin="0,0,8,0">
-                                        <TextBlock Text="浏览器" Style="{StaticResource FieldLabel}"/>
-                                        <ComboBox x:Name="YouTubeBrowser" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnYouTubeBrowserChanged">
-                                            <ComboBoxItem Content="Google Chrome" Tag="chrome"/>
-                                            <ComboBoxItem Content="Brave" Tag="brave"/>
-                                        </ComboBox>
-                                    </StackPanel>
-                                    <Expander Grid.Column="1" Header="自定义浏览器路径（可选）" Foreground="{DynamicResource Text.Secondary}" Margin="8,0,0,0">
-                                        <DockPanel Margin="0,8,0,0">
-                                            <Button Content="浏览..." DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnBrowseYouTubeBrowser"/>
-                                            <TextBox x:Name="YouTubeBrowserPath" Style="{StaticResource HintTextBox}" Tag="自动检测，通常无需填写" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                                        </DockPanel>
-                                    </Expander>
-                                </Grid>
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="观看模式" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <ComboBox x:Name="YouTubeMode" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnYouTubeModeChanged">
-                                                    <ComboBoxItem Content="自动检测直播" Tag="auto"/>
-                                                    <ComboBoxItem Content="手动指定直播" Tag="manual"/>
-                                                </ComboBox>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="1.2*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="直播地址" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                                            <StackPanel Grid.Column="1" x:Name="YouTubeManualUrlPanel" Visibility="Collapsed">
-                                                <TextBox x:Name="YouTubeManualUrl" Style="{StaticResource HintTextBox}" Tag="粘贴 YouTube 直播地址"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <WrapPanel Margin="0,14,0,0">
-                                    <CheckBox x:Name="YouTubeHeadless" Style="{StaticResource ThemeCheckBox}" Content="无头模式" Margin="0,0,18,0"/>
-                                    <CheckBox x:Name="YouTubeMute" Style="{StaticResource ThemeCheckBox}" Content="静音播放"/>
-                                </WrapPanel>
-                                <StackPanel Margin="0,14,0,0" Width="300" HorizontalAlignment="Left">
-                                    <TextBlock Text="直播检查间隔" Style="{StaticResource FieldLabel}"/>
-                                    <DockPanel>
-                                        <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                        <TextBox x:Name="YouTubeInterval" Style="{StaticResource HintTextBox}" Tag="300"/>
-                                    </DockPanel>
-                                    <TextBlock Text="每隔多久检查一次频道是否开播。" Style="{StaticResource FieldHint}"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </StackPanel>
+                <soop:SoopWorkspace x:Name="SoopWorkspace" />
+                <twitch:TwitchWorkspace x:Name="TwitchWorkspace" />
+                <bilibili:BilibiliWorkspace x:Name="BilibiliWorkspace" />
+                <youtube:YouTubeWorkspace x:Name="YouTubeWorkspace" />
                 <StackPanel Tag="workspace:network">
                     <Border Style="{StaticResource SectionCard}">
                         <Expander Header="旧版数据导入（高级）" IsExpanded="False">
                             <StackPanel Margin="0,12,0,0">
-                                <TextBlock Text="导入所选平台的旧版设置、账号或 Session 与缓存。同名文件继续由原有对话框逐项确认覆盖、跳过或取消；原目录保留。请先停止当前平台。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,12"/>
+                                <TextBlock Text="导入所选平台的旧版设置、账号或 Session 与缓存。同名文件继续由原有对话框逐项确认覆盖、跳过或取消；原目录保留。请先停止当前平台。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,12" />
                                 <StackPanel>
-                                    <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="IsEnabled" Value="True"/><Style.Triggers><DataTrigger Binding="{Binding ActivePlatform.Running}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
-                                    <Button Content="导入 SOOP 旧版数据" Tag="Soop" Visibility="{Binding SoopPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
-                                    <Button Content="导入 Twitch 旧版数据" Tag="Twitch" Visibility="{Binding TwitchPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
-                                    <Button Content="导入 Bilibili 旧版数据" Tag="Bilibili" Visibility="{Binding BilibiliPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
-                                    <Button Content="导入 YouTube 旧版数据" Tag="YouTube" Visibility="{Binding YouTubePanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport"/>
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="IsEnabled" Value="True" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ActivePlatform.Running}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <Button Content="导入 SOOP 旧版数据" Tag="Soop" Visibility="{Binding SoopPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport" />
+                                    <Button Content="导入 Twitch 旧版数据" Tag="Twitch" Visibility="{Binding TwitchPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport" />
+                                    <Button Content="导入 Bilibili 旧版数据" Tag="Bilibili" Visibility="{Binding BilibiliPanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport" />
+                                    <Button Content="导入 YouTube 旧版数据" Tag="YouTube" Visibility="{Binding YouTubePanelVisibility}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="14,0" Click="OnImport" />
                                 </StackPanel>
                             </StackPanel>
                         </Expander>
@@ -1712,73 +132,73 @@
                         <Border x:Name="DropsNetworkSummary" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0" Padding="14,11" CornerRadius="14">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <WrapPanel>
-                                        <TextBlock Text="网络与代理" Style="{StaticResource SectionTitle}" FontSize="16"/>
-                                        <Button Content="网络测试" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnNetworkCheck"/>
+                                        <TextBlock Text="网络与代理" Style="{StaticResource SectionTitle}" FontSize="16" />
+                                        <Button Content="网络测试" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnNetworkCheck" />
                                         <Border Style="{StaticResource Badge}" Margin="10,0,0,0" Padding="8,3">
-                                            <TextBlock Text="{Binding NetworkProxyModeText}" Foreground="{DynamicResource Accent.Primary}" FontSize="10.5"/>
+                                            <TextBlock Text="{Binding NetworkProxyModeText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
                                         </Border>
                                     </WrapPanel>
                                     <UniformGrid Columns="2" Margin="0,8,0,0">
                                         <StackPanel>
-                                            <TextBlock Text="代理地址" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
-                                            <TextBlock Text="{Binding NetworkProxyUrlText}" FontSize="11.5" TextTrimming="CharacterEllipsis" ToolTip="{Binding NetworkProxyUrlText}"/>
+                                            <TextBlock Text="代理地址" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                                            <TextBlock Text="{Binding NetworkProxyUrlText}" FontSize="13" TextTrimming="CharacterEllipsis" ToolTip="{Binding NetworkProxyUrlText}" />
                                         </StackPanel>
                                         <StackPanel Margin="14,0,0,0">
-                                            <TextBlock Text="失败策略" Foreground="{DynamicResource Text.Muted}" FontSize="10.5"/>
-                                            <TextBlock Text="{Binding NetworkProxyFallbackText}" FontSize="11.5"/>
+                                            <TextBlock Text="失败策略" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                                            <TextBlock Text="{Binding NetworkProxyFallbackText}" FontSize="13" />
                                         </StackPanel>
                                     </UniformGrid>
                                     <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="10,8" Margin="0,9,0,0">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                                <TextBlock Text="掉宝代理范围" FontWeight="SemiBold" FontSize="11.5"/>
-                                                <TextBlock Text="{Binding NetworkProxyScopeText}" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,2,0,0"/>
+                                                <TextBlock Text="掉宝代理范围" FontWeight="SemiBold" FontSize="13" />
+                                                <TextBlock Text="{Binding NetworkProxyScopeText}" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,2,0,0" />
                                             </StackPanel>
                                             <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                                <CheckBox x:Name="SoopUseProxyCheck" Content="SOOP" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                                <CheckBox x:Name="YouTubeUseProxyCheck" Content="YouTube" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                                <CheckBox x:Name="TwitchUseProxyCheck" Content="Twitch" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
-                                                <CheckBox x:Name="BilibiliUseProxyCheck" Content="哔哩哔哩" Style="{StaticResource ThemeCheckBox}" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged"/>
+                                                <CheckBox x:Name="SoopUseProxyCheck" Content="SOOP" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged" />
+                                                <CheckBox x:Name="YouTubeUseProxyCheck" Content="YouTube" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged" />
+                                                <CheckBox x:Name="TwitchUseProxyCheck" Content="Twitch" Style="{StaticResource ThemeCheckBox}" Margin="0,0,16,0" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged" />
+                                                <CheckBox x:Name="BilibiliUseProxyCheck" Content="哔哩哔哩" Style="{StaticResource ThemeCheckBox}" Checked="OnDropsProxyScopeChanged" Unchecked="OnDropsProxyScopeChanged" />
                                             </WrapPanel>
                                         </Grid>
                                     </Border>
-                                    <TextBlock Text="代理地址、总开关和失败策略仍在设置页管理；Chrome / Brave 调试连接始终直连。" Foreground="{DynamicResource Text.Muted}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="代理地址、总开关和失败策略仍在设置页管理；Chrome / Brave 调试连接始终直连。" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,7,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="前往设置" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnOpenProxySettings"/>
+                                <Button Grid.Column="1" Content="前往设置" Style="{StaticResource SecondaryButton}" Padding="13,0" Margin="16,0,0,0" VerticalAlignment="Center" Click="OnOpenProxySettings" />
                             </Grid>
                         </Border>
                     </Expander>
                     <Border Style="{StaticResource SectionCard}">
                         <StackPanel>
-                            <TextBlock Text="平台维护快捷操作" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+                            <TextBlock Text="平台维护快捷操作" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <WrapPanel Margin="0,10,0,0">
-                                <Button x:Name="DropsActiveStartButton" Content="{Binding ActiveStartText}" IsEnabled="{Binding CanActiveStart}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnActiveStart" Margin="0,0,8,8"/>
-                                <Button x:Name="DropsActiveStopButton" Content="停止" IsEnabled="{Binding CanActiveStop}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnActiveStop"/>
-                                <Button Content="刷新当前平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnRefresh"/>
-                                <Button Content="官方背包 / 平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnActiveInventory"/>
-                                <Button Content="打开直播间" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnOpenCurrentWatch"/>
+                                <Button x:Name="DropsActiveStartButton" Content="{Binding ActiveStartText}" IsEnabled="{Binding CanActiveStart}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnActiveStart" Margin="0,0,8,8" />
+                                <Button x:Name="DropsActiveStopButton" Content="停止" IsEnabled="{Binding CanActiveStop}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnActiveStop" />
+                                <Button Content="刷新当前平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnRefresh" />
+                                <Button Content="官方背包 / 平台" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnActiveInventory" />
+                                <Button Content="打开直播间" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnOpenCurrentWatch" />
                             </WrapPanel>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource SectionCard}">
                         <StackPanel>
-                            <TextBlock Text="运行状态" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+                            <TextBlock Text="运行状态" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
                             <StackPanel>
                                 <WrapPanel>
-                                    <TextBlock Text="{Binding ActivePlatform.Name}" Style="{StaticResource SectionTitle}" Margin="0,0,14,0"/>
-                                    <TextBlock Text="{Binding ActivePlatform.Status}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ActivePlatform.Name}" Style="{StaticResource SectionTitle}" Margin="0,0,14,0" />
+                                    <TextBlock Text="{Binding ActivePlatform.Status}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 </WrapPanel>
-                                <TextBlock Text="{Binding ActiveAccountText, StringFormat=账号：{0}}" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding ActivePlatform.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ActiveAccountText, StringFormat=账号：{0}}" Margin="0,7,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding ActivePlatform.Summary}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -1787,22 +207,22 @@
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
                         <StackPanel>
                             <DockPanel>
-                                <TextBlock Text="运行日志" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="运行日志" Style="{StaticResource SectionTitle}" />
                                 <WrapPanel DockPanel.Dock="Right">
-                                    <Button Content="复制全部" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnCopyAllLogs"/>
-                                    <Button Content="清空显示" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnClearLogDisplay"/>
+                                    <Button Content="复制全部" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnCopyAllLogs" />
+                                    <Button Content="清空显示" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnClearLogDisplay" />
                                 </WrapPanel>
                             </DockPanel>
                             <Grid Margin="0,10,0,0" MinHeight="86">
-                                <TextBox x:Name="LogTextBox" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Text.Primary}" CaretBrush="{DynamicResource Text.Primary}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" FontFamily="Consolas" FontSize="11" Height="220" Padding="8" TextChanged="OnLogTextChanged">
+                                <TextBox x:Name="LogTextBox" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Text.Primary}" CaretBrush="{DynamicResource Text.Primary}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" FontFamily="Consolas" FontSize="13" Height="220" Padding="8" TextChanged="OnLogTextChanged">
                                     <TextBox.ContextMenu>
                                         <ContextMenu>
-                                            <MenuItem Header="复制" Command="Copy" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"/>
-                                            <MenuItem Header="全选" Command="SelectAll" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"/>
+                                            <MenuItem Header="复制" Command="Copy" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
+                                            <MenuItem Header="全选" Command="SelectAll" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
                                         </ContextMenu>
                                     </TextBox.ContextMenu>
                                 </TextBox>
-                                <TextBlock x:Name="LogEmptyHint" Text="暂无日志。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                <TextBlock x:Name="LogEmptyHint" Text="暂无日志。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -1812,15 +232,15 @@
         <Border x:Name="PlatformSettingsFooter" Grid.Row="4" Style="{StaticResource SurfaceCard}" Padding="16,12" Margin="0,12,0,0" Visibility="Collapsed">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="PlatformDraftHint" Text="更改会保留在当前页面，点击保存后应用。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,0,16,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="PlatformDraftHint" Text="更改会保留在当前页面，点击保存后应用。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,0,16,0" VerticalAlignment="Center" />
                 <WrapPanel Grid.Column="1">
-                    <Button Content="保存设置" IsEnabled="{Binding IsTwitchCoreAvailable}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="8,0,0,0" x:Name="TwitchSaveSettingsButton" Click="OnSaveTwitch" Visibility="{Binding TwitchPanelVisibility}"/>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="14,0" x:Name="SoopSaveSettingsButton" Click="OnSaveSoop" Margin="8,0,0,0" Visibility="{Binding SoopPanelVisibility}"/>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="8,0,0,0" x:Name="YouTubeSaveSettingsButton" Click="OnSaveYouTube" Visibility="{Binding YouTubePanelVisibility}"/>
-                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="12,0" Command="{Binding BilibiliDetails.SaveSettingsCommand}" Visibility="{Binding BilibiliPanelVisibility}" Margin="8,0,0,0"/>
+                    <Button Content="保存设置" IsEnabled="{Binding IsTwitchCoreAvailable}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="8,0,0,0" x:Name="TwitchSaveSettingsButton" Click="OnSaveTwitch" Visibility="{Binding TwitchPanelVisibility}" />
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="14,0" x:Name="SoopSaveSettingsButton" Click="OnSaveSoop" Margin="8,0,0,0" Visibility="{Binding SoopPanelVisibility}" />
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="14,0" Margin="8,0,0,0" x:Name="YouTubeSaveSettingsButton" Click="OnSaveYouTube" Visibility="{Binding YouTubePanelVisibility}" />
+                    <Button Content="保存设置" Style="{StaticResource PrimaryButton}" Padding="12,0" Command="{Binding BilibiliDetails.SaveSettingsCommand}" Visibility="{Binding BilibiliPanelVisibility}" Margin="8,0,0,0" />
                 </WrapPanel>
             </Grid>
         </Border>

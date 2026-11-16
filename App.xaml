@@ -8,6 +8,8 @@
                 <ResourceDictionary Source="pack://application:,,,/Themes/Icons.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/Themes/Controls.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/Themes/Fluent.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Views/Drops/Shared/DropsResources.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Themes/Visuals.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/Stats/Theme/StatsColors.Light.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/Stats/Theme/StatsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>

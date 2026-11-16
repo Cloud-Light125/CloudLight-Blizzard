@@ -1,0 +1,6 @@
+<UserControl x:Class="CloudLightBlizzard.Controls.RewardArtwork" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:c="clr-namespace:CloudLightBlizzard.Controls" x:Name="Artwork">
+    <Grid>
+        <c:BenefitGallery ItemsSource="{Binding Benefits}" IsCompact="{Binding IsCompact,ElementName=Artwork}"><c:BenefitGallery.Style><Style TargetType="c:BenefitGallery" BasedOn="{StaticResource BenefitGalleryStyle}"><Style.Triggers><DataTrigger Binding="{Binding Benefits.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></c:BenefitGallery.Style></c:BenefitGallery>
+        <c:VisualImage SourceUrl="{Binding ImageUrl}" Brand="{Binding Brand}" MinHeight="76"><c:VisualImage.Style><Style TargetType="c:VisualImage"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Benefits.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></c:VisualImage.Style></c:VisualImage>
+    </Grid>
+</UserControl>

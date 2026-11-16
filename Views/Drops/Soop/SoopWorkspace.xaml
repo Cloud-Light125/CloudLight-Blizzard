@@ -1,0 +1,263 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:soop="clr-namespace:CloudLightBlizzard.Views.Drops.Soop" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.Soop.SoopWorkspace">
+    <StackPanel x:Name="SoopPanel" Visibility="{Binding SoopPanelVisibility}" x:FieldModifier="internal">
+        <soop:SoopOverview x:Name="SoopOverview" x:FieldModifier="internal" Tag="workspace:overview" />
+        <StackPanel Tag="workspace:accounts">
+            <Border x:Name="SoopAccountsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14" x:FieldModifier="internal">
+                <StackPanel>
+                    <TextBlock Text="SOOP 账号" Style="{StaticResource SectionTitle}" />
+                    <Border x:Name="SoopMultiAccountWarningCard" Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,12,0,0" x:FieldModifier="internal">
+                        <StackPanel>
+                            <TextBlock Text="SOOP 多账号使用提示" FontWeight="SemiBold" Foreground="{DynamicResource WarnTx}" />
+                            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" LineHeight="19" Foreground="{DynamicResource Text.Secondary}" Text="SOOP 可能对短时间内多个账号登录或同时运行多个账号进行安全检测。账号异常限制时，请联系 SOOP 客服处理。建议避免短时间批量添加大量账号。" />
+                        </StackPanel>
+                    </Border>
+                    <Expander x:Name="SoopAddAccountExpander" Header="添加 SOOP 账号" Margin="0,16,0,12" IsExpanded="False" x:FieldModifier="internal">
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="SOOP 账号" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="SoopUserId" Style="{StaticResource HintTextBox}" Tag="请输入 SOOP 登录账号" x:FieldModifier="internal" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                <TextBlock Text="密码" Style="{StaticResource FieldLabel}" />
+                                <Grid>
+                                    <PasswordBox x:Name="SoopPassword" PasswordChanged="OnSoopPasswordChanged" x:FieldModifier="internal" />
+                                    <TextBlock x:Name="SoopPasswordHint" Text="请输入密码" Foreground="{DynamicResource Text.Muted}" VerticalAlignment="Center" Margin="11,0" IsHitTestVisible="False" x:FieldModifier="internal" />
+                                </Grid>
+                            </StackPanel>
+                            <Button Grid.Column="2" Content="添加账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="0,23,0,0" Click="OnSoopAddAccount" />
+                        </Grid>
+                    </Expander>
+                    <Grid Margin="6,12,6,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.2*" />
+                            <ColumnDefinition />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="账号与当前任务" Foreground="{DynamicResource Text.Secondary}" />
+                        <TextBlock Grid.Column="1" Text="主账号 / 运行状态" Foreground="{DynamicResource Text.Secondary}" />
+                        <TextBlock Grid.Column="2" Text="官方进度" Foreground="{DynamicResource Text.Secondary}" />
+                    </Grid>
+                    <Grid Margin="0,12,0,10" MinHeight="86">
+                        <ListBox x:Name="SoopAccountsList" ItemsSource="{Binding Accounts}" ItemTemplate="{StaticResource SoopAccountRowTemplate}" MaxHeight="360" x:FieldModifier="internal" />
+                        <TextBlock Text="尚未添加 SOOP 账号。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Accounts.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <WrapPanel>
+                        <Button Content="全部开始" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStart" />
+                        <Button Content="全部停止" Tag="Soop" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnStop" />
+                        <Button Content="刷新账号状态" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="0,0,8,8" Click="OnSoopRefresh" />
+                    </WrapPanel>
+                    <Expander Header="选中账号操作" Margin="0,12,0,0">
+                        <WrapPanel>
+                            <Button Content="启动选中账号" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnSoopStartAccount" Margin="0,0,8,8" />
+                            <Button Content="停止选中账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopStopAccount" />
+                            <Button Content="设为主账号" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopSetPrimaryAccount" />
+                            <Button Content="删除选中账号" Style="{StaticResource DangerButton}" Padding="14,0" Margin="0,0,8,8" Click="OnSoopDeleteAccount" />
+                        </WrapPanel>
+                    </Expander>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:activities">
+            <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,0,7,0" VerticalAlignment="Top" CornerRadius="14">
+                    <StackPanel>
+                        <TextBlock Text="掉宝任务" Style="{StaticResource SectionTitle}" />
+                        <Grid Margin="0,10,0,0" MinHeight="120">
+                            <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="280" />
+                            <TextBlock Text="当前没有可用任务。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Tasks.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource SurfaceCard}" Margin="7,0,0,0" VerticalAlignment="Top" CornerRadius="14">
+                    <StackPanel>
+                        <DockPanel LastChildFill="True">
+                            <Button Content="打开背包" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Height="26" Padding="10,0" FontSize="13" Click="OnOpenSoopInventory" />
+                            <TextBlock Text="奖励背包" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Grid Margin="0,10,0,10" MinHeight="96">
+                            <ListBox x:Name="SoopInventoryList" ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="240" x:FieldModifier="internal" />
+                            <TextBlock Text="背包中暂无奖励。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Inventory.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <WrapPanel>
+                            <Button Content="{Binding SelectedItem.SoopClaimButtonText, ElementName=SoopInventoryList, TargetNullValue=领取选中奖励, FallbackValue=领取选中奖励}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward" />
+                            <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Expander Header="进度历史与回退诊断" Margin="0,14,0,0">
+                <StackPanel Margin="8">
+                    <TextBlock Text="这些记录用于排查同步与回退，不代表当前任务进度。重启后先显示历史缓存；最新进度以官方查询为准。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,8" />
+                    <ListBox ItemsSource="{Binding SoopProgressHistory}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="220" />
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+        <StackPanel Tag="workspace:settings">
+            <Border x:Name="SoopSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14" x:FieldModifier="internal">
+                <StackPanel>
+                    <TextBlock Text="直播间与任务策略" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="自动选择适合的直播间，或指定频道；同一账号同一时间只进入一个直播间。" Style="{StaticResource FieldHint}" />
+                    <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="820" Margin="0,12,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.1*" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,18,0">
+                            <StackPanel>
+                                <ctrl:SettingRow Title="直播间选择" Description="自动分配频道，或固定到指定直播间。">
+                                    <ctrl:SettingRow.Editor>
+                                        <StackPanel>
+                                            <ComboBox x:Name="SoopChannelMode" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnSoopChannelModeChanged" x:FieldModifier="internal">
+                                                <ComboBoxItem Content="自动选择" Tag="smart" />
+                                                <ComboBoxItem Content="手动指定" Tag="manual" />
+                                                <ComboBoxItem Content="仅守望先锋赛事频道" Tag="owesports" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="优先任务" Description="主账号和独立账号仍按原任务策略运行。">
+                                    <ctrl:SettingRow.Editor>
+                                        <StackPanel>
+                                            <ComboBox x:Name="SoopPriorityMission" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag" x:FieldModifier="internal" />
+                                        </StackPanel>
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                            </StackPanel>
+                            <StackPanel x:Name="SoopManualChannelPanel" Margin="0,12,0,0" Visibility="Collapsed" x:FieldModifier="internal">
+                                <TextBlock Text="直播间地址或频道 ID" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="SoopManualChannel" Style="{StaticResource HintTextBox}" Tag="例如 owesports 或 https://play.sooplive.com/owesports" x:FieldModifier="internal" />
+                            </StackPanel>
+                            <StackPanel x:Name="SoopPreferredChannelPanel" Margin="0,12,0,0" Visibility="Collapsed" x:FieldModifier="internal">
+                                <TextBlock Text="赛事频道" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="SoopPreferredChannel" Style="{StaticResource HintTextBox}" Tag="owesports" x:FieldModifier="internal" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="运行偏好" Style="{DynamicResource VisualHeading}" />
+                            <StackPanel>
+                                <ctrl:SettingRow Title="低流量模式" Description="降低观看流量，保留官方心跳与任务查询。" ReflowWidth="300">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="SoopLowBandwidth" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="自动领取奖励" Description="沿用账号绑定保护；领取前重新验证 UID。" ReflowWidth="300">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="SoopAutoClaim" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="没有任务时继续等待" Description="无可执行任务时继续等待新活动。" ReflowWidth="300">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="SoopHangWithoutMissions" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                            </StackPanel>
+                            <ctrl:SettingRow Title="启动 CloudLight Blizzard 时自动运行 SOOP" Description="启动偏好按原规则保存，在下次启动应用时生效。" ReflowWidth="300">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="SoopAutoStart" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Click="OnAutoStartChanged" x:FieldModifier="internal" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="SOOP 认证失效后，将使用 Windows DPAPI 加密保存的账号密码持续重登，直到成功或手动停止账号。" Style="{StaticResource FieldHint}" Margin="0,7,0,0" />
+                    <WrapPanel Margin="0,14,0,0">
+                        <Button Content="{Binding SoopRefreshButtonText}" IsEnabled="{Binding CanRefreshSoop}" Style="{StaticResource PrimaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnSoopRefresh" />
+                        <ProgressBar Width="70" Height="5" Margin="12,0,0,0" VerticalAlignment="Center" IsIndeterminate="True" Visibility="{Binding SoopRefreshProgressVisibility}" Background="{DynamicResource App.SurfaceAlt}" Foreground="{DynamicResource Accent.Primary}" />
+                        <TextBlock Text="{Binding SoopRefreshStatus}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:advanced">
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="刷新与恢复" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <StackPanel>
+                        <ctrl:SettingRow Title="任务刷新间隔" Description="定期重新查询当前账号可用的活动和任务。">
+                            <ctrl:SettingRow.Editor>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        <TextBox x:Name="SoopMissionInterval" Style="{StaticResource HintTextBox}" Tag="90" x:FieldModifier="internal" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </ctrl:SettingRow.Editor>
+                        </ctrl:SettingRow>
+                        <ctrl:SettingRow Title="背包刷新间隔" Description="定期同步当前账号的官方奖励背包。">
+                            <ctrl:SettingRow.Editor>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        <TextBox x:Name="SoopInventoryInterval" Style="{StaticResource HintTextBox}" Tag="300" x:FieldModifier="internal" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </ctrl:SettingRow.Editor>
+                        </ctrl:SettingRow>
+                        <ctrl:SettingRow Title="直播间刷新间隔" Description="定期重新检查可用直播间和频道状态。">
+                            <ctrl:SettingRow.Editor>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        <TextBox x:Name="SoopChannelInterval" Style="{StaticResource HintTextBox}" Tag="300" x:FieldModifier="internal" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </ctrl:SettingRow.Editor>
+                        </ctrl:SettingRow>
+                        <ctrl:SettingRow Title="失效重登间隔" Description="更改后点击下方“保存设置”应用。">
+                            <ctrl:SettingRow.Editor>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="秒" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        <TextBox x:Name="SoopReauthInterval" Style="{StaticResource HintTextBox}" Tag="300" x:FieldModifier="internal" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </ctrl:SettingRow.Editor>
+                        </ctrl:SettingRow>
+                    </StackPanel>
+                    <TextBlock Text="任务、背包、频道和失效重登使用各自的刷新间隔。保存后沿用原 Worker 的应用方式。" TextWrapping="Wrap" Style="{StaticResource FieldHint}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

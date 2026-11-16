@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Text.Json;
+using CloudLightBlizzard.ViewModels.Visuals;
 
 namespace CloudLightBlizzard.ViewModels;
 
@@ -16,6 +17,10 @@ public sealed partial class DropsViewModel
 
 public sealed partial class DropsRow
 {
+    private CloudLightBlizzard.ViewModels.Visuals.RewardVisual? _visual;
+    public CloudLightBlizzard.ViewModels.Visuals.RewardVisual Visual=>_visual??=CloudLightBlizzard.ViewModels.Visuals.RewardVisual.From(Payload,"Twitch","");
+    public string CampaignImageUrl=>Payload.ValueKind==JsonValueKind.Object&&Payload.TryGetProperty("gameImageUrl",out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
+    public IReadOnlyList<RewardVisual> CampaignRewards=>V.Rows(Payload,"drops").Select(d=>RewardVisual.From(d,"Twitch","")).ToArray();
     public string SoopProgressSummary
     {
         get

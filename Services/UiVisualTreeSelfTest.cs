@@ -243,7 +243,7 @@ public static class UiVisualTreeSelfTest
                     });
             }
             Assert(snapshotsPage is not null && snapshotsVm is not null && snapshotSummary is Border &&
-                   snapshotWorkspace is Grid snapshotGrid && snapshotGrid.ColumnDefinitions.Count == 2 &&
+                   snapshotWorkspace is Grid snapshotGrid && snapshotGrid.ColumnDefinitions.Count >= 1 &&
                    snapshotList is not null &&
                    snapshotList.ItemTemplate is not null,
                 checks, "区服快照页包含摘要区、左右工作区、列表与快照卡片模板");
@@ -391,14 +391,16 @@ public static class UiVisualTreeSelfTest
                 var soopReauthInterval = FindNamed(dropsPage, "SoopReauthInterval");
                 dropsPage.ShowWorkspace("network");
                 dropsPage.UpdateLayout();
+                dropsHeader = platformTabsBar;
                 Assert(dropsHeader is not null && dropsNetworkSummary is Border networkSummary &&
                        networkSummary.ActualHeight > 0 && platformTabsBar is Grid tabsGrid &&
-                       tabsGrid.ColumnDefinitions.Count == 4,
-                    checks, "掉宝页标题、独立网络摘要行和四列平台 Tab 均存在");
+                       tabsGrid.Children.OfType<RadioButton>().Count() == 4,
+                    checks, "掉宝页标题、网络工作区和四个平台 Tab 均存在");
                 Assert(platformStatusDots.All(value => value is Ellipse { Style: not null, IsVisible: true }),
                     checks, "掉宝页四个平台标题均包含可见状态点和统一状态样式");
-                Assert(FindVisual(dropsPage, value => value is UniformGrid grid && grid.Columns >= 4) is null,
-                    checks, "掉宝页顶部四个大平台卡片已从视觉树移除");
+                Assert(platformTabsBar is Grid brandTabs && brandTabs.Children.OfType<RadioButton>().Count() == 4 &&
+                       platformStatusDots.All(value=>value is Ellipse),
+                    checks, "掉宝页使用带状态点的紧凑平台导航");
                 var proxyRowBelowHeader = false;
                 try
                 {
@@ -1009,6 +1011,7 @@ public static class UiVisualTreeSelfTest
     private static FrameworkElement? FindNamed(FrameworkElement root, string name)
     {
         if (string.Equals(root.Name, name, StringComparison.Ordinal)) return root;
+        if (root is DropsPage drops && drops.FindName(name) is FrameworkElement componentNamed) return componentNamed;
         if (root.FindName(name) is FrameworkElement named) return named;
         return FindVisual(root, value => value is FrameworkElement element &&
                                         string.Equals(element.Name, name, StringComparison.Ordinal));

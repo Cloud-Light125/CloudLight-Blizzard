@@ -23,7 +23,7 @@
                                              Visibility="{Binding UnreadVisibility}" VerticalAlignment="Top" Margin="0,5,0,0"/>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="{Binding Announcement.Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding PublishedText}" Foreground="{DynamicResource Text.Muted}" FontSize="11" Margin="0,4,0,0"/>
+                                        <TextBlock Text="{Binding PublishedText}" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,4,0,0"/>
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>

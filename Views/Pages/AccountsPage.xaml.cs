@@ -11,7 +11,16 @@ public partial class AccountsPage : UserControl
     private MainViewModel? _vm;
     public event Action<AccountRow>? OpenStatsRequested;
 
-    public AccountsPage() { InitializeComponent(); ShowWorkspace("library"); }
+    public AccountsPage()
+    {
+        InitializeComponent();
+        AddHandler(CloudLightBlizzard.Controls.WorkspaceAction.RequestEvent,new EventHandler<CloudLightBlizzard.Controls.WorkspaceActionEventArgs>((_,e)=>
+        {
+            e.Handled=true;
+            switch(e.Action){case "account:switch":OnSwitchCard(e.Control,new RoutedEventArgs());break;case "account:edit":OnEdit(e.Control,new RoutedEventArgs());break;case "account:delete":OnDelete(e.Control,new RoutedEventArgs());break;case "account:stats":OnStats(e.Control,new RoutedEventArgs());break;}
+        }));
+        ShowWorkspace("library");
+    }
     internal void ShowWorkspace(string section)
     {
         CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);

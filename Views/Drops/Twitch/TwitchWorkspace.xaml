@@ -1,0 +1,290 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:twitch="clr-namespace:CloudLightBlizzard.Views.Drops.Twitch" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Drops.Twitch.TwitchWorkspace">
+    <StackPanel x:Name="TwitchPanel" Visibility="{Binding TwitchPanelVisibility}" x:FieldModifier="internal">
+        <twitch:TwitchOverview x:Name="TwitchOverview" x:FieldModifier="internal" Tag="workspace:overview" />
+        <StackPanel Tag="workspace:accounts">
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="账号与本地 Session" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding ActiveAccountText}" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Twitch.Summary}" TextWrapping="Wrap" Margin="0,8,0,16" />
+                    <TextBlock Text="清除操作继续使用原有确认流程；游戏偏好、代理与自动启动设置保留。" TextWrapping="Wrap" Style="{StaticResource FieldHint}" />
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="IsEnabled" Value="True" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Accounts.Count}" Value="0" />
+                                            <Condition Binding="{Binding IsTwitchLoginInProgress}" Value="False" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Button Content="清除登录信息" IsEnabled="{Binding CanClearTwitchLogin}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnTwitchLogout" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:activities">
+            <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" Visibility="{Binding TwitchPanelVisibility}" CornerRadius="14">
+                <StackPanel>
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <TextBlock Text="显示范围：" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" />
+                            <ComboBox x:Name="TwitchCampaignScopePicker" Width="150" Style="{StaticResource ThemeComboBox}" SelectionChanged="OnTwitchCampaignScopeChanged" x:FieldModifier="internal">
+                                <ComboBoxItem Content="当前可掉宝" Tag="available" />
+                                <ComboBoxItem Content="仅优先游戏" Tag="priority" />
+                                <ComboBoxItem Content="全部活动" Tag="all" />
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Text="掉宝活动" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <Grid Margin="0,12,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+                        <Grid Margin="12,0,18,7">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.1*" MinWidth="100" />
+                                <ColumnDefinition Width="1.8*" MinWidth="150" />
+                                <ColumnDefinition Width="0.8*" />
+                                <ColumnDefinition Width="1.2*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="游戏" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                            <TextBlock Grid.Column="1" Text="活动或奖励名称" Margin="14,0,0,0" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                            <TextBlock Grid.Column="2" Text="状态" Margin="14,0,0,0" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                            <TextBlock Grid.Column="3" Text="进度 / 剩余" Foreground="{DynamicResource Text.Muted}" FontSize="13" />
+                        </Grid>
+                        <Grid Grid.Row="1" MinHeight="145">
+                            <ListBox ItemsSource="{Binding Tasks}" ItemTemplate="{StaticResource TwitchCampaignRowTemplate}" MaxHeight="320" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                            <TextBlock Text="{Binding TwitchCampaignsEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Tasks.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <StackPanel Margin="0,14,0,0">
+                <Border Style="{StaticResource SurfaceCard}" CornerRadius="14">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="掉宝进度与奖励" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="打开背包" Style="{StaticResource SecondaryButton}" Padding="12,0" Click="OnOpenTwitchInventory" />
+                        </Grid>
+                        <Grid Margin="0,10,0,0" MinHeight="145">
+                            <ListBox ItemsSource="{Binding Inventory}" ItemTemplate="{StaticResource TwitchDropRowTemplate}" MaxHeight="300" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                            <TextBlock Text="{Binding TwitchInventoryEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Inventory.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14">
+                    <StackPanel>
+                        <TextBlock Text="当前频道与可用频道" Style="{StaticResource SectionTitle}" />
+                        <Grid Margin="0,10,0,10" MinHeight="145">
+                            <ListBox x:Name="TwitchChannelsList" ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource DropsRowTemplate}" MaxHeight="250" x:FieldModifier="internal" />
+                            <TextBlock Text="{Binding TwitchChannelsEmptyText}" Foreground="{DynamicResource Text.Muted}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="12" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Channels.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <Button Content="选择并切换频道" Style="{StaticResource SecondaryButton}" Padding="12,0" HorizontalAlignment="Left" Click="OnTwitchSelectChannel" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+        <StackPanel Tag="workspace:settings">
+            <Border x:Name="TwitchSettingsCard" Margin="0" Visibility="{Binding TwitchPanelVisibility}" BorderThickness="0" x:FieldModifier="internal">
+                <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="740">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.6*" />
+                        <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <Border Style="{StaticResource SectionCard}">
+                            <StackPanel>
+                                <TextBlock Text="基础偏好" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                                <TextBlock Text="不确定如何设置时保持默认即可。优先游戏会影响程序选择掉宝活动和频道的顺序。" Style="{StaticResource FieldHint}" />
+                                <StackPanel>
+                                    <ctrl:SettingRow Title="界面语言" Description="仅调整 Twitch Core 的显示语言。">
+                                        <ctrl:SettingRow.Editor>
+                                            <StackPanel>
+                                                <ComboBox x:Name="TwitchLanguage" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag" x:FieldModifier="internal" />
+                                            </StackPanel>
+                                        </ctrl:SettingRow.Editor>
+                                    </ctrl:SettingRow>
+                                    <ctrl:SettingRow Title="掉宝优先策略" Description="沿用活动资格与现有优先游戏规则。">
+                                        <ctrl:SettingRow.Editor>
+                                            <StackPanel>
+                                                <ComboBox x:Name="TwitchPriorityMode" Style="{StaticResource ThemeComboBox}" x:FieldModifier="internal">
+                                                    <ComboBoxItem Content="仅挂机优先游戏" Tag="PRIORITY_ONLY" />
+                                                    <ComboBoxItem Content="最早结束的活动优先" Tag="ENDING_SOONEST" />
+                                                    <ComboBoxItem Content="剩余可用时间最少优先" Tag="LOW_AVBL_FIRST" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                        </ctrl:SettingRow.Editor>
+                                    </ctrl:SettingRow>
+                                    <ctrl:SettingRow Title="连接质量" Description="等级 1–6，按当前网络质量选择。">
+                                        <ctrl:SettingRow.Editor>
+                                            <StackPanel>
+                                                <ComboBox x:Name="TwitchConnectionQuality" Style="{StaticResource ThemeComboBox}" x:FieldModifier="internal">
+                                                    <ComboBoxItem Content="等级 1" Tag="1" />
+                                                    <ComboBoxItem Content="等级 2" Tag="2" />
+                                                    <ComboBoxItem Content="等级 3" Tag="3" />
+                                                    <ComboBoxItem Content="等级 4" Tag="4" />
+                                                    <ComboBoxItem Content="等级 5" Tag="5" />
+                                                    <ComboBoxItem Content="等级 6" Tag="6" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                        </ctrl:SettingRow.Editor>
+                                    </ctrl:SettingRow>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <Border Grid.Column="1" Style="{DynamicResource HeroCard}">
+                        <StackPanel>
+                            <TextBlock Text="观看计划" Style="{DynamicResource VisualHeading}" />
+                            <TextBlock Text="优先与排除游戏决定活动选择顺序。自动化与领取策略可以独立调整。" Style="{DynamicResource VisualCaption}" Margin="0,0,0,16" />
+                            <Button Content="优先 / 排除游戏 →" ctrl:WorkspaceAction.Name="section:games" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,10" HorizontalAlignment="Stretch" />
+                            <Button Content="启动、通知与自动领取 →" ctrl:WorkspaceAction.Name="section:automation" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,10" HorizontalAlignment="Stretch" />
+                            <Button Content="网络与账号维护 →" ctrl:WorkspaceAction.Name="section:network" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,10" HorizontalAlignment="Stretch" />
+                            <TextBlock Text="当前账号" Style="{DynamicResource VisualHeading}" />
+                            <TextBlock Text="{Binding TwitchVisual.AccountText}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,16" />
+                            <TextBlock Text="{Binding TwitchVisual.SyncText}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,16" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:network">
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="配置异常恢复" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <Button Content="备份并恢复默认配置" Visibility="{Binding TwitchConfigRepairVisibility}" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnRepairTwitchSettings" />
+                    <TextBlock Text="仅当现有恢复流程确认配置损坏时可用；恢复前备份损坏文件，不清除 Session。" TextWrapping="Wrap" Style="{StaticResource FieldHint}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:games">
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="游戏优先级" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,8,0">
+                            <TextBlock Text="优先游戏" Style="{StaticResource FieldLabel}" />
+                            <DockPanel>
+                                <Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddPriorityGame" />
+                                <ComboBox x:Name="TwitchPriorityPicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchPriorityChoices}" x:FieldModifier="internal" />
+                            </DockPanel>
+                            <ListBox x:Name="TwitchPriorityList" ItemsSource="{Binding TwitchPriorityGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0" x:FieldModifier="internal">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="6,4">
+                                            <WrapPanel DockPanel.Dock="Right">
+                                                <Button Content="↑" ToolTip="上移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Click="OnPriorityUp" />
+                                                <Button Content="↓" ToolTip="下移" Tag="{Binding}" Style="{StaticResource SecondaryButton}" Width="28" Height="26" Padding="0" Margin="4,0,0,0" Click="OnPriorityDown" />
+                                                <Button Content="移除" Tag="{Binding}" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Margin="4,0,0,0" Click="OnRemovePriorityGame" />
+                                            </WrapPanel>
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                            <TextBlock Text="排除游戏" Style="{StaticResource FieldLabel}" />
+                            <DockPanel>
+                                <Button Content="添加" DockPanel.Dock="Right" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="8,0,0,0" Click="OnAddExcludedGame" />
+                                <ComboBox x:Name="TwitchExcludePicker" Style="{StaticResource SearchComboBox}" ItemsSource="{Binding TwitchExcludeChoices}" x:FieldModifier="internal" />
+                            </DockPanel>
+                            <ListBox x:Name="TwitchExcludeList" ItemsSource="{Binding TwitchExcludedGames}" MinHeight="96" MaxHeight="190" Margin="0,8,0,0" x:FieldModifier="internal">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="6,4">
+                                            <Button Content="移除" Tag="{Binding}" DockPanel.Dock="Right" Style="{StaticResource DangerButton}" Height="26" Padding="8,0" Click="OnRemoveExcludedGame" />
+                                            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="TwitchGamesEmptyHint" Text="登录 Twitch 并刷新掉宝活动后即可选择游戏。" Style="{StaticResource FieldHint}" Visibility="Collapsed" x:FieldModifier="internal" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <StackPanel Tag="workspace:automation">
+            <Border Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="自动化与通知" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" />
+                    <ctrl:SettingRow Title="启动 CloudLight Blizzard 时自动运行 Twitch" Description="启动偏好按原规则保存，在下次启动应用时生效。" ReflowWidth="300">
+                        <ctrl:SettingRow.Editor>
+                            <CheckBox x:Name="TwitchAutoStart" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Click="OnAutoStartChanged" x:FieldModifier="internal" Width="48" />
+                        </ctrl:SettingRow.Editor>
+                    </ctrl:SettingRow>
+                    <ctrl:SettingRow Title="托盘通知" Description="更改后点击下方“保存设置”应用。" ReflowWidth="300">
+                        <ctrl:SettingRow.Editor>
+                            <CheckBox x:Name="TwitchTrayNotifications" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                        </ctrl:SettingRow.Editor>
+                    </ctrl:SettingRow>
+                    <ctrl:SettingRow Title="显示徽章和表情" Description="更改后点击下方“保存设置”应用。" ReflowWidth="300">
+                        <ctrl:SettingRow.Editor>
+                            <CheckBox x:Name="TwitchBadgesEmotes" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                        </ctrl:SettingRow.Editor>
+                    </ctrl:SettingRow>
+                    <ctrl:SettingRow Title="检查可用掉宝" Description="更改后点击下方“保存设置”应用。" ReflowWidth="300">
+                        <ctrl:SettingRow.Editor>
+                            <CheckBox x:Name="TwitchAvailableDrops" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                        </ctrl:SettingRow.Editor>
+                    </ctrl:SettingRow>
+                    <ctrl:SettingRow Title="自动领取掉宝" Description="更改后点击下方“保存设置”应用。" ReflowWidth="300">
+                        <ctrl:SettingRow.Editor>
+                            <CheckBox x:Name="TwitchAutoClaim" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" x:FieldModifier="internal" Width="48" />
+                        </ctrl:SettingRow.Editor>
+                    </ctrl:SettingRow>
+                    <TextBlock Text="自动领取沿用当前 NoAutoClaim 规则与默认值。开启前请确认当前平台的领取策略。" TextWrapping="Wrap" Style="{StaticResource FieldHint}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

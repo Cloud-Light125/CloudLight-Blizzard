@@ -771,6 +771,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
 
     public void RefreshTemporalStatus(DateTimeOffset now)
     {
+        foreach(var visual in _visuals.Values)visual.RefreshClock();
         Raise(nameof(TwitchAuthorizationRemainingText));
         if (_soopNextRetryAt is { } soopDeadline)
         {
@@ -2253,6 +2254,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         if (state.TryGetProperty("runtime", out var runtime) && runtime.ValueKind == JsonValueKind.Object &&
             !Bool(runtime, "available", true))
             ApplyRuntimeError(platform, Text(runtime, "code"), Text(runtime, "message"));
+        ApplyVisualState(platform, state);
         }
         finally { _projectionPlatform = previousProjection; }
     }
@@ -2263,6 +2265,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
             return;
         var uid = uidValue.GetString() ?? "";
         if (string.IsNullOrWhiteSpace(uid)) return;
+        SoopVisual.UpdateAccount(state);
         var accountRows = _rows[DropsPlatform.Soop].Accounts;
         var accountIndex = accountRows.ToList().FindIndex(row => row.Id == uid);
         var accountRow = new DropsRow
@@ -3194,6 +3197,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         if (message.Platform == DropsPlatform.Bilibili)
         {
             BilibiliDetails.HandleEvent(message.Name, message.Payload);
+            BilibiliVisual.RefreshBilibili(BilibiliDetails);
             if (message.Name is "status" or "session")
             {
                 var bilibili = Bilibili;

@@ -3,7 +3,7 @@
     <!-- Shared desktop typography and keyboard/focus states. Semantic brushes are theme-swappable. -->
     <Style TargetType="Window">
         <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="14"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="Foreground" Value="{DynamicResource Text.Primary}"/>
@@ -11,7 +11,7 @@
     </Style>
     <Style TargetType="UserControl">
         <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="14"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
     </Style>
     <Style x:Key="WorkspaceTab" TargetType="RadioButton">
@@ -40,13 +40,14 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-            <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions>
-                <ContentPresenter VerticalAlignment="Center" Margin="0,0,16,0" RecognizesAccessKey="True"/>
-                <Border x:Name="Track" Grid.Column="1" Width="40" Height="22" Background="{DynamicResource TgOff}" CornerRadius="11" HorizontalAlignment="Right">
+            <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <ContentPresenter x:Name="SwitchLabel" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                <Border x:Name="Track" Grid.Column="1" Width="40" Height="22" Margin="12,0,0,0" Background="{DynamicResource TgOff}" CornerRadius="11" HorizontalAlignment="Right">
                     <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="{DynamicResource OnAcc}" HorizontalAlignment="Left" Margin="3,0"/>
                 </Border>
             </Grid>
             <ControlTemplate.Triggers>
+                <Trigger Property="Content" Value=""><Setter TargetName="SwitchLabel" Property="Visibility" Value="Collapsed"/><Setter TargetName="Track" Property="Margin" Value="0"/></Trigger>
                 <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource Acc}"/><Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/></Trigger>
                 <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderThickness" Value="2"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Text.Primary}"/></Trigger>
                 <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>

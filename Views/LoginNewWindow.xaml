@@ -22,7 +22,7 @@
             </Grid>
 
             <StackPanel Margin="15,10,15,0">
-                <TextBlock Foreground="{DynamicResource Tx2}" FontSize="12.5" TextWrapping="Wrap" LineHeight="20">
+                <TextBlock Foreground="{DynamicResource Tx2}" FontSize="13" TextWrapping="Wrap" LineHeight="20">
                     <Run Text="即将回到 Battle.net 登录页，登录一个" /><Run Text="新账号" Foreground="{DynamicResource Tx1}" FontWeight="SemiBold" /><Run Text="。登录成功后回来点击「保存当前账号」即可收录。" />
                 </TextBlock>
                 <Border Background="{DynamicResource WarnBg}" BorderBrush="{DynamicResource WarnBd}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,9,0,0">
@@ -30,15 +30,15 @@
                         <ctrl:IconView DockPanel.Dock="Left" Geometry="{StaticResource GeoWarn}" Stroke="{DynamicResource WarnIc}" Thickness="2" IconSize="14"
                                        VerticalAlignment="Top" Margin="0,1,8,0" />
                         <TextBlock Text="不要在 Battle.net 里点击「退出登录」，否则下次可能需要重新验证。本工具只引导登录，不会替你退出其他账号。"
-                                   Foreground="{DynamicResource WarnTx}" FontSize="12" TextWrapping="Wrap" LineHeight="18" />
+                                   Foreground="{DynamicResource WarnTx}" FontSize="13" TextWrapping="Wrap" LineHeight="18" />
                     </DockPanel>
                 </Border>
             </StackPanel>
 
             <Grid Margin="15,14,15,15">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource GhostButton}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="OnCancel" Content="取消" FontSize="12.5" />
-                    <Button Style="{StaticResource AccentButton}" Height="32" Padding="18,0" Click="OnConfirm" Content="继续" FontSize="12.5" />
+                    <Button Style="{StaticResource GhostButton}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="OnCancel" Content="取消" FontSize="13" />
+                    <Button Style="{StaticResource AccentButton}" Height="32" Padding="18,0" Click="OnConfirm" Content="继续" FontSize="13" />
                 </StackPanel>
             </Grid>
         </StackPanel>

@@ -1,71 +1,100 @@
-<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:pages="clr-namespace:CloudLightBlizzard.Views.Pages" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" x:Class="CloudLightBlizzard.Views.Pages.SettingsPage" behaviors:NestedScrollBehavior.IsEnabled="True" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:ns4="clr-namespace:CloudLightBlizzard.Views.Pages" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Pages.SettingsPage" behaviors:NestedScrollBehavior.IsEnabled="True" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <Grid Margin="24,22,24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="182" />
+            <ColumnDefinition />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition />
         </Grid.RowDefinitions>
-        <ctrl:PageHeader Title="设置" Description="调整应用行为、Battle.net 路径与本地数据。"/>
-        <WrapPanel x:Name="SettingsWorkspaceNavigation" Margin="0,8,0,8" Grid.Row="1">
-            <RadioButton Content="常规与外观" Tag="general" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="启动与退出" Tag="startup" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="网络代理" Tag="network" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="通知" Tag="notifications" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="数据与存储" Tag="data" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="更新" Tag="updates" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-            <RadioButton Content="反馈" Tag="feedback" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged"/>
-        </WrapPanel>
-        <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+        <ctrl:PageHeader Title="设置" Description="调整应用行为、Battle.net 路径与本地数据。" Grid.ColumnSpan="2" />
+        <StackPanel x:Name="SettingsWorkspaceNavigation" Margin="0,24,18,0" Grid.Row="1">
+            <RadioButton Content="常规与外观" Tag="general" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="启动与退出" Tag="startup" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="网络代理" Tag="network" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="通知" Tag="notifications" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="数据与存储" Tag="data" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="更新" Tag="updates" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+            <RadioButton Content="反馈" Tag="feedback" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
+        </StackPanel>
+        <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" Grid.Column="1" Margin="0,22,0,0">
             <StackPanel Margin="0,0,4,16">
                 <StackPanel Tag="workspace:general">
                     <Border Style="{StaticResource SectionCard}">
                         <StackPanel>
-                            <TextBlock Text="外观" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" TextWrapping="Wrap"/>
-                            <CheckBox x:Name="DarkModeBox" Style="{StaticResource SwitchCheckBox}" Content="深色模式" Checked="OnThemeChanged" Unchecked="OnThemeChanged" Margin="0,6,0,6"/>
-                            <TextBlock Text="主题立即应用到全部页面和对话框，并沿用现有设置保存机制。" TextWrapping="Wrap" Style="{StaticResource FieldHint}"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
-                        <StackPanel>
-                            <TextBlock Text="Battle.net" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <TextBlock Text="Battle.net.exe 路径" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                            <TextBlock x:Name="ExePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,11"/>
-                            <WrapPanel>
-                                <Button Content="自动检测" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,0" Click="OnAutoDetect"/>
-                                <Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnChooseExe"/>
-                            </WrapPanel>
+                            <TextBlock Text="常规与外观" Style="{StaticResource SectionTitle}" Margin="0,0,0,12" TextWrapping="Wrap" />
+                            <ctrl:SettingRow Title="深色模式" Description="立即切换整个应用的浅色或深色外观。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="DarkModeBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnThemeChanged" Unchecked="OnThemeChanged" Margin="0" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <Grid Margin="16,16" behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="620">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Battle.net.exe 路径" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="ExePathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,11" />
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <Button Content="自动检测" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,0" Click="OnAutoDetect" />
+                                    <Button Content="更改" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnChooseExe" />
+                                </WrapPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>
                 <StackPanel Tag="workspace:startup">
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,24,0,0">
                         <StackPanel>
-                            <TextBlock Text="常规" Style="{StaticResource SectionTitle}" Margin="0,0,0,14" TextWrapping="Wrap"/>
-                            <CheckBox x:Name="CloseToTrayBox" Style="{StaticResource SwitchCheckBox}" Content="关闭主窗口时最小化到托盘" Margin="0,6,0,6" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
-                            <CheckBox x:Name="StartMinimizedBox" Style="{StaticResource SwitchCheckBox}" Content="启动时进入托盘" Margin="0,6,0,6" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
-                            <CheckBox x:Name="StartupBox" Style="{StaticResource SwitchCheckBox}" Content="开机自动启动" Margin="0,6,0,6" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                            <TextBlock Text="常规" Style="{StaticResource SectionTitle}" Margin="0,0,0,14" TextWrapping="Wrap" />
+                            <ctrl:SettingRow Title="关闭主窗口时最小化到托盘" Description="点击关闭时保留后台任务，并收起到系统托盘。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="CloseToTrayBox" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Checked="OnSettingChanged" Unchecked="OnSettingChanged" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <ctrl:SettingRow Title="启动时进入托盘" Description="应用启动后直接收起到系统托盘。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="StartMinimizedBox" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Checked="OnSettingChanged" Unchecked="OnSettingChanged" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <ctrl:SettingRow Title="开机自动启动" Description="登录 Windows 后自动启动 CloudLight Blizzard。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="StartupBox" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Checked="OnSettingChanged" Unchecked="OnSettingChanged" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
                         </StackPanel>
                     </Border>
                 </StackPanel>
                 <StackPanel Tag="workspace:network">
                     <Border x:Name="NetworkProxyCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="网络代理" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <TextBlock Text="这里统一设置 HTTP / HTTPS 代理地址、总开关和失败策略；四个掉宝平台是否使用代理，可在掉宝页面分别选择。" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,13" TextWrapping="Wrap"/>
-                            <CheckBox x:Name="EnableProxyBox" Style="{StaticResource SwitchCheckBox}" Content="启用网络代理" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged" Margin="0,6,0,6"/>
-                            <TextBlock Text="代理地址" FontWeight="SemiBold" Margin="0,12,0,5" TextWrapping="Wrap"/>
-                            <TextBox x:Name="ProxyUrlBox" Style="{StaticResource InputBox}" ToolTip="例如 http://127.0.0.1:7897" TextChanged="OnProxyInputChanged"/>
-                            <CheckBox x:Name="FallbackDirectBox" Style="{StaticResource SwitchCheckBox}" Content="代理连接失败时允许直连" Margin="0,6,0,6" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged"/>
-                            <TextBlock x:Name="ProxyNoticeText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="网络代理" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                            <TextBlock Text="这里统一设置 HTTP / HTTPS 代理地址、总开关和失败策略；四个掉宝平台是否使用代理，可在掉宝页面分别选择。" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,13" TextWrapping="Wrap" />
+                            <ctrl:SettingRow Title="启用网络代理" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="EnableProxyBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged" Margin="0" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <TextBlock Text="代理地址" FontWeight="SemiBold" Margin="0,12,0,5" TextWrapping="Wrap" />
+                            <TextBox x:Name="ProxyUrlBox" Style="{StaticResource InputBox}" ToolTip="例如 http://127.0.0.1:7897" TextChanged="OnProxyInputChanged" />
+                            <ctrl:SettingRow Title="代理连接失败时允许直连" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="FallbackDirectBox" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Checked="OnProxyInputChanged" Unchecked="OnProxyInputChanged" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <TextBlock x:Name="ProxyNoticeText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap" />
                             <WrapPanel Margin="0,12,0,0">
-                                <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}" Padding="15,0" Click="OnSaveProxy"/>
-                                <Button x:Name="NetworkTestButton" Content="测试连接" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0" Click="OnTestNetwork"/>
-                                <Button x:Name="CopyDiagnosticButton" Content="复制诊断结果" IsEnabled="False" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0" Click="OnCopyDiagnostic"/>
+                                <Button Content="保存代理设置" Style="{StaticResource PrimaryButton}" Padding="15,0" Click="OnSaveProxy" />
+                                <Button x:Name="NetworkTestButton" Content="测试连接" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0" Click="OnTestNetwork" />
+                                <Button x:Name="CopyDiagnosticButton" Content="复制诊断结果" IsEnabled="False" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="8,0,0,0" Click="OnCopyDiagnostic" />
                             </WrapPanel>
                             <Border x:Name="NetworkDiagnosticPanel" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,12,0,0" Visibility="Collapsed">
                                 <StackPanel>
-                                    <TextBlock Text="网络诊断" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="NetworkDiagnosticText" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0"/>
+                                    <TextBlock Text="网络诊断" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="NetworkDiagnosticText" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource Text.Secondary}" Margin="0,7,0,0" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -74,21 +103,45 @@
                 <StackPanel Tag="workspace:notifications">
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="公告提醒" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <CheckBox x:Name="AnnouncementBadgeBox" Style="{StaticResource SwitchCheckBox}" Content="有新公告时显示小蓝点" Margin="0,6,0,6" Checked="OnAnnouncementBadgeChanged" Unchecked="OnAnnouncementBadgeChanged"/>
-                            <TextBlock Text="关闭后仍会获取公告，铃铛和公告列表也会保留。" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="公告提醒" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                            <ctrl:SettingRow Title="有新公告时显示小蓝点" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="AnnouncementBadgeBox" Style="{StaticResource SwitchCheckBox}" Content="" Margin="0" Checked="OnAnnouncementBadgeChanged" Unchecked="OnAnnouncementBadgeChanged" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
+                            <TextBlock Text="关闭后仍会获取公告，铃铛和公告列表也会保留。" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="Windows 通知" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <TextBlock Text="使用 Windows 10 / 11 系统通知提示重要状态变化；连续重试不会逐条打扰。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,7,0,12"/>
-                            <CheckBox x:Name="EnableWindowsNotificationsBox" Style="{StaticResource SwitchCheckBox}" Content="启用 Windows 通知" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0,6,0,6"/>
+                            <TextBlock Text="Windows 通知" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                            <TextBlock Text="使用 Windows 10 / 11 系统通知提示重要状态变化；连续重试不会逐条打扰。" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,7,0,12" />
+                            <ctrl:SettingRow Title="启用 Windows 通知" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                <ctrl:SettingRow.Editor>
+                                    <CheckBox x:Name="EnableWindowsNotificationsBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0" Width="48" />
+                                </ctrl:SettingRow.Editor>
+                            </ctrl:SettingRow>
                             <StackPanel>
-                                <CheckBox x:Name="NotifyRegionSwitchBox" Style="{StaticResource SwitchCheckBox}" Content="区服切换" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0,6,0,6"/>
-                                <CheckBox x:Name="NotifyDropsBox" Style="{StaticResource SwitchCheckBox}" Content="Drops" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0,6,0,6"/>
-                                <CheckBox x:Name="NotifyUpdatesBox" Style="{StaticResource SwitchCheckBox}" Content="软件更新" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0,6,0,6"/>
-                                <CheckBox x:Name="NotifyAnnouncementsBox" Style="{StaticResource SwitchCheckBox}" Content="公告" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0,6,0,6"/>
+                                <ctrl:SettingRow Title="区服切换" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="NotifyRegionSwitchBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="Drops" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="NotifyDropsBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="软件更新" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="NotifyUpdatesBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
+                                <ctrl:SettingRow Title="公告" Description="按当前保存机制应用；影响范围以选项说明为准。">
+                                    <ctrl:SettingRow.Editor>
+                                        <CheckBox x:Name="NotifyAnnouncementsBox" Style="{StaticResource SwitchCheckBox}" Content="" Checked="OnNotificationSettingChanged" Unchecked="OnNotificationSettingChanged" Margin="0" Width="48" />
+                                    </ctrl:SettingRow.Editor>
+                                </ctrl:SettingRow>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -96,53 +149,53 @@
                 <StackPanel Tag="workspace:data">
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="数据" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <TextBlock Text="数据位置" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                            <TextBlock x:Name="DataPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>
-                            <TextBlock Text="账号备份、日志和程序设置保存在这里。" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12" TextWrapping="Wrap"/>
-                            <TextBlock Text="Battle.net 账号快照目录" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                            <TextBlock x:Name="AccountSnapshotPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0"/>
-                            <TextBlock Text="该路径不随守望先锋区服文件备份位置改变。账号页可查看状态并打开此目录。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12"/>
+                            <TextBlock Text="数据" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                            <TextBlock Text="数据位置" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap" />
+                            <TextBlock x:Name="DataPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
+                            <TextBlock Text="账号备份、日志和程序设置保存在这里。" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12" TextWrapping="Wrap" />
+                            <TextBlock Text="Battle.net 账号快照目录" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="AccountSnapshotPathText" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" />
+                            <TextBlock Text="该路径不随守望先锋区服文件备份位置改变。账号页可查看状态并打开此目录。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,5,0,12" />
                             <WrapPanel>
-                                <Button Content="打开数据文件夹" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,0" Click="OnOpenData"/>
-                                <Button Content="清理战绩缓存" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClearCache"/>
+                                <Button Content="打开数据文件夹" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,8,0" Click="OnOpenData" />
+                                <Button Content="清理战绩缓存" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClearCache" />
                             </WrapPanel>
-                            <TextBlock x:Name="CacheText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="CacheText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
                 <StackPanel Tag="workspace:updates">
                     <Border x:Name="UpdateSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="软件更新" Style="{StaticResource SectionTitle}" TextWrapping="Wrap"/>
-                            <TextBlock Text="当前版本" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                            <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" TextWrapping="Wrap"/>
-                            <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" TextWrapping="Wrap"/>
-                            <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate"/>
+                            <TextBlock Text="软件更新" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                            <TextBlock Text="当前版本" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap" />
+                            <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" TextWrapping="Wrap" />
+                            <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" TextWrapping="Wrap" />
+                            <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
                             <StackPanel x:Name="UpdateAvailablePanel" Margin="0,15,0,0" Visibility="Collapsed">
-                                <TextBlock x:Name="UpdateAvailableText" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="InstallerValidationText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed"/>
+                                <TextBlock x:Name="UpdateAvailableText" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock x:Name="InstallerValidationText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed" />
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button x:Name="OpenUpdateLinkButton" Content="打开更新链接" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,10,0" Click="OnOpenUpdateLink"/>
-                                    <Button x:Name="OnlineUpdateButton" Content="在线更新" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnOnlineUpdate"/>
+                                    <Button x:Name="OpenUpdateLinkButton" Content="打开更新链接" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,10,0" Click="OnOpenUpdateLink" />
+                                    <Button x:Name="OnlineUpdateButton" Content="在线更新" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnOnlineUpdate" />
                                 </StackPanel>
                                 <StackPanel x:Name="UpdateDownloadPanel" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <ProgressBar x:Name="UpdateDownloadProgressBar" Height="8" Minimum="0" Maximum="100"/>
-                                    <TextBlock x:Name="UpdateDownloadText" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                                    <ProgressBar x:Name="UpdateDownloadProgressBar" Height="8" Minimum="0" Maximum="100" />
+                                    <TextBlock x:Name="UpdateDownloadText" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </StackPanel>
                             <StackPanel x:Name="SkippedUpdatePanel" Margin="0,15,0,0" Visibility="Collapsed">
-                                <TextBlock Text="已忽略更新" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="SkippedVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,9" TextWrapping="Wrap"/>
-                                <Button Content="恢复此版本提示" HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRestoreSkippedUpdate"/>
+                                <TextBlock Text="已忽略更新" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock x:Name="SkippedVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,9" TextWrapping="Wrap" />
+                                <Button Content="恢复此版本提示" HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRestoreSkippedUpdate" />
                             </StackPanel>
-                            <TextBlock x:Name="UpdateHistoryText" Foreground="{DynamicResource Text.Muted}" TextWrapping="Wrap" Margin="0,15,0,0"/>
-                            <TextBlock x:Name="UpdateFailureText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="UpdateHistoryText" Foreground="{DynamicResource Text.Muted}" TextWrapping="Wrap" Margin="0,15,0,0" />
+                            <TextBlock x:Name="UpdateFailureText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
                 <StackPanel Tag="workspace:feedback">
-                    <pages:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0"/>
+                    <ns4:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

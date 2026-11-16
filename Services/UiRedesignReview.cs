@@ -33,6 +33,12 @@ internal sealed class UiRedesignReview
     private readonly BindingListener _bindings = new();
     private readonly ComboBox _scenarios = new() { MinWidth = 240, Margin = new Thickness(16, 0, 8, 0) };
     private readonly bool _automated;
+    private readonly string _reviewGameImage="review-fixture://layout/cover",_reviewRewardTitle="模拟奖励组合 · 水晶与徽章";
+    private readonly JsonElement _reviewBenefits=JsonSerializer.SerializeToElement(new[]{
+        new{id="fixture-a",name="模拟水晶 A",type="DIRECT_ENTITLEMENT",imageUrl="review-fixture://layout/benefit-a"},
+        new{id="fixture-b",name="模拟徽章 B",type="BADGE",imageUrl="review-fixture://layout/benefit-b"},
+        new{id="fixture-c",name="缺图回退 C",type="EMOTE",imageUrl=""}});
+    private readonly JsonElement _reviewTwitchSnapshot;
     internal static readonly string[] Scenarios = [
         "01 总览", "02 Battle.net 账号管理", "03 区服切换", "04 战绩", "05 区服快照",
         "06 Twitch 未登录", "07 Twitch 设备授权", "08 Twitch 已登录", "09 Twitch 正在观看", "10 Twitch 完整设置",
@@ -40,7 +46,7 @@ internal sealed class UiRedesignReview
         "18 Twitch 配置损坏", "19 Twitch 网络失败", "20 SOOP 无账号", "21 SOOP 单账号停止", "22 Bilibili 二维码过期",
         "23 Bilibili 已登录", "24 YouTube 浏览器不可用", "25 Worker 崩溃", "26 代理不可用", "27 账号切换失败", "28 区服切换失败",
         "29 Twitch 活动与奖励", "30 Twitch 账号维护", "31 Bilibili 活动任务", "32 Twitch 网络与维护", "33 运行日志", "34 Twitch 游戏优先级", "35 Twitch 自动化",
-        "36 SOOP 刷新与恢复", "37 Bilibili 自动化与通知", "38 YouTube 浏览器配置", "39 全局网络代理", "40 账号备份与存储",
+        "36 SOOP 刷新与恢复", "37 Bilibili 自动化与通知", "38 YouTube 浏览器配置", "39 全局网络代理", "40 账号备份与存储", "41 关于与来源", "42 SOOP 正在观看", "43 Bilibili 任务", "44 Twitch 奖励详情",
     ];
 
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target)!;
@@ -62,6 +68,24 @@ internal sealed class UiRedesignReview
             userRoot.StartsWith(_output + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("UI 验收必须使用与用户数据分离的目录。");
         Directory.CreateDirectory(_output);
+        Controls.VisualImage.ReviewLoader=Visuals.ReviewImageAssets.LoadAsync;
+        var visualFixture=Path.Combine(_output,"visual-fixture.json");
+        if(File.Exists(visualFixture))
+        {
+            using var fixture=JsonDocument.Parse(File.ReadAllText(visualFixture));
+            _reviewGameImage=fixture.RootElement.TryGetProperty("gameImageUrl",out var gameImage)?gameImage.GetString()??"":"";
+            if(fixture.RootElement.TryGetProperty("benefits",out var benefits)&&benefits.ValueKind==JsonValueKind.Array)_reviewBenefits=benefits.Clone();
+            _reviewRewardTitle=fixture.RootElement.TryGetProperty("rewardTitle",out var rewardTitle)?rewardTitle.GetString()??"模拟奖励":"模拟奖励";
+        }
+        var capturedSnapshot=Path.Combine(_output,"core-visual-state.json");
+        if(File.Exists(capturedSnapshot))
+        {
+            using var captured=JsonDocument.Parse(File.ReadAllText(capturedSnapshot));
+            var state=captured.RootElement.TryGetProperty("result",out var result)?result:captured.RootElement;
+            // Opt-in replay only: keep visual data, never load authentication or obsolete Host generations.
+            var safeNames=new[]{"coreAvailable","running","authState","status","accounts","campaigns","inventory","currentDrop","currentChannel","lastInventorySyncAt","inventorySource","watchRequests"};
+            _reviewTwitchSnapshot=JsonSerializer.SerializeToElement(state.EnumerateObject().Where(p=>safeNames.Contains(p.Name)).ToDictionary(p=>p.Name,p=>p.Value.Clone()));
+        }
         CreateSimulatedQr(Path.Combine(_output, "simulated-qr.png"));
         AppPaths.UseSelfTestRoot(Path.Combine(_output, "isolated-data"));
         _automated = automated;
@@ -91,7 +115,7 @@ internal sealed class UiRedesignReview
         banner.SetResourceReference(Border.BackgroundProperty, "AccSoft");
         _scenarios.SetResourceReference(FrameworkElement.StyleProperty, "ThemeComboBox");
         var controls = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-        controls.Children.Add(new TextBlock { Text = "隔离验收 · 模拟数据", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        controls.Children.Add(new TextBlock { Text = "隔离验收 · 账号 / 进度 / 图片均为模拟", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         _scenarios.ItemsSource = Scenarios;
         controls.Children.Add(_scenarios);
         var next = new Button { Content = "下一场景", Style = (Style)_window.FindResource("SecondaryButton"), Padding = new Thickness(12, 0, 12, 0) };
@@ -116,17 +140,21 @@ internal sealed class UiRedesignReview
         };
     }
 
-    private JsonElement Twitch(bool loggedIn = false, bool running = false) => Json(new {
-        coreAvailable = true, running, authState = loggedIn ? "logged_in" : "logged_out", status = running ? "正在观看" : loggedIn ? "已登录，未开始" : "尚未登录",
+    private JsonElement Twitch(bool loggedIn = false, bool running = false) => loggedIn&&_reviewTwitchSnapshot.ValueKind==JsonValueKind.Object ? _reviewTwitchSnapshot.Clone() : Json(new {
+        coreAvailable = true, workerHealth="ready", running, authState = loggedIn ? "logged_in" : "logged_out", status = running ? "正在观看" : loggedIn ? "已登录，未开始" : "尚未登录",
         accounts = loggedIn ? new[] { new { userId = "模拟账号 · review-user", loggedIn = true } } : [],
         settings = new { language = "简体中文", priority_mode = "PRIORITY_ONLY", connection_quality = 1, tray_notifications = true, auto_claim_drops = false, priority = new[] { "Overwatch 2" }, exclude = Array.Empty<string>() },
-        campaigns = loggedIn ? new[] { new { id = "review-campaign", name = "模拟活动 · 守望先锋", game = "Overwatch 2", available = true, status = "ACTIVE", drops = new[] { new { id = "reward1", name = "模拟奖励", requiredMinutes = 60, currentMinutes = 18, progress = 0.3 } } } } : [],
-        inventory = loggedIn ? new[] { new { id = "reward1", name = "模拟奖励 · 仅用于界面验收", campaign = "模拟活动 · 守望先锋", requiredMinutes = 60, currentMinutes = 18, progress = 0.3, completed = false, claimed = false, canClaim = false } } : [],
+        campaigns = loggedIn ? new[] { new { id = "review-campaign", name = "隔离模拟活动", game = "Overwatch", gameImageUrl=_reviewGameImage, available = true, priority=true, eligible=true, linked=true, active=true, canEarn=true, availability="available", totalDrops=3, completedDrops=1, claimedDrops=0, requiredMinutes=60, remainingMinutes=42, progress=0.3, endsAt=DateTimeOffset.UtcNow.AddDays(2).ToString("O"), status = "ACTIVE", drops = new[] { new { id = "reward1", name = _reviewRewardTitle,benefits=_reviewBenefits,campaignId="review-campaign",gameImageUrl=_reviewGameImage, requiredMinutes = 60, currentMinutes = 18, progress = 0.3 } } } } : [],
+        inventory = loggedIn ? new[] {
+            new { id = "reward1", name = _reviewRewardTitle, campaign = "隔离模拟活动", campaignId="review-campaign",game="Overwatch",benefits=_reviewBenefits,gameImageUrl=_reviewGameImage,requiredMinutes = 60, currentMinutes = 18, progress = 0.3, completed = false, claimed = false, canClaim = false },
+            new { id = "reward2", name = "模拟奖励 B · 缺图回退",campaign="隔离模拟活动",campaignId="review-campaign",game="Overwatch",benefits=JsonSerializer.SerializeToElement(Array.Empty<object>()),gameImageUrl=_reviewGameImage,requiredMinutes=120,currentMinutes=0,progress=0d,completed=false,claimed=false,canClaim=false },
+            new { id = "reward3", name = "模拟奖励 C · 已完成",campaign="隔离模拟活动",campaignId="review-campaign",game="Overwatch",benefits=JsonSerializer.SerializeToElement(Array.Empty<object>()),gameImageUrl=_reviewGameImage,requiredMinutes=30,currentMinutes=30,progress=1d,completed=true,claimed=false,canClaim=false },
+        } : [],
         channels = loggedIn ? new[] { new { id = "review-channel", name = "模拟频道 · Overwatch", game = "Overwatch 2", dropsEnabled = true, online = true } } : [],
         currentChannel = running ? new { id = "review-channel", name = "模拟频道 · Overwatch", game = "Overwatch 2", dropsEnabled = true, online = true, url = "https://www.twitch.tv/example" } : null,
         inventorySource = loggedIn ? "remote" : "none", lastInventorySyncAt = loggedIn ? DateTimeOffset.UtcNow.ToString("O") : "",
         watchRequests = new { lastResult = running ? "accepted" : "none", attempts = running ? 1 : 0 },
-        currentDrop = running ? new { id = "reward1", campaign = "模拟活动", name = "模拟奖励", currentMinutes = 18, requiredMinutes = 60, progress = 0.3, estimatedExtraMinutes = 2 } : null,
+        currentDrop = running ? new { id = "reward1", campaign = "隔离模拟活动", campaignId="review-campaign",game="Overwatch", name = _reviewRewardTitle,benefits=_reviewBenefits,gameImageUrl=_reviewGameImage, currentMinutes = 18, requiredMinutes = 60, progress = 0.3, estimatedExtraMinutes = 2 } : null,
     });
     private void Apply(int index)
     {
@@ -134,28 +162,31 @@ internal sealed class UiRedesignReview
         _main.StatusText = "隔离验收：账号、授权和奖励均为模拟数据。";
         if (index != 27) typeof(MainViewModel).GetProperty(nameof(MainViewModel.RegionGuide))!.SetValue(_main, _defaultRegionGuide);
         foreach (var p in Enum.GetValues<DropsPlatform>()) _drops.DismissMessage(p);
-        _states[DropsPlatform.Twitch] = Twitch(index is 7 or 8 or 9 or 28 or 29 or 31 or 33 or 34, index == 8);
-        _states[DropsPlatform.Soop] = Raw("""{"running":true,"settings":{"channel_mode":"smart","priority_mission_id":"auto","auto_claim_enabled":false,"low_bandwidth_mode":true,"hang_without_missions":true,"mission_poll_interval":90,"inventory_poll_interval":300,"channel_refresh_interval":300,"reauth_retry_interval":300},"accounts":[{"uid":"模拟主账号","primary":true,"loggedIn":true,"running":true,"channelName":"模拟赛事频道","missionTitle":"模拟任务"},{"uid":"模拟副账号","primary":false,"loggedIn":true,"running":false,"channelName":"尚未进入","missionTitle":"等待任务"}]}""");
-        _states[DropsPlatform.Bilibili] = Raw("""{"running":false,"loggedIn":false,"status":"尚未登录","settings":{"enabled":true,"watch_mode":"standard","sessions_per_room":1,"auto_claim":false},"rooms":[],"activities":[],"tasks":[],"sessions":[]}""");
+        _states[DropsPlatform.Twitch] = Twitch(index is 0 or 7 or 8 or 9 or 28 or 29 or 31 or 33 or 34 or 43, index is 0 or 8);
+        _states[DropsPlatform.Soop] = Raw("""{"running":true,"settings":{"channel_mode":"smart","priority_mission_id":"auto","auto_claim_enabled":false,"low_bandwidth_mode":true,"hang_without_missions":true,"mission_poll_interval":90,"inventory_poll_interval":300,"channel_refresh_interval":300,"reauth_retry_interval":300},"accounts":[{"uid":"模拟主账号","primary":true,"loggedIn":true,"running":true,"channelName":"模拟赛事频道","missionTitle":"模拟赛事任务 · 阶段 3/5","currentProgress":[{"account":"模拟主账号","reward":"模拟阶段奖励","currentMinutes":15,"requiredMinutes":30}]},{"uid":"模拟副账号","primary":false,"loggedIn":true,"running":false,"channelName":"尚未进入","missionTitle":"模拟任务 · 阶段 1/4","currentProgress":[{"account":"模拟副账号","reward":"模拟阶段奖励 B","currentMinutes":5,"requiredMinutes":45}]}]}""");
+        _states[DropsPlatform.Bilibili] = Raw("""{"running":false,"loggedIn":false,"account":{"loggedIn":false,"uid":0,"userName":""},"status":"尚未登录","settings":{"enabled":true,"watch_mode":"standard","sessions_per_room":1,"auto_claim":false},"rooms":[],"activities":[],"tasks":[],"sessions":[]}""");
         _states[DropsPlatform.YouTube] = Raw("""{"running":false,"status":"尚未开始","profiles":["模拟观看账号"],"config":{"browser":"chrome","mode":"auto","headless":false,"mute":true,"check_interval":300},"channels":[],"history":{"rows":[]},"sessions":[]}""");
         if (index == 6) _states[DropsPlatform.Twitch] = Json(new { coreAvailable = true, running = false, authState = "authorization_required", accounts = Array.Empty<object>(), authRequired = new { code = "CLB-TEST", url = "https://www.twitch.tv/activate", expiresAt = DateTimeOffset.UtcNow.AddMinutes(15).ToString("O") } });
         if (index == 17) _states[DropsPlatform.Twitch] = Json(new { coreAvailable = false, coreErrorKind = "configuration", coreError = "模拟：配置无法解析。已保存的 Session 保留，可备份并恢复配置。", configuration = new { canReset = true }, accounts = Array.Empty<object>() });
         if (index == 18) _states[DropsPlatform.Twitch] = Json(new { coreAvailable = true, running = false, authState = "failed", loginErrorCode = "network_error", loginError = "模拟：连接超时，Session 尚未完成验证。", accounts = new[] { new { userId = "已保存 Session · 模拟", loggedIn = false } } });
         if (index == 19) _states[DropsPlatform.Soop] = Raw("""{"running":false,"accounts":[],"settings":{"channel_mode":"smart"}}""");
-        var section = index switch { 0 => "overview", 1 or 26 or 39 => "accounts", 2 or 27 => "region", 3 => "stats", 4 => "snapshots", 15 => "diagnostics", 16 or 38 => "settings", _ => "drops" };
+        if(index is 22 or 30 or 42)_states[DropsPlatform.Bilibili]=Raw("""{"loggedIn":true,"account":{"loggedIn":true,"uid":123456,"userName":"模拟 Bilibili 账号"},"status":"已登录 · 等待开始观看","running":false,"rooms":[{"id":1,"name":"模拟赛事直播间","enabled":true}],"tasks":[{"id":"fixture-task","name":"模拟观看任务","current":18,"limit":60,"percent":30,"completed":false,"claimed":false,"claimable":false}],"activities":[]}""");
+        var section = index switch { 0 => "overview", 1 or 26 or 39 => "accounts", 2 or 27 => "region", 3 => "stats", 4 => "snapshots", 40 => "about", 15 => "diagnostics", 16 or 38 => "settings", _ => "drops" };
         _window.NavigateTo(section);
+        foreach(var platformState in _states)_drops.ApplyState(platformState.Key,platformState.Value);
+        foreach(var visualPlatform in _drops.VisualPlatforms)visualPlatform.Health.WorkerHealth="隔离模拟 · 未启动真实 Worker";
         if (section == "drops")
         {
-            var platform = index switch { 10 or 11 or 19 or 20 or 35 => DropsPlatform.Soop, 12 or 13 or 21 or 22 or 30 or 36 => DropsPlatform.Bilibili, 14 or 23 or 37 => DropsPlatform.YouTube, _ => DropsPlatform.Twitch };
+            var platform = index switch { 10 or 11 or 19 or 20 or 35 or 41 => DropsPlatform.Soop, 12 or 13 or 21 or 22 or 30 or 36 or 42 => DropsPlatform.Bilibili, 14 or 23 or 37 => DropsPlatform.YouTube, _ => DropsPlatform.Twitch };
             _page.SelectPlatform(platform);
             _drops.SelectPlatform(platform);
             _drops.ApplyState(platform, _states[platform]);
-            _page.ShowWorkspace(index switch { 9 or 11 or 13 or 37 => "settings", 10 or 20 or 29 => "accounts", 28 or 30 => "activities", 31 => "network", 32 => "logs", 33 => "games", 34 or 36 => "automation", 35 => "advanced", _ => "overview" });
+            _page.ShowWorkspace(index switch { 9 or 11 or 13 or 37 => "settings", 10 or 20 or 29 => "accounts", 28 or 30 or 43 => "activities", 31 => "network", 32 => "logs", 33 => "games", 34 or 36 => "automation", 35 => "advanced", _ => "overview" });
             if (index is 12 or 21)
             {
                 _drops.BilibiliDetails.HandleEvent("qr_login", Json(new { state = index == 21 ? "expired" : "waiting_scan", message = index == 21 ? "模拟：二维码已过期，请重新获取。" : "模拟二维码，仅用于布局验收，不可用于登录。", url = "https://example.invalid/isolated-review", imagePath = Path.Combine(_output, "simulated-qr.png"), expiresAt = DateTimeOffset.UtcNow.AddMinutes(3).ToString("O") }));
             }
-            if (index == 22) _drops.BilibiliDetails.ApplyState(Raw("""{"loggedIn":true,"account":{"uid":123456,"userName":"模拟 Bilibili 账号"},"running":false}"""));
+
             if (index == 23) { _drops.YouTube.Status = "浏览器不可用"; _drops.YouTube.Summary = "模拟：未找到 Chrome / Brave，请在观看配置中指定浏览器路径。"; }
             if (index == 24) _drops.ApplyState(DropsPlatform.Twitch, Json(new { coreAvailable = false, coreErrorKind = "worker", coreError = "模拟：后台组件意外结束，请在网络与维护中重新检测。", accounts = Array.Empty<object>() }));
             if (index == 25) _drops.SetTwitchTemporaryNetworkFailure("模拟：代理服务器 127.0.0.1:7897 不可用，Session 已保留。");
@@ -181,6 +212,16 @@ internal sealed class UiRedesignReview
             diag.ApplyReviewReport(new DiagnosticRunReport { Checks = diag.Checks.ToList(), StartedAt = DateTimeOffset.Now, CompletedAt = DateTimeOffset.Now });
         }
         _window.UpdateLayout();
+        if(index==43)foreach(var detail in Descendants<Expander>(_page).Where(e=>e.Header as string=="奖励与前置任务详情"))detail.IsExpanded=true;
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T:DependencyObject
+    {
+        for(var i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)
+        {
+            var child=VisualTreeHelper.GetChild(parent,i);if(child is T typed)yield return typed;
+            foreach(var nested in Descendants<T>(child))yield return nested;
+        }
     }
 
     private async Task RunMatrixAsync()
@@ -192,13 +233,13 @@ internal sealed class UiRedesignReview
             {
                 _scenarios.SelectedIndex = i;
                 await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                foreach (var (width, height, scale) in new[] { (1366d,768d,1d), (1366d,768d,1.25), (1366d,768d,1.5), (1920d,1080d,1d), (1920d,1080d,1.25), (1920d,1080d,1.5), (2560d,1440d,1d), (2560d,1440d,1.25), (2560d,1440d,1.5) })
+                foreach (var (width, height, scale) in new[] { (1600d,960d,1d), (1600d,960d,1.25), (1600d,960d,1.5), (1366d,768d,1d), (1366d,768d,1.25), (1366d,768d,1.5), (1920d,1080d,1d), (1920d,1080d,1.25), (1920d,1080d,1.5), (2560d,1440d,1d), (2560d,1440d,1.25), (2560d,1440d,1.5) })
                 {
                     // Explicit DIP layout testing; this does not claim to change the monitor DPI.
                     _window.Width = width / scale;_window.Height = height / scale;
                     _window.UpdateLayout();
                     await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                    _checks.Add($"layout {i+1:00} {width}x{height} @{scale*100:0}% equivalent-DIP");
+                    _checks.Add($"layout {i+1:00} {width}x{height} @{scale*100:0}% equivalent-DIP actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#}");
                     CheckVisibleBounds(i, width, height, scale);
                     if (width == 1366 && scale == 1.5 && i is 1 or 5 or 9 or 10 or 12 or 13 or 16)
                         Capture(Path.Combine(renders, $"{i+1:00}-1366-150.png"));
@@ -207,7 +248,15 @@ internal sealed class UiRedesignReview
                 await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
                 Capture(Path.Combine(renders, $"{i+1:00}.png"));
             }
-            ThemeManager.Apply(true);_scenarios.SelectedIndex = 8;_window.UpdateLayout();Capture(Path.Combine(renders,"dark.png"));ThemeManager.Apply(false);
+            _scenarios.SelectedIndex=8;
+            _window.Width=_window.MinWidth;_window.Height=_window.MinHeight;_window.UpdateLayout();
+            await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+            CheckVisibleBounds(8,_window.ActualWidth,_window.ActualHeight,1);
+            Capture(Path.Combine(renders,"minimum.png"));_checks.Add($"minimum-window actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP");
+            _window.WindowState=WindowState.Maximized;await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);_window.UpdateLayout();
+            Capture(Path.Combine(renders,"maximized.png"));_checks.Add($"maximized-window actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP");
+            _window.WindowState=WindowState.Normal;_window.Width=1280;_window.Height=820;
+            ThemeManager.Apply(true);_window.UpdateLayout();await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);Capture(Path.Combine(renders,"dark.png"));ThemeManager.Apply(false);
             await CheckDraftsAsync();
             await CheckAuthorizationCancellationAsync();
             var dpi = VisualTreeHelper.GetDpi(_window);
@@ -221,6 +270,17 @@ internal sealed class UiRedesignReview
     {
         void Walk(DependencyObject parent)
         {
+            if(parent is Grid settingsGrid)
+            {
+                var rows=settingsGrid.Children.OfType<Controls.SettingRow>().Where(r=>r.IsVisible&&r.ActualHeight>1&&r.ActualWidth>1).ToArray();
+                for(var a=0;a<rows.Length;a++)for(var b=a+1;b<rows.Length;b++)
+                {
+                    var first=rows[a].TransformToAncestor(settingsGrid).TransformBounds(new Rect(0,0,rows[a].ActualWidth,rows[a].ActualHeight));
+                    var second=rows[b].TransformToAncestor(settingsGrid).TransformBounds(new Rect(0,0,rows[b].ActualWidth,rows[b].ActualHeight));
+                    var overlap=Rect.Intersect(first,second);
+                    if(!overlap.IsEmpty&&overlap.Width>1&&overlap.Height>1)_checks.Add($"FAIL overlapping setting rows scenario={scenario+1:00} {rows[a].Title}/{rows[b].Title}");
+                }
+            }
             for (var i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)
             {
                 var child=VisualTreeHelper.GetChild(parent,i);
