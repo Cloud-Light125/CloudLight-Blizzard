@@ -27,8 +27,11 @@ try {
     foreach($taskPlatform in @('twitch','soop','bilibili','youtube')){
         $taskWorker=Join-Path $taskWorkers "$taskPlatform/$taskPlatform-worker.exe"
         $taskHash=(Get-FileHash -LiteralPath $taskWorker -Algorithm SHA256).Hash.ToLowerInvariant()
-        if($taskHash -ne $taskMeta.workers.$taskPlatform){throw "Worker hash mismatch: $taskPlatform"}
-        $taskBuilds[$taskPlatform]=[ordered]@{sha256=$taskHash;sourceCommit=$taskMeta.workerBuilds.$taskPlatform.commit;rebuilt=$false}
+        $taskWorkerMeta=$taskMeta.workerBuilds.$taskPlatform
+        $taskExpectedHash=if($taskMeta.PSObject.Properties.Name -contains 'workers'){$taskMeta.workers.$taskPlatform}else{$taskWorkerMeta.sha256}
+        $taskWorkerCommit=if($taskWorkerMeta.PSObject.Properties.Name -contains 'sourceCommit'){$taskWorkerMeta.sourceCommit}else{$taskWorkerMeta.commit}
+        if($taskHash -ne $taskExpectedHash){throw "Worker hash mismatch: $taskPlatform"}
+        $taskBuilds[$taskPlatform]=[ordered]@{sha256=$taskHash;sourceCommit=$taskWorkerCommit;rebuilt=$false}
     }
     $env:MSBuildEnableWorkloadResolver='false'
     & dotnet publish 'CloudLight Blizzard.csproj' -c Release --no-restore -o $taskApp "-p:BuildCommit=$taskCommit" "-p:BuildTimestamp=$([DateTimeOffset]::UtcNow.ToString('o'))" '-p:DropsBuildPurpose=Maintenance' "-p:DropsArtifactsRoot=$taskWorkers" *> (Join-Path $taskValidation 'publish.log')
