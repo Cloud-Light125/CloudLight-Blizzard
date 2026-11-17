@@ -1,3 +1,39 @@
+# 本轮高密度 Twitch 验收（2026-11-17）
+
+对照用户官方背包参考：将“一个巨大单奖励主卡 + 通栏进度 + 独立频道卡”改为紧凑账号/运行栏、当前观看状态条、按 Campaign 分组的 Benefit 网格。统一 238 DIP 卡高、约 172–200 DIP 卡宽、90 DIP 图片区，名称 13.5、状态 12.5、百分比 15 DIP。长名受两行高度约束，完整名可在 Tooltip 与详情读取。完成观看、可领取、已领取、资格不足、前置未满足分别投影，只有最近实际频道的 accepted 请求才标明正在观看。
+
+## 一屏密度（SIMULATED / PASS；真实 WPF 控件）
+
+当前物理 DPI 为 125%，按目标物理窗口尺寸换算 DIP，在实际 WPF 窗口测量控件边界；截图由实际窗口 RenderTargetBitmap 输出。100/150% 仍为等效 DIP 模拟，没有更改系统 DPI。以下首屏完整张数不含仅露出图片的卡片。
+
+| 请求窗口 @125% | 每行卡片 | 概览完整卡 / 相交卡 | 活动页完整卡 / 相交卡 |
+|---|---:|---:|---:|
+| 1366×768 | 4 | 4 / 4 | 4 / 8 |
+| 1600×900 | 5 | 5 / 10 | 5 / 10 |
+| 1920×1080 | 6 | 6 / 11 | 11 / 11 |
+| 2560×1440 | 9 | 11 / 18 | 11 / 18 |
+
+数字来自 [density-results.txt](density-results.txt)，按内容宽度自适应，没有硬编码显示器分辨率。真实账号每个活动的物品数量不同：最大化活动页实际首屏为 3 Campaign、8 张完整物品卡；真实 Palia 筛选页为一行 8 Benefit。单活动只有 2 件时保留 2 卡，空余部分不放假奖励。
+
+| 布局截图（显式模拟） | 用途 |
+|---|---|
+| [概览 1366](screenshots-density-simulated/overview-1366x768-125.png) | 首屏状态、操作、4 张完整卡 |
+| [概览 1600](screenshots-density-simulated/overview-1600x900-125.png) | 每行 5 卡、多 Benefit 共享进度 |
+| [活动 1920](screenshots-density-simulated/activities-1920x1080-125.png) | 一屏 11 张完整卡、未完成/待领取/已领取/资格与前置 |
+| [深色](screenshots-density-simulated/activities-dark.png) | 控件、文字、输入框与卡片对比度 |
+| [无频道](screenshots-density-simulated/no-eligible-channel.png) | Worker 运行不等于有效观看 |
+| [筛选空态](screenshots-density-simulated/filtered-empty.png) | 当前筛选无结果，不误报账号无活动 |
+
+真实账号概览、活动页、多 Benefit、完成状态见 [real-twitch-e2e.md](real-twitch-e2e.md)。主代理已逐张查看上述关键截图及原 01/09/42/43/44，未以自动化结果代替视觉检查。
+
+性能：外层 Campaign 使用 WPF Recycling 虚拟化，图片按可见滚动区域加载，离屏取消待处理请求；卡片采用 192px 解码、详情 640px，二者共享原图片磁盘缓存。保留 4 并发、7 天缓存、32 MiB/64 张内存上限，快速切图防旧结果覆盖。刷新复用 Campaign/Benefit 卡对象。实际最高观测同屏加载按可见图片数增长，没有一次性下载全部 381 个 Benefit；未声称做过数小时独立内存压力测试。
+
+原设置、仅优先游戏筛选、频道选择、详情中的原领取按钮、账号维护及自动领取安全策略保留。没有新增子页面；详情复用原模板。SOOP 增加每账号阶段/同步说明，Bilibili 活跃 Session 与任务完成分开；两平台无可信奖励图时继续正常占位。
+
+---
+
+以下保留前次 UI V2 历史验收，不能作为本轮 REAL E2E 结果。
+
 # 实际 WPF 截图与视觉验收
 
 日期：2026-11-16（Asia/Shanghai）。下列图片全部来自实际 Windows WPF 程序，没有 HTML 或概念效果图。业务账号、授权码、二维码、分钟数和物品图为显式隔离模拟。测试物品由 ReviewImageAssets 绘制并标注“非官方物品”，只用于布局验收。真实官方当前奖励图片端到端仍为 BLOCKED。

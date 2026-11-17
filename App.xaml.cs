@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
 using CloudLightBlizzard.Services;
@@ -10,6 +11,8 @@ namespace CloudLightBlizzard;
 
 public partial class App : Application
 {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string id);
     /// <summary>第二个实例用它唤起已运行的窗口。</summary>
     public const string ShowEventName = @"Local\CloudLight Blizzard.Show";
     internal static bool IsHeadlessSelfTest { get; private set; }
@@ -56,6 +59,7 @@ public partial class App : Application
                 dropsAcceptanceRoot.StartsWith(originalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Drops 验收必须使用与原账号数据分离的目录。");
             AppPaths.UseSelfTestRoot(dropsAcceptanceRoot);
+            SetCurrentProcessExplicitAppUserModelID("CloudLightBlizzard.RealDropsAcceptance");
         }
         if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-live-selftest")
         {
@@ -184,6 +188,8 @@ public partial class App : Application
         var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession, settings: settings);
         if (dropsAcceptanceRoot is not null) mainWindow.Title += " · Drops 本地验收";
         MainWindow = mainWindow;
+        if (dropsAcceptanceRoot is not null && e.Args.Contains("--drops-evidence"))
+            RealDropsEvidenceRecorder.Attach(mainWindow, Path.Combine(dropsAcceptanceRoot, "evidence"));
         if (!startHidden) mainWindow.Show();
     }
 

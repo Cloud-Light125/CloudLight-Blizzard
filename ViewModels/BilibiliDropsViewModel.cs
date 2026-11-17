@@ -171,6 +171,8 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public BilibiliDropsViewModel(DropsPlatformViewModel platform)
     {
         _platform = platform;
+        _platform.PropertyChanged+=(_,_)=>{Raise(nameof(WatchStateText));Raise(nameof(WatchingSessions));};
+        Tasks.CollectionChanged+=(_,_)=>Raise(nameof(TaskStateText));
         ScanQrLoginCommand = NewCommand();
         CancelQrCommand = NewCommand();
         ReacquireQrCommand = NewCommand();
@@ -190,6 +192,10 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     }
 
     public DropsPlatformViewModel Platform => _platform;
+    public int WatchingSessions=>_platform.Running?ActiveSessions:0;
+    public string WatchStateText=>_platform.WorkerLifecycle==WorkerLifecycle.Crashed?"观看 Worker 已异常退出":!_platform.Running?"观看 Worker 已停止":
+        ActiveSessions>0?$"正在观看 · {ActiveSessions} 个活跃 Session":FailedSessions>0?"观看连接失败":RetryingSessions>0?"观看暂停 · 等待重连":ConnectingSessions>0?"正在连接直播间":"Worker 已启动 · 活跃观看 Session 为 0";
+    public string TaskStateText=>Tasks.Count==0?"官方任务等待刷新":$"{Tasks.Count(t=>!t.Completed)} 项任务未完成 · {Tasks.Count(t=>t.Completed)} 项已完成";
     public ObservableCollection<BilibiliRoomViewModel> Rooms { get; } = new();
     public ObservableCollection<BilibiliActivityViewModel> Activities { get; } = new();
     public ObservableCollection<BilibiliTaskViewModel> Tasks { get; } = new();
@@ -398,7 +404,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     private int _configuredSessions;
     public int ConfiguredSessions { get => _configuredSessions; private set { Set(ref _configuredSessions, value); Raise(nameof(SessionSummary)); } }
     private int _activeSessions;
-    public int ActiveSessions { get => _activeSessions; private set { Set(ref _activeSessions, value); Raise(nameof(SessionSummary)); } }
+    public int ActiveSessions { get => _activeSessions; private set { Set(ref _activeSessions, value); Raise(nameof(SessionSummary));Raise(nameof(WatchStateText));Raise(nameof(WatchingSessions)); } }
     private int _connectingSessions;
     public int ConnectingSessions { get => _connectingSessions; private set { Set(ref _connectingSessions, value); Raise(nameof(SessionSummary)); } }
     private int _retryingSessions;
@@ -585,6 +591,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         finally { _suppressSettingsDirty = previous; }
         SettingsDirty = false;
         Raise(nameof(SessionEstimateText));
+        Raise(nameof(WatchStateText));Raise(nameof(WatchingSessions));Raise(nameof(TaskStateText));
     }
 
     public void HandleEvent(string name, JsonElement payload)
@@ -733,6 +740,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
         ConnectingSessions = Int(value, "connectingSessions", ConnectingSessions);
         RetryingSessions = Int(value, "retryingSessions", RetryingSessions);
         FailedSessions = Int(value, "failedSessions", FailedSessions);
+        Raise(nameof(WatchStateText));Raise(nameof(WatchingSessions));
         if (!value.TryGetProperty("sessions", out var sessionArray) || sessionArray.ValueKind != JsonValueKind.Array) return;
         Sessions.Clear();
         foreach (var item in sessionArray.EnumerateArray())

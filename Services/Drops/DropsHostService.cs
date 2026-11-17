@@ -52,6 +52,7 @@ public sealed class DropsHostService : IAsyncDisposable
 
     public event EventHandler<WorkerEvent>? EventReceived;
     public event EventHandler<WorkerSnapshot>? SnapshotChanged;
+    internal event Action<DropsPlatform, long, JsonElement>? ProtocolObserved;
     public bool IsCurrentEvent(DropsPlatform platform, JsonElement payload)
     {
         if (!payload.TryGetProperty("_workerGeneration", out var value) || !value.TryGetInt64(out var generation)) return true;
@@ -675,6 +676,7 @@ public sealed class DropsHostService : IAsyncDisposable
         {
             using var document = JsonDocument.Parse(line);
             var root = document.RootElement;
+            ProtocolObserved?.Invoke(worker.Platform, worker.Generation, root);
             if (root.TryGetProperty("id", out var idElement) && idElement.GetString() is { Length: > 0 } id &&
                 worker.Pending.TryGetValue(id, out var pending))
             {

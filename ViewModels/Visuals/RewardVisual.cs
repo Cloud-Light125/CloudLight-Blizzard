@@ -33,12 +33,17 @@ public sealed record RewardVisual
     public bool CanClaim { get; init; }
     public bool? Eligible { get; init; }
     public bool IsCurrent { get; init; }
+    public bool Expired { get; init; }
+    public bool Upcoming { get; init; }
+    public string EndsAt { get; init; } = "";
+    public bool WatchCompleted => Completed || Required > 0 && Current >= Required;
     public double Percent => Required > 0 ? Math.Clamp(Current * 100 / Required, 0, 100) : 0;
     public string PercentText => Required > 0 ? $"{Percent:0.#}%" : "—";
     public string ProgressText => Required > 0 ? $"{Current:0.#} / {Required:0.#} {Unit}" : "等待官方进度";
     public string RemainingText => Required > 0 ? $"还需 {Math.Max(0, Required - Current):0.#} {Unit}" : "所需进度尚未确认";
     public string EstimateText => Estimate > 0 ? $"本地预计新增约 {Estimate:0.#} 分钟 · 等待官方确认" : "官方进度与本地观察时长独立记录";
-    public string StateText => Claimed ? "已领取" : CanClaim ? "可领取" : Completed ? "已完成" : Eligible == false ? "不满足资格" : IsCurrent ? "正在获取" : Current > 0 ? "进行中" : "尚未开始";
+    public string StateText => Claimed ? "已领取" : CanClaim ? "已完成 · 待领取" : WatchCompleted ? "已完成 · 领取未开放" : Expired ? "活动已结束" : Upcoming ? "活动尚未开始" : Eligible == false ? "不满足资格" : PreconditionsSatisfiedForMining == false ? "等待前置任务" : IsCurrent ? "正在获取" : Current > 0 ? "未完成" : "尚未开始";
+    public string PrerequisiteText => PreconditionDropIds.Count == 0 ? "无前置阶段" : PreconditionsSatisfiedForMining == true ? "前置观看条件已满足" : "需要前置阶段 · 详见奖励详情";
     public string SyncText => DateTimeOffset.TryParse(SyncAt, out var at)
         ? $"上次官方同步 {at.ToLocalTime():HH:mm:ss}" : "尚无官方同步时间";
     public Visibility ClaimVisibility => CanClaim && !Claimed ? Visibility.Visible : Visibility.Collapsed;
@@ -59,6 +64,9 @@ public sealed record RewardVisual
         SyncAt=V.Text(item,"lastInventorySyncAt",V.Text(item,"lastConfirmedAt",sync)),
         Completed=V.Bool(item,"completed"), Claimed=V.Bool(item,"claimed"), CanClaim=V.Bool(item,"canClaim",V.Bool(item,"claimable")),
         Eligible=V.Get(item,"eligible").ValueKind is JsonValueKind.True or JsonValueKind.False ? V.Bool(item,"eligible") : null, IsCurrent=current,
+        Expired=V.Bool(item,"expired") || DateTimeOffset.TryParse(V.Text(item,"endsAt"),out var end)&&end<DateTimeOffset.UtcNow,
+        Upcoming=V.Bool(item,"upcoming") || DateTimeOffset.TryParse(V.Text(item,"startsAt"),out var start)&&start>DateTimeOffset.UtcNow,
+        EndsAt=V.Text(item,"endsAt"),
     };
 }
 
@@ -70,7 +78,9 @@ public sealed record CampaignVisual(string Id, string Title, string Game, string
 
 public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool Running, bool LoggedIn, string Channel, string Task, RewardVisual? Reward, string ImageUrl)
 {
-    public string StateText => Running ? "正在运行" : LoggedIn ? "已停止" : "尚未登录";
+    public string StateText => Running ? "Worker 运行中" : LoggedIn ? "已停止" : "尚未登录";
+    public string SyncText => Reward?.SyncText ?? "尚无该账号官方同步";
+    public string Phase {get;init;}="";
     public string RoleText => IsPrimary ? "主账号" : "独立账号";
     public string ProgressText => Reward?.ProgressText ?? "等待该账号官方刷新";
     public double Percent => Reward?.Percent ?? 0;

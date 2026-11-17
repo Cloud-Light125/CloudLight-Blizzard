@@ -67,14 +67,15 @@ public sealed class VisualImageCache
         uri=value;return true;
     }
     internal string CachePath(string source)=>Path.Combine(_root,Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant()+".img");
-    public async Task<VisualImageResult> LoadAsync(string? source,CancellationToken token=default)
+    public async Task<VisualImageResult> LoadAsync(string? source,CancellationToken token=default,int decodePixelWidth=640)
     {
         if(string.IsNullOrWhiteSpace(source))return new(null,"官方未提供图片");
         if(!IsPublicImageUri(source,out var uri))return new(null,"图片来源不可用");
         using var deadline=CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(_timeout);
         var ct=deadline.Token;bool entered=false,keyEntered=false;
-        var path=CachePath(source);var imageLock=_imageLocks[(path.GetHashCode()&int.MaxValue)%_imageLocks.Length];
+        decodePixelWidth=Math.Clamp(decodePixelWidth,64,1280);
+        var path=CachePath(source);var memoryKey=path+"|"+decodePixelWidth;var imageLock=_imageLocks[(path.GetHashCode()&int.MaxValue)%_imageLocks.Length];
         try
         {
             await imageLock.WaitAsync(ct).ConfigureAwait(false);keyEntered=true;
@@ -86,10 +87,10 @@ public sealed class VisualImageCache
                 try
                 {
                     BitmapSource? remembered;
-                    lock(_memorySync)remembered=_memory.TryGetValue(path,out var entry)?entry.Image:null;
-                    if(remembered is not null){Renew(path);Remember(path,remembered);return new(remembered,"已加载缓存");}
+                    lock(_memorySync)remembered=_memory.TryGetValue(memoryKey,out var entry)?entry.Image:null;
+                    if(remembered is not null){Renew(path);Remember(path,memoryKey,remembered);return new(remembered,"已加载缓存");}
                     var cached=await File.ReadAllBytesAsync(path,ct).ConfigureAwait(false);
-                    if(cached.Length<=MaxImageBytes){var decoded=await DecodeAsync(cached,ct).ConfigureAwait(false);Renew(path);Remember(path,decoded);return new(decoded,"已加载缓存");}
+                    if(cached.Length<=MaxImageBytes){var decoded=await DecodeAsync(cached,ct,decodePixelWidth).ConfigureAwait(false);Renew(path);Remember(path,memoryKey,decoded);return new(decoded,"已加载缓存");}
                 }
                 catch(OperationCanceledException){throw;}
                 catch{ /* Corrupt or externally removed cache: fetch once below. */ }
@@ -106,8 +107,8 @@ public sealed class VisualImageCache
                 bytes.Write(buffer,0,read);
             }
             var data=bytes.ToArray();
-            var image=await DecodeAsync(data,ct).ConfigureAwait(false);
-            Remember(path,image);
+            var image=await DecodeAsync(data,ct,decodePixelWidth).ConfigureAwait(false);
+            Remember(path,memoryKey,image);
             await _files.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -128,14 +129,14 @@ public sealed class VisualImageCache
     public void Invalidate(string? source)
     {
         if(string.IsNullOrWhiteSpace(source))return;
-        var path=CachePath(source);lock(_memorySync){_memory.Remove(path);_failures.Remove(path);}
+        var path=CachePath(source);lock(_memorySync){foreach(var key in _memory.Keys.Where(k=>k.StartsWith(path+"|",StringComparison.Ordinal)).ToArray())_memory.Remove(key);_failures.Remove(path);}
     }
     private static void Renew(string path){try{File.SetLastWriteTimeUtc(path,DateTime.UtcNow);}catch(IOException){}catch(UnauthorizedAccessException){}}
-    private void Remember(string path,BitmapSource image)
+    private void Remember(string path,string memoryKey,BitmapSource image)
     {
         lock(_memorySync)
         {
-            _failures.Remove(path);_memory[path]=(image,DateTime.UtcNow,(long)image.PixelWidth*image.PixelHeight*4);
+            _failures.Remove(path);_memory[memoryKey]=(image,DateTime.UtcNow,(long)image.PixelWidth*image.PixelHeight*4);
             var bytes=_memory.Values.Sum(v=>v.Bytes);
             foreach(var old in _memory.OrderBy(p=>p.Value.At).ToArray())
             {
@@ -149,10 +150,10 @@ public sealed class VisualImageCache
         lock(_memorySync){if(_failures.Count>=128)_failures.Clear();_failures[path]=(state,DateTime.UtcNow.AddSeconds(30));}
         return new(null,state);
     }
-    private static Task<BitmapSource> DecodeAsync(byte[] data,CancellationToken ct)=>Task.Run<BitmapSource>(()=>
+    private static Task<BitmapSource> DecodeAsync(byte[] data,CancellationToken ct,int width)=>Task.Run<BitmapSource>(()=>
     {
         ct.ThrowIfCancellationRequested();using var stream=new MemoryStream(data);
-        var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.DecodePixelWidth=640;image.StreamSource=stream;image.EndInit();
+        var image=new BitmapImage();image.BeginInit();image.CacheOption=BitmapCacheOption.OnLoad;image.DecodePixelWidth=width;image.StreamSource=stream;image.EndInit();
         if(image.PixelHeight>8192||image.PixelWidth>8192)throw new InvalidDataException("Image dimensions exceed limit.");
         image.Freeze();ct.ThrowIfCancellationRequested();return image;
     },ct);

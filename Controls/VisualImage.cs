@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CloudLightBlizzard.Services.Visuals;
 
 namespace CloudLightBlizzard.Controls;
@@ -10,6 +11,8 @@ public sealed class VisualImage : Grid
 {
     public static readonly DependencyProperty SourceUrlProperty = DependencyProperty.Register(nameof(SourceUrl), typeof(string), typeof(VisualImage), new PropertyMetadata("", Changed));
     public static readonly DependencyProperty BrandProperty = DependencyProperty.Register(nameof(Brand), typeof(string), typeof(VisualImage), new PropertyMetadata("Twitch"));
+    public static readonly DependencyProperty DecodePixelWidthProperty = DependencyProperty.Register(nameof(DecodePixelWidth),typeof(int),typeof(VisualImage),new PropertyMetadata(640,Changed));
+    public int DecodePixelWidth {get=>(int)GetValue(DecodePixelWidthProperty);set=>SetValue(DecodePixelWidthProperty,value);}
     public static readonly DependencyProperty ImageStretchProperty = DependencyProperty.Register(nameof(ImageStretch), typeof(Stretch), typeof(VisualImage), new PropertyMetadata(Stretch.Uniform, StretchChanged));
     public string SourceUrl { get => (string)GetValue(SourceUrlProperty); set => SetValue(SourceUrlProperty, value); }
     public string Brand { get => (string)GetValue(BrandProperty); set => SetValue(BrandProperty, value); }
@@ -24,6 +27,9 @@ public sealed class VisualImage : Grid
     private readonly StackPanel _placeholder = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _retry = new() { Content = "↻", Width = 28, Height = 28, ToolTip = "重新加载图片", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(4), Visibility = Visibility.Collapsed };
     private CancellationTokenSource? _request;
+    private readonly List<ScrollViewer> _viewports=[];
+    private readonly DispatcherTimer _viewportTimer=new(){Interval=TimeSpan.FromMilliseconds(100)};
+    private string _displayedSource="";
     public VisualImage()
     {
         SetResourceReference(BackgroundProperty, "App.SurfaceAlt");
@@ -32,17 +38,43 @@ public sealed class VisualImage : Grid
         placeholder.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Text.Secondary"); _icon.Child = placeholder;
         _placeholder.Children.Add(_icon); _placeholder.Children.Add(_label); Children.Add(_placeholder); Children.Add(_image);
         _retry.SetResourceReference(StyleProperty, "IconButton"); _retry.Click += (_, _) => { (ImageProvider ?? VisualImageCache.ForBrand(Brand)).Invalidate(SourceUrl); Start(); }; Children.Add(_retry);
-        Loaded += (_, _) => Start(); Unloaded += (_, _) => Cancel();
+        _viewportTimer.Tick+=(_,_)=>{_viewportTimer.Stop();EvaluateViewport();};
+        Loaded += (_, _) =>
+        {
+            for(DependencyObject? parent=VisualTreeHelper.GetParent(this);parent is not null;parent=VisualTreeHelper.GetParent(parent))
+                if(parent is ScrollViewer scroll){_viewports.Add(scroll);scroll.ScrollChanged+=ViewportScrolled;}
+            ScheduleViewport();
+        };
+        Unloaded += (_, _) =>
+        {
+            foreach(var viewport in _viewports)viewport.ScrollChanged-=ViewportScrolled;
+            _viewports.Clear();_viewportTimer.Stop();Cancel();_image.Source=null;_displayedSource="";
+        };
+        IsVisibleChanged+=(_,_)=>ScheduleViewport();
         SizeChanged += (_, _) =>
         {
             Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight)), 12, 12);
             _label.Visibility = ActualWidth < 100 || ActualHeight < 85 ? Visibility.Collapsed : Visibility.Visible;
             _icon.Width = _icon.Height = ActualWidth < 100 || ActualHeight < 85 ? 26 : 42;
+            ScheduleViewport();
         };
     }
-    private static void Changed(DependencyObject d, DependencyPropertyChangedEventArgs e) { var c = (VisualImage)d; if (c.IsLoaded) c.Start(); }
+    private static void Changed(DependencyObject d, DependencyPropertyChangedEventArgs e) { var c = (VisualImage)d;c.Cancel();c._image.Source=null;c._displayedSource="";if(c.IsLoaded)c.ScheduleViewport(); }
     private static void StretchChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) => ((VisualImage)d)._image.Stretch = (Stretch)e.NewValue;
     private void Cancel() { _request?.Cancel(); _request?.Dispose(); _request = null; }
+    private void ViewportScrolled(object sender,ScrollChangedEventArgs e)=>ScheduleViewport();
+    private void ScheduleViewport(){if(IsLoaded){_viewportTimer.Stop();_viewportTimer.Start();}}
+    private void EvaluateViewport()
+    {
+        var visible=IsVisible&&ActualWidth>0&&ActualHeight>0&&_viewports.All(viewport=>
+        {
+            try{return TransformToAncestor(viewport).TransformBounds(new Rect(0,0,ActualWidth,ActualHeight)).IntersectsWith(new Rect(0,0,viewport.ActualWidth,viewport.ActualHeight));}
+            catch(InvalidOperationException){return false;}
+        });
+        if(!visible){Cancel();return;}
+        if(_displayedSource==SourceUrl&&_image.Source is not null||_request is not null)return;
+        Start();
+    }
     private async void Start()
     {
         Cancel(); var cts = new CancellationTokenSource(); _request = cts; _image.Source = null; _placeholder.Visibility = Visibility.Visible; _retry.Visibility = Visibility.Collapsed;
@@ -50,9 +82,10 @@ public sealed class VisualImage : Grid
         try
         {
             var result = ReviewLoader is { } loader && SourceUrl.StartsWith("review-fixture://", StringComparison.Ordinal)
-                ? await loader(SourceUrl, cts.Token) : await (ImageProvider ?? VisualImageCache.ForBrand(Brand)).LoadAsync(SourceUrl, cts.Token);
+                ? await loader(SourceUrl, cts.Token) : await (ImageProvider ?? VisualImageCache.ForBrand(Brand)).LoadAsync(SourceUrl, cts.Token,DecodePixelWidth);
             if (!ReferenceEquals(_request, cts) || cts.IsCancellationRequested) return;
             _image.Source = result.Image; _label.Text = result.State; ToolTip = result.Image is null ? result.State : null; _placeholder.Visibility = result.Image is null ? Visibility.Visible : Visibility.Collapsed;
+            _displayedSource=SourceUrl;
             _retry.Visibility = result.Image is null && VisualImageCache.IsPublicImageUri(SourceUrl, out _) ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (OperationCanceledException) { }

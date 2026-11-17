@@ -2,7 +2,7 @@
 
 基线为上一轮最终 763 条 UI 契约（早期 754）；不是 763 个独立业务功能。每行保留原事件、命令、输入或状态绑定来源。共享视觉投影和组件作用域变化单独注明。静态映射不等于真实账号操作已执行。
 
-静态映射 763 / 763；待核对 0。运行证据见 regression-results.md；真实登录、Claim、游戏覆盖按用户要求不执行。
+静态映射 763 / 763；待核对 0。运行证据见 regression-results.md；本轮 Twitch 已完成真实 Session、图片和观看验收；Claim、游戏覆盖不执行。
 
 | ID | 原页面 / 控件 | 原事件或绑定 | 新入口 / 证据 | 验证层级 |
 |---|---|---|---|---|
@@ -186,7 +186,7 @@
 | UI-0178 | Views/Pages/DiagnosticsPage.xaml / DataTrigger | {"Binding": "{Binding Status}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0179 | Views/Pages/DiagnosticsPage.xaml / {Binding Category} | {"Text": "{Binding Category}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0180 | Views/Pages/DiagnosticsPage.xaml / {Binding Name} | {"Text": "{Binding Name}"} | 原契约保留 · Stats/HeroDetailWindow.xaml | 静态；运行验证按测试记录 |
-| UI-0181 | Views/Pages/DiagnosticsPage.xaml / {Binding Summary} | {"Text": "{Binding Summary}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
+| UI-0181 | Views/Pages/DiagnosticsPage.xaml / {Binding Summary} | {"Text": "{Binding Summary}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0182 | Views/Pages/DiagnosticsPage.xaml / {Binding Details} | {"Text": "{Binding Details}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0183 | Views/Pages/DiagnosticsPage.xaml / {Binding StatusText} | {"Text": "{Binding StatusText}"} | 原契约保留 · Views/Dashboard/DashboardView.xaml | 静态；运行验证按测试记录 |
 | UI-0184 | Views/Pages/DiagnosticsPage.xaml / 开始诊断 | {"Click": "OnStart"} | 原契约保留 · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
@@ -208,14 +208,14 @@
 | UI-0200 | Views/Pages/DropsPage.xaml / Border | {"MinWidth": "{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"} | 原契约保留 · Stats/Theme/StatsStyles.xaml | 静态；运行验证按测试记录 |
 | UI-0201 | Views/Pages/DropsPage.xaml / {Binding Primary} | {"Text": "{Binding Primary}", "ToolTip": "{Binding Primary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0202 | Views/Pages/DropsPage.xaml / {Binding Secondary} | {"Text": "{Binding Secondary}", "ToolTip": "{Binding Secondary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0203 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0203 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0204 | Views/Pages/DropsPage.xaml / {Binding Primary} | {"Text": "{Binding Primary}", "ToolTip": "{Binding Primary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0205 | Views/Pages/DropsPage.xaml / {Binding Secondary} | {"Text": "{Binding Secondary}", "ToolTip": "{Binding Secondary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0206 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0206 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0207 | Views/Pages/DropsPage.xaml / {Binding TwitchClaimButtonText} | {"Content": "{Binding TwitchClaimButtonText}", "Visibility": "{Binding TwitchClaimVisibility}", "IsEnabled": "{Binding CanStartTwitchClaim}", "Click": "OnClaimTwitchDrop"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0208 | Views/Pages/DropsPage.xaml / {Binding Secondary} | {"Text": "{Binding Secondary}", "ToolTip": "{Binding Secondary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0209 | Views/Pages/DropsPage.xaml / {Binding Primary} | {"Text": "{Binding Primary}", "ToolTip": "{Binding Primary}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0210 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0210 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0211 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Progress, Mode=OneWay}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0212 | Views/Pages/DropsPage.xaml / {Binding Detail} | {"Text": "{Binding Detail}", "ToolTip": "{Binding Detail}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0213 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Enabled}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
@@ -242,7 +242,7 @@
 | UI-0234 | Views/Pages/DropsPage.xaml / {Binding Diagnostic} | {"Text": "{Binding Diagnostic}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0235 | Views/Pages/DropsPage.xaml / {Binding Name} | {"Text": "{Binding Name}", "ToolTip": "{Binding Name}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0236 | Views/Pages/DropsPage.xaml / {Binding OfficialText} | {"Text": "{Binding OfficialText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0237 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0237 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0238 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Percent}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0239 | Views/Pages/DropsPage.xaml / {Binding ProgressText} | {"Text": "{Binding ProgressText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0240 | Views/Pages/DropsPage.xaml / {Binding ClaimButtonText} | {"Content": "{Binding ClaimButtonText}", "Visibility": "{Binding ClaimVisibility}", "IsEnabled": "{Binding CanClaim}", "Command": "{Binding DataContext.BilibiliDetails.ClaimRewardCommand, ElementName=DropsRoot}", "CommandParameter": "{Binding}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
@@ -255,7 +255,7 @@
 | UI-0247 | Views/Pages/DropsPage.xaml / {Binding Id} | {"Text": "{Binding Id}", "ToolTip": "{Binding Id}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0248 | Views/Pages/DropsPage.xaml / {Binding StateText} | {"Text": "{Binding StateText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0249 | Views/Pages/DropsPage.xaml / {Binding Detail} | {"Text": "{Binding Detail}", "ToolTip": "{Binding Detail}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0250 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0250 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
 | UI-0251 | Views/Pages/DropsPage.xaml / {Binding Name} | {"Text": "{Binding Name}", "ToolTip": "{Binding Name}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0252 | Views/Pages/DropsPage.xaml / {Binding RoomText, Mode=OneWay} | {"Text": "{Binding RoomText, Mode=OneWay}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0253 | Views/Pages/DropsPage.xaml / {Binding TaskText, Mode=OneWay} | {"Text": "{Binding TaskText, Mode=OneWay}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
@@ -355,7 +355,7 @@
 | UI-0347 | Views/Pages/DropsPage.xaml / 打开登录窗口 | {"Click": "OnYouTubeLogin"} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0348 | Views/Pages/DropsPage.xaml / 删除账号 | {"Click": "OnYouTubeDeleteProfile"} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0349 | Views/Pages/DropsPage.xaml / YouTubeChannelsList | {"ItemsSource": "{Binding Channels}"} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0350 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Channels.Count}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0350 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Channels.Count}"} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0351 | Views/Pages/DropsPage.xaml / YouTubeChannelName | {} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0352 | Views/Pages/DropsPage.xaml / YouTubeChannelId | {} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0353 | Views/Pages/DropsPage.xaml / YouTubeChannelUrl | {} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
@@ -385,10 +385,10 @@
 | UI-0377 | Views/Pages/DropsPage.xaml / {Binding TwitchAuthorizationExpiryText} | {"Text": "{Binding TwitchAuthorizationExpiryText}"} | 原契约保留 · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0378 | Views/Pages/DropsPage.xaml / 打开 Twitch 授权页面 | {"Click": "OnOpenTwitchAuthorization"} | 同一绑定 / Command（共享模板或控件更名） · Views\Drops\Twitch\TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0379 | Views/Pages/DropsPage.xaml / TwitchCopyCodeButton | {"Click": "OnCopyTwitchAuthorizationCode"} | 同一绑定 / Command（共享模板或控件更名） · Views\Drops\Twitch\TwitchOverview.xaml | 静态；运行验证按测试记录 |
-| UI-0380 | Views/Pages/DropsPage.xaml / {Binding TwitchChannelText} | {"Text": "{Binding TwitchChannelText}"} | 结构化可视化替代：TwitchChannelText → TwitchVisual.Channel · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
+| UI-0380 | Views/Pages/DropsPage.xaml / {Binding TwitchChannelText} | {"Text": "{Binding TwitchChannelText}"} | 结构化可视化替代：TwitchChannelText → TwitchInventory.Channel · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0381 | Views/Pages/DropsPage.xaml / {Binding TwitchDataSourceText} | {"Text": "{Binding TwitchDataSourceText}"} | 原契约保留 · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0382 | Views/Pages/DropsPage.xaml / {Binding TwitchCurrentProgressText} | {"Text": "{Binding TwitchCurrentProgressText}"} | 结构化可视化替代：TwitchCurrentProgressText → Binding ProgressText · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
-| UI-0383 | Views/Pages/DropsPage.xaml / {Binding TwitchWatchRequestText} | {"Text": "{Binding TwitchWatchRequestText}"} | 原契约保留 · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
+| UI-0383 | Views/Pages/DropsPage.xaml / {Binding TwitchWatchRequestText} | {"Text": "{Binding TwitchWatchRequestText}"} | 结构化可视化替代：TwitchWatchRequestText → TwitchInventory.WatchState · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0384 | Views/Pages/DropsPage.xaml / {Binding TwitchNetworkRouteText} | {"Text": "{Binding TwitchNetworkRouteText}"} | 原契约保留 · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0385 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding TwitchCurrentProgress, Mode=OneWay}"} | 结构化可视化替代：TwitchCurrentProgress → Binding Percent · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0386 | Views/Pages/DropsPage.xaml / 使用帮助 | {"Click": "OnToggleHelp"} | 同一绑定 / Command（共享模板或控件更名） · Views\Drops\Soop\SoopOverview.xaml | 静态；运行验证按测试记录 |
@@ -422,19 +422,19 @@
 | UI-0414 | Views/Pages/DropsPage.xaml / {Binding TwitchLastSuccessText} | {"Text": "{Binding TwitchLastSuccessText}", "Visibility": "{Binding TwitchLastSuccessVisibility}"} | 原契约保留 · Views/Drops/Twitch/TwitchOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0415 | Views/Pages/DropsPage.xaml / TwitchAutoStart | {"Click": "OnAutoStartChanged"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0416 | Views/Pages/DropsPage.xaml / 打开背包 | {"Click": "OnOpenTwitchInventory"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0417 | Views/Pages/DropsPage.xaml / ListBox | {"ItemsSource": "{Binding Inventory}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0418 | Views/Pages/DropsPage.xaml / {Binding TwitchInventoryEmptyText} | {"Text": "{Binding TwitchInventoryEmptyText}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0417 | Views/Pages/DropsPage.xaml / ListBox | {"ItemsSource": "{Binding Inventory}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0418 | Views/Pages/DropsPage.xaml / {Binding TwitchInventoryEmptyText} | {"Text": "{Binding TwitchInventoryEmptyText}"} | 结构化可视化替代：TwitchInventoryEmptyText → TwitchInventory.EmptyText · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0419 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Inventory.Count}"} | 原契约保留 · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0420 | Views/Pages/DropsPage.xaml / TwitchChannelsList | {"ItemsSource": "{Binding Channels}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0421 | Views/Pages/DropsPage.xaml / {Binding TwitchChannelsEmptyText} | {"Text": "{Binding TwitchChannelsEmptyText}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0422 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Channels.Count}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0422 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Channels.Count}"} | 原契约保留 · Views/Drops/YouTube/YouTubeWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0423 | Views/Pages/DropsPage.xaml / 选择并切换频道 | {"Click": "OnTwitchSelectChannel"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0424 | Views/Pages/DropsPage.xaml / BilibiliPanel | {"Visibility": "{Binding BilibiliPanelVisibility}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0425 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.LoginStateText} | {"Text": "{Binding BilibiliDetails.LoginStateText}"} | 结构化可视化替代：BilibiliDetails.LoginStateText → BilibiliDetails.AccountStatus · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0426 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.AccountStatus} | {"Text": "{Binding BilibiliDetails.AccountStatus}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0427 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.NetworkModeText} | {"Text": "{Binding BilibiliDetails.NetworkModeText}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0428 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.NetworkPolicyText} | {"Text": "{Binding BilibiliDetails.NetworkPolicyText}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0429 | Views/Pages/DropsPage.xaml / {Binding Bilibili.Status} | {"Text": "{Binding Bilibili.Status}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
+| UI-0429 | Views/Pages/DropsPage.xaml / {Binding Bilibili.Status} | {"Text": "{Binding Bilibili.Status}"} | 结构化可视化替代：Bilibili.Status → BilibiliDetails.WatchStateText · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0430 | Views/Pages/DropsPage.xaml / {Binding Bilibili.ConnectionStateText} | {"Text": "{Binding Bilibili.ConnectionStateText}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0431 | Views/Pages/DropsPage.xaml / BilibiliQrLoginButton | {"Visibility": "{Binding BilibiliDetails.LoginVisibility}", "Command": "{Binding BilibiliDetails.ScanQrLoginCommand}"} | 同名输入 / 控件保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0432 | Views/Pages/DropsPage.xaml / 退出登录 | {"Visibility": "{Binding BilibiliDetails.LogoutVisibility}", "Command": "{Binding BilibiliDetails.LogoutCommand}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
@@ -481,7 +481,7 @@
 | UI-0473 | Views/Pages/DropsPage.xaml / 保存设置 | {"Command": "{Binding BilibiliDetails.SaveSettingsCommand}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Pages/DropsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0474 | Views/Pages/DropsPage.xaml / 清除第三方通知 | {"Command": "{Binding BilibiliDetails.ClearNotifierCommand}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0475 | Views/Pages/DropsPage.xaml / 刷新 Session 详情 | {"Command": "{Binding BilibiliDetails.RefreshSessionsCommand}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0476 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.SessionSummary} | {"Text": "{Binding BilibiliDetails.SessionSummary}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0476 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.SessionSummary} | {"Text": "{Binding BilibiliDetails.SessionSummary}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliOverview.xaml | 静态；运行验证按测试记录 |
 | UI-0477 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.LastApiSuccessAt, StringFormat=最近成功 API：{0}} | {"Text": "{Binding BilibiliDetails.LastApiSuccessAt, StringFormat=最近成功 API：{0}}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0478 | Views/Pages/DropsPage.xaml / BilibiliTaskList | {"ItemsSource": "{Binding BilibiliDetails.Tasks}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0479 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding BilibiliDetails.Tasks.Count}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
@@ -496,10 +496,10 @@
 | UI-0488 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.RetryingSessions} | {"Text": "{Binding BilibiliDetails.RetryingSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0489 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.FailedSessions} | {"Text": "{Binding BilibiliDetails.FailedSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0490 | Views/Pages/DropsPage.xaml / BilibiliSessionList | {"ItemsSource": "{Binding BilibiliDetails.Sessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0491 | Views/Pages/DropsPage.xaml / Border | {"Visibility": "{Binding TwitchPanelVisibility}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0491 | Views/Pages/DropsPage.xaml / Border | {"Visibility": "{Binding TwitchPanelVisibility}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0492 | Views/Pages/DropsPage.xaml / TwitchCampaignScopePicker | {"SelectionChanged": "OnTwitchCampaignScopeChanged"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0493 | Views/Pages/DropsPage.xaml / ListBox | {"ItemsSource": "{Binding Tasks}"} | 原契约保留 · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0494 | Views/Pages/DropsPage.xaml / {Binding TwitchCampaignsEmptyText} | {"Text": "{Binding TwitchCampaignsEmptyText}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0494 | Views/Pages/DropsPage.xaml / {Binding TwitchCampaignsEmptyText} | {"Text": "{Binding TwitchCampaignsEmptyText}"} | 结构化可视化替代：TwitchCampaignsEmptyText → TwitchInventory.EmptyText · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0495 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding Tasks.Count}"} | 原契约保留 · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0496 | Views/Pages/DropsPage.xaml / TwitchSettingsCard | {"Visibility": "{Binding TwitchPanelVisibility}"} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0497 | Views/Pages/DropsPage.xaml / TwitchLanguage | {} | 原契约保留 · Views/Drops/Twitch/TwitchWorkspace.xaml | 静态；运行验证按测试记录 |

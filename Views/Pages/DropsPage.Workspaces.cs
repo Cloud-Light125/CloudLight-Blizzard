@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using CloudLightBlizzard.Controls;
 using CloudLightBlizzard.ViewModels;
 using CloudLightBlizzard.ViewModels.Visuals;
+using CloudLightBlizzard.Services;
+using CloudLightBlizzard.Services.Drops;
 namespace CloudLightBlizzard.Views.Pages;
 
 public partial class DropsPage
@@ -123,6 +125,22 @@ public partial class DropsPage
     private void OnVisualAction(object? sender, WorkspaceActionEventArgs e)
     {
         e.Handled = true;
+        if(e.Action=="twitch:channels")
+        {
+            ShowWorkspace("activities");TwitchWorkspace.TwitchChannelsExpander.IsExpanded=true;
+            TwitchWorkspace.TwitchChannelsExpander.BringIntoView();return;
+        }
+        if(e.Action=="twitch:reward-details"&&e.Control is FrameworkElement{DataContext:RewardCardVisual card})
+        {
+            var row=_vm?.Inventory.FirstOrDefault(r=>r.Id==card.Drop.Id&&r.Visual.CampaignId==card.Drop.CampaignId);
+            if(row is null){_vm?.ReportMessage(DropsPlatform.Twitch,"该奖励的官方进度详情尚未加载，请刷新背包。","提示");return;}
+            var content=new ContentControl{Content=row,ContentTemplate=(DataTemplate)FindResource("TwitchDropRowTemplate"),Margin=new Thickness(16)};
+            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 奖励详情 · "+card.Drop.Title,Width=Math.Min(900,SystemParameters.WorkArea.Width-40),Height=Math.Min(600,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled}};
+            dialog.SetResourceReference(BackgroundProperty,"App.Background");dialog.SetResourceReference(ForegroundProperty,"Text.Primary");
+            ThemeManager.Attach(dialog);dialog.AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnVisualAction));
+            content.Loaded+=(_,_)=>ExpandRewardDetails(content);
+            dialog.ShowDialog();return;
+        }
         if (e.Action.StartsWith("legacy:")) { RunLegacyAction(e.Action[7..], e.Control, new RoutedEventArgs()); return; }
         if (e.Action.StartsWith("section:")) { ShowWorkspace(e.Action[8..]); return; }
         if (e.Action.StartsWith("quick:")) { OnQuickStartAction(new Button { Tag = e.Action[6..] }, new RoutedEventArgs()); return; }
@@ -133,6 +151,11 @@ public partial class DropsPage
             else if (e.Action == "soop:stop") OnSoopStopAccount(e.Control, new RoutedEventArgs());
             else ShowWorkspace("accounts");
         }
+    }
+    private static void ExpandRewardDetails(DependencyObject parent)
+    {
+        if(parent is Expander expander)expander.IsExpanded=true;
+        for(var index=0;index<System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);index++)ExpandRewardDetails(System.Windows.Media.VisualTreeHelper.GetChild(parent,index));
     }
     private void RunLegacyAction(string action, object sender, RoutedEventArgs args)
     {

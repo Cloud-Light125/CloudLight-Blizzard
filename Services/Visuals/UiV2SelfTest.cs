@@ -26,6 +26,9 @@ internal static class UiV2SelfTest
         static JsonElement Json(string value)=>JsonDocument.Parse(value).RootElement.Clone();
         try
         {
+            TwitchInventorySelfTest.Run(Check);
+            var safeEvidence=RealDropsEvidenceRecorder.SafeSnapshot(Json("""{"accounts":[{"userId":"private-user"}],"token":"private-token","authRequired":{"code":"private-code"},"inventory":[{"id":"drop","benefits":[{"id":"benefit","imageUrl":"https://static-cdn.jtvnw.net/reward.png?signature=private-signature"}]}]}""")).GetRawText();
+            Check(!safeEvidence.Contains("private-")&&safeEvidence.Contains("imageUrlSha256")&&safeEvidence.Contains("benefit"),"real evidence excludes account/authentication fields and image signature parameters while retaining source hashes and IDs");
             var health=new DropsPlatformViewModel(DropsPlatform.Twitch,"Twitch"){Running=true};var model=new PlatformOverviewModel(health);
             model.Apply(Json("""{"lastInventorySyncAt":"2026-11-16T00:00:00Z","inventory":[{"id":"other","name":"not current","currentMinutes":1,"requiredMinutes":10},{"id":"current","name":"test drop","game":"Game","campaignId":"campaign","currentMinutes":18,"requiredMinutes":60,"benefits":[{"id":"one","name":"First","type":"DIRECT_ENTITLEMENT","imageUrl":"https://static-cdn.jtvnw.net/one.png"},{"id":"two","name":"Second","type":"BADGE","imageUrl":"https://static-cdn.jtvnw.net/two.png"}]}],"currentDrop":{"id":"current","name":"test drop","campaignId":"campaign","currentMinutes":18,"requiredMinutes":60,"estimatedExtraMinutes":2,"progress":0.99,"preconditionDropIds":["prior"],"preconditionsMet":false,"preconditionsSatisfiedForMining":true,"eligible":true}}"""));
             Check(model.ActiveReward?.Id=="current"&&model.ActiveReward.CampaignId=="campaign","current drop joins by Core drop ID, not inventory position");
@@ -51,6 +54,8 @@ internal static class UiV2SelfTest
             var invalid=await cache.LoadAsync("https://127.0.0.1/private.png");Check(invalid.Image is null&&transport.Requests.Count==0,"private/local image targets are rejected");
             var loaded=await cache.LoadAsync(good);var again=await cache.LoadAsync(good);
             Check(loaded.Image?.IsFrozen==true&&again.Image is not null&&transport.Count("/good.png")==1,"valid async image is frozen and reused from cache");
+            var thumbnail=await cache.LoadAsync(good,decodePixelWidth:192);
+            Check(thumbnail.Image?.PixelWidth==192&&transport.Count("/good.png")==1&&loaded.Image?.PixelWidth==640,"thumbnail decoding reuses official disk bytes without downloading again or replacing the detail-size bitmap");
             await Task.WhenAll(Enumerable.Range(0,5).Select(_=>cache.LoadAsync("https://static-cdn.jtvnw.net/shared.png")));
             Check(transport.Count("/shared.png")==1,"concurrent controls load the same URL only once");
             File.SetLastWriteTimeUtc(cache.CachePath(good),DateTime.UtcNow.AddDays(-8));await cache.LoadAsync(good);
@@ -81,6 +86,13 @@ internal static class UiV2SelfTest
             Check(blue,"actual WPF fast image switch displays the new reward, never a late prior image");
             imageControl.SourceUrl="https://static-cdn.jtvnw.net/unload-slow.png";await Task.Delay(30);window.Close();await Task.Delay(30);
             Check(transport.Canceled>0,"actual WPF unload cancels pending image loads");
+            var deferred=new VisualImage{ImageProvider=cache,SourceUrl="https://static-cdn.jtvnw.net/offscreen.png",Height=100};
+            var scrollContent=new System.Windows.Controls.StackPanel();scrollContent.Children.Add(new System.Windows.Controls.Border{Height=600});scrollContent.Children.Add(deferred);
+            var viewport=new System.Windows.Controls.ScrollViewer{Content=scrollContent};var viewportWindow=new Window{Width=240,Height=180,ShowActivated=false,ShowInTaskbar=false,Content=viewport};viewportWindow.Show();
+            await Application.Current.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(180);
+            Check(transport.Count("/offscreen.png")==0,"offscreen reward controls do not download images before entering the viewport");
+            viewport.ScrollToBottom();await Application.Current.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(250);
+            Check(transport.Count("/offscreen.png")==1&&deferred.LoadedImage is not null,"scrolling into view loads the official thumbnail asynchronously once");viewportWindow.Close();
 
             var reward=RewardVisual.From(Json("""{"id":"many","name":"isolated test","benefits":[{"id":"a","name":"A","type":"DIRECT_ENTITLEMENT","imageUrl":""},{"id":"b","name":"B","type":"EMOTE","imageUrl":""},{"id":"c","name":"C","type":"BADGE","imageUrl":""}]}"""),"Twitch","");
             var gallery=new BenefitGallery{ItemsSource=reward.Benefits};var galleryWindow=new Window{Title="隔离多 Benefit 组件回归 · 模拟数据",Width=480,Height=280,ShowActivated=false,ShowInTaskbar=false,Content=gallery};galleryWindow.Show();
@@ -92,7 +104,7 @@ internal static class UiV2SelfTest
             var track=toggle.Template.FindName("Track",toggle) as FrameworkElement;
             var trackBounds=track?.TransformToAncestor(toggle).TransformBounds(new Rect(0,0,track.ActualWidth,track.ActualHeight));
             Check(trackBounds is {} bounds&&bounds.Left>=0&&bounds.Right<=toggle.ActualWidth,"actual checked WPF switch fits inside its 48 DIP setting editor without clipping");toggleWindow.Close();
-            checks.Add("BLOCKED real-current-reward-image: no authenticated Core snapshot is loaded; upstream debug/CDN assets and historical announcement images do not count as real current rewards.");
+            checks.Add("NOT TESTED real account images in this isolated component suite; independently collected official account evidence is recorded in docs/ui-redesign-v2/real-twitch-e2e.md.");
         }
         catch(Exception ex){checks.Add("FAIL selftest exception: "+ex.GetType().Name);}
         await File.WriteAllLinesAsync(Path.Combine(output,"ui-v2-selftest.txt"),checks);

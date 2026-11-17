@@ -1,0 +1,16 @@
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+density overview physical-request=1366x768@125% actual=1092.8x614.4 DIP columns=4 full-cards=4 intersecting-cards=4 realized-cards=32
+density activities physical-request=1366x768@125% actual=1092.8x614.4 DIP columns=4 full-cards=4 intersecting-cards=8 realized-cards=46
+density overview physical-request=1600x900@125% actual=1280x720 DIP columns=5 full-cards=5 intersecting-cards=10 realized-cards=18
+density activities physical-request=1600x900@125% actual=1280x720 DIP columns=5 full-cards=5 intersecting-cards=10 realized-cards=18
+density overview physical-request=1920x1080@125% actual=1536x864 DIP columns=6 full-cards=6 intersecting-cards=11 realized-cards=18
+density activities physical-request=1920x1080@125% actual=1536x864 DIP columns=6 full-cards=11 intersecting-cards=11 realized-cards=25
+density overview physical-request=2560x1440@125% actual=2048x1152 DIP columns=9 full-cards=11 intersecting-cards=18 realized-cards=25
+density activities physical-request=2560x1440@125% actual=2048x1152 DIP columns=9 full-cards=11 intersecting-cards=18 realized-cards=25
+PASS no channel is distinct from Worker running
+binding-errors=0
+physical-monitor-dpi=120

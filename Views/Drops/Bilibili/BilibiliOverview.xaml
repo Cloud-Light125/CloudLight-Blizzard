@@ -53,7 +53,7 @@
             <UniformGrid Columns="4">
                 <ctrl:MetricTile Label="直播间" Value="{Binding BilibiliDetails.Rooms.Count}" Caption="已添加房间" />
                 <ctrl:MetricTile Label="官方任务" Value="{Binding BilibiliDetails.Tasks.Count}" Caption="官方接口返回" />
-                <ctrl:MetricTile Label="观看 Session" Value="{Binding BilibiliDetails.Sessions.Count}" Caption="独立连接状态" />
+                <ctrl:MetricTile Label="活跃观看 Session" Value="{Binding BilibiliDetails.WatchingSessions}" Caption="以实际连接状态为准" />
                 <ctrl:MetricTile Label="奖励记录" Value="{Binding BilibiliDetails.Rewards.Count}" Caption="原领取结果" />
             </UniformGrid>
             <Grid behaviors:ResponsiveGrid.IsEnabled="True">
@@ -72,7 +72,9 @@
                     <StackPanel>
                         <ctrl:PlatformIcon Platform="Bilibili" Width="40" Height="40" HorizontalAlignment="Left" />
                         <TextBlock Text="{Binding BilibiliVisual.Channel}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,16,0,8" />
-                        <TextBlock Text="{Binding Bilibili.Status}" Style="{DynamicResource VisualBody}" />
+                        <TextBlock Text="{Binding BilibiliDetails.WatchStateText}" Style="{DynamicResource VisualBody}" />
+                        <TextBlock Text="{Binding BilibiliDetails.TaskStateText}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0"/>
+                        <TextBlock Text="{Binding BilibiliDetails.SessionSummary}" Style="{DynamicResource VisualCaption}" Margin="0,6,0,0"/>
                         <TextBlock Text="{Binding Bilibili.Summary}" Style="{DynamicResource VisualCaption}" Margin="0,8,0,16" />
                         <Button x:Name="BilibiliDiscoverButton" Content="发现当前活动" Command="{Binding BilibiliDetails.DiscoverCommand}" Style="{DynamicResource SecondaryButton}" x:FieldModifier="internal" />
                         <Button Content="观看配置" ctrl:WorkspaceAction.Name="section:settings" Style="{DynamicResource SecondaryButton}" Margin="0,8,0,0" />

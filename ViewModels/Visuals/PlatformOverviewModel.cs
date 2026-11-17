@@ -17,12 +17,15 @@ public sealed class PlatformOverviewModel : ObservableObject
     private RewardVisual? _activeReward;
     private DateTimeOffset? _observedStart;
     private string _officialChange="本次尚未观察到新的官方进度";
+    private string _runtimeSummary="";
+    public string RuntimeSummary=>_runtimeSummary.Length>0?_runtimeSummary:Brand=="YouTube"?Health.Status:Health.Running?"Worker 运行中 · 观看状态需单独确认":"Worker 未运行";
+    internal void UpdateRuntimeSummary(string value){if(_runtimeSummary==value)return;_runtimeSummary=value;Raise(nameof(RuntimeSummary));}
     public string AccountText { get=>_accountText; private set=>Set(ref _accountText,value); }
     public string SessionText { get=>_sessionText; private set=>Set(ref _sessionText,value); }
     public string Channel { get=>_channel; private set=>Set(ref _channel,value); }
     public string AutoClaimText { get=>_autoClaim; private set=>Set(ref _autoClaim,value); }
     public RewardVisual? ActiveReward { get=>_activeReward; private set { Set(ref _activeReward,value); Raise(nameof(FeaturedReward)); Raise(nameof(FeaturedLabel)); } }
-    public RewardVisual? FeaturedReward => ActiveReward ?? Accounts.FirstOrDefault(a=>a.Running&&a.Reward is not null)?.Reward ?? Rewards.FirstOrDefault(r=>!r.Claimed) ?? Rewards.FirstOrDefault();
+    public RewardVisual? FeaturedReward => ActiveReward ?? Accounts.FirstOrDefault(a=>a.Running&&a.Reward is not null)?.Reward ?? Rewards.FirstOrDefault(r=>!r.Claimed&&!r.WatchCompleted&&!r.Expired&&r.Eligible!=false) ?? Rewards.FirstOrDefault(r=>r.CanClaim&&!r.Claimed) ?? Rewards.FirstOrDefault();
     public string FeaturedLabel => Health.Running&&ActiveReward?.IsCurrent==true ? "正在获取的奖励" : "奖励预览 · 尚未确认当前观看奖励";
     public string RewardCount => Rewards.Count.ToString();
     public string CampaignCount => Campaigns.Count.ToString();
@@ -45,6 +48,7 @@ public sealed class PlatformOverviewModel : ObservableObject
         Health=health;if(health.Running)_observedStart=DateTimeOffset.Now;
         health.PropertyChanged+=(_,e)=>
         {
+            Raise(nameof(RuntimeSummary));
             if(e.PropertyName==nameof(health.Running))
             {
                 _observedStart=health.Running?DateTimeOffset.Now:null;
@@ -85,9 +89,9 @@ public sealed class PlatformOverviewModel : ObservableObject
             if(next is not null&&ActiveReward is {} prior&&prior.Id==next.Id)
                 _officialChange=next.Current>prior.Current?$"本次官方进度增加 {next.Current-prior.Current:0.#} 分钟":next.Current<prior.Current?"官方进度发生回退，请重新检查":"本次尚未观察到新的官方进度";
             else _officialChange="等待下一次官方进度确认";
-            if(next is not null&&Rewards.FirstOrDefault(r=>r.Id==next.Id) is {} inventory)
+            if(next is not null&&Rewards.FirstOrDefault(r=>r.Id==next.Id&&r.CampaignId==next.CampaignId) is {} inventory)
                 next=next with{Benefits=next.Benefits.Count==0?inventory.Benefits:next.Benefits,ImageUrl=string.IsNullOrWhiteSpace(next.ImageUrl)?inventory.ImageUrl:next.ImageUrl,Game=string.IsNullOrWhiteSpace(next.Game)?inventory.Game:next.Game,GameImageUrl=string.IsNullOrWhiteSpace(next.GameImageUrl)?inventory.GameImageUrl:next.GameImageUrl};
-            ActiveReward=next;
+            ActiveReward=next is {WatchCompleted:false,Claimed:false}?next:null;
         }
         if(V.Has(state,"campaigns") || Brand=="Bilibili" && V.Has(state,"activities"))
         {
@@ -114,7 +118,7 @@ public sealed class PlatformOverviewModel : ObservableObject
         var p=V.Rows(account,"currentProgress").FirstOrDefault(p=>!V.Has(p,"account")||V.Text(p,"account")==uid);
         var reward=p.ValueKind==JsonValueKind.Object ? RewardVisual.From(p,Brand,"") : V.Has(account,"currentProgress")?null:old?.Reward;
         var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),V.Bool(account,"running",old?.Running??false),V.Bool(account,"loggedIn",old?.LoggedIn??false),
-            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??""));
+            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??"")){Phase=V.Text(account,"status",old?.Phase??"阶段尚未确认")};
         if(old is null) Accounts.Add(row); else Accounts[Accounts.IndexOf(old)]=row;
         if(Brand=="Soop")
         {

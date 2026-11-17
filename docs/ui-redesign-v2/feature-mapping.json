@@ -3216,7 +3216,7 @@
     "new_location": "DiagnosticsPage",
     "evidence": [
       "原契约保留",
-      "Views/Pages/DiagnosticsPage.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -3614,7 +3614,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -3670,7 +3670,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -3747,7 +3747,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -4240,7 +4240,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -4484,7 +4484,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/CampaignInventoryView.xaml"
     ]
   },
   {
@@ -6270,7 +6270,7 @@
     "new_location": "DropsPage / Twitch / activities",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Twitch/TwitchWorkspace.xaml"
+      "Views/Drops/YouTube/YouTubeWorkspace.xaml"
     ]
   },
   {
@@ -6796,7 +6796,7 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / overview",
     "evidence": [
-      "结构化可视化替代：TwitchChannelText → TwitchVisual.Channel",
+      "结构化可视化替代：TwitchChannelText → TwitchInventory.Channel",
       "Views/Drops/Twitch/TwitchOverview.xaml"
     ]
   },
@@ -6850,7 +6850,7 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / overview",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：TwitchWatchRequestText → TwitchInventory.WatchState",
       "Views/Drops/Twitch/TwitchOverview.xaml"
     ]
   },
@@ -7477,8 +7477,8 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / activities",
     "evidence": [
-      "原契约保留",
-      "Views/Drops/Twitch/TwitchWorkspace.xaml"
+      "同一绑定 / Command（共享模板或控件更名）",
+      "Views/Drops/Soop/SoopWorkspace.xaml"
     ]
   },
   {
@@ -7495,7 +7495,7 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / activities",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：TwitchInventoryEmptyText → TwitchInventory.EmptyText",
       "Views/Drops/Twitch/TwitchWorkspace.xaml"
     ]
   },
@@ -7568,7 +7568,7 @@
     "new_location": "DropsPage / YouTube / activities",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Twitch/TwitchWorkspace.xaml"
+      "Views/Drops/YouTube/YouTubeWorkspace.xaml"
     ]
   },
   {
@@ -7693,7 +7693,7 @@
     "preserved": true,
     "new_location": "DropsPage / Bilibili / overview",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：Bilibili.Status → BilibiliDetails.WatchStateText",
       "Views/Drops/Bilibili/BilibiliOverview.xaml"
     ]
   },
@@ -8546,7 +8546,7 @@
     "new_location": "DropsPage / Bilibili / activities",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Bilibili/BilibiliWorkspace.xaml"
+      "Views/Drops/Bilibili/BilibiliOverview.xaml"
     ]
   },
   {
@@ -8815,7 +8815,7 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / activities",
     "evidence": [
-      "原契约保留",
+      "同一绑定 / Command（共享模板或控件更名）",
       "Views/Drops/Twitch/TwitchWorkspace.xaml"
     ]
   },
@@ -8869,7 +8869,7 @@
     "preserved": true,
     "new_location": "DropsPage / Twitch / activities",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：TwitchCampaignsEmptyText → TwitchInventory.EmptyText",
       "Views/Drops/Twitch/TwitchWorkspace.xaml"
     ]
   },

@@ -708,6 +708,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         BilibiliDetails.PropertyChanged += (_, _) =>
         {
             Raise(nameof(ActiveAccountText)); Raise(nameof(ActiveStartText));
+            BilibiliVisual.UpdateRuntimeSummary(BilibiliDetails.WatchStateText);
         };
         Platforms = [Soop, YouTube, Twitch, Bilibili];
         foreach (var platform in Platforms)
@@ -772,6 +773,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
     public void RefreshTemporalStatus(DateTimeOffset now)
     {
         foreach(var visual in _visuals.Values)visual.RefreshClock();
+        _twitchInventory?.RefreshClock();
         Raise(nameof(TwitchAuthorizationRemainingText));
         if (_soopNextRetryAt is { } soopDeadline)
         {
@@ -2978,6 +2980,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
 
     private void RebuildTwitchCampaigns()
     {
+        TwitchInventory.SetScope(TwitchCampaignScopeKey);
         var tasks = _rows[DropsPlatform.Twitch].Tasks;
         tasks.Clear();
         foreach (var item in _twitchCampaigns.Where(IsTwitchCampaignVisible))
@@ -3002,7 +3005,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
             ? "请先登录 Twitch 账号。"
             : _twitchCampaignScope switch
             {
-                TwitchCampaignScope.Priority => "当前没有可掉宝的优先游戏活动。",
+                TwitchCampaignScope.Priority => "当前筛选无结果：没有可掉宝的优先游戏活动。",
                 TwitchCampaignScope.All => "当前没有已获取到的掉宝活动。",
                 _ => "当前没有可参与的掉宝活动。",
             };
@@ -3144,6 +3147,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         _projectionPlatform = message.Platform;
         try
         {
+        if(message.Platform==DropsPlatform.Twitch)TwitchInventory.ApplyEvent(message.Name,message.Payload);
         if (message.Platform == DropsPlatform.Twitch && message.Name == "watch_request")
             ApplyTwitchWatchRequest(message.Payload);
         if (message.Platform == DropsPlatform.Twitch && message.Name == "network_request")

@@ -120,7 +120,7 @@ public partial class DropsPage : UserControl
             PlatformTabsBar.ColumnDefinitions[0].Width = narrowTabs ? new GridLength(0) : new GridLength(160);
             PlatformPageTitle.Visibility = narrowTabs ? Visibility.Collapsed : Visibility.Visible;
             TwitchIntro.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            TwitchLoginCard.Padding = compact ? new Thickness(12) : new Thickness(18);
+            TwitchLoginCard.Padding = new Thickness(12,8,12,8);
             TwitchWorkspace.TwitchOverview.ApplyCompact(compact);
             foreach (var tab in WorkspaceNavigation.Children.OfType<RadioButton>())
             {
@@ -626,7 +626,7 @@ public partial class DropsPage : UserControl
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.Host is not ("www.twitch.tv" or "play.sooplive.com" or "live.bilibili.com" or "www.youtube.com" or "youtube.com"))
         {
-            ShowInfo("当前尚未确认直播间；SOOP 多账号可先选中账号。", "打开直播间");
+            ShowInfo(_platform==DropsPlatform.Twitch?"当前尚未确认合资格频道，尚未开始有效观看。可在活动页选择在线频道。":"当前尚未确认直播间；SOOP 多账号可先选中账号。", "打开直播间");
             return;
         }
         try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
@@ -2197,7 +2197,7 @@ public partial class DropsPage : UserControl
             }));
             return;
         }
-        if (message.Name is "drop" or "current_channel" or "channel" or "refresh_completed")
+        if (message.Name is "state" or "drop" or "current_channel" or "channel" or "refresh_completed" || message.Name=="status"&&!Bool(message.Payload,"running"))
         {
             RefreshTwitchStateFromEvent();
             return;

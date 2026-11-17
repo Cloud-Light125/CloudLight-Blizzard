@@ -60,10 +60,12 @@
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="{Binding Task}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,8" />
+                                    <TextBlock Text="{Binding Phase}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,6"/>
                                     <TextBlock Text="{Binding ProgressText}" FontSize="18" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold" />
                                     <ProgressBar Maximum="100" Value="{Binding Percent,Mode=OneWay}" Style="{DynamicResource ThemeProgressBar}" Height="8" Margin="0,8,0,0" />
                                 </StackPanel>
                             </Grid>
+                            <TextBlock Text="{Binding SyncText}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/>
                             <WrapPanel>
                                 <Button Content="启动账号" Visibility="{Binding StartVisibility}" ctrl:WorkspaceAction.Name="soop:start" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />
                                 <Button Content="停止账号" Visibility="{Binding StopVisibility}" ctrl:WorkspaceAction.Name="soop:stop" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" />

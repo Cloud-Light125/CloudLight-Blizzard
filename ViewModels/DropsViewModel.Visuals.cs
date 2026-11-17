@@ -7,6 +7,15 @@ namespace CloudLightBlizzard.ViewModels;
 public sealed partial class DropsViewModel
 {
     private readonly Dictionary<DropsPlatform, PlatformOverviewModel> _visuals = [];
+    private TwitchInventoryModel? _twitchInventory;
+    public TwitchInventoryModel TwitchInventory
+    {
+        get
+        {
+            if(_twitchInventory is null){_twitchInventory=new(Twitch);_twitchInventory.PropertyChanged+=(_,_)=>TwitchVisual.UpdateRuntimeSummary(_twitchInventory.WatchState);}
+            return _twitchInventory;
+        }
+    }
     public PlatformOverviewModel TwitchVisual => VisualFor(DropsPlatform.Twitch);
     public PlatformOverviewModel SoopVisual => VisualFor(DropsPlatform.Soop);
     public PlatformOverviewModel BilibiliVisual => VisualFor(DropsPlatform.Bilibili);
@@ -17,5 +26,9 @@ public sealed partial class DropsViewModel
         if (!_visuals.TryGetValue(platform, out var model)) _visuals[platform] = model = new(For(platform));
         return model;
     }
-    private void ApplyVisualState(DropsPlatform platform, JsonElement state) => VisualFor(platform).Apply(state);
+    private void ApplyVisualState(DropsPlatform platform, JsonElement state)
+    {
+        VisualFor(platform).Apply(state);
+        if(platform==DropsPlatform.Twitch)TwitchInventory.Apply(state);
+    }
 }

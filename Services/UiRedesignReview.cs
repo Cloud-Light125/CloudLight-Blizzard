@@ -124,13 +124,23 @@ internal sealed class UiRedesignReview
         var theme = new Button { Content = "切换深浅色", Style = (Style)_window.FindResource("SecondaryButton"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(12, 0, 12, 0) };
         theme.Click += (_, _) => ThemeManager.Apply(!ThemeManager.IsDark);controls.Children.Add(theme);
         banner.Child = controls;shell.Children.Add(banner);Grid.SetRow(root, 1);shell.Children.Add(root);_window.Content = shell;
+        if(File.Exists(Path.Combine(_output,"density-test.flag")))
+        {
+            banner.Visibility=Visibility.Collapsed;
+            var watermark=new Border{Background=(Brush)_window.FindResource("AccSoft"),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(6),IsHitTestVisible=false,Child=new TextBlock{Text="SIMULATED · 隔离模拟数据",FontSize=12,FontWeight=FontWeights.SemiBold}};
+            Grid.SetRowSpan(watermark,2);Panel.SetZIndex(watermark,100);shell.Children.Add(watermark);
+        }
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
         PresentationTraceSources.DataBindingSource.Listeners.Add(_bindings);
         _scenarios.SelectionChanged += (_, _) => Apply(_scenarios.SelectedIndex);
         _window.Loaded += async (_, _) =>
         {
             _scenarios.SelectedIndex = Math.Clamp(initialScenario, 0, Scenarios.Length-1);
-            if (_automated) await RunMatrixAsync();
+            if (_automated)
+            {
+                if(File.Exists(Path.Combine(_output,"density-test.flag")))await RunDensityAsync();
+                else await RunMatrixAsync();
+            }
         };
         _window.Closed += (_, _) =>
         {
@@ -153,7 +163,7 @@ internal sealed class UiRedesignReview
         channels = loggedIn ? new[] { new { id = "review-channel", name = "模拟频道 · Overwatch", game = "Overwatch 2", dropsEnabled = true, online = true } } : [],
         currentChannel = running ? new { id = "review-channel", name = "模拟频道 · Overwatch", game = "Overwatch 2", dropsEnabled = true, online = true, url = "https://www.twitch.tv/example" } : null,
         inventorySource = loggedIn ? "remote" : "none", lastInventorySyncAt = loggedIn ? DateTimeOffset.UtcNow.ToString("O") : "",
-        watchRequests = new { lastResult = running ? "accepted" : "none", attempts = running ? 1 : 0 },
+        watchRequests = new { channelId="review-channel", lastResult = running ? "accepted" : "none", attempts = running ? 1 : 0,lastAcceptedAt=running?DateTimeOffset.UtcNow.ToString("O"):"" },
         currentDrop = running ? new { id = "reward1", campaign = "隔离模拟活动", campaignId="review-campaign",game="Overwatch", name = _reviewRewardTitle,benefits=_reviewBenefits,gameImageUrl=_reviewGameImage, currentMinutes = 18, requiredMinutes = 60, progress = 0.3, estimatedExtraMinutes = 2 } : null,
     });
     private void Apply(int index)
@@ -163,6 +173,8 @@ internal sealed class UiRedesignReview
         if (index != 27) typeof(MainViewModel).GetProperty(nameof(MainViewModel.RegionGuide))!.SetValue(_main, _defaultRegionGuide);
         foreach (var p in Enum.GetValues<DropsPlatform>()) _drops.DismissMessage(p);
         _states[DropsPlatform.Twitch] = Twitch(index is 0 or 7 or 8 or 9 or 28 or 29 or 31 or 33 or 34 or 43, index is 0 or 8);
+        if(File.Exists(Path.Combine(_output,"density-test.flag"))&&_reviewTwitchSnapshot.ValueKind!=JsonValueKind.Object&&index is 8 or 28 or 43)
+            _states[DropsPlatform.Twitch]=DenseFixture(_states[DropsPlatform.Twitch]);
         _states[DropsPlatform.Soop] = Raw("""{"running":true,"settings":{"channel_mode":"smart","priority_mission_id":"auto","auto_claim_enabled":false,"low_bandwidth_mode":true,"hang_without_missions":true,"mission_poll_interval":90,"inventory_poll_interval":300,"channel_refresh_interval":300,"reauth_retry_interval":300},"accounts":[{"uid":"模拟主账号","primary":true,"loggedIn":true,"running":true,"channelName":"模拟赛事频道","missionTitle":"模拟赛事任务 · 阶段 3/5","currentProgress":[{"account":"模拟主账号","reward":"模拟阶段奖励","currentMinutes":15,"requiredMinutes":30}]},{"uid":"模拟副账号","primary":false,"loggedIn":true,"running":false,"channelName":"尚未进入","missionTitle":"模拟任务 · 阶段 1/4","currentProgress":[{"account":"模拟副账号","reward":"模拟阶段奖励 B","currentMinutes":5,"requiredMinutes":45}]}]}""");
         _states[DropsPlatform.Bilibili] = Raw("""{"running":false,"loggedIn":false,"account":{"loggedIn":false,"uid":0,"userName":""},"status":"尚未登录","settings":{"enabled":true,"watch_mode":"standard","sessions_per_room":1,"auto_claim":false},"rooms":[],"activities":[],"tasks":[],"sessions":[]}""");
         _states[DropsPlatform.YouTube] = Raw("""{"running":false,"status":"尚未开始","profiles":["模拟观看账号"],"config":{"browser":"chrome","mode":"auto","headless":false,"mute":true,"check_interval":300},"channels":[],"history":{"rows":[]},"sessions":[]}""");
@@ -224,6 +236,68 @@ internal sealed class UiRedesignReview
         }
     }
 
+    private JsonElement DenseFixture(JsonElement original)
+    {
+        var state=original.EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.Clone());
+        var campaigns=new List<object>();var inventory=new List<object>();
+        for(var campaignIndex=0;campaignIndex<6;campaignIndex++)
+        {
+            var campaignId=campaignIndex==0?"review-campaign":"density-campaign-"+campaignIndex;
+            var rewards=new List<object>();
+            for(var index=0;index<(campaignIndex==0?10:6);index++)
+            {
+                var id=campaignIndex==0&&index==0?"reward1":$"density-drop-{campaignIndex}-{index}";
+                var completed=index is 1 or 2;var required=60*(index+1);var current=completed?required:index==0?18:0;
+                var benefits=Enumerable.Range(0,index==0?2:1).Select(b=>new{id=$"density-benefit-{campaignIndex}-{index}-{b}",name=index==5?"模拟长名称物品 · A long official-style reward name for wrapping":"模拟物品 "+(index+1)+(b==0?" A":" B"),type="DIRECT_ENTITLEMENT",imageUrl=b==0?"review-fixture://layout/benefit-a":"review-fixture://layout/benefit-b"}).ToArray();
+                var reward=new{id,name="模拟阶段 "+(index+1),campaignId,campaign="模拟活动 "+(campaignIndex+1),game="布局模拟游戏 "+(campaignIndex+1),benefits,gameImageUrl=_reviewGameImage,requiredMinutes=required,currentMinutes=current,completed,claimed=index==2,canClaim=index==1,eligible=index!=4,preconditionDropIds=index>2?new[]{"density-prior"}:Array.Empty<string>(),preconditionsMet=index<3,preconditionsSatisfiedForMining=index<3};
+                rewards.Add(reward);inventory.Add(reward);
+            }
+            campaigns.Add(new{id=campaignId,name="模拟活动 "+(campaignIndex+1)+" · 奖励背包密度验收",game="布局模拟游戏 "+(campaignIndex+1),gameImageUrl=_reviewGameImage,available=true,priority=true,eligible=true,active=true,endsAt=DateTimeOffset.UtcNow.AddDays(campaignIndex+1).ToString("O"),completedDrops=2,totalDrops=rewards.Count,remainingMinutes=42,progress=.3,drops=rewards});
+        }
+        state["campaigns"]=Json(campaigns);state["inventory"]=Json(inventory);
+        var selected=Json(inventory[0]).EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.Clone());selected["estimatedExtraMinutes"]=Json(2);state["currentDrop"]=Json(selected);
+        state["currentChannel"]=Json(new{id="review-channel",name="模拟频道",game="布局模拟游戏 1",online=true,dropsEnabled=true});
+        return Json(state);
+    }
+    private async Task RunDensityAsync()
+    {
+        try
+        {
+            var output=Path.Combine(_output,"screenshots");Directory.CreateDirectory(output);
+            foreach(var (width,height) in new[]{(1366,768),(1600,900),(1920,1080),(2560,1440)})
+            foreach(var section in new[]{"overview","activities"})
+            {
+                _scenarios.SelectedIndex=8;_page.SelectPlatform(DropsPlatform.Twitch);_page.ShowWorkspace(section);
+                _drops.SetTwitchCampaignScope("all");_window.Width=width/1.25;_window.Height=height/1.25;
+                ((ComboBox)_page.FindName("TwitchCampaignScopePicker")).SelectedIndex=2;
+                _window.UpdateLayout();await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(450);_window.UpdateLayout();
+                CheckVisibleBounds(8,width,height,1.25);
+                var tiles=Descendants<Border>(_page).Where(b=>b.IsVisible&&b.Tag as string=="RewardTile").ToArray();
+                var viewport=Descendants<Controls.CampaignInventoryView>(_page).Single(v=>v.IsVisible);
+                var clip=viewport.TransformToAncestor(_window).TransformBounds(new Rect(0,0,viewport.ActualWidth,viewport.ActualHeight));
+                var bounds=tiles.Select(tile=>tile.TransformToAncestor(_window).TransformBounds(new Rect(0,0,tile.ActualWidth,tile.ActualHeight))).ToArray();
+                var visible=bounds.Where(b=>b.IntersectsWith(clip)).ToArray();var full=visible.Count(b=>b.Top>=clip.Top-1&&b.Bottom<=clip.Bottom+1);
+                var columns=visible.GroupBy(b=>Math.Round(b.Top)).OrderBy(g=>g.Key).FirstOrDefault()?.Count()??0;
+                _checks.Add($"density {section} physical-request={width}x{height}@125% actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP columns={columns} full-cards={full} intersecting-cards={visible.Length} realized-cards={tiles.Length}");
+                if(full<columns)_checks.Add($"FAIL first reward row is not fully visible at {width}x{height} {section}");
+                for(var a=0;a<bounds.Length;a++)for(var b=a+1;b<bounds.Length;b++){var overlap=Rect.Intersect(bounds[a],bounds[b]);if(!overlap.IsEmpty&&overlap.Width>1&&overlap.Height>1)_checks.Add("FAIL overlapping reward tiles");}
+                Capture(Path.Combine(output,$"{section}-{width}x{height}-125.png"));
+            }
+            _window.Width=1280;_window.Height=820;_scenarios.SelectedIndex=8;_page.ShowWorkspace("overview");
+            ThemeManager.Apply(true);await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(350);Capture(Path.Combine(output,"overview-dark.png"));
+            _page.ShowWorkspace("activities");await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(350);Capture(Path.Combine(output,"activities-dark.png"));ThemeManager.Apply(false);
+            var fields=_states[DropsPlatform.Twitch].EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.Clone());
+            fields["currentChannel"]=Json(null!);fields["currentDrop"]=Json(null!);fields["watchRequests"]=Json(new{});fields["running"]=Json(true);
+            _drops.ApplyState(DropsPlatform.Twitch,Json(fields));_page.ShowWorkspace("overview");await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(350);Capture(Path.Combine(output,"no-eligible-channel.png"));
+            _checks.Add(_drops.TwitchInventory.WatchState=="等待合资格频道"?"PASS no channel is distinct from Worker running":"FAIL no-channel state");
+            _page.ShowWorkspace("activities");_drops.TwitchInventory.Search="missing-filter-result";await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);Capture(Path.Combine(output,"filtered-empty.png"));_drops.TwitchInventory.Search="";
+            _checks.Add("binding-errors="+_bindings.Errors.Count);_checks.Add("physical-monitor-dpi="+VisualTreeHelper.GetDpi(_window).PixelsPerInchX);
+            File.WriteAllLines(Path.Combine(_output,"density-results.txt"),_checks);
+            Environment.ExitCode=_bindings.Errors.Count>0||_checks.Any(c=>c.StartsWith("FAIL"))?1:0;
+        }
+        catch(Exception ex){File.WriteAllText(Path.Combine(_output,"density-failure.txt"),ex.ToString());Environment.ExitCode=1;}
+        finally{_window.Close();}
+    }
     private async Task RunMatrixAsync()
     {
         try
