@@ -1,0 +1,348 @@
+UI navigation integration selftest: PASS
+PASS 导航 accounts 存在且 Tag 正确
+PASS 导航 region 存在且 Tag 正确
+PASS 导航 stats 存在且 Tag 正确
+PASS 导航 drops 存在且 Tag 正确
+PASS 导航 snapshots 存在且 Tag 正确
+PASS 导航 diagnostics 存在且 Tag 正确
+PASS 导航 settings 存在且 Tag 正确
+PASS 导航 about 存在且 Tag 正确
+PASS 总览导航绑定真实聚合页面
+PASS 主窗口包含单一 PageHost
+PASS 账号页显示实际账号快照目录，与区服自定义目录独立
+PASS 设置页与账号页展示同一个实际快照路径
+PASS LastMainSection=overview 打开总览并保留设置
+PASS 总览不显示账号页专用 footer
+PASS 主窗口最小尺寸适应当前 DPI 工作区
+PASS 账号 页面已初始化
+PASS 账号 页面绑定了 ViewModel
+PASS 账号 页面包含可滚动视觉树
+PASS 区服切换 页面已初始化
+PASS 区服切换 页面绑定了 ViewModel
+PASS 区服切换 页面包含可滚动视觉树
+PASS 战绩 页面已初始化
+PASS 战绩 页面由现有 code-behind 状态管理
+PASS 战绩 页面包含可滚动视觉树
+PASS Drops 页面已初始化
+PASS Drops 页面绑定了 ViewModel
+PASS Drops 页面包含可滚动视觉树
+PASS 区服快照 页面已初始化
+PASS 区服快照 页面绑定了 ViewModel
+PASS 区服快照 页面包含可滚动视觉树
+PASS 诊断中心 页面已初始化
+PASS 诊断中心 页面绑定了 ViewModel
+PASS 诊断中心 页面包含可滚动视觉树
+PASS 设置 页面已初始化
+PASS 设置 页面由现有 code-behind 状态管理
+PASS 设置 页面包含可滚动视觉树
+PASS 关于 页面已初始化
+PASS 关于 页面绑定了 ViewModel
+PASS 关于 页面包含可滚动视觉树
+PASS 真实导航 accounts 将 账号 页面放入 PageHost
+PASS 真实导航 accounts 的 AccountFooter 可见性正确
+PASS 真实导航 region 将 区服切换 页面放入 PageHost
+PASS 真实导航 region 的 AccountFooter 可见性正确
+PASS 真实导航 stats 将 战绩 页面放入 PageHost
+PASS 真实导航 stats 的 AccountFooter 可见性正确
+PASS 真实导航 drops 将 Drops 页面放入 PageHost
+PASS 真实导航 drops 的 AccountFooter 可见性正确
+PASS 真实导航 snapshots 将 区服快照 页面放入 PageHost
+PASS 真实导航 snapshots 的 AccountFooter 可见性正确
+PASS 真实导航 diagnostics 将 诊断中心 页面放入 PageHost
+PASS 真实导航 diagnostics 的 AccountFooter 可见性正确
+PASS 真实导航 settings 将 设置 页面放入 PageHost
+PASS 真实导航 settings 的 AccountFooter 可见性正确
+PASS 真实导航 about 将 关于 页面放入 PageHost
+PASS 真实导航 about 的 AccountFooter 可见性正确
+PASS 区服文件页已移除手动完整性验证和第四步验证入口
+PASS 关于页第三方组件列表已实例化（实际 6 项）
+PASS 关于页包含 Worker、SQLite 与 Toast 组件说明
+PASS 关于页第三方组件提供上游项目与第三方说明入口
+PASS 区服快照页包含摘要区、左右工作区、列表与快照卡片模板
+PASS 区服快照页摘要和详情分组标签清晰可见，路线只读绑定为 OneWay
+PASS 区服快照页按当前选择在详情与空状态之间切换
+PASS 区服快照卡片保留详情、重新生成、打开目录和删除操作入口，并移除验证入口
+PASS Snapshot list/details render completes without XamlParseException
+PASS Snapshot list/details render has XamlParseException=0
+PASS Snapshot list/details render has InvalidOperationException=0
+PASS Snapshot list/details render has DispatcherUnhandledException=0 (actual 0)
+PASS Snapshot list/details render has WPF Binding Error=0 (actual 0)
+PASS Snapshot list render creates a real ListBoxItem with the test SnapshotItemViewModel
+PASS Snapshot list render displays the SourceText and TargetText values
+PASS Snapshot list SourceText Binding.Mode is OneWay
+PASS Snapshot list TargetText Binding.Mode is OneWay
+PASS Snapshot details render instantiates the SourceText and TargetText Runs
+PASS Snapshot details SourceText Binding.Mode is OneWay
+PASS Snapshot details TargetText Binding.Mode is OneWay
+PASS SnapshotItemViewModel.SourceText remains getter-only
+PASS SnapshotItemViewModel.TargetText remains getter-only
+PASS Drops 页面实例化了共享 DropsViewModel 与 BilibiliDropsViewModel
+PASS 真实 MainWindow 包含 PageHost、SOOP Tab 与哔哩哔哩 Tab
+PASS 真实页面初始化完成且初始平台为 SOOP
+PASS MainWindow 真实导航将自身持有的 DropsPage 放入 PageHost
+PASS BilibiliTab.IsChecked=true 触发并冒泡了真实 Checked RoutedEvent
+PASS Checked 事件链更新 DropsPage._platform（实际=Bilibili）
+PASS Checked 事件链更新 DropsViewModel.SelectedPlatform=Bilibili
+PASS 掉宝页标题、网络工作区和四个平台 Tab 均存在
+PASS 掉宝页四个平台标题均包含可见状态点和统一状态样式
+PASS 掉宝页使用带状态点的紧凑平台导航
+PASS 掉宝页网络代理摘要位于标题区下方且不与右上操作区重叠
+PASS Checked 事件链更新 BilibiliPanel.Visibility=Visible
+PASS 切换到哔哩哔哩后 BilibiliPanel 在真实窗口中可见且有布局高度
+PASS 未登录状态下 BilibiliAccountCard 在真实窗口中可见且有布局高度
+PASS 未登录状态下扫码登录按钮存在于有效视觉树
+PASS Drops 页面已移除独立自愈状态区域及其 UI-only 字段/按钮
+PASS Bilibili 页面包含复用 QuickStartStepTemplate 的快速开始卡片
+PASS 网络与维护分类包含四个独立代理选项
+PASS Bilibili 网络卡片不再重复显示代理开关
+PASS SOOP 设置包含认证失效自动重登间隔
+PASS Bilibili 精简设置仍保留活动、观看模式、任务、自动恢复、通知和网络入口
+PASS 选择哔哩哔哩后其它三个平台面板均被正确隐藏
+PASS Drops navigation state: SelectedPlatform=Bilibili BilibiliTabChecked=True BilibiliPanelVisibility=Visible BilibiliPanelIsVisible=True BilibiliPanelHeight=85.51
+PASS 真实平台 Tab 切换到 Soop 后状态同步
+PASS 真实平台 Soop 内容可见且有布局高度
+PASS 选择 Soop 后 YouTube 内容隐藏
+PASS 选择 Soop 后 Twitch 内容隐藏
+PASS 选择 Soop 后 Bilibili 内容隐藏
+PASS 真实平台 Tab 切换到 YouTube 后状态同步
+PASS 真实平台 YouTube 内容可见且有布局高度
+PASS 选择 YouTube 后 Soop 内容隐藏
+PASS 选择 YouTube 后 Twitch 内容隐藏
+PASS 选择 YouTube 后 Bilibili 内容隐藏
+PASS 真实平台 Tab 切换到 Twitch 后状态同步
+PASS 真实平台 Twitch 内容可见且有布局高度
+PASS 选择 Twitch 后 Soop 内容隐藏
+PASS 选择 Twitch 后 YouTube 内容隐藏
+PASS 选择 Twitch 后 Bilibili 内容隐藏
+PASS 真实平台 Tab 切换到 Bilibili 后状态同步
+PASS 真实平台 Bilibili 内容可见且有布局高度
+PASS 选择 Bilibili 后 Soop 内容隐藏
+PASS 选择 Bilibili 后 YouTube 内容隐藏
+PASS 选择 Bilibili 后 Twitch 内容隐藏
+PASS BilibiliPanel.Visibility Binding 指向当前 DropsViewModel.BilibiliPanelVisibility 且无错误
+PASS BilibiliPanel.DataContext 是 DropsViewModel
+PASS Bilibili 账号卡片和二维码区域存在于实际内容树
+PASS Bilibili 账号、扫码、开始停止、刷新和活动发现控件存在
+PASS 删除顶部平台卡片后 YouTube 开始/停止观看入口仍保留在页面标题操作区
+PASS Bilibili 房间、官方任务、Session 列表和关键 VM Command 可绑定
+PASS 哔哩哔哩选中时不会显示 Twitch 通用活动和设置卡片
+PASS 运行日志分类可达且显示原有日志控件
+PASS 真实 Bilibili 添加控件通过 TwoWay Binding 写入 URL 和房间名称
+PASS 真实 Bilibili 添加按钮绑定 AddRoomCommand 且可执行
+PASS AddRoomCommand → mock Worker 返回房间 → Rooms collection 增加
+PASS 真实 BilibiliRoomRowTemplate 已实例化并完成 Measure/Arrange/Render，房间名称、Room ID、状态和 Session 状态可见
+PASS Bilibili 房间行的 RoomIdText、Status、SessionText Run.Text 均为 OneWay
+PASS 启用 CheckBox 保留合理的 TwoWay Binding，并绑定 SetRoomEnabledCommand
+PASS 删除按钮已在真实房间模板中实例化并绑定 RemoveRoomCommand
+PASS 添加并渲染 Bilibili 房间后没有新增 WPF Binding Error
+PASS 添加并渲染 Bilibili 房间后没有 DispatcherUnhandledException/InvalidOperationException
+PASS SetRoomEnabledCommand → mock Worker 返回停用状态 → 房间列表保持一致
+PASS RemoveRoomCommand → mock Worker 返回空房间 → Rooms collection 和模板正常移除
+PASS 启用/停用/删除房间命令链未产生 Binding Error 或 DispatcherUnhandledException
+PASS 切换预览包含开始切换按钮
+PASS 切换预览包含安全阻断区域
+PASS 播放 URL 签名在 Host 日志中脱敏
+PASS 同代 Worker 的迟到 Host 健康快照不能覆盖较新快照
+PASS 真实剪贴板后台 STA 写入操作完成（非模拟；状态 RanToCompletion，HRESULT=0x00000000）
+PASS 真实 Win32 剪贴板写入后可读回相同内容（后台调用，非模拟）
+PASS 后台 Twitch 快照不覆盖前台 SOOP 账号与背包
+PASS 缺少背包字段的局部状态保留最近成功快照
+PASS 乱序旧响应不能清空新背包快照
+PASS 采集较早但送达较晚的快照不能覆盖更新状态
+PASS 新 Worker 的成功空背包可替换旧快照
+PASS Twitch 配置损坏阻止授权、清除登录、刷新和开始操作
+PASS Twitch 配置错误独立分类，提供受控恢复入口，不判定认证过期
+PASS Twitch 未初始化时重复授权在 ViewModel 门禁终止，不创建新的 Worker
+PASS Twitch 配置恢复成功清除旧错误和修复入口，重新允许 Session 验证
+PASS Twitch 网络终态退出等待状态，不误判 Session 失效
+PASS 失败后采集到的checking快照不能掩盖网络终态
+PASS Twitch 安全路由诊断可见，恢复后清除旧网络错误但不据HTTP200宣布登录
+PASS Twitch 407为代理认证失败，保持Session不要求Twitch重新授权
+PASS 旧Generation网络失败事件不能覆盖新路由成功证据
+PASS 不可信授权网址不会显示验证码操作区
+PASS 自动恢复结束后不复用无人轮询的设备码，手动登录重新取得授权
+PASS 真实复制按钮操作结束后恢复可用
+PASS 真实复制按钮 → ClipboardService → 系统剪贴板读回（模拟授权码）
+PASS 授权过期使用授权提示并隐藏验证码，不误报网络故障
+PASS 停止一个 SOOP 账号不会把其它运行账号标记为全部停止
+PASS 停止 B 账号不会取消 A 账号的恢复意图
+PASS 停止 A 账号取消其自身重试
+PASS 真实开始按钮发送一次 start，并切换运行/停止控件状态（模拟响应）
+PASS 真实停止按钮发送 stop，停止后恢复开始按钮（模拟响应）
+PASS SOOP 心跳 unknown 仍呈现服务端确认数值，观看状态独立提醒
+PASS SOOP 页面只读刷新失败保留运行状态和官方快照，不将全部账号误报停止
+PASS 重启历史独立展示缓存与真实回退证据，不冒充当前进度
+PASS 真实关闭提醒按钮生效，同一问题重复回调不重新显示
+PASS 成功刷新后新的故障仍可提醒
+PASS Twitch 进度条只使用远端分钟数，额外估算独立说明
+PASS Twitch 观看连接失败显示具体阶段/HTTP，保留官方奖励进度
+PASS Twitch 观看请求恢复清除旧连接故障，不将分片接受等同官方进度增长
+PASS Twitch 分片失败事件直接更新诊断，无需等待奖励变化或手动刷新
+PASS Twitch 分片恢复事件立即清理旧请求错误
+PASS 手动停止后迟到分片事件不能恢复观看诊断
+PASS SOOP 后台状态不覆盖正在编辑的设置
+PASS 真实保存按钮失败后保留草稿并恢复可用
+PASS 真实保存按钮发送 save_settings，成功后接受服务器设置并提示应用结果
+PASS YouTube 浏览器存在且发现直播仍须等待实际播放，不能误报正在观看
+PASS YouTube 已确认播放事件正确投影到账号与页面状态
+PASS YouTube 官方登录限制经快照投影到账号卡、总状态和原因
+PASS YouTube 登录限制增量事件不会被通用等待播放状态覆盖
+PASS 同一YouTube直播的周期发现事件保留官方登录限制
+PASS YouTube 媒体恢复后清除旧登录限制提示
+PASS YouTube 一个Profile被登录限制不覆盖另一个Profile已确认播放的总状态
+PASS YouTube 后台播放变化和本地历史自动投影，无需手动刷新（模拟事件）
+PASS YouTube 停止后的迟到本地计时事件不能恢复观看提示
+PASS Worker 故障提示在当前页面可见
+PASS Soop 1366×768 / 100% 操作控件无横向裁切
+PASS Soop 1366×768 / 100% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1366×768 / 125% 操作控件无横向裁切
+PASS Soop 1366×768 / 125% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1366×768 / 150% 操作控件无横向裁切
+PASS Soop 1366×768 / 150% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1920×1080 / 100% 操作控件无横向裁切
+PASS Soop 1920×1080 / 100% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1920×1080 / 125% 操作控件无横向裁切
+PASS Soop 1920×1080 / 125% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1920×1080 / 150% 操作控件无横向裁切
+PASS Soop 1920×1080 / 150% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 2560×1440 / 100% 操作控件无横向裁切
+PASS Soop 2560×1440 / 100% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 2560×1440 / 125% 操作控件无横向裁切
+PASS Soop 2560×1440 / 125% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 2560×1440 / 150% 操作控件无横向裁切
+PASS Soop 2560×1440 / 150% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1200×760 / 100% 操作控件无横向裁切
+PASS Soop 1200×760 / 100% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1200×760 / 125% 操作控件无横向裁切
+PASS Soop 1200×760 / 125% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS Soop 1200×760 / 150% 操作控件无横向裁切
+PASS Soop 1200×760 / 150% DIP模拟无横向溢出
+PASS Soop 底部内容可滚动到达
+PASS YouTube 1366×768 / 100% 操作控件无横向裁切
+PASS YouTube 1366×768 / 100% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1366×768 / 125% 操作控件无横向裁切
+PASS YouTube 1366×768 / 125% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1366×768 / 150% 操作控件无横向裁切
+PASS YouTube 1366×768 / 150% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1920×1080 / 100% 操作控件无横向裁切
+PASS YouTube 1920×1080 / 100% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1920×1080 / 125% 操作控件无横向裁切
+PASS YouTube 1920×1080 / 125% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1920×1080 / 150% 操作控件无横向裁切
+PASS YouTube 1920×1080 / 150% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 2560×1440 / 100% 操作控件无横向裁切
+PASS YouTube 2560×1440 / 100% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 2560×1440 / 125% 操作控件无横向裁切
+PASS YouTube 2560×1440 / 125% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 2560×1440 / 150% 操作控件无横向裁切
+PASS YouTube 2560×1440 / 150% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1200×760 / 100% 操作控件无横向裁切
+PASS YouTube 1200×760 / 100% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1200×760 / 125% 操作控件无横向裁切
+PASS YouTube 1200×760 / 125% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS YouTube 1200×760 / 150% 操作控件无横向裁切
+PASS YouTube 1200×760 / 150% DIP模拟无横向溢出
+PASS YouTube 底部内容可滚动到达
+PASS Twitch 1366×768 / 100% 操作控件无横向裁切
+PASS Twitch 1366×768 / 100% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1366×768 / 125% 操作控件无横向裁切
+PASS Twitch 1366×768 / 125% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1366×768 / 150% 操作控件无横向裁切
+PASS Twitch 1366×768 / 150% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1920×1080 / 100% 操作控件无横向裁切
+PASS Twitch 1920×1080 / 100% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1920×1080 / 125% 操作控件无横向裁切
+PASS Twitch 1920×1080 / 125% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1920×1080 / 150% 操作控件无横向裁切
+PASS Twitch 1920×1080 / 150% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 2560×1440 / 100% 操作控件无横向裁切
+PASS Twitch 2560×1440 / 100% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 2560×1440 / 125% 操作控件无横向裁切
+PASS Twitch 2560×1440 / 125% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 2560×1440 / 150% 操作控件无横向裁切
+PASS Twitch 2560×1440 / 150% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1200×760 / 100% 操作控件无横向裁切
+PASS Twitch 1200×760 / 100% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1200×760 / 125% 操作控件无横向裁切
+PASS Twitch 1200×760 / 125% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Twitch 1200×760 / 150% 操作控件无横向裁切
+PASS Twitch 1200×760 / 150% DIP模拟无横向溢出
+PASS Twitch 底部内容可滚动到达
+PASS Bilibili 1366×768 / 100% 操作控件无横向裁切
+PASS Bilibili 1366×768 / 100% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1366×768 / 125% 操作控件无横向裁切
+PASS Bilibili 1366×768 / 125% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1366×768 / 150% 操作控件无横向裁切
+PASS Bilibili 1366×768 / 150% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1920×1080 / 100% 操作控件无横向裁切
+PASS Bilibili 1920×1080 / 100% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1920×1080 / 125% 操作控件无横向裁切
+PASS Bilibili 1920×1080 / 125% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1920×1080 / 150% 操作控件无横向裁切
+PASS Bilibili 1920×1080 / 150% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 2560×1440 / 100% 操作控件无横向裁切
+PASS Bilibili 2560×1440 / 100% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 2560×1440 / 125% 操作控件无横向裁切
+PASS Bilibili 2560×1440 / 125% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 2560×1440 / 150% 操作控件无横向裁切
+PASS Bilibili 2560×1440 / 150% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1200×760 / 100% 操作控件无横向裁切
+PASS Bilibili 1200×760 / 100% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1200×760 / 125% 操作控件无横向裁切
+PASS Bilibili 1200×760 / 125% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS Bilibili 1200×760 / 150% 操作控件无横向裁切
+PASS Bilibili 1200×760 / 150% DIP模拟无横向溢出
+PASS Bilibili 底部内容可滚动到达
+PASS 真实 Soop Worker → JSONL → DropsHostService 握手与未登录状态（隔离数据）
+PASS 真实 YouTube Worker → JSONL → DropsHostService 握手与未登录状态（隔离数据）
+PASS 真实 Twitch Worker → JSONL → DropsHostService 握手与未登录状态（隔离数据）
+PASS 真实 Worker 崩溃后重建进程并使用新 generation（无账号）
+PASS 真实 Host 停止绕过刷新队列，Worker 取消只读刷新并退出观看（隔离、不可用测试代理）
+PASS 已发送请求取消后回收旧 Worker，新请求使用新 generation，无迟到业务遗留
+PASS 真实 Bilibili Worker → JSONL → DropsHostService 握手与未登录状态（隔离数据）
+PASS 真实 Host/JSONL 取消 B 恢复并停止 B 时保留 A 与原 Worker generation（账号业务模拟）
+PASS WPF binding selftest 未发现 PresentationTraceSources 数据绑定错误

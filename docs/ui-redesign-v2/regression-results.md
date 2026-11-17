@@ -1,4 +1,10 @@
-# 本轮回归（2026-11-17）
+# 最新回归：优先概览、紧凑卡片与观看状态（2026-11-17）
+
+见 [本轮完整验收报告](priority-status-acceptance.md) 与 priority-evidence/：最终 Release 候选全部验证通过，Twitch Python 87、SOOP 43、Bilibili 21；投影/排序/状态/图片组件 95；UI/Host 347；Feature 13 组；WPF 528 布局；独立官方快照回放 145 检查、24 个四尺寸/主题/页面组合，0 Binding 错误。静态迁移映射 763/763。历史回放与模拟请求均明确标识，本轮没有进行真实账号业务操作。
+
+---
+
+# 上一轮回归（2026-11-17）
 
 - Python 按平台隔离进程运行，避免同名 worker 模块互相污染：Twitch+Shared 87 PASS（13 subtests），SOOP 43 PASS（6 subtests），Bilibili 21 PASS（2 subtests），YouTube 8 PASS。最初错误地跨平台同进程 pytest 收集失败，随后按平台正常执行，未修改业务代码绕过失败。
 - UI 静态契约继续 763/763，0 待核对。这是契约映射，非 763 项真实账号操作。密集背包替代绑定有明确映射，原 Command、事件、设置和 Bilibili Room 命令作用域保留。

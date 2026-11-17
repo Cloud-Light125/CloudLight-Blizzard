@@ -1,3 +1,13 @@
+# UI V2 最新交付：优先概览、紧凑卡片与观看状态
+
+2026-11-17，Asia/Shanghai。本轮从 e77f7db 继续，应用实现 1a1f78b，最终候选源码 0124a20。独立概览显示偏好、现有优先游戏顺序、三平台观看/进度/资格分离均已完成；卡片图片 92 DIP，四尺寸概览首屏完整卡片 3/4/5/8。
+
+最终候选 Release、95 项投影/图片/组件、347 UI/Host、13 组 Feature、528 布局、763 静态映射通过；发布程序的官方历史快照隔离回放 145 项检查通过、0 Binding 错误。截图与新旧对比、精确来源及未执行的线上验证见 [本轮验收报告](priority-status-acceptance.md)。本轮没有真实登录、观看或领取，也未复制/修改真实 Session。
+
+原未跟踪 artifacts/、screenshots.zip 保留。主代理独立实施；权限与模型设置无修改。候选在 release/candidates/2.1.10-priority-status-UI-V2-Checked，Worker 来源/哈希保留原始记录。以下是之前轮次的历史记录。
+
+---
+
 # UI V2 高密度 Twitch 与真实账号验收
 
 2026-11-17，Asia/Shanghai。继续 ui/fluent-v2，起始 25fc6bbb84765ac1ad7807d78ce9e7bd1c8f061c。没有第三代 UI、main 合并、Tag 或正式 Release。

@@ -1,0 +1,196 @@
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS card widths 190–216 DIP overview 1366 light
+PASS card heights under 300 DIP overview 1366 light
+PASS no horizontal card scrolling overview 1366 light
+PASS details buttons at least 32 DIP overview 1366 light
+PASS partial progress never labeled ongoing overview 1366 light
+density overview 1366 light: content=812.4; full-cards=3; first-row=3; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=279.7
+PASS card widths 190–216 DIP activities 1366 light
+PASS card heights under 300 DIP activities 1366 light
+PASS no horizontal card scrolling activities 1366 light
+PASS details buttons at least 32 DIP activities 1366 light
+PASS partial progress never labeled ongoing activities 1366 light
+density activities 1366 light: content=812.4; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=204
+PASS card widths 190–216 DIP queue 1366 light
+PASS card heights under 300 DIP queue 1366 light
+PASS no horizontal card scrolling queue 1366 light
+PASS details buttons at least 32 DIP queue 1366 light
+PASS partial progress never labeled ongoing queue 1366 light
+density queue 1366 light: content=812.4; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=169.4
+PASS card widths 190–216 DIP overview 1366 dark
+PASS card heights under 300 DIP overview 1366 dark
+PASS no horizontal card scrolling overview 1366 dark
+PASS details buttons at least 32 DIP overview 1366 dark
+PASS partial progress never labeled ongoing overview 1366 dark
+density overview 1366 dark: content=812.4; full-cards=3; first-row=3; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=279.7
+PASS card widths 190–216 DIP activities 1366 dark
+PASS card heights under 300 DIP activities 1366 dark
+PASS no horizontal card scrolling activities 1366 dark
+PASS details buttons at least 32 DIP activities 1366 dark
+PASS partial progress never labeled ongoing activities 1366 dark
+density activities 1366 dark: content=812.4; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=204
+PASS card widths 190–216 DIP queue 1366 dark
+PASS card heights under 300 DIP queue 1366 dark
+PASS no horizontal card scrolling queue 1366 dark
+PASS details buttons at least 32 DIP queue 1366 dark
+PASS partial progress never labeled ongoing queue 1366 dark
+density queue 1366 dark: content=812.4; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=169.4
+PASS card widths 190–216 DIP overview 1600 light
+PASS card heights under 300 DIP overview 1600 light
+PASS no horizontal card scrolling overview 1600 light
+PASS details buttons at least 32 DIP overview 1600 light
+PASS partial progress never labeled ongoing overview 1600 light
+density overview 1600 light: content=987.6; full-cards=4; first-row=4; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 1600 light
+PASS card heights under 300 DIP activities 1600 light
+PASS no horizontal card scrolling activities 1600 light
+PASS details buttons at least 32 DIP activities 1600 light
+PASS partial progress never labeled ongoing activities 1600 light
+density activities 1600 light: content=987.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 1600 light
+PASS card heights under 300 DIP queue 1600 light
+PASS no horizontal card scrolling queue 1600 light
+PASS details buttons at least 32 DIP queue 1600 light
+PASS partial progress never labeled ongoing queue 1600 light
+density queue 1600 light: content=987.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS card widths 190–216 DIP overview 1600 dark
+PASS card heights under 300 DIP overview 1600 dark
+PASS no horizontal card scrolling overview 1600 dark
+PASS details buttons at least 32 DIP overview 1600 dark
+PASS partial progress never labeled ongoing overview 1600 dark
+density overview 1600 dark: content=987.6; full-cards=4; first-row=4; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 1600 dark
+PASS card heights under 300 DIP activities 1600 dark
+PASS no horizontal card scrolling activities 1600 dark
+PASS details buttons at least 32 DIP activities 1600 dark
+PASS partial progress never labeled ongoing activities 1600 dark
+density activities 1600 dark: content=987.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 1600 dark
+PASS card heights under 300 DIP queue 1600 dark
+PASS no horizontal card scrolling queue 1600 dark
+PASS details buttons at least 32 DIP queue 1600 dark
+PASS partial progress never labeled ongoing queue 1600 dark
+density queue 1600 dark: content=987.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS card widths 190–216 DIP overview 1920 light
+PASS card heights under 300 DIP overview 1920 light
+PASS no horizontal card scrolling overview 1920 light
+PASS details buttons at least 32 DIP overview 1920 light
+PASS partial progress never labeled ongoing overview 1920 light
+density overview 1920 light: content=1243.6; full-cards=5; first-row=5; card-width=191.6; card-height=241.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 1920 light
+PASS card heights under 300 DIP activities 1920 light
+PASS no horizontal card scrolling activities 1920 light
+PASS details buttons at least 32 DIP activities 1920 light
+PASS partial progress never labeled ongoing activities 1920 light
+density activities 1920 light: content=1243.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 1920 light
+PASS card heights under 300 DIP queue 1920 light
+PASS no horizontal card scrolling queue 1920 light
+PASS details buttons at least 32 DIP queue 1920 light
+PASS partial progress never labeled ongoing queue 1920 light
+density queue 1920 light: content=1243.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS card widths 190–216 DIP overview 1920 dark
+PASS card heights under 300 DIP overview 1920 dark
+PASS no horizontal card scrolling overview 1920 dark
+PASS details buttons at least 32 DIP overview 1920 dark
+PASS partial progress never labeled ongoing overview 1920 dark
+density overview 1920 dark: content=1243.6; full-cards=5; first-row=5; card-width=191.6; card-height=241.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 1920 dark
+PASS card heights under 300 DIP activities 1920 dark
+PASS no horizontal card scrolling activities 1920 dark
+PASS details buttons at least 32 DIP activities 1920 dark
+PASS partial progress never labeled ongoing activities 1920 dark
+density activities 1920 dark: content=1243.6; full-cards=2; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 1920 dark
+PASS card heights under 300 DIP queue 1920 dark
+PASS no horizontal card scrolling queue 1920 dark
+PASS details buttons at least 32 DIP queue 1920 dark
+PASS partial progress never labeled ongoing queue 1920 dark
+density queue 1920 dark: content=1243.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS card widths 190–216 DIP overview 2560 light
+PASS card heights under 300 DIP overview 2560 light
+PASS no horizontal card scrolling overview 2560 light
+PASS details buttons at least 32 DIP overview 2560 light
+PASS partial progress never labeled ongoing overview 2560 light
+density overview 2560 light: content=1755.6; full-cards=8; first-row=5; card-width=204.7; card-height=221.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 2560 light
+PASS card heights under 300 DIP activities 2560 light
+PASS no horizontal card scrolling activities 2560 light
+PASS details buttons at least 32 DIP activities 2560 light
+PASS partial progress never labeled ongoing activities 2560 light
+density activities 2560 light: content=1755.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 2560 light
+PASS card heights under 300 DIP queue 2560 light
+PASS no horizontal card scrolling queue 2560 light
+PASS details buttons at least 32 DIP queue 2560 light
+PASS partial progress never labeled ongoing queue 2560 light
+density queue 2560 light: content=1755.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS card widths 190–216 DIP overview 2560 dark
+PASS card heights under 300 DIP overview 2560 dark
+PASS no horizontal card scrolling overview 2560 dark
+PASS details buttons at least 32 DIP overview 2560 dark
+PASS partial progress never labeled ongoing overview 2560 dark
+density overview 2560 dark: content=1755.6; full-cards=8; first-row=5; card-width=204.7; card-height=221.3; image=92; fonts=15/14/16/13; top=301.7
+PASS card widths 190–216 DIP activities 2560 dark
+PASS card heights under 300 DIP activities 2560 dark
+PASS no horizontal card scrolling activities 2560 dark
+PASS details buttons at least 32 DIP activities 2560 dark
+PASS partial progress never labeled ongoing activities 2560 dark
+density activities 2560 dark: content=1755.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=226
+PASS card widths 190–216 DIP queue 2560 dark
+PASS card heights under 300 DIP queue 2560 dark
+PASS no horizontal card scrolling queue 2560 dark
+PASS details buttons at least 32 DIP queue 2560 dark
+PASS partial progress never labeled ongoing queue 2560 dark
+density queue 2560 dark: content=1755.6; full-cards=7; first-row=2; card-width=216; card-height=221.3; image=92; fonts=15/14/16/13; top=191.4
+PASS actual WPF display scope selection saves the independent UI preference
+PASS actual WPF empty priorities do not show all
+PASS actual WPF missing priority campaign explanation
+PASS Twitch page and dashboard agree on stopped official progress
+PASS request acceptance never claims official progress growth
+mock-request Soop/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+mock-request Bilibili/load_state
+mock-request Twitch/load_state
+PASS campaign coverage one: 1 Drop / 1 Benefit cards; official minutes counted per Drop
+PASS campaign coverage two: 2 Drop / 2 Benefit cards; official minutes counted per Drop
+PASS campaign coverage three: 3 Drop / 3 Benefit cards; official minutes counted per Drop
+PASS campaign coverage many: 10 Drop / 10 Benefit cards; official minutes counted per Drop
+PASS campaign coverage multi-benefit: 1 Drop / 3 Benefit cards; official minutes counted per Drop
+PASS campaign coverage ineligible: 1 Drop / 1 Benefit cards; official minutes counted per Drop
+NOT PRESENT in supplied data: upcoming
+PASS campaign coverage expired: 5 Drop / 5 Benefit cards; official minutes counted per Drop
+state coverage unfinished: 90 campaign groups
+state coverage completed: 10 campaign groups
+state coverage claimable: 1 campaign groups
+state coverage claimed: 0 campaign groups
+mock-request Soop/load_state
+PASS SOOP A stopped while B stopped
+mock-request Bilibili/load_state
+PASS Bilibili active sessions stopped
+PASS Bilibili dashboard/page agree stopped
+mock-request Soop/load_state
+PASS SOOP A stopped while B running-empty
+mock-request Bilibili/load_state
+PASS Bilibili active sessions running-empty
+PASS Bilibili dashboard/page agree running-empty
+mock-request Soop/load_state
+PASS SOOP A stopped while B active
+mock-request Bilibili/load_state
+PASS Bilibili active sessions active
+PASS Bilibili dashboard/page agree active
+mock-request Soop/load_state
+PASS SOOP A stopped while B recovering
+mock-request Bilibili/load_state
+PASS Bilibili active sessions recovering
+PASS Bilibili dashboard/page agree recovering
+binding-errors=0
+PASS actual WPF binding check
+Official snapshot replay verifies layout and saved progress only. Live requests, SOOP and Bilibili are simulated; no authentication/claim/Worker launched.

@@ -1,0 +1,96 @@
+PASS running Worker plus completed Drop and no channel never claims current watching
+PASS eligible unfinished campaign ranks ahead of historical completed rewards
+PASS every Benefit retains one shared official 18/60 Drop; estimates are never added
+PASS NoAutoClaim mining prerequisites stay distinct from claim unlock requirements
+PASS accepted flag without a recent acceptance time does not prove watching
+PASS accepted playlist request establishes transport evidence, never official growth
+PASS channel changes invalidate accepted requests for the previous channel
+PASS old accepted requests expire without being treated as present watching
+PASS original priority-only campaign filter is retained
+PASS empty filtered results do not imply an empty account inventory
+PASS completed campaign filter uses official Drop completion
+PASS watch completion without canClaim is not labeled claimable
+PASS game filter cannot mix another game's rewards
+PASS inventory refresh updates existing card objects without rebuilding every image control
+PASS network failure preserves the last confirmed official minutes with stale labeling
+PASS stopping clears current watching even if a prior selected Drop remains cached
+PASS crashed Worker is distinguishable from a manual stop
+PASS unfinished Bilibili tasks do not imply a running viewing Worker
+PASS running Bilibili Worker with zero active Sessions is not watching
+PASS active Bilibili Session evidence is independent of task percent
+PASS manual Bilibili stop suppresses stale active Session records
+PASS compact readable reward grid adapts to actual content width with three/four/five/eight columns
+PASS 100 percent never implies claimed or claimable
+PASS completion, claim availability and receipt have independent visual states
+PASS unknown prerequisite evidence never appears satisfied
+PASS SOOP renders every official stage without accepting another UID's progress
+PASS PRIORITY 1: A/B/C user order precedes other games, including multiple campaigns and ineligible A
+PASS PRIORITY 2: overview filter hides other games without changing full inventory or queue
+PASS PRIORITY 3: display toggle cannot mutate Core strategy, game order or start Worker
+PASS PRIORITY 4: UI preference survives a settings disk round trip
+PASS PRIORITY 5: switching to all restores nonpriority campaigns
+PASS PRIORITY 6: reopening restores the independent overview range
+PASS PRIORITY 7: existing priority collection moves immediately update custom order
+PASS PRIORITY 8: background refresh preserves current user order
+PASS PRIORITY 9: identical refresh has deterministic campaign tie breakers
+PASS PRIORITY 10: empty priority list never silently falls back to all
+PASS PRIORITY 11: empty priorities still show all with setup guidance
+PASS PRIORITY 12: missing priority campaigns have a distinct empty state
+PASS PRIORITY 13: substring names never identify another game
+PASS PRIORITY 14: verified game IDs match official name variants and retain ended campaign context
+PASS PRIORITY 15: old settings migrate to all without changing mining configuration
+PASS STATE 1: stopped + official 25/120 is partial completion with no watching badge
+PASS STATE 2: local estimate never increments official minutes
+PASS STATE 3: running Worker with no channel does not establish viewing
+PASS STATE 4: selected channel without accepted requests does not establish viewing
+PASS STATE 5: only exact campaign/Drop target has request evidence; siblings and official growth remain independent
+PASS STATE recovery: recovering connections never carry a watching badge
+PASS STATE 6: a subsequent official increase for the same Drop confirms growth
+PASS STATE 7: newer failed request immediately overrides earlier accepted evidence
+PASS STATE 8: future request timestamps are not valid evidence
+PASS STATE 9: expired request evidence cannot claim viewing
+PASS STATE 10: historical progress and recorded requests cannot become live viewing
+PASS STATE 11: stopping preserves official progress and labels the historical channel
+PASS STATE matrix: qualification never overwrites partial official progress
+PASS STATE matrix: qualification never overwrites partial official progress
+PASS STATE matrix: qualification never overwrites partial official progress
+PASS STATE matrix: qualification never overwrites partial official progress
+PASS STATE matrix: completed, claimable and claimed remain separate
+PASS SOOP 1: stopped A and active B use independent UID runtime and official viewTime
+PASS SOOP 2: shared Worker running without a valid account connection is not viewing
+PASS SOOP 3: official viewTime increase is observed per UID/task
+PASS SOOP recovery: connection failure invalidates account evidence and dashboard together
+PASS SOOP 4: global stop clears every viewing indicator while preserving per UID progress
+PASS BILIBILI 1: running Worker with zero sessions preserves 30% official progress without viewing
+PASS BILIBILI 2: actual active session records bound the count; sessions never imply official progress
+PASS BILIBILI 3: stop and resume cannot reuse old active Session evidence
+PASS BILIBILI 4: history never becomes live viewing
+PASS real evidence excludes account/authentication fields and image signature parameters while retaining source hashes and IDs
+PASS current drop joins by Core drop ID, not inventory position
+PASS all Benefit IDs/names/types/images survive the projection
+PASS official 18/60 remains 30%; local +2 and supplied percent cannot inflate it
+PASS claim prerequisites and existing NoAutoClaim mining evidence remain separate
+PASS changing current reward cannot retain the previous benefit images
+PASS SOOP incremental stop keeps UID-specific official progress separate
+PASS mismatched SOOP progress UID is never displayed on another account
+PASS image routing respects disabled per-platform proxy scopes
+PASS image routing reuses the existing enabled Twitch scope without enabling Bilibili
+PASS empty image URL gives an explicit placeholder without a network request
+PASS private/local image targets are rejected
+PASS valid async image is frozen and reused from cache
+PASS thumbnail decoding reuses official disk bytes without downloading again or replacing the detail-size bitmap
+PASS concurrent controls load the same URL only once
+PASS upstream seven-day cache expiry fetches the image again
+PASS corrupt cached bytes are replaced by a valid fetch
+PASS invalid image bytes use a bounded failure fallback without retry storms
+PASS image timeout produces a fallback
+PASS caller cancellation terminates an in-flight image request
+PASS cache filenames contain hashes, never signed URL parameters
+PASS disk cache obeys its configured size limit
+PASS actual WPF fast image switch displays the new reward, never a late prior image
+PASS actual WPF unload cancels pending image loads
+PASS offscreen reward controls do not download images before entering the viewport
+PASS scrolling into view loads the official thumbnail asynchronously once
+PASS actual WPF gallery realizes every Benefit, including the third item
+PASS actual checked WPF switch fits inside its 48 DIP setting editor without clipping
+NOT TESTED real account images in this isolated component suite; independently collected official account evidence is recorded in docs/ui-redesign-v2/real-twitch-e2e.md.

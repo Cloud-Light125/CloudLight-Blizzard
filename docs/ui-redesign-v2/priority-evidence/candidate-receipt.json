@@ -1,0 +1,36 @@
+{
+  "commit": "0124a20c306aab3bfa8cfe877aa8b2c40e588e9d",
+  "branch": "ui/fluent-v2",
+  "appDllSha256": "359f3f15492f3340b7c03000c139855f39c2c85c48c95a85afa9b06f0987089f",
+  "workerBuilds": {
+    "twitch": {
+      "sha256": "bc4816a3cc7edf4088236f9786af4822eb0dc8fde317e294c145e8c975313ac2",
+      "sourceCommit": "25fc6bbb84765ac1ad7807d78ce9e7bd1c8f061c",
+      "rebuilt": false
+    },
+    "soop": {
+      "sha256": "5cdb730063e40b246e9e9166accf21ca298150eb1d1930bdb837ac099cf0c197",
+      "sourceCommit": "813e6deda6ded9be8d76392594e38e859875738d",
+      "rebuilt": false
+    },
+    "bilibili": {
+      "sha256": "4eda1b34097bdc64a2561ccbc1072cbba7cb91e95dd2b01176e5c28b26dfcb09",
+      "sourceCommit": "813e6deda6ded9be8d76392594e38e859875738d",
+      "rebuilt": false
+    },
+    "youtube": {
+      "sha256": "6917ac93547d19b0c4cad3b8b034b20c490a78190ed0d5387b297686d9197dba",
+      "sourceCommit": "813e6deda6ded9be8d76392594e38e859875738d",
+      "rebuilt": false
+    }
+  },
+  "releaseBuild": "PASS",
+  "images": "PASS",
+  "feature": "PASS",
+  "density": "PASS",
+  "layouts": "PASS",
+  "uiHost": "PASS",
+  "originalUserDataModified": false,
+  "workerSourcesChanged": false,
+  "purpose": "Local review candidate; no installer, Release, tag or main merge"
+}

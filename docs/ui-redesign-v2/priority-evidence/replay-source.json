@@ -1,0 +1,9 @@
+{
+  "source": "state-0002.json",
+  "sourceSha256": "4a8bc8ab3fb37d39a1c08b321d194fe314cd8838df1b8a9704d87af6cf33a685",
+  "campaigns": 97,
+  "drops": 359,
+  "cachedImagesCopied": 40,
+  "authOrSessionsCopied": false,
+  "runtimeEvidence": "simulated separately"
+}

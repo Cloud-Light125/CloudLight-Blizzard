@@ -1,0 +1,599 @@
+layout 01 1600x960 @100% equivalent-DIP actual=1600x960
+layout 01 1600x960 @125% equivalent-DIP actual=1280x768
+layout 01 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 01 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 01 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 01 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 01 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 01 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 01 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 01 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 01 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 01 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 02 1600x960 @100% equivalent-DIP actual=1600x960
+layout 02 1600x960 @125% equivalent-DIP actual=1280x768
+layout 02 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 02 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 02 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 02 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 02 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 02 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 02 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 02 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 02 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 02 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 03 1600x960 @100% equivalent-DIP actual=1600x960
+layout 03 1600x960 @125% equivalent-DIP actual=1280x768
+layout 03 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 03 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 03 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 03 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 03 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 03 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 03 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 03 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 03 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 03 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 04 1600x960 @100% equivalent-DIP actual=1600x960
+layout 04 1600x960 @125% equivalent-DIP actual=1280x768
+layout 04 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 04 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 04 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 04 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 04 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 04 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 04 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 04 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 04 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 04 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 05 1600x960 @100% equivalent-DIP actual=1600x960
+layout 05 1600x960 @125% equivalent-DIP actual=1280x768
+layout 05 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 05 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 05 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 05 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 05 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 05 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 05 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 05 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 05 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 05 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+layout 06 1600x960 @100% equivalent-DIP actual=1600x960
+layout 06 1600x960 @125% equivalent-DIP actual=1280x768
+layout 06 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 06 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 06 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 06 1366x768 @150% equivalent-DIP actual=910.4x540
+PASS narrow Twitch login primary action visible without scrolling
+layout 06 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 06 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 06 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 06 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 06 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 06 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 07 1600x960 @100% equivalent-DIP actual=1600x960
+layout 07 1600x960 @125% equivalent-DIP actual=1280x768
+layout 07 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 07 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 07 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 07 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 07 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 07 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 07 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 07 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 07 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 07 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 08 1600x960 @100% equivalent-DIP actual=1600x960
+layout 08 1600x960 @125% equivalent-DIP actual=1280x768
+layout 08 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 08 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 08 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 08 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 08 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 08 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 08 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 08 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 08 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 08 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 09 1600x960 @100% equivalent-DIP actual=1600x960
+layout 09 1600x960 @125% equivalent-DIP actual=1280x768
+layout 09 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 09 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 09 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 09 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 09 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 09 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 09 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 09 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 09 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 09 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 10 1600x960 @100% equivalent-DIP actual=1600x960
+layout 10 1600x960 @125% equivalent-DIP actual=1280x768
+layout 10 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 10 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 10 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 10 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 10 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 10 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 10 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 10 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 10 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 10 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Soop/load_state
+layout 11 1600x960 @100% equivalent-DIP actual=1600x960
+layout 11 1600x960 @125% equivalent-DIP actual=1280x768
+layout 11 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 11 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 11 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 11 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 11 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 11 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 11 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 11 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 11 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 11 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 12 1600x960 @100% equivalent-DIP actual=1600x960
+layout 12 1600x960 @125% equivalent-DIP actual=1280x768
+layout 12 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 12 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 12 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 12 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 12 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 12 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 12 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 12 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 12 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 12 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Bilibili/load_state
+layout 13 1600x960 @100% equivalent-DIP actual=1600x960
+layout 13 1600x960 @125% equivalent-DIP actual=1280x768
+layout 13 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 13 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 13 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 13 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 13 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 13 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 13 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 13 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 13 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 13 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 14 1600x960 @100% equivalent-DIP actual=1600x960
+layout 14 1600x960 @125% equivalent-DIP actual=1280x768
+layout 14 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 14 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 14 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 14 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 14 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 14 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 14 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 14 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 14 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 14 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request YouTube/load_state
+mock-request YouTube/detect_browser
+layout 15 1600x960 @100% equivalent-DIP actual=1600x960
+layout 15 1600x960 @125% equivalent-DIP actual=1280x768
+layout 15 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 15 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 15 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 15 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 15 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 15 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 15 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 15 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 15 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 15 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 16 1600x960 @100% equivalent-DIP actual=1600x960
+layout 16 1600x960 @125% equivalent-DIP actual=1280x768
+layout 16 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 16 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 16 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 16 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 16 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 16 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 16 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 16 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 16 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 16 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 17 1600x960 @100% equivalent-DIP actual=1600x960
+layout 17 1600x960 @125% equivalent-DIP actual=1280x768
+layout 17 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 17 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 17 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 17 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 17 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 17 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 17 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 17 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 17 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 17 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+layout 18 1600x960 @100% equivalent-DIP actual=1600x960
+layout 18 1600x960 @125% equivalent-DIP actual=1280x768
+layout 18 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 18 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 18 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 18 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 18 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 18 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 18 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 18 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 18 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 18 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 19 1600x960 @100% equivalent-DIP actual=1600x960
+layout 19 1600x960 @125% equivalent-DIP actual=1280x768
+layout 19 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 19 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 19 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 19 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 19 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 19 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 19 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 19 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 19 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 19 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Soop/load_state
+layout 20 1600x960 @100% equivalent-DIP actual=1600x960
+layout 20 1600x960 @125% equivalent-DIP actual=1280x768
+layout 20 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 20 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 20 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 20 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 20 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 20 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 20 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 20 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 20 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 20 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 21 1600x960 @100% equivalent-DIP actual=1600x960
+layout 21 1600x960 @125% equivalent-DIP actual=1280x768
+layout 21 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 21 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 21 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 21 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 21 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 21 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 21 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 21 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 21 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 21 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Bilibili/load_state
+layout 22 1600x960 @100% equivalent-DIP actual=1600x960
+layout 22 1600x960 @125% equivalent-DIP actual=1280x768
+layout 22 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 22 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 22 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 22 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 22 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 22 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 22 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 22 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 22 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 22 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 23 1600x960 @100% equivalent-DIP actual=1600x960
+layout 23 1600x960 @125% equivalent-DIP actual=1280x768
+layout 23 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 23 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 23 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 23 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 23 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 23 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 23 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 23 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 23 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 23 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request YouTube/load_state
+layout 24 1600x960 @100% equivalent-DIP actual=1600x960
+layout 24 1600x960 @125% equivalent-DIP actual=1280x768
+layout 24 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 24 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 24 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 24 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 24 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 24 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 24 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 24 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 24 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 24 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Twitch/load_state
+layout 25 1600x960 @100% equivalent-DIP actual=1600x960
+layout 25 1600x960 @125% equivalent-DIP actual=1280x768
+layout 25 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 25 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 25 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 25 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 25 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 25 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 25 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 25 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 25 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 25 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 26 1600x960 @100% equivalent-DIP actual=1600x960
+layout 26 1600x960 @125% equivalent-DIP actual=1280x768
+layout 26 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 26 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 26 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 26 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 26 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 26 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 26 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 26 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 26 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 26 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 27 1600x960 @100% equivalent-DIP actual=1600x960
+layout 27 1600x960 @125% equivalent-DIP actual=1280x768
+layout 27 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 27 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 27 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 27 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 27 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 27 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 27 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 27 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 27 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 27 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 28 1600x960 @100% equivalent-DIP actual=1600x960
+layout 28 1600x960 @125% equivalent-DIP actual=1280x768
+layout 28 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 28 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 28 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 28 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 28 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 28 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 28 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 28 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 28 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 28 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+layout 29 1600x960 @100% equivalent-DIP actual=1600x960
+layout 29 1600x960 @125% equivalent-DIP actual=1280x768
+layout 29 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 29 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 29 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 29 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 29 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 29 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 29 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 29 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 29 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 29 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 30 1600x960 @100% equivalent-DIP actual=1600x960
+layout 30 1600x960 @125% equivalent-DIP actual=1280x768
+layout 30 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 30 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 30 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 30 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 30 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 30 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 30 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 30 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 30 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 30 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Bilibili/load_state
+layout 31 1600x960 @100% equivalent-DIP actual=1600x960
+layout 31 1600x960 @125% equivalent-DIP actual=1280x768
+layout 31 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 31 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 31 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 31 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 31 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 31 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 31 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 31 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 31 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 31 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Twitch/load_state
+layout 32 1600x960 @100% equivalent-DIP actual=1600x960
+layout 32 1600x960 @125% equivalent-DIP actual=1280x768
+layout 32 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 32 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 32 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 32 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 32 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 32 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 32 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 32 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 32 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 32 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 33 1600x960 @100% equivalent-DIP actual=1600x960
+layout 33 1600x960 @125% equivalent-DIP actual=1280x768
+layout 33 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 33 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 33 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 33 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 33 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 33 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 33 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 33 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 33 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 33 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 34 1600x960 @100% equivalent-DIP actual=1600x960
+layout 34 1600x960 @125% equivalent-DIP actual=1280x768
+layout 34 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 34 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 34 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 34 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 34 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 34 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 34 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 34 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 34 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 34 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 35 1600x960 @100% equivalent-DIP actual=1600x960
+layout 35 1600x960 @125% equivalent-DIP actual=1280x768
+layout 35 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 35 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 35 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 35 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 35 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 35 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 35 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 35 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 35 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 35 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Soop/load_state
+layout 36 1600x960 @100% equivalent-DIP actual=1600x960
+layout 36 1600x960 @125% equivalent-DIP actual=1280x768
+layout 36 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 36 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 36 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 36 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 36 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 36 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 36 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 36 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 36 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 36 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Bilibili/load_state
+layout 37 1600x960 @100% equivalent-DIP actual=1600x960
+layout 37 1600x960 @125% equivalent-DIP actual=1280x768
+layout 37 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 37 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 37 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 37 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 37 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 37 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 37 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 37 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 37 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 37 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request YouTube/load_state
+layout 38 1600x960 @100% equivalent-DIP actual=1600x960
+layout 38 1600x960 @125% equivalent-DIP actual=1280x768
+layout 38 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 38 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 38 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 38 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 38 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 38 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 38 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 38 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 38 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 38 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 39 1600x960 @100% equivalent-DIP actual=1600x960
+layout 39 1600x960 @125% equivalent-DIP actual=1280x768
+layout 39 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 39 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 39 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 39 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 39 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 39 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 39 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 39 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 39 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 39 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 40 1600x960 @100% equivalent-DIP actual=1600x960
+layout 40 1600x960 @125% equivalent-DIP actual=1280x768
+layout 40 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 40 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 40 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 40 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 40 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 40 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 40 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 40 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 40 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 40 2560x1440 @150% equivalent-DIP actual=1706.4x960
+layout 41 1600x960 @100% equivalent-DIP actual=1600x960
+layout 41 1600x960 @125% equivalent-DIP actual=1280x768
+layout 41 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 41 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 41 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 41 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 41 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 41 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 41 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 41 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 41 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 41 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+mock-request Soop/load_state
+layout 42 1600x960 @100% equivalent-DIP actual=1600x960
+layout 42 1600x960 @125% equivalent-DIP actual=1280x768
+layout 42 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 42 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 42 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 42 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 42 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 42 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 42 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 42 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 42 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 42 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Bilibili/load_state
+layout 43 1600x960 @100% equivalent-DIP actual=1600x960
+layout 43 1600x960 @125% equivalent-DIP actual=1280x768
+layout 43 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 43 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 43 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 43 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 43 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 43 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 43 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 43 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 43 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 43 2560x1440 @150% equivalent-DIP actual=1706.4x960
+mock-request Twitch/load_state
+layout 44 1600x960 @100% equivalent-DIP actual=1600x960
+layout 44 1600x960 @125% equivalent-DIP actual=1280x768
+layout 44 1600x960 @150% equivalent-DIP actual=1066.4x640
+layout 44 1366x768 @100% equivalent-DIP actual=1366.4x768
+layout 44 1366x768 @125% equivalent-DIP actual=1092.8x614.4
+layout 44 1366x768 @150% equivalent-DIP actual=910.4x540
+layout 44 1920x1080 @100% equivalent-DIP actual=1920x1080
+layout 44 1920x1080 @125% equivalent-DIP actual=1536x864
+layout 44 1920x1080 @150% equivalent-DIP actual=1280x720
+layout 44 2560x1440 @100% equivalent-DIP actual=2065.6x1297.6
+layout 44 2560x1440 @125% equivalent-DIP actual=2048x1152
+layout 44 2560x1440 @150% equivalent-DIP actual=1706.4x960
+minimum-window actual=860x540 DIP
+maximized-window actual=2062.4x1246.4 DIP
+mock-request Soop/load_state
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS Twitch settings draft survives platform navigation/refresh
+mock-request Twitch/save_settings
+mock-request Twitch/load_state
+PASS real Twitch save Click reaches existing Worker command
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Soop/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS SOOP draft survives platform navigation/refresh
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request YouTube/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS YouTube draft survives platform navigation/refresh
+PASS YouTube channel quick-start opens activities section
+mock-request Soop/load_state
+PASS SOOP quick-start opens account form
+mock-request Twitch/load_state
+PASS cancel/stop prevents in-flight device-code renewal from restarting login
+binding-errors=0
+physical-monitor-dpi=120/120
+DPI method: equivalent DIP sizes, not physical monitor switching
