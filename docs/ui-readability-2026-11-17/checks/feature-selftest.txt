@@ -1,0 +1,22 @@
+Game locator: PASS (binary tags, forward/back slashes, spaces/Unicode, retail executable, JSON compatibility)
+TEST 1 account controlled mirror: PASS (recursive/manifest/A-B cleanup/exclusions; A-B-A-B leaves backup contents/timestamps unchanged)
+TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)
+Twitch connection state: PASS
+SOOP network recovery / quick-start refresh state: PASS
+SOOP account risk / claim eligibility / normalized task policy: PASS
+Drops log session cursor: PASS (existing/missing/truncate/clear)
+TEST 4A online update installer lifecycle: PASS (settings persisted before launch/streams closed/verification/launch ordering/CTS cancellation/launch failure)
+TEST 4 Worker updates: PASS (semantic versions/release/assets/rate-limit/cache/skip/manual/failure/delay/single-flight)
+TEST 5 region preparation guide: PASS (NotPrepared/Preparing/Waiting/Building/Ready/Outdated/Mixed/Error and Busy gates)
+TEST 6 Generation/Staging: PASS (drift-tolerant detection, successful/failed normalize state, strict FullSnapshot restore hash, 256MB copies)
+TEST 7 BestEffort/volatile/staging/account: PASS (A-H: unknown-file preservation, known-file repair, strict FullSnapshot backup hash, Unknown direct normalize, account order, volatile filtering, source staging reuse)
+CORE TEST 1 legacy Ready -> Step4: PASS
+CORE TEST 2 status check + temporary cleanup: PASS
+CORE TEST 3 reset current side + switch other side: PASS
+TEST 8 account switch pipeline: PASS (strict read-only-backup order/fail-fast/no launch after region failure)
+TEST 9 settings/account list: PASS (durable atomic save/backup recovery/no default overwrite)
+TEST 10 app paths migration: PASS (settings/accounts/logs/default move/custom preserved)
+TEST 11 updater resilience: PASS (retry/exhaustion/404/Range/ignored Range/ETag/metadata mismatch/digest)
+TEST 12 snapshots and switch preview: PASS (direct state/listing, missing/corrupt/expired, legacy-file ignore, delete safety, historical deletion, read-only preview, shared plan, disk and invalid snapshot blockers)
+TEST 13 diagnostics and notifications: PASS (severity/cancel/sanitizer/ZIP required entries/no secrets/read-only/notification gate/error-dialog throttle)
+OVERALL: PASS

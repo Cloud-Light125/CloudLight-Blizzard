@@ -3911,7 +3911,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/RewardCard.xaml"
     ]
   },
   {
@@ -3929,7 +3929,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "Controls/RewardCard.xaml"
     ]
   },
   {
@@ -4149,7 +4149,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Controls/RewardHero.xaml"
+      "Controls/RewardCard.xaml"
     ]
   },
   {
@@ -4221,7 +4221,7 @@
     "preserved": true,
     "new_location": "DropsPage",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：OfficialText → Subtitle=\"官方任务接口\"",
       "Views/Drops/Shared/DropsResources.xaml"
     ]
   },
@@ -4257,8 +4257,8 @@
     "preserved": true,
     "new_location": "DropsPage",
     "evidence": [
-      "原契约保留",
-      "Views/Drops/Shared/DropsResources.xaml"
+      "结构化可视化替代：Percent → Binding Percent,Mode=OneWay",
+      "Controls/RewardCard.xaml"
     ]
   },
   {

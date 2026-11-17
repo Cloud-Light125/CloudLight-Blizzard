@@ -130,12 +130,21 @@ public partial class DropsPage
             ShowWorkspace("activities");TwitchWorkspace.TwitchChannelsExpander.IsExpanded=true;
             TwitchWorkspace.TwitchChannelsExpander.BringIntoView();return;
         }
-        if(e.Action=="twitch:reward-details"&&e.Control is FrameworkElement{DataContext:RewardCardVisual card})
+        if(e.Action=="twitch:campaign-details"&&e.Control is FrameworkElement{DataContext:CampaignRewardGroup group})
         {
-            var row=_vm?.Inventory.FirstOrDefault(r=>r.Id==card.Drop.Id&&r.Visual.CampaignId==card.Drop.CampaignId);
-            if(row is null){_vm?.ReportMessage(DropsPlatform.Twitch,"该奖励的官方进度详情尚未加载，请刷新背包。","提示");return;}
-            var content=new ContentControl{Content=row,ContentTemplate=(DataTemplate)FindResource("TwitchDropRowTemplate"),Margin=new Thickness(16)};
-            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 奖励详情 · "+card.Drop.Title,Width=Math.Min(900,SystemParameters.WorkArea.Width-40),Height=Math.Min(600,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled}};
+            var inventory=new CampaignInventoryView{ItemsSource=new[]{group},Margin=new Thickness(16),Height=double.NaN,CampaignActionVisibility=Visibility.Collapsed};
+            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 活动详情 · "+group.Title,Width=Math.Min(Math.Clamp(80+group.Cards.Count*234,400,1180),SystemParameters.WorkArea.Width-40),SizeToContent=SizeToContent.Height,MaxHeight=Math.Min(740,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=inventory};
+            dialog.SetResourceReference(BackgroundProperty,"App.Background");dialog.SetResourceReference(ForegroundProperty,"Text.Primary");ThemeManager.Attach(dialog);
+            dialog.AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnVisualAction));dialog.ShowDialog();return;
+        }
+        if((e.Action=="twitch:reward-details"||e.Action=="reward:details")&&e.Control is FrameworkElement{DataContext:{} context})
+        {
+            var drop=context is RewardCardVisual card?card.Drop:context as RewardVisual;
+            if(drop is null)return;
+            if(drop.Brand!="Twitch"){ShowWorkspace(drop.Brand=="Soop"?"accounts":"activities");return;}
+            var row=_vm?.Inventory.FirstOrDefault(r=>r.Id==drop.Id&&r.Visual.CampaignId==drop.CampaignId);
+            var content=new ContentControl{Content=(object?)row??drop,ContentTemplate=(DataTemplate)FindResource(row is null?"VisualRewardRow":"TwitchDropRowTemplate"),Margin=new Thickness(16)};
+            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 奖励详情 · "+drop.Title,Width=Math.Min(Math.Clamp(80+drop.Cards.Count*240,440,900),SystemParameters.WorkArea.Width-40),SizeToContent=SizeToContent.Height,MaxHeight=Math.Min(740,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled}};
             dialog.SetResourceReference(BackgroundProperty,"App.Background");dialog.SetResourceReference(ForegroundProperty,"Text.Primary");
             ThemeManager.Attach(dialog);dialog.AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnVisualAction));
             content.Loaded+=(_,_)=>ExpandRewardDetails(content);
@@ -155,6 +164,7 @@ public partial class DropsPage
     private static void ExpandRewardDetails(DependencyObject parent)
     {
         if(parent is Expander expander)expander.IsExpanded=true;
+        if(parent is RewardCard card)card.DetailsVisibility=Visibility.Collapsed;
         for(var index=0;index<System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);index++)ExpandRewardDetails(System.Windows.Media.VisualTreeHelper.GetChild(parent,index));
     }
     private void RunLegacyAction(string action, object sender, RoutedEventArgs args)

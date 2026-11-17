@@ -1,0 +1,46 @@
+mock-request Twitch/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS readable controls overview 1366: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density overview physical-request=1366x768@125% actual=1092.8x614.4 DIP content-width=812.4 columns=2 full-cards=0 intersecting-cards=2 realized-cards=8 tile-width=248.8 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+reading viewport 1366x768 overview: full-cards=2; account/filter headers scroll away; initial full-cards=0
+PASS readable controls activities 1366: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density activities physical-request=1366x768@125% actual=1092.8x614.4 DIP content-width=812.4 columns=2 full-cards=0 intersecting-cards=2 realized-cards=8 tile-width=248.8 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+reading viewport 1366x768 activities: full-cards=2; account/filter headers scroll away; initial full-cards=0
+PASS readable controls overview 1600: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density overview physical-request=1600x900@125% actual=1280x720 DIP content-width=987.6 columns=2 full-cards=0 intersecting-cards=2 realized-cards=8 tile-width=226.9 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+reading viewport 1600x900 overview: full-cards=2; account/filter headers scroll away; initial full-cards=0
+PASS readable controls activities 1600: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density activities physical-request=1600x900@125% actual=1280x720 DIP content-width=987.6 columns=2 full-cards=2 intersecting-cards=2 realized-cards=8 tile-width=226.9 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+PASS readable controls overview 1920: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density overview physical-request=1920x1080@125% actual=1536x864 DIP content-width=1243.6 columns=2 full-cards=2 intersecting-cards=7 realized-cards=8 tile-width=229.9 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+PASS readable controls activities 1920: cards=8, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density activities physical-request=1920x1080@125% actual=1536x864 DIP content-width=1243.6 columns=2 full-cards=2 intersecting-cards=7 realized-cards=8 tile-width=229.9 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+PASS readable controls overview 2560: cards=18, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density overview physical-request=2560x1440@125% actual=2048x1152 DIP content-width=1755.6 columns=2 full-cards=2 intersecting-cards=7 realized-cards=18 tile-width=233.4 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+PASS readable controls activities 2560: cards=18, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8
+density activities physical-request=2560x1440@125% actual=2048x1152 DIP content-width=1755.6 columns=2 full-cards=7 intersecting-cards=7 realized-cards=18 tile-width=233.4 tile-height=323.2 image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34
+mock-request Soop/load_state
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+mock-request Bilibili/load_state
+mock-request Twitch/load_state
+PASS campaign coverage one: 1 Drop / 1 Benefit cards; official minutes counted per Drop
+PASS campaign coverage two: 2 Drop / 2 Benefit cards; official minutes counted per Drop
+PASS campaign coverage three: 3 Drop / 3 Benefit cards; official minutes counted per Drop
+PASS campaign coverage many: 10 Drop / 10 Benefit cards; official minutes counted per Drop
+PASS campaign coverage multi-benefit: 3 Drop / 8 Benefit cards; official minutes counted per Drop
+PASS campaign coverage ineligible: 2 Drop / 2 Benefit cards; official minutes counted per Drop
+NOT PRESENT in supplied data: upcoming
+PASS campaign coverage expired: 3 Drop / 3 Benefit cards; official minutes counted per Drop
+state coverage unfinished: 89 campaign groups
+state coverage completed: 10 campaign groups
+state coverage claimable: 1 campaign groups
+state coverage claimed: 0 campaign groups
+PASS no channel is distinct from Worker running
+binding-errors=0
+physical-monitor-dpi=120

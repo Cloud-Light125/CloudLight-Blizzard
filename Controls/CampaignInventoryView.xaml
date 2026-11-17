@@ -1,34 +1,16 @@
 <UserControl x:Class="CloudLightBlizzard.Controls.CampaignInventoryView" x:Name="Inventory" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:c="clr-namespace:CloudLightBlizzard.Controls" MinHeight="180">
-    <UserControl.Resources>
-        <DataTemplate x:Key="RewardTileTemplate">
-            <Border Tag="RewardTile" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="10" Padding="10,6" Height="238">
-                <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="90"/><RowDefinition Height="34"/><RowDefinition Height="17"/><RowDefinition Height="22"/><RowDefinition Height="6"/><RowDefinition Height="18"/><RowDefinition Height="20"/><RowDefinition Height="17"/></Grid.RowDefinitions>
-                    <c:VisualImage SourceUrl="{Binding ImageUrl}" Brand="Twitch" DecodePixelWidth="192" ImageStretch="Uniform" />
-                    <TextBlock Grid.Row="1" Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="17" MaxHeight="34" ToolTip="{Binding Title}"/>
-                    <TextBlock Grid.Row="2" Text="{Binding Stage}" FontSize="12" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Stage}"/>
-                    <DockPanel Grid.Row="3"><TextBlock DockPanel.Dock="Right" Text="{Binding Percent}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding Drop.ProgressText}" FontSize="12" VerticalAlignment="Center"/></DockPanel>
-                    <ProgressBar Grid.Row="4" Value="{Binding Drop.Percent,Mode=OneWay}" Maximum="100" Height="5" Style="{DynamicResource ThemeProgressBar}"/>
-                    <TextBlock Grid.Row="5" Text="{Binding Drop.RemainingText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}"/>
-                    <TextBlock Grid.Row="6" Text="{Binding Drop.StateText}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Drop.StateText}"/>
-                    <DockPanel Grid.Row="7"><Button DockPanel.Dock="Right" Content="详情" c:WorkspaceAction.Name="twitch:reward-details" Padding="6,0" MinHeight="20" FontSize="12" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding Drop.PrerequisiteText}" FontSize="12" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Drop.PrerequisiteText}" VerticalAlignment="Center"/></DockPanel>
-                </Grid>
-            </Border>
-        </DataTemplate>
-        <DataTemplate x:Key="CampaignGroupTemplate">
-            <Border Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,0,10" Tag="CampaignGroup">
-                <StackPanel>
-                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="48"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <c:VisualImage SourceUrl="{Binding ImageUrl}" Width="32" Height="42" Brand="Twitch" DecodePixelWidth="128"/>
-                        <StackPanel Grid.Column="1" Margin="0,0,8,0"><TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/><WrapPanel Margin="0,3,0,0"><TextBlock Text="{Binding Game}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,12,0"/><TextBlock Text="{Binding Summary}" FontSize="12.5"/></WrapPanel></StackPanel>
-                        <StackPanel Grid.Column="2" MaxWidth="210" VerticalAlignment="Center"><DockPanel><Button DockPanel.Dock="Right" Content="完整背包 →" c:WorkspaceAction.Name="section:activities" FontSize="12.5" MinHeight="22" Padding="6,0" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Accent.Primary}"><Button.Style><Style TargetType="Button"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsOverview,RelativeSource={RelativeSource AncestorType=c:CampaignInventoryView}}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style></Button><TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" TextWrapping="Wrap" HorizontalAlignment="Right" VerticalAlignment="Center"/></DockPanel><TextBlock Text="{Binding EndText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" TextWrapping="Wrap" HorizontalAlignment="Right"/></StackPanel>
-                    </Grid>
-                    <ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource RewardTileTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><c:RewardTilePanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
-                </StackPanel>
-            </Border>
-        </DataTemplate>
-    </UserControl.Resources>
-    <ListBox x:Name="CampaignList" ItemsSource="{Binding ItemsSource,ElementName=Inventory}" ItemTemplate="{StaticResource CampaignGroupTemplate}" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="0.5">
-        <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
-    </ListBox>
-</UserControl>
+<UserControl.Resources>
+<DataTemplate x:Key="RewardTileTemplate"><c:RewardCard Reward="{Binding Drop}" Title="{Binding Title}" ImageUrl="{Binding ImageUrl}" Subtitle="{Binding Stage}"/></DataTemplate>
+<DataTemplate x:Key="CampaignGroupTemplate">
+<Border Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,14,14" Tag="CampaignGroup"><StackPanel>
+<Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+<c:VisualImage SourceUrl="{Binding ImageUrl}" Width="32" Height="42" Brand="Twitch" DecodePixelWidth="128"/>
+<StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/><WrapPanel Margin="0,3,0,0"><TextBlock Text="{Binding Game}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,12,0"/><TextBlock Text="{Binding Status}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Accent.Primary}"/></WrapPanel></StackPanel><WrapPanel Grid.Column="2"><Button Content="完整背包 →" c:WorkspaceAction.Name="section:activities" MinHeight="34" Padding="8,0" FontSize="13"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsOverview,RelativeSource={RelativeSource AncestorType=c:CampaignInventoryView}}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style></Button><Button Content="活动详情 →" Visibility="{Binding CampaignActionVisibility,RelativeSource={RelativeSource AncestorType=c:CampaignInventoryView}}" c:WorkspaceAction.Name="twitch:campaign-details" Style="{DynamicResource SecondaryButton}" MinHeight="34" Padding="8,0" FontSize="13" Margin="8,0,0,0"/></WrapPanel></Grid>
+<WrapPanel Margin="0,0,0,8"><TextBlock Text="{Binding Summary}" FontSize="13" Margin="0,0,12,0"/><TextBlock Text="{Binding EndText}" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/></WrapPanel>
+<ItemsControl ItemsSource="{Binding Cards}" ItemTemplate="{StaticResource RewardTileTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><c:RewardTilePanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+</StackPanel></Border></DataTemplate>
+<DataTemplate x:Key="CampaignRowTemplate"><ItemsControl ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource CampaignGroupTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="{Binding Groups.Count}"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl></DataTemplate>
+</UserControl.Resources>
+<ListBox x:Name="CampaignList" ItemsSource="{Binding Rows,ElementName=Inventory}" ItemTemplate="{StaticResource CampaignRowTemplate}" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,0,-14,0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="0.5">
+<ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+</ListBox></UserControl>

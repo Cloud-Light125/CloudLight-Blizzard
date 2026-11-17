@@ -31,6 +31,8 @@ public partial class DropsPage : UserControl
         {
             if (tab.Tag as string == "games")
                 tab.Visibility = _platform == DropsPlatform.Twitch ? Visibility.Visible : Visibility.Collapsed;
+            if (tab.Tag as string == "queue")
+                tab.Visibility = _platform == DropsPlatform.Twitch ? Visibility.Visible : Visibility.Collapsed;
             if (tab.Tag as string == "automation")
                 tab.Visibility = _platform is DropsPlatform.Twitch or DropsPlatform.Bilibili ? Visibility.Visible : Visibility.Collapsed;
             if (tab.Tag as string == "advanced")

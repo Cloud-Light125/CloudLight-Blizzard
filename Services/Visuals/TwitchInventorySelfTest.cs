@@ -46,7 +46,14 @@ internal static class TwitchInventorySelfTest
         bili.HandleEvent("session",Raw("""{"configuredSessions":1,"activeSessions":1,"sessions":[{"id":"s","roomId":1,"state":"active"}]}"""));
         check(bili.WatchingSessions==1&&bili.WatchStateText.StartsWith("正在观看"),"active Bilibili Session evidence is independent of task percent");
         biliHealth.Running=false;check(bili.WatchingSessions==0&&bili.WatchStateText.Contains("已停止"),"manual Bilibili stop suppresses stale active Session records");
-        check(Controls.RewardTilePanel.ColumnsFor(750)==4&&Controls.RewardTilePanel.ColumnsFor(970)==5&&Controls.RewardTilePanel.ColumnsFor(1170)==6,"reward grid adapts to content width with four/five/six columns without monitor-resolution branches");
+        check(Controls.RewardTilePanel.ColumnsFor(750)==3&&Controls.RewardTilePanel.ColumnsFor(970)==4&&Controls.RewardTilePanel.ColumnsFor(1170)==5&&Controls.RewardTilePanel.ColumnsFor(1700)==7,"readable reward grid adapts to actual content width with three/four/five/seven columns");
+        var complete=new RewardVisual{Current=120,Required=120};
+        check(complete.StateKind=="completed"&&!complete.Claimed&&!complete.CanClaim&&complete.StateText.Contains("未开放"),"100 percent never implies claimed or claimable");
+        check((complete with{CanClaim=true}).StateKind=="claimable"&&(complete with{Claimed=true}).StateKind=="claimed","completion, claim availability and receipt have independent visual states");
+        check(new RewardVisual{PreconditionDropIds=["prior"]}.PrerequisiteSummary=="前置待确认","unknown prerequisite evidence never appears satisfied");
+        var soop=new PlatformOverviewModel(new(DropsPlatform.Soop,"Soop"));
+        soop.Apply(Raw("""{"accounts":[{"uid":"one","loggedIn":true,"currentProgress":[{"account":"one","reward":"A","currentMinutes":15,"requiredMinutes":30},{"account":"one","reward":"B","currentMinutes":5,"requiredMinutes":45},{"account":"two","reward":"foreign","currentMinutes":99}]},{"uid":"two","loggedIn":true,"currentProgress":[{"account":"two","reward":"C","currentMinutes":2,"requiredMinutes":30}]}]}"""));
+        check(soop.Accounts[0].Rewards.Count==2&&soop.Accounts[1].Rewards.Single().Current==2,"SOOP renders every official stage without accepting another UID's progress");
     }
     private static bool PrerequisitesSatisfiedForTest(this RewardVisual value)=>value.PreconditionsSatisfiedForMining==true&&value.PreconditionsMet==false;
 }

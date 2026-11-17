@@ -10,6 +10,7 @@ public sealed class PlatformOverviewModel : ObservableObject
     public DropsPlatformViewModel Health { get; }
     public string Brand => Health.Platform.ToString();
     public string Name => Health.Name;
+    public string WorkerText => Health.Running ? "Worker 运行中" : "Worker 已停止";
     public ObservableCollection<RewardVisual> Rewards { get; } = [];
     public ObservableCollection<CampaignVisual> Campaigns { get; } = [];
     public ObservableCollection<AccountVisual> Accounts { get; } = [];
@@ -26,16 +27,18 @@ public sealed class PlatformOverviewModel : ObservableObject
     public string AutoClaimText { get=>_autoClaim; private set=>Set(ref _autoClaim,value); }
     public RewardVisual? ActiveReward { get=>_activeReward; private set { Set(ref _activeReward,value); Raise(nameof(FeaturedReward)); Raise(nameof(FeaturedLabel)); } }
     public RewardVisual? FeaturedReward => ActiveReward ?? Accounts.FirstOrDefault(a=>a.Running&&a.Reward is not null)?.Reward ?? Rewards.FirstOrDefault(r=>!r.Claimed&&!r.WatchCompleted&&!r.Expired&&r.Eligible!=false) ?? Rewards.FirstOrDefault(r=>r.CanClaim&&!r.Claimed) ?? Rewards.FirstOrDefault();
-    public string FeaturedLabel => Health.Running&&ActiveReward?.IsCurrent==true ? "正在获取的奖励" : "奖励预览 · 尚未确认当前观看奖励";
+    public string FeaturedLabel => "奖励预览 · 进度以官方确认为准";
     public string RewardCount => Rewards.Count.ToString();
     public string CampaignCount => Campaigns.Count.ToString();
     public string ClaimableCount => Rewards.Count(r=>r.CanClaim&&!r.Claimed).ToString();
     public string AccountCount => Accounts.Count(a=>a.LoggedIn).ToString();
     public string SyncText => DateTimeOffset.TryParse(_sync,out var at) ? $"上次官方同步 {at.ToLocalTime():HH:mm:ss}" : "尚无官方同步记录";
-    public Visibility RewardVisibility => FeaturedReward is null ? Visibility.Collapsed : Visibility.Visible;
-    public Visibility EmptyRewardVisibility => FeaturedReward is null ? Visibility.Visible : Visibility.Collapsed;
-    public string TaskSummary => FeaturedReward?.Title ?? "尚无当前任务";
-    public string FeaturedImageUrl=>FeaturedReward?.ImageUrl??"";
+    public Visibility RewardVisibility => FeaturedReward is null||SessionText!="已验证" ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility EmptyRewardVisibility => RewardVisibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+    public string NextActionText => SessionText!="已验证" ? "连接账号 →" : "查看任务 →";
+    public string EmptyTaskText => SessionText!="已验证" ? "连接账号后查看官方任务与进度" : "尚无当前任务 · 刷新平台活动";
+    public string TaskSummary => SessionText!="已验证" ? "连接账号后查看奖励" : FeaturedReward?.Title ?? "尚无当前任务";
+    public string FeaturedImageUrl=>FeaturedReward?.Benefits.FirstOrDefault()?.ImageUrl??FeaturedReward?.ImageUrl??"";
     public string FeaturedProgress=>FeaturedReward?.ProgressText??"等待官方任务";
     public double FeaturedPercent=>FeaturedReward?.Percent??0;
     public string OfficialChangeText=>_officialChange;
@@ -49,6 +52,7 @@ public sealed class PlatformOverviewModel : ObservableObject
         health.PropertyChanged+=(_,e)=>
         {
             Raise(nameof(RuntimeSummary));
+            Raise(nameof(WorkerText));
             if(e.PropertyName==nameof(health.Running))
             {
                 _observedStart=health.Running?DateTimeOffset.Now:null;
@@ -115,10 +119,11 @@ public sealed class PlatformOverviewModel : ObservableObject
         if(string.IsNullOrWhiteSpace(uid)) return;
         // Progress is read only from this UID's current official response, never from history.
         var old=Accounts.FirstOrDefault(a=>a.Id==uid);
+        var rewards=V.Has(account,"currentProgress") ? V.Rows(account,"currentProgress").Where(p=>!V.Has(p,"account")||V.Text(p,"account")==uid).Select(p=>RewardVisual.From(p,Brand,"")).ToArray() : old?.Rewards??[];
         var p=V.Rows(account,"currentProgress").FirstOrDefault(p=>!V.Has(p,"account")||V.Text(p,"account")==uid);
         var reward=p.ValueKind==JsonValueKind.Object ? RewardVisual.From(p,Brand,"") : V.Has(account,"currentProgress")?null:old?.Reward;
         var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),V.Bool(account,"running",old?.Running??false),V.Bool(account,"loggedIn",old?.LoggedIn??false),
-            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??"")){Phase=V.Text(account,"status",old?.Phase??"阶段尚未确认")};
+            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??"")){Phase=V.Text(account,"status",old?.Phase??"阶段尚未确认"),Rewards=rewards};
         if(old is null) Accounts.Add(row); else Accounts[Accounts.IndexOf(old)]=row;
         if(Brand=="Soop")
         {
@@ -129,7 +134,7 @@ public sealed class PlatformOverviewModel : ObservableObject
     }
     private void NotifyVisuals()
     {
-        foreach(var name in new[]{nameof(FeaturedReward),nameof(FeaturedLabel),nameof(RewardVisibility),nameof(EmptyRewardVisibility),nameof(RewardCount),nameof(CampaignCount),nameof(ClaimableCount),nameof(AccountCount),nameof(SyncText),nameof(TaskSummary),nameof(FeaturedImageUrl),nameof(FeaturedProgress),nameof(FeaturedPercent),nameof(ObservedDurationText),nameof(OfficialChangeText),nameof(RewardPreview),nameof(CampaignPreview)}) Raise(name);
+        foreach(var name in new[]{nameof(FeaturedReward),nameof(FeaturedLabel),nameof(RewardVisibility),nameof(EmptyRewardVisibility),nameof(RewardCount),nameof(CampaignCount),nameof(ClaimableCount),nameof(AccountCount),nameof(SyncText),nameof(TaskSummary),nameof(FeaturedImageUrl),nameof(FeaturedProgress),nameof(FeaturedPercent),nameof(ObservedDurationText),nameof(OfficialChangeText),nameof(RewardPreview),nameof(CampaignPreview),nameof(NextActionText),nameof(EmptyTaskText)}) Raise(name);
     }
     internal void RefreshClock(){Raise(nameof(SyncText));Raise(nameof(ObservedDurationText));}
     internal void RefreshBilibili(BilibiliDropsViewModel details)
@@ -139,5 +144,6 @@ public sealed class PlatformOverviewModel : ObservableObject
         Rewards.Clear();
         foreach(var task in details.Tasks)Rewards.Add(new RewardVisual{Id=task.Id,Title=task.Name,Brand="Bilibili",Current=task.Current,Required=task.Limit,Unit="",Completed=task.Completed,Claimed=task.Claimed,CanClaim=task.Claimable,ImageUrl=previous.GetValueOrDefault(task.Id)?.ImageUrl??""});
         Channel=details.Rooms.FirstOrDefault(r=>r.Enabled)?.Name??"尚未添加直播间";NotifyVisuals();
+        if(!string.IsNullOrWhiteSpace(details.LastApiSuccessAt)){_sync=details.LastApiSuccessAt;Raise(nameof(SyncText));}
     }
 }

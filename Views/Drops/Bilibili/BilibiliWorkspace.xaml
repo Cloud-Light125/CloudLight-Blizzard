@@ -58,25 +58,8 @@
                 </StackPanel>
             </Border>
         </StackPanel>
-        <StackPanel Tag="workspace:activities">
-            <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
-                <StackPanel>
-                    <TextBlock Text="活动与直播间" Style="{StaticResource SectionTitle}" />
-                    <TextBlock Text="自动发现活动；也可手动指定 URL 或房间号。" Style="{StaticResource FieldHint}" />
-                    <Grid Margin="0,10,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="BilibiliRoomInput" Style="{StaticResource HintTextBox}" Tag="直播间 URL 或 Room ID" Text="{Binding BilibiliDetails.RoomReference, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" x:FieldModifier="internal" />
-                        <Button Grid.Column="1" Content="添加" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.AddRoomCommand}" />
-                    </Grid>
-                    <TextBox x:Name="BilibiliRoomNameInput" Style="{StaticResource HintTextBox}" Tag="直播间名称（可选）" Margin="0,6,0,0" Text="{Binding BilibiliDetails.RoomName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" x:FieldModifier="internal" />
-                    <ListBox x:Name="BilibiliRoomList" ItemsSource="{Binding BilibiliDetails.Rooms}" ItemTemplate="{StaticResource BilibiliRoomRowTemplate}" MinHeight="58" MaxHeight="170" Margin="0,8,0,0" x:FieldModifier="internal" />
-                    <TextBlock Text="{Binding BilibiliDetails.Activities.Count, StringFormat=已发现活动：{0} 个}" Foreground="{DynamicResource Text.Secondary}" Margin="0,8,0,0" />
-                    <ListBox x:Name="BilibiliActivityList" ItemsSource="{Binding BilibiliDetails.Activities}" ItemTemplate="{StaticResource BilibiliActivityRowTemplate}" MinHeight="42" MaxHeight="120" Margin="0,4,0,0" x:FieldModifier="internal" />
-                </StackPanel>
-            </Border>
+        <StackPanel Tag="workspace:activities"><Border Style="{DynamicResource HeroCard}" Padding="14"><StackPanel><WrapPanel><Button Content="开始观看" Command="{Binding BilibiliDetails.StartCommand}" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,8"/><Button Content="停止" Command="{Binding BilibiliDetails.StopCommand}" Visibility="{Binding Bilibili.StopVisibility}" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,8"/><Button Content="刷新任务" Command="{Binding BilibiliDetails.RefreshCommand}" Style="{DynamicResource SecondaryButton}" Margin="0,0,0,8"/></WrapPanel><TextBlock Text="{Binding BilibiliDetails.WatchStateText}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding BilibiliDetails.TaskStateText}" FontSize="14" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
+
             <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
                 <StackPanel>
                     <DockPanel>
@@ -84,7 +67,7 @@
                         <TextBlock DockPanel.Dock="Right" Text="{Binding BilibiliDetails.SessionSummary}" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" />
                     </DockPanel>
                     <TextBlock Text="{Binding BilibiliDetails.LastApiSuccessAt, StringFormat=最近成功 API：{0}}" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,4,0,0" />
-                    <ListBox x:Name="BilibiliTaskList" ItemsSource="{Binding BilibiliDetails.Tasks}" ItemTemplate="{StaticResource BilibiliTaskRowTemplate}" MinHeight="80" MaxHeight="300" Margin="0,8,0,0" x:FieldModifier="internal" />
+                    <ListBox x:Name="BilibiliTaskList" ItemsSource="{Binding BilibiliDetails.Tasks}" ItemTemplate="{StaticResource BilibiliTaskRowTemplate}" MinHeight="80" MaxHeight="800" Margin="0,8,0,0" x:FieldModifier="internal" ScrollViewer.HorizontalScrollBarVisibility="Disabled"><ListBox.ItemsPanel><ItemsPanelTemplate><ctrl:RewardTilePanel/></ItemsPanelTemplate></ListBox.ItemsPanel><ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/></Style></ListBox.ItemContainerStyle></ListBox>
                     <TextBlock Text="尚未读取到官方任务进度。请先发现活动或填写 Task IDs。" Foreground="{DynamicResource Text.Muted}" HorizontalAlignment="Center" Margin="8,10" TextWrapping="Wrap">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -113,7 +96,24 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </StackPanel>
-            </Border>
+            </Border><Expander Header="活动与直播间 · 管理" IsExpanded="True" Margin="0,0,0,16"><Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,16" CornerRadius="14">
+                <StackPanel>
+                    <TextBlock Text="活动与直播间" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Text="自动发现活动；也可手动指定 URL 或房间号。" Style="{StaticResource FieldHint}" />
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="BilibiliRoomInput" Style="{StaticResource HintTextBox}" Tag="直播间 URL 或 Room ID" Text="{Binding BilibiliDetails.RoomReference, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" x:FieldModifier="internal" />
+                        <Button Grid.Column="1" Content="添加" Style="{StaticResource SecondaryButton}" Padding="11,0" Margin="6,0,0,0" Command="{Binding BilibiliDetails.AddRoomCommand}" />
+                    </Grid>
+                    <TextBox x:Name="BilibiliRoomNameInput" Style="{StaticResource HintTextBox}" Tag="直播间名称（可选）" Margin="0,6,0,0" Text="{Binding BilibiliDetails.RoomName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" x:FieldModifier="internal" />
+                    <ListBox x:Name="BilibiliRoomList" ItemsSource="{Binding BilibiliDetails.Rooms}" ItemTemplate="{StaticResource BilibiliRoomRowTemplate}" MinHeight="58" MaxHeight="170" Margin="0,8,0,0" x:FieldModifier="internal" />
+                    <TextBlock Text="{Binding BilibiliDetails.Activities.Count, StringFormat=已发现活动：{0} 个}" Foreground="{DynamicResource Text.Secondary}" Margin="0,8,0,0" />
+                    <ListBox x:Name="BilibiliActivityList" ItemsSource="{Binding BilibiliDetails.Activities}" ItemTemplate="{StaticResource BilibiliActivityRowTemplate}" MinHeight="42" MaxHeight="120" Margin="0,4,0,0" x:FieldModifier="internal" />
+                </StackPanel>
+            </Border></Expander>
         </StackPanel>
         <StackPanel Tag="workspace:settings">
             <Border x:Name="BilibiliSettingsCard" Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,10,0,0" CornerRadius="14" x:FieldModifier="internal">

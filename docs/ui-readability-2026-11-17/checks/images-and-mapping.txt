@@ -1,0 +1,55 @@
+PASS running Worker plus completed Drop and no channel never claims current watching
+PASS eligible unfinished campaign ranks ahead of historical completed rewards
+PASS every Benefit retains one shared official 18/60 Drop; estimates are never added
+PASS NoAutoClaim mining prerequisites stay distinct from claim unlock requirements
+PASS accepted flag without a recent acceptance time does not prove watching
+PASS actual channel and recent accepted playlist request establish watching evidence
+PASS channel changes invalidate accepted requests for the previous channel
+PASS old accepted requests expire without being treated as present watching
+PASS original priority-only campaign filter is retained
+PASS empty filtered results do not imply an empty account inventory
+PASS completed campaign filter uses official Drop completion
+PASS watch completion without canClaim is not labeled claimable
+PASS game filter cannot mix another game's rewards
+PASS inventory refresh updates existing card objects without rebuilding every image control
+PASS network failure preserves the last confirmed official minutes with stale labeling
+PASS stopping clears current watching even if a prior selected Drop remains cached
+PASS crashed Worker is distinguishable from a manual stop
+PASS unfinished Bilibili tasks do not imply a running viewing Worker
+PASS running Bilibili Worker with zero active Sessions is not watching
+PASS active Bilibili Session evidence is independent of task percent
+PASS manual Bilibili stop suppresses stale active Session records
+PASS readable reward grid adapts to actual content width with three/four/five/seven columns
+PASS 100 percent never implies claimed or claimable
+PASS completion, claim availability and receipt have independent visual states
+PASS unknown prerequisite evidence never appears satisfied
+PASS SOOP renders every official stage without accepting another UID's progress
+PASS real evidence excludes account/authentication fields and image signature parameters while retaining source hashes and IDs
+PASS current drop joins by Core drop ID, not inventory position
+PASS all Benefit IDs/names/types/images survive the projection
+PASS official 18/60 remains 30%; local +2 and supplied percent cannot inflate it
+PASS claim prerequisites and existing NoAutoClaim mining evidence remain separate
+PASS changing current reward cannot retain the previous benefit images
+PASS SOOP incremental stop keeps UID-specific official progress separate
+PASS mismatched SOOP progress UID is never displayed on another account
+PASS image routing respects disabled per-platform proxy scopes
+PASS image routing reuses the existing enabled Twitch scope without enabling Bilibili
+PASS empty image URL gives an explicit placeholder without a network request
+PASS private/local image targets are rejected
+PASS valid async image is frozen and reused from cache
+PASS thumbnail decoding reuses official disk bytes without downloading again or replacing the detail-size bitmap
+PASS concurrent controls load the same URL only once
+PASS upstream seven-day cache expiry fetches the image again
+PASS corrupt cached bytes are replaced by a valid fetch
+PASS invalid image bytes use a bounded failure fallback without retry storms
+PASS image timeout produces a fallback
+PASS caller cancellation terminates an in-flight image request
+PASS cache filenames contain hashes, never signed URL parameters
+PASS disk cache obeys its configured size limit
+PASS actual WPF fast image switch displays the new reward, never a late prior image
+PASS actual WPF unload cancels pending image loads
+PASS offscreen reward controls do not download images before entering the viewport
+PASS scrolling into view loads the official thumbnail asynchronously once
+PASS actual WPF gallery realizes every Benefit, including the third item
+PASS actual checked WPF switch fits inside its 48 DIP setting editor without clipping
+NOT TESTED real account images in this isolated component suite; independently collected official account evidence is recorded in docs/ui-redesign-v2/real-twitch-e2e.md.

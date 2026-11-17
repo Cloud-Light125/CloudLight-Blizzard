@@ -30,6 +30,7 @@
                 </StackPanel>
             </Border>
         </StackPanel>
+        <StackPanel Tag="workspace:queue"><TextBlock Text="奖励队列" Style="{DynamicResource VisualHeading}"/><TextBlock Text="当前任务、可参与阶段与待领取奖励 · 官方进度按 Drop 记录" Style="{DynamicResource VisualCaption}" Margin="0,0,0,12"/><ctrl:CampaignInventoryView ItemsSource="{Binding TwitchInventory.QueueGroups}"/></StackPanel>
         <StackPanel Tag="workspace:activities">
             <WrapPanel Margin="0,0,0,8">
                 <TextBlock Text="奖励背包" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,18,6"/>

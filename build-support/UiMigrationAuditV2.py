@@ -57,6 +57,8 @@ for row in baseline:
   'Bilibili.Status':('Views/Drops/Bilibili/BilibiliOverview.xaml','BilibiliDetails.WatchStateText'),
   'TwitchCurrentProgressText':('Controls/RewardHero.xaml','Binding ProgressText'),
   'TwitchCurrentProgress':('Controls/RewardHero.xaml','Binding Percent'),
+  'OfficialText':('Views/Drops/Shared/DropsResources.xaml','Subtitle="官方任务接口"'),
+  'Percent':('Controls/RewardCard.xaml','Binding Percent,Mode=OneWay'),
   'TwitchConnectionStage':('Views/Drops/Twitch/TwitchOverview.xaml','TwitchLoginVisibility'),
   'BilibiliDetails.LoginStateText':('Views/Drops/Bilibili/BilibiliOverview.xaml','BilibiliDetails.AccountStatus'),
   'Bilibili.ConnectionStateText':('Views/Drops/Bilibili/BilibiliOverview.xaml','BilibiliDetails.ProxyModeText'),

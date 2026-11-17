@@ -57,6 +57,7 @@
         <WrapPanel x:Name="WorkspaceNavigation" Margin="0,8,0,8" Grid.Row="2">
             <RadioButton Content="概览" Tag="overview" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
             <RadioButton Content="账号管理" Tag="accounts" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
+            <RadioButton Content="奖励队列" Tag="queue" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged"/>
             <RadioButton Content="活动与奖励" Tag="activities" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
             <RadioButton Content="观看配置" Tag="settings" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />
             <RadioButton Content="网络与维护" Tag="network" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />

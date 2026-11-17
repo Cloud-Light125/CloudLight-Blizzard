@@ -13,7 +13,7 @@ public sealed class RewardCardVisual : ObservableObject
     public BenefitVisual? Benefit { get; private set; }
     public string Title => Benefit?.Name ?? Drop.Title;
     public string ImageUrl => Benefit?.ImageUrl ?? Drop.ImageUrl;
-    public string Stage => Drop.Benefits.Count > 1 ? $"{Drop.Benefits.Count} 件共享进度 · {Drop.Title}" : $"Drop · {Drop.Title}";
+    public string Stage => Drop.Brand!="Twitch" ? Drop.Brand=="Soop" ? "官方任务阶段" : "官方任务" : Drop.Benefits.Count > 1 ? $"{Drop.Benefits.Count} 件共享进度 · {Drop.Title}" : $"Drop · {Drop.Title}";
     public string Percent => Drop.Required > 0 ? Drop.PercentText : Drop.WatchCompleted || Drop.Claimed ? "已完成" : "—";
     internal RewardCardVisual(string key, RewardVisual drop, BenefitVisual? benefit) { Key=key; Drop=drop; Benefit=benefit; }
     internal void Update(RewardVisual drop, BenefitVisual? benefit)
@@ -78,6 +78,7 @@ public sealed class TwitchInventoryModel : ObservableObject
     private string _channel="尚未选择频道", _game="", _scope="available", _search="", _status="all", _sort="recommended", _gameFilter="全部游戏";
     public ObservableCollection<CampaignRewardGroup> Groups { get; } = [];
     public ObservableCollection<CampaignRewardGroup> OverviewGroups { get; } = [];
+    public ObservableCollection<CampaignRewardGroup> QueueGroups { get; } = [];
     public ObservableCollection<string> Games { get; } = ["全部游戏"];
     public string Search { get=>_search; set { if(_search==value)return;Set(ref _search,value);Filter(); } }
     public string StatusFilter { get=>_status; set { if(_status==value)return;Set(ref _status,value??"all");Filter(); } }
@@ -172,6 +173,7 @@ public sealed class TwitchInventoryModel : ObservableObject
         Reconcile(Groups,ordered.ToArray(),g=>g.Id);
         var overview=Rank(_all.Values).Take(4).ToArray();
         Reconcile(OverviewGroups,overview,g=>g.Id);
+        Reconcile(QueueGroups,Rank(_all.Values.Where(g=>g.Drops.Any(d=>!d.Claimed&&(d.CanClaim||!d.WatchCompleted&&!d.Expired&&!d.Upcoming&&d.Eligible!=false&&d.PreconditionsSatisfiedForMining!=false)))).ToArray(),g=>g.Id);
         foreach(var property in new[]{nameof(CountText),nameof(FilterSummary),nameof(EmptyText),nameof(EmptyVisibility),nameof(OverviewTitle)})Raise(property);
     }
     private IOrderedEnumerable<CampaignRewardGroup> Rank(IEnumerable<CampaignRewardGroup> groups)=>groups

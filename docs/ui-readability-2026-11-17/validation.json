@@ -1,0 +1,199 @@
+{
+  "baseCommit": "6084972626c0f081767da9d7887a51979c168c30",
+  "branch": "ui/fluent-v2",
+  "snapshot": {
+    "receivedAt": "2026-11-16T23:12:09.7591414+08:00",
+    "campaigns": 96,
+    "drops": 337,
+    "benefits": 358,
+    "replayedWithoutWorker": true
+  },
+  "python": {
+    "twitch": {
+      "passed": 84,
+      "subtests": 13
+    },
+    "soop": {
+      "passed": 43,
+      "subtests": 6
+    },
+    "bilibili": {
+      "passed": 21,
+      "subtests": 2
+    }
+  },
+  "imagesAndMapping": "PASS",
+  "layoutCases": 528,
+  "layoutBindings": 0,
+  "officialCards": "PASS",
+  "simulatedCards": "PASS",
+  "feature": "PASS",
+  "uiHost": {
+    "pass": 345,
+    "fail": [],
+    "blocked": [
+      "BLOCKED 真实剪贴板写入/读回：被 其它程序（已释放所有者窗口） 占用，HRESULT=0x800401D0；需解除占用后验收\r"
+    ]
+  },
+  "migration": {
+    "baseline": 763,
+    "mapped": 763,
+    "review": 0
+  },
+  "appDllSha256": "e63ece160af50acc80a4428850fdaedc5f0b4514514913a534c5eca5e8a463a5",
+  "configuration": {
+    "model": "gpt-6.1-sol",
+    "reasoning": "xhigh",
+    "sandbox": "danger-full-access",
+    "approval": "never",
+    "multiAgent": false,
+    "overridesGlobalDefaults": false
+  },
+  "metrics": [
+    {
+      "section": "overview",
+      "physical-request": "1366x768@125%",
+      "actual": "1092.8x614.4",
+      "content-width": "812.4",
+      "columns": "3",
+      "full-cards": "0",
+      "intersecting-cards": "3",
+      "realized-cards": "18",
+      "tile-width": "248.8",
+      "tile-height": "323.2",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "activities",
+      "physical-request": "1366x768@125%",
+      "actual": "1092.8x614.4",
+      "content-width": "812.4",
+      "columns": "3",
+      "full-cards": "0",
+      "intersecting-cards": "3",
+      "realized-cards": "18",
+      "tile-width": "248.8",
+      "tile-height": "323.2",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "overview",
+      "physical-request": "1600x900@125%",
+      "actual": "1280x720",
+      "content-width": "987.6",
+      "columns": "4",
+      "full-cards": "0",
+      "intersecting-cards": "4",
+      "realized-cards": "18",
+      "tile-width": "226.9",
+      "tile-height": "323.2",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "activities",
+      "physical-request": "1600x900@125%",
+      "actual": "1280x720",
+      "content-width": "987.6",
+      "columns": "4",
+      "full-cards": "4",
+      "intersecting-cards": "8",
+      "realized-cards": "18",
+      "tile-width": "226.9",
+      "tile-height": "323.2",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "overview",
+      "physical-request": "1920x1080@125%",
+      "actual": "1536x864",
+      "content-width": "1243.6",
+      "columns": "5",
+      "full-cards": "5",
+      "intersecting-cards": "10",
+      "realized-cards": "18",
+      "tile-width": "229.9",
+      "tile-height": "345.7",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "activities",
+      "physical-request": "1920x1080@125%",
+      "actual": "1536x864",
+      "content-width": "1243.6",
+      "columns": "5",
+      "full-cards": "5",
+      "intersecting-cards": "10",
+      "realized-cards": "18",
+      "tile-width": "229.9",
+      "tile-height": "345.7",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "overview",
+      "physical-request": "2560x1440@125%",
+      "actual": "2048x1152",
+      "content-width": "1755.6",
+      "columns": "7",
+      "full-cards": "11",
+      "intersecting-cards": "11",
+      "realized-cards": "23",
+      "tile-width": "233.4",
+      "tile-height": "345.7",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    },
+    {
+      "section": "activities",
+      "physical-request": "2560x1440@125%",
+      "actual": "2048x1152",
+      "content-width": "1755.6",
+      "columns": "7",
+      "full-cards": "11",
+      "intersecting-cards": "11",
+      "realized-cards": "23",
+      "tile-width": "233.4",
+      "tile-height": "345.7",
+      "image-height": "120",
+      "name-font": "15",
+      "official-font": "15",
+      "percent-font": "17",
+      "state-font": "13",
+      "button-min-height": "34"
+    }
+  ],
+  "overviewInventoryShortcut": "retained; final layout and official replay PASS"
+}

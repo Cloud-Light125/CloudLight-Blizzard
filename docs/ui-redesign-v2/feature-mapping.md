@@ -2,7 +2,7 @@
 
 基线为上一轮最终 763 条 UI 契约（早期 754）；不是 763 个独立业务功能。每行保留原事件、命令、输入或状态绑定来源。共享视觉投影和组件作用域变化单独注明。静态映射不等于真实账号操作已执行。
 
-静态映射 763 / 763；待核对 0。运行证据见 regression-results.md；本轮 Twitch 已完成真实 Session、图片和观看验收；Claim、游戏覆盖不执行。
+静态映射 763 / 763；待核对 0。运行证据见 regression-results.md；真实登录、Claim、游戏覆盖按用户要求不执行。
 
 | ID | 原页面 / 控件 | 原事件或绑定 | 新入口 / 证据 | 验证层级 |
 |---|---|---|---|---|
@@ -224,8 +224,8 @@
 | UI-0216 | Views/Pages/DropsPage.xaml / {Binding Number} | {"Text": "{Binding Number}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0217 | Views/Pages/DropsPage.xaml / {Binding Title} | {"Text": "{Binding Title}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0218 | Views/Pages/DropsPage.xaml / {Binding StateText} | {"Text": "{Binding StateText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
-| UI-0219 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding StateKind}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0220 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding StateKind}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0219 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding StateKind}"} | 原契约保留 · Controls/RewardCard.xaml | 静态；运行验证按测试记录 |
+| UI-0220 | Views/Pages/DropsPage.xaml / DataTrigger | {"Binding": "{Binding StateKind}"} | 原契约保留 · Controls/RewardCard.xaml | 静态；运行验证按测试记录 |
 | UI-0221 | Views/Pages/DropsPage.xaml / {Binding Description} | {"Text": "{Binding Description}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0222 | Views/Pages/DropsPage.xaml / {Binding ActionText} | {"Content": "{Binding ActionText}", "Tag": "{Binding ActionKey}", "Visibility": "{Binding ActionVisibility}", "Click": "OnQuickStartAction"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0223 | Views/Pages/DropsPage.xaml / {Binding Campaign} | {"Text": "{Binding Campaign}", "ToolTip": "{Binding Campaign}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
@@ -237,13 +237,13 @@
 | UI-0229 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Percent, Mode=OneWay}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0230 | Views/Pages/DropsPage.xaml / {Binding WatchPathText} | {"Text": "{Binding WatchPathText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0231 | Views/Pages/DropsPage.xaml / {Binding SyncState} | {"Text": "{Binding SyncState}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0232 | Views/Pages/DropsPage.xaml / {Binding RemainingText} | {"Text": "{Binding RemainingText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
+| UI-0232 | Views/Pages/DropsPage.xaml / {Binding RemainingText} | {"Text": "{Binding RemainingText}"} | 原契约保留 · Controls/RewardCard.xaml | 静态；运行验证按测试记录 |
 | UI-0233 | Views/Pages/DropsPage.xaml / {Binding ConfirmationText} | {"Text": "{Binding ConfirmationText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0234 | Views/Pages/DropsPage.xaml / {Binding Diagnostic} | {"Text": "{Binding Diagnostic}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0235 | Views/Pages/DropsPage.xaml / {Binding Name} | {"Text": "{Binding Name}", "ToolTip": "{Binding Name}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0236 | Views/Pages/DropsPage.xaml / {Binding OfficialText} | {"Text": "{Binding OfficialText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0236 | Views/Pages/DropsPage.xaml / {Binding OfficialText} | {"Text": "{Binding OfficialText}"} | 结构化可视化替代：OfficialText → Subtitle="官方任务接口" · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0237 | Views/Pages/DropsPage.xaml / {Binding Status} | {"Text": "{Binding Status}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
-| UI-0238 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Percent}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
+| UI-0238 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Percent}"} | 结构化可视化替代：Percent → Binding Percent,Mode=OneWay · Controls/RewardCard.xaml | 静态；运行验证按测试记录 |
 | UI-0239 | Views/Pages/DropsPage.xaml / {Binding ProgressText} | {"Text": "{Binding ProgressText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0240 | Views/Pages/DropsPage.xaml / {Binding ClaimButtonText} | {"Content": "{Binding ClaimButtonText}", "Visibility": "{Binding ClaimVisibility}", "IsEnabled": "{Binding CanClaim}", "Command": "{Binding DataContext.BilibiliDetails.ClaimRewardCommand, ElementName=DropsRoot}", "CommandParameter": "{Binding}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0241 | Views/Pages/DropsPage.xaml / CheckBox | {"IsChecked": "{Binding Enabled, Mode=TwoWay}", "Command": "{Binding DataContext.BilibiliDetails.SetRoomEnabledCommand, ElementName=DropsRoot}", "CommandParameter": "{Binding}"} | 同一绑定 / Command（共享模板或控件更名） · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |

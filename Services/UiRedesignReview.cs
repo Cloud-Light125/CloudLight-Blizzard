@@ -81,7 +81,7 @@ internal sealed class UiRedesignReview
         if(File.Exists(capturedSnapshot))
         {
             using var captured=JsonDocument.Parse(File.ReadAllText(capturedSnapshot));
-            var state=captured.RootElement.TryGetProperty("result",out var result)?result:captured.RootElement;
+            var state=captured.RootElement.TryGetProperty("result",out var result)?result:captured.RootElement.TryGetProperty("state",out var official)?official:captured.RootElement;
             // Opt-in replay only: keep visual data, never load authentication or obsolete Host generations.
             var safeNames=new[]{"coreAvailable","running","authState","status","accounts","campaigns","inventory","currentDrop","currentChannel","lastInventorySyncAt","inventorySource","watchRequests"};
             _reviewTwitchSnapshot=JsonSerializer.SerializeToElement(state.EnumerateObject().Where(p=>safeNames.Contains(p.Name)).ToDictionary(p=>p.Name,p=>p.Value.Clone()));
@@ -92,7 +92,7 @@ internal sealed class UiRedesignReview
         var paths = new BattleNetPaths(Path.Combine(_output, "isolated-battle-local"), Path.Combine(_output, "isolated-battle-roaming")) { ClientExe = null };
         _window = new MainWindow(startHidden: true, settings: new AppSettings { LastMainSection = "overview", CloseToTray = false }, paths: paths, isolatedReview: true);
         Application.Current.MainWindow = _window;
-        _window.Title = "CloudLight Blizzard · 隔离界面验收（模拟数据）";
+        _window.Title = _reviewTwitchSnapshot.ValueKind==JsonValueKind.Object ? "CloudLight Blizzard · 官方快照回放（隔离验收）" : "CloudLight Blizzard · 隔离界面验收（模拟数据）";
         _main = Field<MainViewModel>(_window, "_vm");
         _defaultRegionGuide = _main.RegionGuide;
         _page = Field<DropsPage>(_window, "_dropsPage");
@@ -127,7 +127,7 @@ internal sealed class UiRedesignReview
         if(File.Exists(Path.Combine(_output,"density-test.flag")))
         {
             banner.Visibility=Visibility.Collapsed;
-            var watermark=new Border{Background=(Brush)_window.FindResource("AccSoft"),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(6),IsHitTestVisible=false,Child=new TextBlock{Text="SIMULATED · 隔离模拟数据",FontSize=12,FontWeight=FontWeights.SemiBold}};
+            var watermark=new Border{Background=(Brush)_window.FindResource("AccSoft"),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(6),IsHitTestVisible=false,Child=new TextBlock{Text=_reviewTwitchSnapshot.ValueKind==JsonValueKind.Object?"TWITCH 官方快照回放 · 其他平台模拟":"SIMULATED · 隔离模拟数据",FontSize=12,FontWeight=FontWeights.SemiBold}};
             Grid.SetRowSpan(watermark,2);Panel.SetZIndex(watermark,100);shell.Children.Add(watermark);
         }
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
@@ -240,19 +240,19 @@ internal sealed class UiRedesignReview
     {
         var state=original.EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.Clone());
         var campaigns=new List<object>();var inventory=new List<object>();
-        for(var campaignIndex=0;campaignIndex<6;campaignIndex++)
+        for(var campaignIndex=0;campaignIndex<8;campaignIndex++)
         {
             var campaignId=campaignIndex==0?"review-campaign":"density-campaign-"+campaignIndex;
             var rewards=new List<object>();
-            for(var index=0;index<(campaignIndex==0?10:6);index++)
+            for(var index=0;index<(campaignIndex==0?10:campaignIndex is 2 or 3 or 4?campaignIndex-1:6);index++)
             {
                 var id=campaignIndex==0&&index==0?"reward1":$"density-drop-{campaignIndex}-{index}";
                 var completed=index is 1 or 2;var required=60*(index+1);var current=completed?required:index==0?18:0;
-                var benefits=Enumerable.Range(0,index==0?2:1).Select(b=>new{id=$"density-benefit-{campaignIndex}-{index}-{b}",name=index==5?"模拟长名称物品 · A long official-style reward name for wrapping":"模拟物品 "+(index+1)+(b==0?" A":" B"),type="DIRECT_ENTITLEMENT",imageUrl=b==0?"review-fixture://layout/benefit-a":"review-fixture://layout/benefit-b"}).ToArray();
-                var reward=new{id,name="模拟阶段 "+(index+1),campaignId,campaign="模拟活动 "+(campaignIndex+1),game="布局模拟游戏 "+(campaignIndex+1),benefits,gameImageUrl=_reviewGameImage,requiredMinutes=required,currentMinutes=current,completed,claimed=index==2,canClaim=index==1,eligible=index!=4,preconditionDropIds=index>2?new[]{"density-prior"}:Array.Empty<string>(),preconditionsMet=index<3,preconditionsSatisfiedForMining=index<3};
+                var benefits=Enumerable.Range(0,index==0&&campaignIndex is 0 or 1?2:1).Select(b=>new{id=$"density-benefit-{campaignIndex}-{index}-{b}",name=index==5?"模拟长名称物品 · A long official-style reward name for wrapping":"模拟物品 "+(index+1)+(b==0?" A":" B"),type="DIRECT_ENTITLEMENT",imageUrl=b==0?"review-fixture://layout/benefit-a":"review-fixture://layout/benefit-b"}).ToArray();
+                var reward=new{id,name="模拟阶段 "+(index+1),campaignId,campaign="模拟活动 "+(campaignIndex+1),game="布局模拟游戏 "+(campaignIndex+1),benefits,gameImageUrl=_reviewGameImage,requiredMinutes=required,currentMinutes=current,completed,claimed=index==2,canClaim=index==1,eligible=index!=4,upcoming=campaignIndex==6,expired=campaignIndex==7,preconditionDropIds=index>2?new[]{"density-prior"}:Array.Empty<string>(),preconditionsMet=index<3,preconditionsSatisfiedForMining=index<3};
                 rewards.Add(reward);inventory.Add(reward);
             }
-            campaigns.Add(new{id=campaignId,name="模拟活动 "+(campaignIndex+1)+" · 奖励背包密度验收",game="布局模拟游戏 "+(campaignIndex+1),gameImageUrl=_reviewGameImage,available=true,priority=true,eligible=true,active=true,endsAt=DateTimeOffset.UtcNow.AddDays(campaignIndex+1).ToString("O"),completedDrops=2,totalDrops=rewards.Count,remainingMinutes=42,progress=.3,drops=rewards});
+            campaigns.Add(new{id=campaignId,name="模拟活动 "+(campaignIndex+1)+" · 奖励背包密度验收",game="布局模拟游戏 "+(campaignIndex+1),gameImageUrl=_reviewGameImage,available=campaignIndex<6,priority=true,eligible=true,active=campaignIndex<6,upcoming=campaignIndex==6,expired=campaignIndex==7,endsAt=DateTimeOffset.UtcNow.AddDays(campaignIndex==7?-1:campaignIndex+1).ToString("O"),completedDrops=2,totalDrops=rewards.Count,remainingMinutes=42,progress=.3,drops=rewards});
         }
         state["campaigns"]=Json(campaigns);state["inventory"]=Json(inventory);
         var selected=Json(inventory[0]).EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.Clone());selected["estimatedExtraMinutes"]=Json(2);state["currentDrop"]=Json(selected);
@@ -267,22 +267,54 @@ internal sealed class UiRedesignReview
             foreach(var (width,height) in new[]{(1366,768),(1600,900),(1920,1080),(2560,1440)})
             foreach(var section in new[]{"overview","activities"})
             {
+                File.AppendAllText(Path.Combine(_output,"density-progress.txt"),$"begin {width} {section}\n");
                 _scenarios.SelectedIndex=8;_page.SelectPlatform(DropsPlatform.Twitch);_page.ShowWorkspace(section);
+                File.AppendAllText(Path.Combine(_output,"density-progress.txt"),"workspace selected\n");
                 _drops.SetTwitchCampaignScope("all");_window.Width=width/1.25;_window.Height=height/1.25;
+                File.AppendAllText(Path.Combine(_output,"density-progress.txt"),"scope set\n");
                 ((ComboBox)_page.FindName("TwitchCampaignScopePicker")).SelectedIndex=2;
                 _window.UpdateLayout();await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(450);_window.UpdateLayout();
                 CheckVisibleBounds(8,width,height,1.25);
                 var tiles=Descendants<Border>(_page).Where(b=>b.IsVisible&&b.Tag as string=="RewardTile").ToArray();
                 var viewport=Descendants<Controls.CampaignInventoryView>(_page).Single(v=>v.IsVisible);
-                var clip=viewport.TransformToAncestor(_window).TransformBounds(new Rect(0,0,viewport.ActualWidth,viewport.ActualHeight));
+                var outer=(ScrollViewer)_page.FindName("DropsScrollViewer");
+                var outerClip=outer.TransformToAncestor(_window).TransformBounds(new Rect(0,0,outer.ActualWidth,outer.ActualHeight));
+                var clip=Rect.Intersect(outerClip,viewport.TransformToAncestor(_window).TransformBounds(new Rect(0,0,viewport.ActualWidth,viewport.ActualHeight)));
                 var bounds=tiles.Select(tile=>tile.TransformToAncestor(_window).TransformBounds(new Rect(0,0,tile.ActualWidth,tile.ActualHeight))).ToArray();
                 var visible=bounds.Where(b=>b.IntersectsWith(clip)).ToArray();var full=visible.Count(b=>b.Top>=clip.Top-1&&b.Bottom<=clip.Bottom+1);
                 var columns=visible.GroupBy(b=>Math.Round(b.Top)).OrderBy(g=>g.Key).FirstOrDefault()?.Count()??0;
-                _checks.Add($"density {section} physical-request={width}x{height}@125% actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP columns={columns} full-cards={full} intersecting-cards={visible.Length} realized-cards={tiles.Length}");
-                if(full<columns)_checks.Add($"FAIL first reward row is not fully visible at {width}x{height} {section}");
+                var cards=Descendants<Controls.RewardCard>(viewport).Where(c=>c.IsVisible&&c.ActualWidth>0).ToArray();
+                var scrollbars=Descendants<ScrollViewer>(viewport).Where(s=>s.IsVisible).ToArray();
+                if(cards.Any(c=>c.ActualWidth<219))_checks.Add("FAIL card compressed below 220 DIP");
+                if(scrollbars.Any(s=>s.ScrollableWidth>1))_checks.Add("FAIL horizontal reward scrolling");
+                foreach(var card in cards)
+                {
+                    if(Descendants<Button>(card).Any(b=>b.IsVisible&&b.ActualHeight<33))_checks.Add("FAIL reward action below 34 DIP");
+                    if(Descendants<ProgressBar>(card).Any(p=>p.IsVisible&&p.ActualHeight<7.9))_checks.Add("FAIL progress bar below 8 DIP");
+                    var name=Descendants<TextBlock>(card).FirstOrDefault(t=>t.FontSize==15);
+                    if(name is null||name.MaxHeight!=40||name.ToolTip is null||name.TextTrimming!=TextTrimming.CharacterEllipsis)_checks.Add("FAIL reward name must support two lines, ellipsis and full tooltip");
+                    foreach(var text in Descendants<TextBlock>(card).Where(t=>t.IsVisible&&t.ActualHeight>0))
+                    {
+                        var textBounds=text.TransformToAncestor(card).TransformBounds(new Rect(0,0,text.ActualWidth,text.ActualHeight));
+                        if(textBounds.Bottom>card.ActualHeight+1||textBounds.Right>card.ActualWidth+1)_checks.Add("FAIL text outside reward card");
+                    }
+                }
+                _checks.Add($"PASS readable controls {section} {width}: cards={cards.Length}, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8");
+                _checks.Add($"density {section} physical-request={width}x{height}@125% actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP content-width={viewport.ActualWidth:0.#} columns={columns} full-cards={full} intersecting-cards={visible.Length} realized-cards={tiles.Length} tile-width={tiles.FirstOrDefault()?.ActualWidth:0.#} tile-height={tiles.FirstOrDefault()?.ActualHeight:0.#} image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34");
                 for(var a=0;a<bounds.Length;a++)for(var b=a+1;b<bounds.Length;b++){var overlap=Rect.Intersect(bounds[a],bounds[b]);if(!overlap.IsEmpty&&overlap.Width>1&&overlap.Height>1)_checks.Add("FAIL overlapping reward tiles");}
                 Capture(Path.Combine(output,$"{section}-{width}x{height}-125.png"));
+                if(full<columns)
+                {
+                    outer.ScrollToVerticalOffset(viewport.TranslatePoint(new Point(),outer).Y+outer.VerticalOffset);
+                    await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(180);
+                    var readingClip=Rect.Intersect(outerClip,viewport.TransformToAncestor(_window).TransformBounds(new Rect(0,0,viewport.ActualWidth,viewport.ActualHeight)));
+                    var readingFull=tiles.Select(tile=>tile.TransformToAncestor(_window).TransformBounds(new Rect(0,0,tile.ActualWidth,tile.ActualHeight))).Count(b=>b.Top>=readingClip.Top-1&&b.Bottom<=readingClip.Bottom+1);
+                    _checks.Add($"reading viewport {width}x{height} {section}: full-cards={readingFull}; account/filter headers scroll away; initial full-cards={full}");
+                    if(readingFull<columns)_checks.Add($"FAIL reward row cannot be read completely after scrolling at {width}x{height} {section}");
+                    Capture(Path.Combine(output,$"{section}-{width}x{height}-reading.png"));
+                }
             }
+            await CaptureCardCoverageAsync(output);
             _window.Width=1280;_window.Height=820;_scenarios.SelectedIndex=8;_page.ShowWorkspace("overview");
             ThemeManager.Apply(true);await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(350);Capture(Path.Combine(output,"overview-dark.png"));
             _page.ShowWorkspace("activities");await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(350);Capture(Path.Combine(output,"activities-dark.png"));ThemeManager.Apply(false);
@@ -297,6 +329,53 @@ internal sealed class UiRedesignReview
         }
         catch(Exception ex){File.WriteAllText(Path.Combine(_output,"density-failure.txt"),ex.ToString());Environment.ExitCode=1;}
         finally{_window.Close();}
+    }
+    private async Task CaptureCardCoverageAsync(string output)
+    {
+        foreach(var (scenario,name,section) in new[]{(0,"dashboard","overview"),(41,"soop-tasks","overview"),(42,"bilibili-tasks","activities"),(8,"twitch-queue","queue")})
+        foreach(var (width,height) in new[]{(1366,768),(1600,900),(1920,1080),(2560,1440)})
+        foreach(var dark in new[]{false,true})
+        {
+            _scenarios.SelectedIndex=scenario;Apply(scenario);
+            if(scenario!=0)_page.ShowWorkspace(section);
+            _window.Width=width/1.25;_window.Height=height/1.25;ThemeManager.Apply(dark);
+            _window.UpdateLayout();await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(160);
+            CheckVisibleBounds(scenario,width,height,1.25);
+            Capture(Path.Combine(output,$"{name}-{width}x{height}-{(dark?"dark":"light")}.png"));
+            if(scenario is 41 or 42)
+            {
+                var outer=(ScrollViewer)_page.FindName("DropsScrollViewer");
+                var first=Descendants<Controls.RewardCard>(_page).FirstOrDefault(c=>c.IsVisible);
+                if(first is not null)
+                {
+                    outer.ScrollToVerticalOffset(first.TranslatePoint(new Point(),outer).Y+outer.VerticalOffset-12);
+                    await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(180);
+                    Capture(Path.Combine(output,$"{name}-{width}x{height}-{(dark?"dark":"light")}-reading.png"));
+                }
+            }
+        }
+        ThemeManager.Apply(false);_scenarios.SelectedIndex=8;Apply(8);_page.ShowWorkspace("activities");
+        _window.Width=1536;_window.Height=864;_drops.SetTwitchCampaignScope("all");
+        foreach(var kind in new[]{"one","two","three","many","multi-benefit","ineligible","upcoming","expired"})
+        {
+            _drops.TwitchInventory.Search="";
+            var groups=_drops.TwitchInventory.Groups;
+            var group=groups.FirstOrDefault(g=>kind switch{"one"=>g.Cards.Count==1,"two"=>g.Cards.Count==2,"three"=>g.Cards.Count==3,"many"=>g.Cards.Count>5,"multi-benefit"=>g.Drops.Any(d=>d.Benefits.Count>1),"ineligible"=>g.Drops.Any(d=>d.Eligible==false),"upcoming"=>g.Upcoming,"expired"=>g.Expired,_=>false});
+            if(group is null){_checks.Add("NOT PRESENT in supplied data: "+kind);continue;}
+            _drops.TwitchInventory.Search=group.Title;
+            await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(250);
+            Capture(Path.Combine(output,"campaign-"+kind+".png"));
+            _checks.Add($"PASS campaign coverage {kind}: {group.Drops.Count} Drop / {group.Cards.Count} Benefit cards; official minutes counted per Drop");
+        }
+        _drops.TwitchInventory.Search="";
+        foreach(var state in new[]{"unfinished","completed","claimable","claimed"})
+        {
+            _drops.TwitchInventory.StatusFilter=state;
+            await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);await Task.Delay(180);
+            Capture(Path.Combine(output,"state-"+state+".png"));
+            _checks.Add($"state coverage {state}: {_drops.TwitchInventory.Groups.Count} campaign groups");
+        }
+        _drops.TwitchInventory.StatusFilter="all";
     }
     private async Task RunMatrixAsync()
     {

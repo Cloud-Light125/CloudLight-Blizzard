@@ -34,6 +34,7 @@ public sealed class BilibiliActivityViewModel
 
 public sealed class BilibiliTaskViewModel : ObservableObject
 {
+    public Visuals.RewardVisual Visual => new(){Id=Id,Title=Name,Brand="Bilibili",Current=Current,Required=Limit,Unit="",Completed=Completed,Claimed=Claimed,CanClaim=Claimable};
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public double Current { get; init; }

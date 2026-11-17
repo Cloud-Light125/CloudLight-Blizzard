@@ -91,35 +91,7 @@
             </Border>
         </Grid>
     </DataTemplate>
-    <DataTemplate x:Key="TwitchDropRowTemplate">
-        <Grid Margin="6,8" behaviors:ResponsiveGrid.IsEnabled="True">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="150" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <ctrl:RewardArtwork DataContext="{Binding Visual}" IsCompact="True" Margin="0,0,14,0" />
-            <StackPanel VerticalAlignment="Center" Grid.Column="1">
-                <TextBlock Text="{Binding Primary}" ToolTip="{Binding Primary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" ToolTip="{Binding Secondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
-                <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" Height="5" Style="{StaticResource ThemeProgressBar}" Margin="0,10,0,4" />
-                <TextBlock Text="{Binding RewardProgressText}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" FontSize="13" />
-                <Expander Header="奖励与前置任务详情" Margin="0,10,0,0">
-                    <StackPanel DataContext="{Binding Visual}">
-                        <ctrl:BenefitGallery ItemsSource="{Binding Benefits}" Margin="0,12,0,0" />
-                        <TextBlock Text="{Binding QualificationText}" FontSize="13" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding SyncText}" FontSize="13" Margin="0,8,0,0" Foreground="{DynamicResource Text.Secondary}" />
-                    </StackPanel>
-                </Expander>
-            </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                <Border Style="{StaticResource Badge}" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
-                </Border>
-                <Button Content="{Binding TwitchClaimButtonText}" Visibility="{Binding TwitchClaimVisibility}" IsEnabled="{Binding CanStartTwitchClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="10,0,0,0" Click="OnClaimTwitchDrop" />
-            </StackPanel>
-        </Grid>
-    </DataTemplate>
+    <DataTemplate x:Key="TwitchDropRowTemplate"><StackPanel Margin="6,8"><ContentControl Content="{Binding Visual}" ContentTemplate="{DynamicResource VisualRewardRow}"/><Expander Header="奖励与前置任务详情" Margin="0,10,0,0"><StackPanel DataContext="{Binding Visual}"><TextBlock Text="{Binding QualificationText}" FontSize="14" TextWrapping="Wrap"/><TextBlock Text="{Binding PrerequisiteText}" FontSize="14" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock Text="{Binding SyncText}" FontSize="13" Margin="0,8,0,0" Foreground="{DynamicResource Text.Secondary}"/></StackPanel></Expander><Button Content="{Binding TwitchClaimButtonText}" Visibility="{Binding TwitchClaimVisibility}" IsEnabled="{Binding CanStartTwitchClaim}" Style="{StaticResource SecondaryButton}" MinHeight="36" Padding="12,0" HorizontalAlignment="Left" Margin="0,10,0,0" Click="OnClaimTwitchDrop"/></StackPanel></DataTemplate>
     <DataTemplate x:Key="TwitchCampaignRowTemplate">
         <StackPanel>
             <Grid>
@@ -259,40 +231,7 @@
             </StackPanel>
         </Grid>
     </DataTemplate>
-    <DataTemplate x:Key="BilibiliTaskRowTemplate">
-        <Border Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="8" Margin="3,4">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid behaviors:ResponsiveGrid.IsEnabled="True">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
-                        <TextBlock Text="{Binding OfficialText}" Foreground="{DynamicResource Text.Muted}" FontSize="13" Margin="0,3,0,0" />
-                    </StackPanel>
-                    <Border Grid.Column="1" Style="{StaticResource Badge}" Margin="12,0,0,0">
-                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" />
-                    </Border>
-                </Grid>
-                <Grid Grid.Row="1" Margin="0,7,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="6" Style="{StaticResource ThemeProgressBar}" />
-                        <TextBlock Text="{Binding ProgressText}" Foreground="{DynamicResource Text.Secondary}" FontSize="13" Margin="0,4,0,0" />
-                    </StackPanel>
-                    <Button Grid.Column="1" Content="{Binding ClaimButtonText}" Visibility="{Binding ClaimVisibility}" IsEnabled="{Binding CanClaim}" Style="{StaticResource SecondaryButton}" Padding="12,0" Margin="12,0,0,0" Command="{Binding DataContext.BilibiliDetails.ClaimRewardCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
-                </Grid>
-            </Grid>
-        </Border>
-    </DataTemplate>
+    <DataTemplate x:Key="BilibiliTaskRowTemplate"><StackPanel><ctrl:RewardCard Reward="{Binding Visual}" Title="{Binding Name}" Subtitle="官方任务接口"/><Button Content="{Binding ClaimButtonText}" Visibility="{Binding ClaimVisibility}" IsEnabled="{Binding CanClaim}" Style="{StaticResource SecondaryButton}" MinHeight="36" Padding="12,0" Margin="0,8,0,0" Command="{Binding DataContext.BilibiliDetails.ClaimRewardCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}"/></StackPanel></DataTemplate>
     <DataTemplate x:Key="BilibiliRoomRowTemplate">
         <Grid Margin="3,4">
             <Grid.ColumnDefinitions>

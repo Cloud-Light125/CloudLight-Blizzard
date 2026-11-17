@@ -1,0 +1,2 @@
+  CloudLight Blizzard -> D:\code\CloudLight Blizzard\CloudLight Blizzard\bin\Release\net8.0-windows10.0.18362.0\CloudLight Blizzard.dll
+  CloudLight Blizzard -> D:\code\CloudLight Blizzard\CloudLight Blizzard\test-output\readability-20261117\app\

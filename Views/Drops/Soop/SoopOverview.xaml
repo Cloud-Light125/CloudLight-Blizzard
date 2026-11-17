@@ -34,12 +34,12 @@
         <ItemsControl ItemsSource="{Binding SoopVisual.Accounts}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <UniformGrid Columns="2" />
+                    <ctrl:RewardTilePanel MinimumTileWidth="400" MaximumTileWidth="640" StretchSparseRows="True"/>
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border Style="{DynamicResource HeroCard}" Margin="0,0,16,16">
+                    <Border Style="{DynamicResource HeroCard}" Margin="0,0,0,0">
                         <StackPanel>
                             <DockPanel>
                                 <Border DockPanel.Dock="Right" Style="{DynamicResource Badge}">
@@ -51,20 +51,7 @@
                                     <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" Margin="0,5,0,0" />
                                 </StackPanel>
                             </DockPanel>
-                            <Grid Margin="0,20,0,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition />
-                                </Grid.ColumnDefinitions>
-                                <ctrl:VisualImage SourceUrl="{Binding Reward.ImageUrl}" Brand="Soop" Width="76" Height="80" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="{Binding Task}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,8" />
-                                    <TextBlock Text="{Binding Phase}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="{Binding ProgressText}" FontSize="18" Foreground="{DynamicResource Accent.Primary}" FontWeight="SemiBold" />
-                                    <ProgressBar Maximum="100" Value="{Binding Percent,Mode=OneWay}" Style="{DynamicResource ThemeProgressBar}" Height="8" Margin="0,8,0,0" />
-                                </StackPanel>
-                            </Grid>
+                            <StackPanel Margin="0,14,0,14"><TextBlock Text="{Binding Task}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,5"/><TextBlock Text="{Binding Phase}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/><ItemsControl ItemsSource="{Binding Rewards}" ItemTemplate="{DynamicResource VisualRewardRow}"/><TextBlock Text="{Binding EmptyTaskText}" FontSize="14" TextWrapping="Wrap"/></StackPanel>
                             <TextBlock Text="{Binding SyncText}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/>
                             <WrapPanel>
                                 <Button Content="启动账号" Visibility="{Binding StartVisibility}" ctrl:WorkspaceAction.Name="soop:start" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />
