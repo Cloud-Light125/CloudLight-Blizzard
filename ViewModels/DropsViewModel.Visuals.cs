@@ -12,7 +12,7 @@ public sealed partial class DropsViewModel
     {
         get
         {
-            if(_twitchInventory is null){_twitchInventory=new(Twitch);_twitchInventory.PropertyChanged+=(_,_)=>TwitchVisual.UpdateRuntimeSummary(_twitchInventory.WatchState);}
+            if(_twitchInventory is null){_twitchInventory=new(Twitch,TwitchPriorityGames);_twitchInventory.PropertyChanged+=(_,_)=>TwitchVisual.UpdateRuntimeSummary(_twitchInventory.WatchState);TwitchVisual.UpdateRuntimeSummary(_twitchInventory.WatchState);}
             return _twitchInventory;
         }
     }

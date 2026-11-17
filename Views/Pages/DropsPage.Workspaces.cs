@@ -125,6 +125,7 @@ public partial class DropsPage
     private void OnVisualAction(object? sender, WorkspaceActionEventArgs e)
     {
         e.Handled = true;
+        if(e.Action=="twitch:overview-all"){if(_vm is not null)_vm.TwitchInventory.OverviewPriorityOnly=false;return;}
         if(e.Action=="twitch:channels")
         {
             ShowWorkspace("activities");TwitchWorkspace.TwitchChannelsExpander.IsExpanded=true;
@@ -133,7 +134,7 @@ public partial class DropsPage
         if(e.Action=="twitch:campaign-details"&&e.Control is FrameworkElement{DataContext:CampaignRewardGroup group})
         {
             var inventory=new CampaignInventoryView{ItemsSource=new[]{group},Margin=new Thickness(16),Height=double.NaN,CampaignActionVisibility=Visibility.Collapsed};
-            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 活动详情 · "+group.Title,Width=Math.Min(Math.Clamp(80+group.Cards.Count*234,400,1180),SystemParameters.WorkArea.Width-40),SizeToContent=SizeToContent.Height,MaxHeight=Math.Min(740,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=inventory};
+            var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 活动详情 · "+group.Title,Width=Math.Min(Math.Clamp(80+group.Cards.Count*206,400,1180),SystemParameters.WorkArea.Width-40),SizeToContent=SizeToContent.Height,MaxHeight=Math.Min(740,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=inventory};
             dialog.SetResourceReference(BackgroundProperty,"App.Background");dialog.SetResourceReference(ForegroundProperty,"Text.Primary");ThemeManager.Attach(dialog);
             dialog.AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnVisualAction));dialog.ShowDialog();return;
         }

@@ -18,7 +18,7 @@ using CloudLightBlizzard.Views.Pages;
 namespace CloudLightBlizzard.Services;
 
 /// <summary>Opt-in, isolated presentation acceptance. Never loads user accounts or starts a worker.</summary>
-internal sealed class UiRedesignReview
+internal sealed partial class UiRedesignReview
 {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string id);
@@ -39,6 +39,7 @@ internal sealed class UiRedesignReview
         new{id="fixture-b",name="模拟徽章 B",type="BADGE",imageUrl="review-fixture://layout/benefit-b"},
         new{id="fixture-c",name="缺图回退 C",type="EMOTE",imageUrl=""}});
     private readonly JsonElement _reviewTwitchSnapshot;
+    private TextBlock? _evidenceWatermark;
     internal static readonly string[] Scenarios = [
         "01 总览", "02 Battle.net 账号管理", "03 区服切换", "04 战绩", "05 区服快照",
         "06 Twitch 未登录", "07 Twitch 设备授权", "08 Twitch 已登录", "09 Twitch 正在观看", "10 Twitch 完整设置",
@@ -83,8 +84,11 @@ internal sealed class UiRedesignReview
             using var captured=JsonDocument.Parse(File.ReadAllText(capturedSnapshot));
             var state=captured.RootElement.TryGetProperty("result",out var result)?result:captured.RootElement.TryGetProperty("state",out var official)?official:captured.RootElement;
             // Opt-in replay only: keep visual data, never load authentication or obsolete Host generations.
-            var safeNames=new[]{"coreAvailable","running","authState","status","accounts","campaigns","inventory","currentDrop","currentChannel","lastInventorySyncAt","inventorySource","watchRequests"};
-            _reviewTwitchSnapshot=JsonSerializer.SerializeToElement(state.EnumerateObject().Where(p=>safeNames.Contains(p.Name)).ToDictionary(p=>p.Name,p=>p.Value.Clone()));
+            var safeNames=new[]{"coreAvailable","authState","campaigns","inventory","currentDrop","currentChannel","lastInventorySyncAt","inventorySource","watchRequests"};
+            var fields=state.EnumerateObject().Where(p=>safeNames.Contains(p.Name)).ToDictionary(p=>p.Name,p=>p.Value.Clone());
+            fields["historicalReplay"]=Json(true);fields["running"]=Json(false);fields["authState"]=Json("logged_in");
+            fields["accounts"]=Json(new[]{new{userId="历史官方数据 · 隔离回放",loggedIn=true}});
+            _reviewTwitchSnapshot=Json(fields);
         }
         CreateSimulatedQr(Path.Combine(_output, "simulated-qr.png"));
         AppPaths.UseSelfTestRoot(Path.Combine(_output, "isolated-data"));
@@ -124,10 +128,11 @@ internal sealed class UiRedesignReview
         var theme = new Button { Content = "切换深浅色", Style = (Style)_window.FindResource("SecondaryButton"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(12, 0, 12, 0) };
         theme.Click += (_, _) => ThemeManager.Apply(!ThemeManager.IsDark);controls.Children.Add(theme);
         banner.Child = controls;shell.Children.Add(banner);Grid.SetRow(root, 1);shell.Children.Add(root);_window.Content = shell;
-        if(File.Exists(Path.Combine(_output,"density-test.flag")))
+        if(File.Exists(Path.Combine(_output,"density-test.flag"))||File.Exists(Path.Combine(_output,"priority-state-test.flag")))
         {
             banner.Visibility=Visibility.Collapsed;
-            var watermark=new Border{Background=(Brush)_window.FindResource("AccSoft"),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(6),IsHitTestVisible=false,Child=new TextBlock{Text=_reviewTwitchSnapshot.ValueKind==JsonValueKind.Object?"TWITCH 官方快照回放 · 其他平台模拟":"SIMULATED · 隔离模拟数据",FontSize=12,FontWeight=FontWeights.SemiBold}};
+            _evidenceWatermark=new TextBlock{Text=_reviewTwitchSnapshot.ValueKind==JsonValueKind.Object?"TWITCH 官方快照回放 · 其他平台模拟":"SIMULATED · 隔离模拟数据",FontSize=12,FontWeight=FontWeights.SemiBold};
+            var watermark=new Border{Background=(Brush)_window.FindResource("AccSoft"),Padding=new Thickness(6,2,6,2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(6),IsHitTestVisible=false,Child=_evidenceWatermark};
             Grid.SetRowSpan(watermark,2);Panel.SetZIndex(watermark,100);shell.Children.Add(watermark);
         }
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
@@ -138,7 +143,8 @@ internal sealed class UiRedesignReview
             _scenarios.SelectedIndex = Math.Clamp(initialScenario, 0, Scenarios.Length-1);
             if (_automated)
             {
-                if(File.Exists(Path.Combine(_output,"density-test.flag")))await RunDensityAsync();
+                if(File.Exists(Path.Combine(_output,"priority-state-test.flag")))await RunPriorityStateAsync();
+                else if(File.Exists(Path.Combine(_output,"density-test.flag")))await RunDensityAsync();
                 else await RunMatrixAsync();
             }
         };
@@ -285,12 +291,12 @@ internal sealed class UiRedesignReview
                 var columns=visible.GroupBy(b=>Math.Round(b.Top)).OrderBy(g=>g.Key).FirstOrDefault()?.Count()??0;
                 var cards=Descendants<Controls.RewardCard>(viewport).Where(c=>c.IsVisible&&c.ActualWidth>0).ToArray();
                 var scrollbars=Descendants<ScrollViewer>(viewport).Where(s=>s.IsVisible).ToArray();
-                if(cards.Any(c=>c.ActualWidth<219))_checks.Add("FAIL card compressed below 220 DIP");
+                if(cards.Any(c=>c.ActualWidth<189))_checks.Add("FAIL card compressed below 190 DIP");
                 if(scrollbars.Any(s=>s.ScrollableWidth>1))_checks.Add("FAIL horizontal reward scrolling");
                 foreach(var card in cards)
                 {
-                    if(Descendants<Button>(card).Any(b=>b.IsVisible&&b.ActualHeight<33))_checks.Add("FAIL reward action below 34 DIP");
-                    if(Descendants<ProgressBar>(card).Any(p=>p.IsVisible&&p.ActualHeight<7.9))_checks.Add("FAIL progress bar below 8 DIP");
+                    if(Descendants<Button>(card).Any(b=>b.IsVisible&&b.ActualHeight<31))_checks.Add("FAIL reward action below 32 DIP");
+                    if(Descendants<ProgressBar>(card).Any(p=>p.IsVisible&&p.ActualHeight<6.9))_checks.Add("FAIL progress bar below 7 DIP");
                     var name=Descendants<TextBlock>(card).FirstOrDefault(t=>t.FontSize==15);
                     if(name is null||name.MaxHeight!=40||name.ToolTip is null||name.TextTrimming!=TextTrimming.CharacterEllipsis)_checks.Add("FAIL reward name must support two lines, ellipsis and full tooltip");
                     foreach(var text in Descendants<TextBlock>(card).Where(t=>t.IsVisible&&t.ActualHeight>0))
@@ -299,8 +305,8 @@ internal sealed class UiRedesignReview
                         if(textBounds.Bottom>card.ActualHeight+1||textBounds.Right>card.ActualWidth+1)_checks.Add("FAIL text outside reward card");
                     }
                 }
-                _checks.Add($"PASS readable controls {section} {width}: cards={cards.Length}, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=34, bars>=8");
-                _checks.Add($"density {section} physical-request={width}x{height}@125% actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP content-width={viewport.ActualWidth:0.#} columns={columns} full-cards={full} intersecting-cards={visible.Length} realized-cards={tiles.Length} tile-width={tiles.FirstOrDefault()?.ActualWidth:0.#} tile-height={tiles.FirstOrDefault()?.ActualHeight:0.#} image-height=120 name-font=15 official-font=15 percent-font=17 state-font=13 button-min-height=34");
+                _checks.Add($"PASS readable controls {section} {width}: cards={cards.Length}, horizontal-scroll=0, names=two-lines-with-tooltip, buttons>=32, bars>=7");
+                _checks.Add($"density {section} physical-request={width}x{height}@125% actual={_window.ActualWidth:0.#}x{_window.ActualHeight:0.#} DIP content-width={viewport.ActualWidth:0.#} columns={columns} full-cards={full} intersecting-cards={visible.Length} realized-cards={tiles.Length} tile-width={tiles.FirstOrDefault()?.ActualWidth:0.#} tile-height={tiles.FirstOrDefault()?.ActualHeight:0.#} image-height=92 name-font=15 official-font=14 percent-font=16 state-font=13 button-min-height=32");
                 for(var a=0;a<bounds.Length;a++)for(var b=a+1;b<bounds.Length;b++){var overlap=Rect.Intersect(bounds[a],bounds[b]);if(!overlap.IsEmpty&&overlap.Width>1&&overlap.Height>1)_checks.Add("FAIL overlapping reward tiles");}
                 Capture(Path.Combine(output,$"{section}-{width}x{height}-125.png"));
                 if(full<columns)
@@ -517,7 +523,8 @@ internal sealed class UiRedesignReview
     private void Capture(string path)
     {
         var visual = (FrameworkElement)_window.Content;
-        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth), (int)Math.Ceiling(visual.ActualHeight),96,96,PixelFormats.Pbgra32);
+        var dpi=VisualTreeHelper.GetDpi(visual);
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth*dpi.DpiScaleX), (int)Math.Ceiling(visual.ActualHeight*dpi.DpiScaleY),dpi.PixelsPerInchX,dpi.PixelsPerInchY,PixelFormats.Pbgra32);
         bitmap.Render(visual);var png = new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var stream = File.Create(path);png.Save(stream);
     }
     private sealed class BindingListener : TraceListener

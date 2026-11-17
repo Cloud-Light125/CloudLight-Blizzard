@@ -168,6 +168,7 @@ public partial class DropsPage : UserControl
         _logTail = new PlatformLogTailService(main.DropsLogSession);
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
+        _vm.TwitchInventory.ConfigureDisplay(main.Settings);
         _vm.TwitchPriorityGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
         _vm.TwitchExcludedGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
         _vm.BilibiliDetails.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(BilibiliDropsViewModel.SettingsDirty)) UpdateDraftHint(); };

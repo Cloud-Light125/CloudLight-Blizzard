@@ -16,6 +16,7 @@ public sealed record RewardVisual
     public string Campaign { get; init; } = "";
     public string CampaignId { get; init; } = "";
     public string Game { get; init; } = "";
+    public string GameId { get; init; } = "";
     public string ImageUrl { get; init; } = "";
     public IReadOnlyList<BenefitVisual> Benefits { get; init; } = [];
     public IReadOnlyList<string> PreconditionDropIds { get; init; } = [];
@@ -42,9 +43,11 @@ public sealed record RewardVisual
     public string ProgressText => Required > 0 ? $"{Current:0.#} / {Required:0.#} {Unit}" : "等待官方进度";
     public string RemainingText => Required > 0 ? $"还需 {Math.Max(0, Required - Current):0.#} {Unit}" : "所需进度尚未确认";
     public string EstimateText => Estimate > 0 ? $"本地预计新增约 {Estimate:0.#} 分钟 · 等待官方确认" : "官方进度与本地观察时长独立记录";
-    public string StateText => Claimed ? "已领取" : CanClaim ? "已完成 · 待领取" : WatchCompleted ? "已完成 · 领取未开放" : Expired ? "活动已结束" : Upcoming ? "活动尚未开始" : Eligible == false ? "当前不符合资格" : PreconditionsSatisfiedForMining == false ? "尚未满足前置阶段" : IsCurrent ? "当前任务 · 以官方进度为准" : Current > 0 ? "未完成" : "尚未开始";
-    public string StateKind => Claimed ? "claimed" : CanClaim ? "claimable" : WatchCompleted ? "completed" : Expired ? "expired" : Upcoming ? "upcoming" : Eligible==false ? "ineligible" : PreconditionsSatisfiedForMining==false ? "locked" : Current>0 ? "progress" : "pending";
-    public string StateBadge => StateKind switch {"claimed"=>"✓ 已领取","claimable"=>"● 待领取","completed"=>"✓ 已完成","expired"=>"已结束","upcoming"=>"未开放","ineligible"=>"资格限制","locked"=>"前置阶段","progress"=>"进行中",_=>"未开始"};
+    public string StateText => Claimed ? "已领取" : CanClaim ? "已完成 · 待领取" : WatchCompleted ? "已完成 · 领取未开放" : Current > 0 ? "部分完成" : "尚未开始";
+    public string StateKind => Claimed ? "claimed" : CanClaim ? "claimable" : WatchCompleted ? "completed" : Current>0 ? "progress" : "pending";
+    public string StateBadge => StateKind switch {"claimed"=>"✓ 已领取","claimable"=>"● 待领取","completed"=>"✓ 已完成","progress"=>"部分完成",_=>"未开始"};
+    public string EligibilityText => Expired ? "活动已结束" : Upcoming ? "活动未开始" : Eligible==false ? "当前不符合资格" : PreconditionsSatisfiedForMining==false ? "前置阶段未满足" : Eligible==true ? "可参与" : "资格状态待确认";
+    public Visibility EligibilityVisibility => Expired||Upcoming||Eligible==false||PreconditionsSatisfiedForMining==false ? Visibility.Visible : Visibility.Collapsed;
     public string OfficialProgressText => Required>0 ? $"{(Brand=="Soop"?"官方 viewTime":"官方进度")}：{ProgressText}" : "等待官方进度确认";
     public string CompletionText => Claimed ? "✓ 已领取" : "100% 已完成";
     public Visibility IncompleteVisibility => WatchCompleted||Claimed||CanClaim ? Visibility.Collapsed : Visibility.Visible;
@@ -58,13 +61,13 @@ public sealed record RewardVisual
     public Visibility ClaimVisibility => CanClaim && !Claimed ? Visibility.Visible : Visibility.Collapsed;
     public string BenefitsText=>Benefits.Count==0?"官方未提供物品图片元数据":string.Join(" · ",Benefits.Select(b=>b.Name));
     public IReadOnlyList<RewardCardVisual> Cards => Benefits.Count==0 ? [new(Id,this,null)] : Benefits.Select((benefit,index)=>new RewardCardVisual(Id+"/"+benefit.Id+"/"+index,this,benefit)).ToArray();
-    public string QualificationText=>Eligible==false?"活动资格未满足":PreconditionsSatisfiedForMining==false?"等待前置任务完成":PreconditionsSatisfiedForMining==true?"前置任务条件已满足":"资格以前端接收的官方数据为准";
+    public string QualificationText=>EligibilityText+" · "+(PreconditionsSatisfiedForMining==false?"等待前置任务完成":PreconditionsSatisfiedForMining==true?"前置任务条件已满足":"前置条件以官方数据为准");
 
     internal static RewardVisual From(JsonElement item, string brand, string sync, bool current = false) => new()
     {
         Id = V.Text(item,"id",V.Text(item,"taskId")), Title=V.Text(item,"name",V.Text(item,"reward",V.Text(item,"rewardTitle","未命名奖励"))),
         Campaign=V.Text(item,"campaign",V.Text(item,"missionTitle")), CampaignId=V.Text(item,"campaignId"),
-        Game=V.Text(item,"game"), ImageUrl=V.Text(item,"imageUrl"), GameImageUrl=V.Text(item,"gameImageUrl"), Brand=brand,
+        Game=V.Text(item,"game"), GameId=V.Text(item,"gameId"), ImageUrl=V.Text(item,"imageUrl"), GameImageUrl=V.Text(item,"gameImageUrl"), Brand=brand,
         Benefits=V.Rows(item,"benefits").Select(b=>new BenefitVisual(V.Text(b,"id"),V.Text(b,"name"),V.Text(b,"type","UNKNOWN"),V.Text(b,"imageUrl"),brand)).ToArray(),
         PreconditionDropIds=V.Rows(item,"preconditionDropIds").Where(p=>p.ValueKind==JsonValueKind.String).Select(p=>p.GetString()??"").ToArray(),
         PreconditionsMet=V.Get(item,"preconditionsMet").ValueKind is JsonValueKind.True or JsonValueKind.False?V.Bool(item,"preconditionsMet"):null,
@@ -90,7 +93,15 @@ public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool 
 {
     public IReadOnlyList<RewardVisual> Rewards {get;init;}=[];
     public string EmptyTaskText => Rewards.Count==0 ? LoggedIn ? "等待该账号官方任务刷新" : "连接账号后查看官方任务" : "";
-    public string StateText => Running ? "Worker 运行中" : LoggedIn ? "已停止" : "尚未登录";
+    public DateTimeOffset? WatchAcceptedAt {get;init;}
+    public bool OfficialGrowth {get;init;}
+    public bool Historical {get;init;}
+    public string ChannelId {get;init;}="";
+    public string ConnectionText {get;init;}="等待合资格频道";
+    public bool HasWatchEvidence=>LoggedIn&&Running&&!Historical&&WatchAcceptedAt is {} at&&WatchEvidence.Recent(at)&&Rewards.Any(r=>!r.WatchCompleted&&!r.Claimed&&!r.Expired&&!r.Upcoming&&r.Eligible!=false);
+    public string WorkerText=>Running?"Worker 运行中":"Worker 已停止";
+    public string StateText => Historical ? "历史官方快照 · 非实时观看" : !LoggedIn ? "尚未登录" : !Running ? "已停止观看" :
+        HasWatchEvidence ? OfficialGrowth ? "官方 viewTime 已确认增长" : "观看请求已接受 · 官方进度待确认" : ConnectionText;
     public string SyncText => Reward?.SyncText ?? "尚无该账号官方同步";
     public string Phase {get;init;}="";
     public string RoleText => IsPrimary ? "主账号" : "独立账号";

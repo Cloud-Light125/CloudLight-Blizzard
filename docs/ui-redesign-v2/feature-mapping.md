@@ -186,7 +186,7 @@
 | UI-0178 | Views/Pages/DiagnosticsPage.xaml / DataTrigger | {"Binding": "{Binding Status}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0179 | Views/Pages/DiagnosticsPage.xaml / {Binding Category} | {"Text": "{Binding Category}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0180 | Views/Pages/DiagnosticsPage.xaml / {Binding Name} | {"Text": "{Binding Name}"} | 原契约保留 · Stats/HeroDetailWindow.xaml | 静态；运行验证按测试记录 |
-| UI-0181 | Views/Pages/DiagnosticsPage.xaml / {Binding Summary} | {"Text": "{Binding Summary}"} | 原契约保留 · Controls/CampaignInventoryView.xaml | 静态；运行验证按测试记录 |
+| UI-0181 | Views/Pages/DiagnosticsPage.xaml / {Binding Summary} | {"Text": "{Binding Summary}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0182 | Views/Pages/DiagnosticsPage.xaml / {Binding Details} | {"Text": "{Binding Details}"} | 原契约保留 · Views/Pages/DiagnosticsPage.xaml | 静态；运行验证按测试记录 |
 | UI-0183 | Views/Pages/DiagnosticsPage.xaml / {Binding StatusText} | {"Text": "{Binding StatusText}"} | 原契约保留 · Views/Dashboard/DashboardView.xaml | 静态；运行验证按测试记录 |
 | UI-0184 | Views/Pages/DiagnosticsPage.xaml / 开始诊断 | {"Click": "OnStart"} | 原契约保留 · Views/Drops/Soop/SoopWorkspace.xaml | 静态；运行验证按测试记录 |
@@ -237,7 +237,7 @@
 | UI-0229 | Views/Pages/DropsPage.xaml / ProgressBar | {"Value": "{Binding Percent, Mode=OneWay}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0230 | Views/Pages/DropsPage.xaml / {Binding WatchPathText} | {"Text": "{Binding WatchPathText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0231 | Views/Pages/DropsPage.xaml / {Binding SyncState} | {"Text": "{Binding SyncState}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
-| UI-0232 | Views/Pages/DropsPage.xaml / {Binding RemainingText} | {"Text": "{Binding RemainingText}"} | 原契约保留 · Controls/RewardCard.xaml | 静态；运行验证按测试记录 |
+| UI-0232 | Views/Pages/DropsPage.xaml / {Binding RemainingText} | {"Text": "{Binding RemainingText}"} | 原契约保留 · Controls/RewardHero.xaml | 静态；运行验证按测试记录 |
 | UI-0233 | Views/Pages/DropsPage.xaml / {Binding ConfirmationText} | {"Text": "{Binding ConfirmationText}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0234 | Views/Pages/DropsPage.xaml / {Binding Diagnostic} | {"Text": "{Binding Diagnostic}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
 | UI-0235 | Views/Pages/DropsPage.xaml / {Binding Name} | {"Text": "{Binding Name}", "ToolTip": "{Binding Name}"} | 原契约保留 · Views/Drops/Shared/DropsResources.xaml | 静态；运行验证按测试记录 |
@@ -491,7 +491,7 @@
 | UI-0483 | Views/Pages/DropsPage.xaml / {Binding Reward} | {"Text": "{Binding Reward}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0484 | Views/Pages/DropsPage.xaml / {Binding Message} | {"Text": "{Binding Message}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0485 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.ConfiguredSessions} | {"Text": "{Binding BilibiliDetails.ConfiguredSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
-| UI-0486 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.ActiveSessions} | {"Text": "{Binding BilibiliDetails.ActiveSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
+| UI-0486 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.ActiveSessions} | {"Text": "{Binding BilibiliDetails.ActiveSessions}"} | 结构化可视化替代：BilibiliDetails.ActiveSessions → BilibiliDetails.WatchingSessions · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0487 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.ConnectingSessions} | {"Text": "{Binding BilibiliDetails.ConnectingSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0488 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.RetryingSessions} | {"Text": "{Binding BilibiliDetails.RetryingSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |
 | UI-0489 | Views/Pages/DropsPage.xaml / {Binding BilibiliDetails.FailedSessions} | {"Text": "{Binding BilibiliDetails.FailedSessions}"} | 原契约保留 · Views/Drops/Bilibili/BilibiliWorkspace.xaml | 静态；运行验证按测试记录 |

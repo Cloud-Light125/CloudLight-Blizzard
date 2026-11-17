@@ -272,10 +272,8 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         DropsPlatform.Bilibili => BilibiliDetails.Rooms.FirstOrDefault(room => room.Enabled)?.Url ?? "",
         _ => "",
     };
-    public string SoopWatchStatusText => string.Join(Environment.NewLine, _rows[DropsPlatform.Soop].Accounts.Select(row =>
-        $"{row.Primary} · {Text(row.Payload, "channelName", "尚未进入直播间")} · " +
-        (Bool(row.Payload, "connectionHealthy") ? "观看连接正常（资格另行确认）" : "观看连接尚未确认") +
-        $" · 最近成功心跳：{FormatSoopTime(Text(row.Payload, "heartbeatLastSuccess"))}"));
+    public string SoopWatchStatusText => string.Join(Environment.NewLine,SoopVisual.Accounts.Select(account=>
+        $"{account.Name} · {account.StateText} · {account.Channel} · {account.SyncText}"));
     private static string FormatSoopTime(string value) => DateTimeOffset.TryParse(value, out var time)
         ? time.ToLocalTime().ToString("HH:mm:ss") : "尚未确认";
     private string _twitchCurrentProgressText = "当前没有有效观看任务";
@@ -705,6 +703,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         _soopRetryDelay = soopRetryDelay;
         _soopRetryOverride = soopRetryOverride;
         BilibiliDetails = new BilibiliDropsViewModel(Bilibili);
+        SoopVisual.PropertyChanged+=(_,_)=>Raise(nameof(SoopWatchStatusText));
         BilibiliDetails.PropertyChanged += (_, _) =>
         {
             Raise(nameof(ActiveAccountText)); Raise(nameof(ActiveStartText));
@@ -774,6 +773,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
     {
         foreach(var visual in _visuals.Values)visual.RefreshClock();
         _twitchInventory?.RefreshClock();
+        BilibiliDetails.RefreshWatchClock();
         Raise(nameof(TwitchAuthorizationRemainingText));
         if (_soopNextRetryAt is { } soopDeadline)
         {
@@ -2416,7 +2416,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
                 Percent = Number(item, "percent"),
                 SyncState = Text(item, "progressState") switch
                 {
-                    "rollback" => "进度回退待确认", "watching" => "正在观看 · 等待服务端更新",
+                    "rollback" => "进度回退待确认", "watching" => "官方进度待确认",
                     "waiting_server" => "正在同步 / 观看状态待确认", "confirmed" => "已确认进度",
                     _ => "暂时无法确认",
                 },

@@ -18,11 +18,11 @@ internal static class TwitchInventorySelfTest
         check(model.OverviewGroups.First().Id=="b"&&model.OverviewGroups[0].Cards.Count==2,"eligible unfinished campaign ranks ahead of historical completed rewards");
         var cards=model.Groups.Single().Cards;
         check(cards.Count==2&&ReferenceEquals(cards[0].Drop,cards[1].Drop)&&cards.All(c=>c.Drop.Current==18&&c.Drop.Percent==30&&c.Drop.Estimate==2),"every Benefit retains one shared official 18/60 Drop; estimates are never added");
-        check(cards[0].Drop.StateText=="未完成"&&cards[0].Drop.PrerequisitesSatisfiedForTest(),"NoAutoClaim mining prerequisites stay distinct from claim unlock requirements");
+        check(cards[0].Drop.StateText=="部分完成"&&cards[0].Drop.PrerequisitesSatisfiedForTest(),"NoAutoClaim mining prerequisites stay distinct from claim unlock requirements");
         var first=cards[0];model.Apply(Raw("""{"currentChannel":{"id":"channel-a","name":"Channel A","game":"B"},"currentDrop":{"id":"current","campaignId":"b","name":"Tier 2","currentMinutes":18,"requiredMinutes":60},"watchRequests":{"channelId":"channel-a","lastResult":"accepted"}}"""));
-        check(!model.HasWatchEvidence&&model.WatchState.Contains("待确认"),"accepted flag without a recent acceptance time does not prove watching");
+        check(!model.HasWatchEvidence&&model.WatchState.Contains("等待观看确认"),"accepted flag without a recent acceptance time does not prove watching");
         model.Apply(Json(new{watchRequests=new{channelId="channel-a",lastResult="accepted",lastAcceptedAt=DateTimeOffset.UtcNow.ToString("o")}}));
-        check(model.HasWatchEvidence&&model.WatchState.StartsWith("正在观看"),"actual channel and recent accepted playlist request establish watching evidence");
+        check(model.HasWatchEvidence&&model.WatchState=="观看请求正常，等待官方进度确认"&&!model.OfficialGrowthConfirmed,"accepted playlist request establishes transport evidence, never official growth");
         model.ApplyEvent("current_channel",Json(new{id="channel-b",name="Channel B"}));
         check(!model.HasWatchEvidence,"channel changes invalidate accepted requests for the previous channel");
         model.Apply(Json(new{watchRequests=new{channelId="channel-b",lastResult="accepted",lastAcceptedAt=DateTimeOffset.UtcNow.AddMinutes(-4).ToString("o")}}));
@@ -44,9 +44,9 @@ internal static class TwitchInventorySelfTest
         check(bili.WatchStateText.Contains("已停止")&&bili.Tasks.Count==1,"unfinished Bilibili tasks do not imply a running viewing Worker");
         biliHealth.Running=true;check(bili.WatchingSessions==0&&!bili.WatchStateText.StartsWith("正在观看"),"running Bilibili Worker with zero active Sessions is not watching");
         bili.HandleEvent("session",Raw("""{"configuredSessions":1,"activeSessions":1,"sessions":[{"id":"s","roomId":1,"state":"active"}]}"""));
-        check(bili.WatchingSessions==1&&bili.WatchStateText.StartsWith("正在观看"),"active Bilibili Session evidence is independent of task percent");
+        check(bili.WatchingSessions==1&&bili.WatchStateText.Contains("官方进度待确认"),"active Bilibili Session evidence is independent of task percent");
         biliHealth.Running=false;check(bili.WatchingSessions==0&&bili.WatchStateText.Contains("已停止"),"manual Bilibili stop suppresses stale active Session records");
-        check(Controls.RewardTilePanel.ColumnsFor(750)==3&&Controls.RewardTilePanel.ColumnsFor(970)==4&&Controls.RewardTilePanel.ColumnsFor(1170)==5&&Controls.RewardTilePanel.ColumnsFor(1700)==7,"readable reward grid adapts to actual content width with three/four/five/seven columns");
+        check(Controls.RewardTilePanel.ColumnsFor(750)==3&&Controls.RewardTilePanel.ColumnsFor(970)==4&&Controls.RewardTilePanel.ColumnsFor(1170)==5&&Controls.RewardTilePanel.ColumnsFor(1700)==8,"compact readable reward grid adapts to actual content width with three/four/five/eight columns");
         var complete=new RewardVisual{Current=120,Required=120};
         check(complete.StateKind=="completed"&&!complete.Claimed&&!complete.CanClaim&&complete.StateText.Contains("未开放"),"100 percent never implies claimed or claimable");
         check((complete with{CanClaim=true}).StateKind=="claimable"&&(complete with{Claimed=true}).StateKind=="claimed","completion, claim availability and receipt have independent visual states");

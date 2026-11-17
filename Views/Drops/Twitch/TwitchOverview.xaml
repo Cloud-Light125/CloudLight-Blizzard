@@ -114,17 +114,30 @@
             </Grid>
         </Border>
         <StackPanel Visibility="{Binding TwitchAuthenticatedVisibility}">
+            <WrapPanel Margin="0,0,0,8">
+                <TextBlock Text="显示范围：" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox x:Name="OverviewScopePicker" Width="242" SelectedValuePath="Tag" SelectedValue="{Binding TwitchInventory.OverviewScope,Mode=TwoWay}" Style="{DynamicResource ThemeComboBox}" Margin="0,0,12,0">
+                    <ComboBoxItem Content="全部活动（优先游戏置顶）" Tag="all"/>
+                    <ComboBoxItem Content="仅显示优先游戏" Tag="priority"/>
+                </ComboBox>
+                <TextBlock Text="{Binding TwitchInventory.OverviewHint}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <Button Content="设置优先游戏 →" ctrl:WorkspaceAction.Name="section:games" Visibility="{Binding TwitchInventory.PrioritySetupVisibility}" Style="{DynamicResource SecondaryButton}" MinHeight="32" Padding="8,0"/>
+            </WrapPanel>
             <Border x:Name="TwitchCurrentProgressCard" x:FieldModifier="internal" Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" Padding="10,6" Margin="0,0,0,8">
                 <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="680"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel>
                         <WrapPanel><TextBlock Text="{Binding TwitchInventory.WatchState}" FontSize="16" FontWeight="SemiBold" Margin="0,0,16,0"/><TextBlock Text="{Binding TwitchInventory.Game}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,12,0"/><TextBlock Text="{Binding TwitchInventory.Channel}" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/></WrapPanel>
-                        <TextBlock Text="{Binding TwitchInventory.CurrentSummary}" FontSize="13.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                        <TextBlock Text="{Binding TwitchInventory.CurrentSummary}" Visibility="{Binding TwitchInventory.CurrentSummaryVisibility}" FontSize="13.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
                         <WrapPanel Margin="0,4,0,0"><TextBlock Text="{Binding TwitchInventory.SyncText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,16,0"/><TextBlock Text="{Binding TwitchInventory.EstimateText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}"/></WrapPanel>
                     </StackPanel>
                     <WrapPanel Grid.Column="1" Margin="12,4,0,0" VerticalAlignment="Center"><Button Content="直播间 ↗" ctrl:WorkspaceAction.Name="legacy:OnOpenCurrentWatch" Style="{DynamicResource SecondaryButton}" Margin="0,0,6,0"/><Button Content="切换频道" ctrl:WorkspaceAction.Name="twitch:channels" Style="{DynamicResource SecondaryButton}"/></WrapPanel>
                 </Grid>
             </Border>
-            <ctrl:CampaignInventoryView ItemsSource="{Binding TwitchInventory.OverviewGroups}" IsOverview="True"/>
+            <StackPanel Visibility="{Binding TwitchInventory.OverviewEmptyVisibility}" Margin="12,16">
+                <TextBlock Text="{Binding TwitchInventory.OverviewEmptyText}" FontSize="15" TextWrapping="Wrap"/>
+                <Button Content="查看全部活动 →" ctrl:WorkspaceAction.Name="twitch:overview-all" Visibility="{Binding TwitchInventory.ViewAllVisibility}" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+            </StackPanel>
+            <ctrl:CampaignInventoryView ItemsSource="{Binding TwitchInventory.OverviewGroups}" IsOverview="True"><ctrl:CampaignInventoryView.Style><Style TargetType="ctrl:CampaignInventoryView"><Style.Triggers><DataTrigger Binding="{Binding TwitchInventory.OverviewGroups.Count}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></ctrl:CampaignInventoryView.Style></ctrl:CampaignInventoryView>
         </StackPanel>
         <Border x:Name="TwitchHelp" Visibility="Collapsed" Style="{DynamicResource HeroCard}" x:FieldModifier="internal">
             <TextBlock Text="连接 Twitch → 设置优先游戏 → 开始观看。官方进度由 Twitch 确认；本地观察与请求成功不等于奖励已计入。网络、账号与高级维护可通过上方分类访问。" Style="{DynamicResource VisualBody}" />

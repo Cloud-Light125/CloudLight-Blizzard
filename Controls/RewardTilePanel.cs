@@ -6,7 +6,7 @@ namespace CloudLightBlizzard.Controls;
 /// <summary>Uniform reward tiles sized from available content width, independently of monitor resolution.</summary>
 public sealed class RewardTilePanel : Panel
 {
-    private const double Gap=14, Minimum=220, Maximum=260;
+    private const double Gap=12, Minimum=190, Maximum=216;
     private double _tileWidth=Minimum, _tileHeight;
     private int _columns=1;
     public static readonly DependencyProperty MinimumTileWidthProperty=DependencyProperty.Register(nameof(MinimumTileWidth),typeof(double),typeof(RewardTilePanel),new FrameworkPropertyMetadata(Minimum,FrameworkPropertyMetadataOptions.AffectsMeasure));

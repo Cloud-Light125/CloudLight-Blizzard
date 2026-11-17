@@ -27,6 +27,7 @@ internal static class UiV2SelfTest
         try
         {
             TwitchInventorySelfTest.Run(Check);
+            PriorityStateSelfTest.Run(Check,output);
             var safeEvidence=RealDropsEvidenceRecorder.SafeSnapshot(Json("""{"accounts":[{"userId":"private-user"}],"token":"private-token","authRequired":{"code":"private-code"},"inventory":[{"id":"drop","benefits":[{"id":"benefit","imageUrl":"https://static-cdn.jtvnw.net/reward.png?signature=private-signature"}]}]}""")).GetRawText();
             Check(!safeEvidence.Contains("private-")&&safeEvidence.Contains("imageUrlSha256")&&safeEvidence.Contains("benefit"),"real evidence excludes account/authentication fields and image signature parameters while retaining source hashes and IDs");
             var health=new DropsPlatformViewModel(DropsPlatform.Twitch,"Twitch"){Running=true};var model=new PlatformOverviewModel(health);

@@ -48,7 +48,8 @@
                                 <ctrl:VisualImage SourceUrl="{Binding ImageUrl}" Brand="Soop" Width="46" Height="46" Margin="0,0,12,0" />
                                 <StackPanel>
                                     <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" Margin="0,5,0,0" />
+                                    <TextBlock Text="{Binding WorkerText}" FontSize="12.5" Margin="0,5,0,0"/>
+                                    <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </DockPanel>
                             <StackPanel Margin="0,14,0,14"><TextBlock Text="{Binding Task}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,5"/><TextBlock Text="{Binding Phase}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/><ItemsControl ItemsSource="{Binding Rewards}" ItemTemplate="{DynamicResource VisualRewardRow}"/><TextBlock Text="{Binding EmptyTaskText}" FontSize="14" TextWrapping="Wrap"/></StackPanel>

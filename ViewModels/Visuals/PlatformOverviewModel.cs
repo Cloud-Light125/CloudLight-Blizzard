@@ -10,7 +10,7 @@ public sealed class PlatformOverviewModel : ObservableObject
     public DropsPlatformViewModel Health { get; }
     public string Brand => Health.Platform.ToString();
     public string Name => Health.Name;
-    public string WorkerText => Health.Running ? "Worker 运行中" : "Worker 已停止";
+    public string WorkerText => Health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Crashed ? "Worker 异常退出" : Health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Starting ? "Worker 正在启动" : Health.Running ? "Worker 运行中" : "Worker 已停止";
     public ObservableCollection<RewardVisual> Rewards { get; } = [];
     public ObservableCollection<CampaignVisual> Campaigns { get; } = [];
     public ObservableCollection<AccountVisual> Accounts { get; } = [];
@@ -19,7 +19,12 @@ public sealed class PlatformOverviewModel : ObservableObject
     private DateTimeOffset? _observedStart;
     private string _officialChange="本次尚未观察到新的官方进度";
     private string _runtimeSummary="";
-    public string RuntimeSummary=>_runtimeSummary.Length>0?_runtimeSummary:Brand=="YouTube"?Health.Status:Health.Running?"Worker 运行中 · 观看状态需单独确认":"Worker 未运行";
+    private readonly Dictionary<string,DateTimeOffset> _accountRejectedBefore=new(StringComparer.Ordinal);
+    public string RuntimeSummary=>Brand=="Soop" ? Health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Crashed ? "Worker 已异常退出" : !Health.Running ? "已停止观看" :
+        Health.ConnectionState is Services.Drops.DropsConnectionState.Failed or Services.Drops.DropsConnectionState.WaitingRetry or Services.Drops.DropsConnectionState.Recovering ? "连接失败 · 等待恢复" :
+        Accounts.Any(a=>a.HasWatchEvidence) ? $"{Accounts.Count(a=>a.HasWatchEvidence)} 个账号观看请求已接受 · 官方进度单独确认" :
+        Accounts.Any(a=>a.Running)?"Worker 运行中 · 等待账号有效观看":"Worker 运行中 · 无活跃账号观看" :
+        _runtimeSummary.Length>0?_runtimeSummary:Brand=="YouTube"?Health.Status:Health.Running?"Worker 运行中 · 观看状态需单独确认":"已停止观看";
     internal void UpdateRuntimeSummary(string value){if(_runtimeSummary==value)return;_runtimeSummary=value;Raise(nameof(RuntimeSummary));}
     public string AccountText { get=>_accountText; private set=>Set(ref _accountText,value); }
     public string SessionText { get=>_sessionText; private set=>Set(ref _sessionText,value); }
@@ -53,10 +58,17 @@ public sealed class PlatformOverviewModel : ObservableObject
         {
             Raise(nameof(RuntimeSummary));
             Raise(nameof(WorkerText));
+            if((e.PropertyName==nameof(health.ConnectionState)&&health.ConnectionState is Services.Drops.DropsConnectionState.Failed or Services.Drops.DropsConnectionState.WaitingRetry or Services.Drops.DropsConnectionState.Recovering)||
+                e.PropertyName==nameof(health.WorkerLifecycle)&&health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Crashed)
+            {
+                for(var index=0;index<Accounts.Count;index++){_accountRejectedBefore[Accounts[index].Id]=DateTimeOffset.UtcNow;Accounts[index]=Accounts[index] with{WatchAcceptedAt=null,OfficialGrowth=false,ConnectionText="连接失败 · 等待重试"};}
+                NotifyVisuals();
+            }
             if(e.PropertyName==nameof(health.Running))
             {
                 _observedStart=health.Running?DateTimeOffset.Now:null;
                 if(!health.Running&&_activeReward is {} reward)_activeReward=reward with{IsCurrent=false};
+                if(!health.Running)for(var index=0;index<Accounts.Count;index++)Accounts[index]=Accounts[index] with{Running=false,WatchAcceptedAt=null,OfficialGrowth=false};
                 NotifyVisuals();
             }
         };
@@ -66,8 +78,10 @@ public sealed class PlatformOverviewModel : ObservableObject
         if(V.Has(state,"lastInventorySyncAt")) _sync=V.Text(state,"lastInventorySyncAt");
         if(V.Has(state,"accounts"))
         {
-            Accounts.Clear();
-            foreach(var account in V.Rows(state,"accounts")) UpdateAccount(account);
+            var incoming=V.Rows(state,"accounts").ToArray();
+            var ids=incoming.Select(a=>V.Text(a,"uid",V.Text(a,"userId"))).ToHashSet(StringComparer.Ordinal);
+            foreach(var account in incoming) UpdateAccount(account);
+            foreach(var removed in Accounts.Where(a=>!ids.Contains(a.Id)).ToArray()){Accounts.Remove(removed);_accountRejectedBefore.Remove(removed.Id);}
             var first=V.Rows(state,"accounts").FirstOrDefault();
             AccountText=V.Text(first,"userName",V.Text(first,"userId",V.Text(first,"uid","尚未连接账号")));
             SessionText=V.Rows(state,"accounts").Any(a=>V.Bool(a,"loggedIn")) ? "已验证" : V.Rows(state,"accounts").Any(a=>V.Bool(a,"sessionSaved")) ? "已保存 · 待验证" : "未验证";
@@ -122,8 +136,25 @@ public sealed class PlatformOverviewModel : ObservableObject
         var rewards=V.Has(account,"currentProgress") ? V.Rows(account,"currentProgress").Where(p=>!V.Has(p,"account")||V.Text(p,"account")==uid).Select(p=>RewardVisual.From(p,Brand,"")).ToArray() : old?.Rewards??[];
         var p=V.Rows(account,"currentProgress").FirstOrDefault(p=>!V.Has(p,"account")||V.Text(p,"account")==uid);
         var reward=p.ValueKind==JsonValueKind.Object ? RewardVisual.From(p,Brand,"") : V.Has(account,"currentProgress")?null:old?.Reward;
-        var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),V.Bool(account,"running",old?.Running??false),V.Bool(account,"loggedIn",old?.LoggedIn??false),
-            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??"")){Phase=V.Text(account,"status",old?.Phase??"阶段尚未确认"),Rewards=rewards};
+        var running=Health.Running&&V.Bool(account,"running",old?.Running??false);
+        var loggedIn=V.Bool(account,"loggedIn",old?.LoggedIn??false);
+        var phase=V.Text(account,"status",old?.Phase??"");
+        var channelId=V.Text(account,"channelId",old?.ChannelId??"");
+        var channelChanged=channelId!=old?.ChannelId;
+        var diagnostic=V.Rows(account,"progressDiagnostics").FirstOrDefault(d=>V.Text(d,"uid")==uid&&V.Bool(d,"watchEligible"));
+        var confirmedAt=V.Text(account,"heartbeatLastSuccess",V.Text(diagnostic,"heartbeatLastSuccess"));
+        if(!running||!loggedIn)_accountRejectedBefore[uid]=DateTimeOffset.UtcNow;
+        var accepted=running&&loggedIn&&channelId.Length>0&&V.Bool(account,"connectionHealthy",V.Bool(diagnostic,"connectionHealthy"))&&
+            V.Bool(account,"bridgeConnected",V.Bool(diagnostic,"bridgeConnected"))&&V.Text(account,"heartbeatStatus",V.Text(diagnostic,"heartbeatStatus")) is "success" or "ok"&&WatchEvidence.Recent(confirmedAt)&&
+            DateTimeOffset.TryParse(confirmedAt,out var heartbeatAt)&&heartbeatAt>=_accountRejectedBefore.GetValueOrDefault(uid)&&(_observedStart is null||heartbeatAt>=_observedStart)&&
+            (V.Bool(diagnostic,"watchEligible")||V.Rows(account,"currentProgress").Any(p=>(!V.Has(p,"account")||V.Text(p,"account")==uid)&&V.Bool(p,"watchEligible")));
+        var connection=phase.Contains("recover",StringComparison.OrdinalIgnoreCase)||phase.Contains("恢复") ? "等待重试 · 恢复中" :
+            phase.Contains("fail",StringComparison.OrdinalIgnoreCase)||phase.Contains("失败")?"连接失败 · 等待重试":channelId.Length==0?"等待合资格频道":"频道已选择 · 等待观看确认";
+        var historical=V.Bool(account,"historicalReplay",old?.Historical??false);
+        var grew=accepted&&!historical&&!channelChanged&&rewards.Any(r=>r.Id.Length>0&&old?.Rewards.Any(p=>p.Id==r.Id&&r.Current>p.Current)==true)&&WatchEvidence.Recent(V.Text(account,"lastConfirmedAt"));
+        var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),running,loggedIn,
+            V.Text(account,"channelName",old?.Channel??"尚未进入直播间"),V.Text(account,"missionTitle",old?.Task??"等待任务"),reward,V.Text(account,"avatarUrl",old?.ImageUrl??""))
+            {Phase=phase,Rewards=rewards,ChannelId=channelId,WatchAcceptedAt=accepted?DateTimeOffset.Parse(confirmedAt):null,OfficialGrowth=grew,ConnectionText=connection,Historical=historical};
         if(old is null) Accounts.Add(row); else Accounts[Accounts.IndexOf(old)]=row;
         if(Brand=="Soop")
         {
@@ -134,9 +165,13 @@ public sealed class PlatformOverviewModel : ObservableObject
     }
     private void NotifyVisuals()
     {
-        foreach(var name in new[]{nameof(FeaturedReward),nameof(FeaturedLabel),nameof(RewardVisibility),nameof(EmptyRewardVisibility),nameof(RewardCount),nameof(CampaignCount),nameof(ClaimableCount),nameof(AccountCount),nameof(SyncText),nameof(TaskSummary),nameof(FeaturedImageUrl),nameof(FeaturedProgress),nameof(FeaturedPercent),nameof(ObservedDurationText),nameof(OfficialChangeText),nameof(RewardPreview),nameof(CampaignPreview),nameof(NextActionText),nameof(EmptyTaskText)}) Raise(name);
+        foreach(var name in new[]{nameof(RuntimeSummary),nameof(FeaturedReward),nameof(FeaturedLabel),nameof(RewardVisibility),nameof(EmptyRewardVisibility),nameof(RewardCount),nameof(CampaignCount),nameof(ClaimableCount),nameof(AccountCount),nameof(SyncText),nameof(TaskSummary),nameof(FeaturedImageUrl),nameof(FeaturedProgress),nameof(FeaturedPercent),nameof(ObservedDurationText),nameof(OfficialChangeText),nameof(RewardPreview),nameof(CampaignPreview),nameof(NextActionText),nameof(EmptyTaskText)}) Raise(name);
     }
-    internal void RefreshClock(){Raise(nameof(SyncText));Raise(nameof(ObservedDurationText));}
+    internal void RefreshClock()
+    {
+        if(Brand=="Soop")for(var index=0;index<Accounts.Count;index++)if(Accounts[index].WatchAcceptedAt is {} at&&!WatchEvidence.Recent(at))Accounts[index]=Accounts[index] with{WatchAcceptedAt=null,OfficialGrowth=false};
+        Raise(nameof(SyncText));Raise(nameof(ObservedDurationText));Raise(nameof(RuntimeSummary));
+    }
     internal void RefreshBilibili(BilibiliDropsViewModel details)
     {
         AccountText=details.LoggedIn?$"{details.UserName} · {details.Uid}":"尚未连接账号";SessionText=details.LoggedIn?"已验证":"未验证";

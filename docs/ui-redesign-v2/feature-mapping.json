@@ -3216,7 +3216,7 @@
     "new_location": "DiagnosticsPage",
     "evidence": [
       "原契约保留",
-      "Controls/CampaignInventoryView.xaml"
+      "Views/Pages/DiagnosticsPage.xaml"
     ]
   },
   {
@@ -4149,7 +4149,7 @@
     "new_location": "DropsPage",
     "evidence": [
       "原契约保留",
-      "Controls/RewardCard.xaml"
+      "Controls/RewardHero.xaml"
     ]
   },
   {
@@ -8725,7 +8725,7 @@
     "preserved": true,
     "new_location": "DropsPage / Bilibili / accounts",
     "evidence": [
-      "原契约保留",
+      "结构化可视化替代：BilibiliDetails.ActiveSessions → BilibiliDetails.WatchingSessions",
       "Views/Drops/Bilibili/BilibiliWorkspace.xaml"
     ]
   },

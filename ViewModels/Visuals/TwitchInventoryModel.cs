@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Windows;
+using CloudLightBlizzard.Services;
 using CloudLightBlizzard.Services.Drops;
 
 namespace CloudLightBlizzard.ViewModels.Visuals;
@@ -31,6 +32,7 @@ public sealed class CampaignRewardGroup : ObservableObject
     public IReadOnlyList<RewardVisual> Drops { get; private set; } = [];
     public string Title => V.Text(_source,"name",Drops.FirstOrDefault()?.Campaign??"未命名活动");
     public string Game => V.Text(_source,"game",Drops.FirstOrDefault()?.Game??"");
+    public string GameId => V.Text(_source,"gameId",Drops.FirstOrDefault(d=>d.GameId.Length>0)?.GameId??"");
     public string ImageUrl => V.Text(_source,"gameImageUrl",Drops.FirstOrDefault()?.GameImageUrl??"");
     public bool Available => V.Bool(_source,"available");
     public bool Priority => V.Bool(_source,"priority");
@@ -43,6 +45,7 @@ public sealed class CampaignRewardGroup : ObservableObject
     public string Summary => $"{Drops.Count(d=>d.WatchCompleted||d.Claimed)}/{Drops.Count} Drop 完成 · {Cards.Count} 件物品 · {Drops.Count(d=>d.CanClaim&&!d.Claimed)} 可领取";
     public string ProgressSummary => V.Has(_source,"remainingMinutes") ? $"官方剩余 {V.Number(_source,"remainingMinutes"):0.#} 分钟" : "官方时长以各 Drop 为准";
     public double Percent => V.Has(_source,"progress") ? Math.Clamp(V.Number(_source,"progress")*100,0,100) : 0;
+    public double ContainerMaxWidth=>Cards.Count==1?360:Cards.Count==2?510:double.PositiveInfinity;
 
     internal CampaignRewardGroup(string id) => Id=id;
     internal void Update(JsonElement source, IReadOnlyList<RewardVisual> drops)
@@ -61,7 +64,7 @@ public sealed class CampaignRewardGroup : ObservableObject
             }
         }
         TwitchInventoryModel.Reconcile(Cards,wanted,c=>c.Key);
-        foreach(var property in new[]{nameof(Title),nameof(Game),nameof(ImageUrl),nameof(Status),nameof(EndText),nameof(Summary),nameof(ProgressSummary),nameof(Percent)})Raise(property);
+        foreach(var property in new[]{nameof(Title),nameof(Game),nameof(GameId),nameof(ImageUrl),nameof(Status),nameof(EndText),nameof(Summary),nameof(ProgressSummary),nameof(Percent),nameof(ContainerMaxWidth)})Raise(property);
     }
 }
 
@@ -73,6 +76,15 @@ public sealed class TwitchInventoryModel : ObservableObject
     private JsonElement _inventory, _campaigns;
     private string _channelId="", _watchChannelId="", _watchResult="", _sync="", _phase="", _inventorySource="";
     private DateTimeOffset? _acceptedAt;
+    private DateTimeOffset _runStartedAt=DateTimeOffset.UtcNow;
+    private DateTimeOffset _rejectedBefore=DateTimeOffset.MinValue;
+    private DateTimeOffset? _growthAt;
+    private readonly Dictionary<string,double> _officialMinutes=new(StringComparer.Ordinal);
+    private readonly ObservableCollection<string>? _configuredGames;
+    private IReadOnlyList<string> _priorityGames=[];
+    private readonly Dictionary<string,int> _priorityRanks=new(StringComparer.Ordinal);
+    private AppSettings? _displaySettings;
+    private bool _overviewPriorityOnly, _historical;
     private bool _emptyPriorityOnly;
     private RewardVisual? _selectedDrop;
     private string _channel="尚未选择频道", _game="", _scope="available", _search="", _status="all", _sort="recommended", _gameFilter="全部游戏";
@@ -84,29 +96,62 @@ public sealed class TwitchInventoryModel : ObservableObject
     public string StatusFilter { get=>_status; set { if(_status==value)return;Set(ref _status,value??"all");Filter(); } }
     public string Sort { get=>_sort; set { if(_sort==value)return;Set(ref _sort,value??"recommended");Filter(); } }
     public string GameFilter { get=>_gameFilter; set { if(_gameFilter==value)return;Set(ref _gameFilter,value??"全部游戏");Filter(); } }
-    public string Channel=>_channel;
+    public string Channel=>!_health.Running&&_channelId.Length>0?"上次使用频道："+_channel:_channel;
     public string Game=>_game;
     public string SyncText=>(DateTimeOffset.TryParse(_sync,out var at)?$"官方同步 {at.ToLocalTime():HH:mm:ss}" : "尚无官方同步")+(_inventorySource=="cache"||_health.ConnectionState is DropsConnectionState.Failed or DropsConnectionState.Degraded or DropsConnectionState.WaitingRetry?" · 数据可能过期":"");
     public string DataFreshness=>_inventorySource=="cache"||_health.ConnectionState is DropsConnectionState.Failed or DropsConnectionState.Degraded or DropsConnectionState.WaitingRetry ? "保留上次官方确认值 · 数据可能过期" : "官方进度与本地估算分别显示";
-    public RewardVisual? CurrentDrop=>_health.Running&&_selectedDrop is {WatchCompleted:false,Claimed:false,Expired:false,Upcoming:false}?_selectedDrop:null;
-    public bool HasWatchEvidence=>_health.Running&&_channelId.Length>0&&_watchChannelId==_channelId&&_watchResult=="accepted"&&_acceptedAt is {} at&&DateTimeOffset.Now-at<TimeSpan.FromMinutes(3);
-    public string WatchState=>_health.WorkerLifecycle==WorkerLifecycle.Crashed ? "Worker 已异常退出" : !_health.Running ? "已停止观看" :
+    public RewardVisual? CurrentDrop=>_health.Running&&!_historical&&_selectedDrop is {WatchCompleted:false,Claimed:false,Expired:false,Upcoming:false,Eligible:not false,PreconditionsSatisfiedForMining:not false}&&
+        (!_all.TryGetValue(_selectedDrop.CampaignId,out var group)||group.Available&&!group.Expired&&!group.Upcoming&&group.Eligible!=false)?_selectedDrop:null;
+    public bool HasWatchEvidence=>_health.Running&&!_historical&&_health.WorkerLifecycle is not (WorkerLifecycle.Starting or WorkerLifecycle.Stopping or WorkerLifecycle.Crashed)&&_health.ConnectionState is not (DropsConnectionState.Failed or DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering)&&
+        _channelId.Length>0&&_watchChannelId==_channelId&&_watchResult=="accepted"&&_acceptedAt is {} at&&at>=_runStartedAt&&at>=_rejectedBefore&&WatchEvidence.Recent(at);
+    public bool IsWatchingDrop(RewardVisual drop)=>HasWatchEvidence&&CurrentDrop is {} current&&current.Id==drop.Id&&current.CampaignId==drop.CampaignId&&
+        !drop.WatchCompleted&&!drop.Claimed&&!drop.Expired&&!drop.Upcoming&&drop.Eligible!=false&&drop.PreconditionsSatisfiedForMining!=false;
+    public bool OfficialGrowthConfirmed=>HasWatchEvidence&&CurrentDrop is not null&&_growthAt is {} at&&WatchEvidence.Recent(at);
+    public string WatchState=>_historical ? "历史官方快照 · 非实时观看" : _health.WorkerLifecycle==WorkerLifecycle.Crashed ? "Worker 已异常退出" : _health.WorkerLifecycle==WorkerLifecycle.Starting ? "Worker 正在启动" : !_health.Running ? "已停止观看" :
         _health.ConnectionState is DropsConnectionState.Failed or DropsConnectionState.WaitingRetry ? "连接失败 · 等待恢复" :
+        _health.ConnectionState==DropsConnectionState.Recovering ? "等待重试 · 恢复中" :
+        _health.ConnectionState==DropsConnectionState.Connecting&&_channelId.Length>0 ? "正在连接频道 · 等待观看确认" :
         _channelId.Length==0 ? _emptyPriorityOnly ? "等待设置优先游戏" : _phase is "loading_campaigns" or "loading_inventory" ? "正在加载官方活动" : "等待合资格频道" :
-        !HasWatchEvidence ? "频道已选择 · 观看请求待确认" : CurrentDrop is null ? "观看连接已确认 · 等待可获取奖励" : "正在观看 · 进度以官方确认为准";
-    public string CurrentSummary=>CurrentDrop is {} drop ? $"{drop.Title} · 官方 {drop.ProgressText} · {drop.PercentText} · {drop.RemainingText}" : "当前没有正在积累进度的 Drop";
+        _watchResult=="failed" ? "观看请求失败 · 等待重试" : !HasWatchEvidence ? "频道已选择 · 等待观看确认" :
+        OfficialGrowthConfirmed ? "官方进度已确认增长" : "观看请求正常，等待官方进度确认";
+    public string CurrentSummary=>CurrentDrop is {} drop ? $"当前目标：{drop.Title} · {drop.StateText} · 官方 {drop.ProgressText} · {drop.PercentText}" : "当前没有有效观看目标 · 已有官方进度保留在奖励卡片中";
+    public Visibility CurrentSummaryVisibility=>CurrentDrop is null?Visibility.Collapsed:Visibility.Visible;
     public string EstimateText=>CurrentDrop is {Estimate:>0} drop?drop.EstimateText:"";
     public string CountText=>$"{_all.Count} 个活动 · {_all.Values.Sum(g=>g.Cards.Count)} 件物品 · {_all.Values.Sum(g=>g.Drops.Count(d=>d.CanClaim&&!d.Claimed))} 可领取";
     public string FilterSummary=>$"筛选后 {Groups.Count} 个活动 · {Groups.Sum(g=>g.Cards.Count)} 件物品";
     public string EmptyText=>_all.Count==0 ? "尚未读取到官方活动，请验证账号并刷新。" : "当前筛选无结果 · 可调整显示范围、游戏或状态筛选。";
     public Visibility EmptyVisibility=>Groups.Count==0?Visibility.Visible:Visibility.Collapsed;
-    public string OverviewTitle=>CurrentDrop is not null ? "当前活动的全部奖励" : "奖励背包 · 可参与与待处理活动";
-
-    internal TwitchInventoryModel(DropsPlatformViewModel health)
+    public string OverviewTitle=>"奖励背包 · 优先游戏与待处理活动";
+    public bool OverviewPriorityOnly
     {
-        _health=health;
-        health.PropertyChanged+=(_,_)=>NotifyRuntime();
+        get=>_overviewPriorityOnly;
+        set
+        {
+            if(value==_overviewPriorityOnly)return;
+            Set(ref _overviewPriorityOnly,value);
+            if(_displaySettings is not null){_displaySettings.TwitchOverviewPriorityOnly=value;_displaySettings.Save();}
+            Filter();
+        }
     }
+    public string OverviewScope { get=>OverviewPriorityOnly?"priority":"all"; set=>OverviewPriorityOnly=value=="priority"; }
+    public string OverviewEmptyText=>OverviewPriorityOnly ? _priorityGames.Count==0 ? "尚未设置优先游戏" : "当前优先游戏暂无符合条件的活动" : "尚未读取到官方活动，请验证账号并刷新。";
+    public Visibility OverviewEmptyVisibility=>OverviewGroups.Count==0?Visibility.Visible:Visibility.Collapsed;
+    public Visibility PrioritySetupVisibility=>_priorityGames.Count==0?Visibility.Visible:Visibility.Collapsed;
+    public Visibility ViewAllVisibility=>OverviewPriorityOnly&&_priorityGames.Count>0&&OverviewGroups.Count==0?Visibility.Visible:Visibility.Collapsed;
+    public string OverviewHint=>_priorityGames.Count==0?"可设置游戏优先级，让指定游戏置顶。":$"按已设置的 {_priorityGames.Count} 个优先游戏顺序展示 · {OverviewGroups.Count} 个活动";
+
+    internal TwitchInventoryModel(DropsPlatformViewModel health,ObservableCollection<string>? configuredGames=null)
+    {
+        _health=health;_configuredGames=configuredGames;
+        if(configuredGames is not null){_priorityGames=configuredGames.ToArray();configuredGames.CollectionChanged+=(_,_)=>{_priorityGames=configuredGames.ToArray();Filter();};}
+        health.PropertyChanged+=(_,e)=>
+        {
+            if(e.PropertyName==nameof(health.Running)){_runStartedAt=DateTimeOffset.UtcNow;InvalidateWatch();}
+            if(e.PropertyName==nameof(health.ConnectionState)&&health.ConnectionState is DropsConnectionState.Failed or DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering){_rejectedBefore=DateTimeOffset.UtcNow;InvalidateWatch();}
+            NotifyRuntime();Filter();
+        };
+    }
+    internal void ConfigureDisplay(AppSettings settings){_displaySettings=settings;_overviewPriorityOnly=settings.TwitchOverviewPriorityOnly;Raise(nameof(OverviewPriorityOnly));Raise(nameof(OverviewScope));Filter();}
     internal void SetScope(string scope){_scope=scope;Filter();}
     internal void Apply(JsonElement state)
     {
@@ -115,29 +160,38 @@ public sealed class TwitchInventoryModel : ObservableObject
         if(V.Has(state,"lastInventorySyncAt"))_sync=V.Text(state,"lastInventorySyncAt");
         if(V.Has(state,"inventorySource"))_inventorySource=V.Text(state,"inventorySource");
         if(V.Has(state,"connectionState"))_phase=V.Text(state,"connectionState");
-        if(V.Has(state,"settings")){var settings=V.Get(state,"settings");_emptyPriorityOnly=V.Text(settings,"priority_mode")=="PRIORITY_ONLY"&&!V.Rows(settings,"priority").Any();}
+        if(V.Has(state,"historicalReplay"))_historical=V.Bool(state,"historicalReplay");
+        if(V.Has(state,"settings")){var settings=V.Get(state,"settings");_emptyPriorityOnly=V.Text(settings,"priority_mode")=="PRIORITY_ONLY"&&!V.Rows(settings,"priority").Any();if(_configuredGames is null&&V.Has(settings,"priority"))_priorityGames=V.Rows(settings,"priority").Where(p=>p.ValueKind==JsonValueKind.String).Select(p=>p.GetString()??"").ToArray();}
         if(V.Has(state,"currentChannel"))UpdateChannel(V.Get(state,"currentChannel"));
         if(V.Has(state,"watchRequests"))UpdateWatch(V.Get(state,"watchRequests"));
-        if(V.Has(state,"currentDrop"))_selectedDrop=V.Get(state,"currentDrop").ValueKind==JsonValueKind.Object?RewardVisual.From(V.Get(state,"currentDrop"),"Twitch",_sync):null;
+        if(V.Has(state,"currentDrop"))
+        {
+            var next=V.Get(state,"currentDrop").ValueKind==JsonValueKind.Object?RewardVisual.From(V.Get(state,"currentDrop"),"Twitch",_sync):null;
+            if(next?.Id!=_selectedDrop?.Id||next?.CampaignId!=_selectedDrop?.CampaignId)_growthAt=null;
+            _selectedDrop=next;
+        }
         if(V.Has(state,"inventory")||V.Has(state,"campaigns"))Rebuild();
+        ObserveOfficialProgress(state);
+        Filter();
         NotifyRuntime();
     }
     internal void ApplyEvent(string name,JsonElement payload)
     {
         if(name=="current_channel")UpdateChannel(payload);
         if(name=="watch_request")UpdateWatch(payload);
-        if(name=="connection_status")_phase=V.Text(payload,"phase");
-        NotifyRuntime();
+        if(name=="connection_status"){_phase=V.Text(payload,"phase");if(_phase is "failed" or "waiting_retry" or "stopped"){_rejectedBefore=DateTimeOffset.UtcNow;InvalidateWatch();}}
+        NotifyRuntime();Filter();
     }
     private void UpdateChannel(JsonElement channel)
     {
         var id=V.Text(channel,"id");
-        if(id!=_channelId){_watchResult="";_acceptedAt=null;}
+        if(id!=_channelId)InvalidateWatch();
         _channelId=id;_channel=V.Text(channel,"name","尚未选择频道");_game=V.Text(channel,"game");
     }
     private void UpdateWatch(JsonElement watch)
     {
         _watchChannelId=V.Text(watch,"channelId");_watchResult=V.Text(watch,"lastResult");
+        if(_watchResult=="failed")_rejectedBefore=DateTimeOffset.UtcNow;
         _acceptedAt=DateTimeOffset.TryParse(V.Text(watch,"lastAcceptedAt",V.Text(watch,"lastSuccessAt")),out var at)?at:null;
     }
     private void Rebuild()
@@ -151,6 +205,7 @@ public sealed class TwitchInventoryModel : ObservableObject
             var rewards=rows.Where(r=>V.Text(r,"campaignId")==id).Select(r=>RewardVisual.From(r,"Twitch",_sync)).ToArray();
             if(rewards.Length==0)rewards=V.Rows(campaign,"drops").Select(r=>RewardVisual.From(r,"Twitch",_sync) with{CampaignId=id,Campaign=V.Text(campaign,"name"),Game=V.Text(campaign,"game"),GameImageUrl=V.Text(campaign,"gameImageUrl")}).ToArray();
             rewards=rewards.Select(r=>r with{Expired=r.Expired||V.Bool(campaign,"expired"),Upcoming=r.Upcoming||V.Bool(campaign,"upcoming"),Eligible=r.Eligible??(V.Has(campaign,"eligible")?V.Bool(campaign,"eligible"):null)}).ToArray();
+            if(_selectedDrop?.CampaignId==id&&rewards.FirstOrDefault(r=>r.Id==_selectedDrop.Id) is {} selected)_selectedDrop=selected;
             if(!_all.TryGetValue(id,out var group))_all[id]=group=new(id);
             group.Update(campaign,rewards);
         }
@@ -160,6 +215,7 @@ public sealed class TwitchInventoryModel : ObservableObject
     }
     private void Filter()
     {
+        RebuildPriorityRanks();
         bool Matches(CampaignRewardGroup g)=>_status switch
         {
             "unfinished"=>g.Drops.Any(d=>!d.WatchCompleted&&!d.Claimed),
@@ -171,20 +227,53 @@ public sealed class TwitchInventoryModel : ObservableObject
             (_gameFilter=="全部游戏"||g.Game==_gameFilter)&&(_search.Length==0||(g.Title+" "+g.Game+" "+string.Join(" ",g.Cards.Select(c=>c.Title))).Contains(_search,StringComparison.OrdinalIgnoreCase)));
         var ordered=_sort switch {"ending"=>filtered.OrderBy(g=>g.SortEnd),"name"=>filtered.OrderBy(g=>g.Game).ThenBy(g=>g.Title),_=>Rank(filtered)};
         Reconcile(Groups,ordered.ToArray(),g=>g.Id);
-        var overview=Rank(_all.Values).Take(4).ToArray();
+        var overview=Rank(_all.Values.Where(g=>!OverviewPriorityOnly||PriorityRank(g)<int.MaxValue)).OrderBy(g=>PriorityRank(g)).ToArray();
         Reconcile(OverviewGroups,overview,g=>g.Id);
         Reconcile(QueueGroups,Rank(_all.Values.Where(g=>g.Drops.Any(d=>!d.Claimed&&(d.CanClaim||!d.WatchCompleted&&!d.Expired&&!d.Upcoming&&d.Eligible!=false&&d.PreconditionsSatisfiedForMining!=false)))).ToArray(),g=>g.Id);
-        foreach(var property in new[]{nameof(CountText),nameof(FilterSummary),nameof(EmptyText),nameof(EmptyVisibility),nameof(OverviewTitle)})Raise(property);
+        foreach(var property in new[]{nameof(CountText),nameof(FilterSummary),nameof(EmptyText),nameof(EmptyVisibility),nameof(OverviewTitle),nameof(OverviewScope),nameof(OverviewEmptyText),nameof(OverviewEmptyVisibility),nameof(PrioritySetupVisibility),nameof(ViewAllVisibility),nameof(OverviewHint)})Raise(property);
+    }
+    private int PriorityRank(CampaignRewardGroup group)=>_priorityRanks.GetValueOrDefault(group.Id,int.MaxValue);
+    private void RebuildPriorityRanks()
+    {
+        _priorityRanks.Clear();
+        // Core currently stores exact official names. Resolve these through official ID/name pairs
+        // when available; ambiguous names never identify two different games. No substring aliases.
+        var names=_all.Values.Where(g=>g.GameId.Length>0).GroupBy(g=>g.Game.Trim(),StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g=>g.Key,g=>g.Select(c=>c.GameId).Distinct(StringComparer.Ordinal).ToArray(),StringComparer.OrdinalIgnoreCase);
+        for(var index=0;index<_priorityGames.Count;index++)
+        {
+            var name=_priorityGames[index].Trim();if(name.Length==0)continue;
+            names.TryGetValue(name,out var ids);
+            foreach(var group in _all.Values)
+            {
+                var matches=group.GameId.Length>0 ? group.GameId==name||ids is {Length:1}&&group.GameId==ids[0] :
+                    string.Equals(group.Game.Trim(),name,StringComparison.OrdinalIgnoreCase)&&ids is not {Length:>1};
+                if(matches)_priorityRanks.TryAdd(group.Id,index);
+            }
+        }
     }
     private IOrderedEnumerable<CampaignRewardGroup> Rank(IEnumerable<CampaignRewardGroup> groups)=>groups
-        .OrderByDescending(g=>CurrentDrop?.CampaignId==g.Id)
+        .OrderByDescending(g=>HasWatchEvidence&&CurrentDrop?.CampaignId==g.Id)
         .ThenByDescending(g=>g.Available&&g.Drops.Any(d=>!d.WatchCompleted&&!d.Claimed&&d.PreconditionsSatisfiedForMining!=false))
         .ThenByDescending(g=>g.Drops.Any(d=>d.CanClaim&&!d.Claimed))
-        .ThenBy(g=>g.Expired).ThenBy(g=>g.SortEnd);
+        .ThenBy(g=>g.Expired).ThenBy(g=>g.Upcoming).ThenBy(g=>g.SortEnd).ThenBy(g=>g.Id,StringComparer.Ordinal);
+    private void InvalidateWatch(){_watchResult="";_acceptedAt=null;_growthAt=null;}
+    private void ObserveOfficialProgress(JsonElement state)
+    {
+        var rows=V.Rows(state,"inventory").Concat(V.Get(state,"currentDrop").ValueKind==JsonValueKind.Object?[V.Get(state,"currentDrop")]:Array.Empty<JsonElement>());
+        foreach(var row in rows.DistinctBy(r=>V.Text(r,"campaignId")+"/"+V.Text(r,"id")))
+        {
+            var drop=RewardVisual.From(row,"Twitch",_sync);var key=drop.CampaignId+"/"+drop.Id;
+            if(_officialMinutes.TryGetValue(key,out var before)&&drop.Current>before&&IsWatchingDrop(drop)&&_inventorySource!="cache"&&
+                DateTimeOffset.TryParse(_sync,out var synced)&&WatchEvidence.Recent(synced)&&synced>=_runStartedAt)_growthAt=DateTimeOffset.UtcNow;
+            if(drop.Current<before&&CurrentDrop?.Id==drop.Id)_growthAt=null;
+            _officialMinutes[key]=drop.Current;
+        }
+    }
     private void NotifyRuntime()
     {
-        if(!_health.Running){_watchResult="";_acceptedAt=null;}
-        foreach(var property in new[]{nameof(Channel),nameof(Game),nameof(SyncText),nameof(DataFreshness),nameof(CurrentDrop),nameof(HasWatchEvidence),nameof(WatchState),nameof(CurrentSummary),nameof(EstimateText)})Raise(property);
+        if(!_health.Running)InvalidateWatch();
+        foreach(var property in new[]{nameof(Channel),nameof(Game),nameof(SyncText),nameof(DataFreshness),nameof(CurrentDrop),nameof(HasWatchEvidence),nameof(OfficialGrowthConfirmed),nameof(WatchState),nameof(CurrentSummary),nameof(CurrentSummaryVisibility),nameof(EstimateText)})Raise(property);
     }
     internal void RefreshClock()=>NotifyRuntime();
     internal static void Reconcile<T>(ObservableCollection<T> target,IReadOnlyList<T> wanted,Func<T,string> key)

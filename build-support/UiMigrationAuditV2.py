@@ -50,6 +50,7 @@ for row in baseline:
   if found:row['evidence']=['原确认 / Command 实现',str(found.relative_to(ROOT))];continue
  # Deliberate visual replacements, with concrete new binding evidence. These are not click-test claims.
  replacements={
+  'BilibiliDetails.ActiveSessions':('Views/Drops/Bilibili/BilibiliWorkspace.xaml','BilibiliDetails.WatchingSessions'),
   'TwitchChannelText':('Views/Drops/Twitch/TwitchOverview.xaml','TwitchInventory.Channel'),
   'TwitchWatchRequestText':('Views/Drops/Twitch/TwitchOverview.xaml','TwitchInventory.WatchState'),
   'TwitchInventoryEmptyText':('Views/Drops/Twitch/TwitchWorkspace.xaml','TwitchInventory.EmptyText'),

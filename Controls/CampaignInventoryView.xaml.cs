@@ -45,7 +45,7 @@ public partial class CampaignInventoryView : UserControl
         var rows=new List<CampaignRow>();
         // Pair small adjacent campaigns only when both keep full-size cards and separate headers.
         var halfContent=(ActualWidth-SystemParameters.VerticalScrollBarWidth)/2-40;
-        var capacity=halfContent<220?0:Math.Min(3,RewardTilePanel.ColumnsFor(halfContent));
+        var capacity=halfContent<190?0:Math.Min(2,RewardTilePanel.ColumnsFor(halfContent));
         for(var index=0;index<groups.Length;index++)
         {
             var group=groups[index];

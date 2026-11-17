@@ -1,9 +1,16 @@
 <UserControl x:Class="CloudLightBlizzard.Controls.RewardCard" x:Name="Card" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:c="clr-namespace:CloudLightBlizzard.Controls">
-    <Border Tag="RewardTile" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" Padding="12" DataContext="{Binding Reward,ElementName=Card}">
+    <Border Tag="RewardTile" Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="10" Padding="10" DataContext="{Binding Reward,ElementName=Card}">
+        <Border.ToolTip><StackPanel MaxWidth="360">
+            <TextBlock Text="{Binding Subtitle,ElementName=Card}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding EligibilityText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding PrerequisiteText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding LocalEstimateText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding SyncText}"/>
+        </StackPanel></Border.ToolTip>
         <StackPanel>
-            <Grid Height="120" Margin="0,0,0,8">
-                <c:VisualImage SourceUrl="{Binding ImageUrl,ElementName=Card}" Brand="{Binding Brand}" DecodePixelWidth="384" ImageStretch="Uniform"/>
-                <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="6" Padding="8,4" BorderThickness="1" Background="{DynamicResource App.Surface}">
+            <Grid Height="92" Margin="0,0,0,6" Tag="RewardImageArea">
+                <c:VisualImage SourceUrl="{Binding ImageUrl,ElementName=Card}" Brand="{Binding Brand}" DecodePixelWidth="256" ImageStretch="Uniform"/>
+                <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="5" Padding="6,3" BorderThickness="1" Background="{DynamicResource App.Surface}">
                     <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource App.Border}"/><Style.Triggers>
                         <DataTrigger Binding="{Binding StateKind}" Value="claimable"><Setter Property="BorderBrush" Value="{DynamicResource Status.Warning}"/></DataTrigger>
                         <DataTrigger Binding="{Binding StateKind}" Value="claimed"><Setter Property="BorderBrush" Value="{DynamicResource Status.Success}"/></DataTrigger>
@@ -12,19 +19,17 @@
                     <TextBlock Text="{Binding StateBadge}" FontSize="13" FontWeight="SemiBold"/>
                 </Border>
             </Grid>
-            <TextBlock Text="{Binding Title,ElementName=Card}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="20" LineStackingStrategy="BlockLineHeight" MaxHeight="40" MinHeight="40" ToolTip="{Binding Title,ElementName=Card}"/>
-            <TextBlock Text="{Binding Subtitle,ElementName=Card}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle,ElementName=Card}" Margin="0,3,0,6"/>
-            <StackPanel Visibility="{Binding IncompleteVisibility}">
-                <TextBlock Text="{Binding OfficialProgressText}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                <DockPanel Margin="0,4,0,5"><TextBlock DockPanel.Dock="Right" Text="{Binding PercentText}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}"/><TextBlock Text="{Binding RemainingText}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" VerticalAlignment="Center"/></DockPanel>
-                <ProgressBar Value="{Binding Percent,Mode=OneWay}" Maximum="100" Height="8" Style="{DynamicResource ThemeProgressBar}"/>
-            </StackPanel>
-            <TextBlock Text="{Binding CompletionText}" Visibility="{Binding CompleteVisibility}" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" TextWrapping="Wrap" Margin="0,2,0,5"/>
-            <TextBlock Text="{Binding StateText}" Visibility="{Binding StateExplanationVisibility}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
-            <TextBlock Text="{Binding LocalEstimateText}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding LocalEstimateText}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
-            <DockPanel Margin="0,8,0,0">
-                <Button DockPanel.Dock="Right" Content="详情 →" c:WorkspaceAction.Name="reward:details" Visibility="{Binding DetailsVisibility,ElementName=Card}" Style="{DynamicResource SecondaryButton}" MinHeight="34" Padding="10,0" FontSize="13"/>
-                <TextBlock Text="{Binding PrerequisiteSummary}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,0,6,0" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Title,ElementName=Card}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="20" LineStackingStrategy="BlockLineHeight" MaxHeight="40" MinHeight="20" ToolTip="{Binding Title,ElementName=Card}"/>
+            <Grid Margin="0,5,0,5" Visibility="{Binding IncompleteVisibility}"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding ProgressText}" ToolTip="{Binding OfficialProgressText}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" Margin="4,0,0,0"/>
+            </Grid>
+            <TextBlock Text="{Binding CompletionText}" Visibility="{Binding CompleteVisibility}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" Margin="0,5,0,5"/>
+            <ProgressBar Value="{Binding Percent,Mode=OneWay}" Maximum="100" Height="7" Style="{DynamicResource ThemeProgressBar}"/>
+            <TextBlock Text="{Binding EligibilityText}" Visibility="{Binding EligibilityVisibility}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding EligibilityText}" Margin="0,5,0,0"/>
+            <DockPanel Margin="0,6,0,0">
+                <Button DockPanel.Dock="Right" Content="详情" c:WorkspaceAction.Name="reward:details" Visibility="{Binding DetailsVisibility,ElementName=Card}" Style="{DynamicResource SecondaryButton}" MinHeight="32" Padding="8,0" FontSize="13"/>
+                <TextBlock Text="{Binding RemainingText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding RemainingText}" Margin="0,0,5,0" VerticalAlignment="Center"/>
             </DockPanel>
         </StackPanel>
     </Border>

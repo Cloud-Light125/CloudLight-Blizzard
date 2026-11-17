@@ -43,7 +43,7 @@ public sealed class BilibiliTaskViewModel : ObservableObject
     public bool Completed { get; init; }
     public bool Claimed { get; init; }
     public bool Claimable { get; init; }
-    public string Status { get; init; } = "进行中";
+    public string Status => Visual.StateText;
     public string ProgressText => $"{FormatNumber(Current)} / {FormatNumber(Limit)} · {Percent:0}%";
     public string OfficialText => "官方任务接口";
     public Visibility ClaimVisibility => Claimable ? Visibility.Visible : Visibility.Collapsed;
@@ -172,7 +172,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public BilibiliDropsViewModel(DropsPlatformViewModel platform)
     {
         _platform = platform;
-        _platform.PropertyChanged+=(_,_)=>{Raise(nameof(WatchStateText));Raise(nameof(WatchingSessions));};
+        _platform.PropertyChanged+=(_,e)=>{if(e.PropertyName==nameof(_platform.Running))_sessionsObservedAt=null;RefreshWatchClock();};
         Tasks.CollectionChanged+=(_,_)=>Raise(nameof(TaskStateText));
         ScanQrLoginCommand = NewCommand();
         CancelQrCommand = NewCommand();
@@ -193,10 +193,14 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     }
 
     public DropsPlatformViewModel Platform => _platform;
-    public int WatchingSessions=>_platform.Running?ActiveSessions:0;
-    public string WatchStateText=>_platform.WorkerLifecycle==WorkerLifecycle.Crashed?"观看 Worker 已异常退出":!_platform.Running?"观看 Worker 已停止":
-        ActiveSessions>0?$"正在观看 · {ActiveSessions} 个活跃 Session":FailedSessions>0?"观看连接失败":RetryingSessions>0?"观看暂停 · 等待重连":ConnectingSessions>0?"正在连接直播间":"Worker 已启动 · 活跃观看 Session 为 0";
-    public string TaskStateText=>Tasks.Count==0?"官方任务等待刷新":$"{Tasks.Count(t=>!t.Completed)} 项任务未完成 · {Tasks.Count(t=>t.Completed)} 项已完成";
+    private DateTimeOffset? _sessionsObservedAt;
+    private bool _historicalReplay;
+    public int WatchingSessions=>_platform.Running&&LoggedIn&&!_historicalReplay&&_platform.WorkerLifecycle is not (WorkerLifecycle.Starting or WorkerLifecycle.Stopping or WorkerLifecycle.Crashed)&&_platform.ConnectionState is not (DropsConnectionState.Failed or DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering)&&_sessionsObservedAt is {} at&&Visuals.WatchEvidence.Recent(at)?Math.Min(ActiveSessions,Sessions.Count(s=>s.State=="active")):0;
+    public string WatchStateText=>_historicalReplay?"历史官方快照 · 非实时观看":_platform.WorkerLifecycle==WorkerLifecycle.Crashed?"观看 Worker 已异常退出":!_platform.Running?"观看 Worker 已停止":
+        _platform.ConnectionState is DropsConnectionState.Failed or DropsConnectionState.WaitingRetry or DropsConnectionState.Recovering?"连接失败 · 等待恢复":
+        WatchingSessions>0?$"观看 Session 活跃（{WatchingSessions}）· 官方进度待确认":!LoggedIn?"尚未登录":FailedSessions>0?"观看连接失败":RetryingSessions>0?"等待重试 · 直播间重连中":ConnectingSessions>0?"正在连接直播间":"尚未建立有效观看 · 活跃 Session 为 0";
+    public string TaskStateText=>Tasks.Count==0?"官方任务等待刷新":$"{Tasks.Count(t=>!t.Completed)} 项任务未完成 · {Tasks.Count(t=>t.Completed)} 项已完成 · {Tasks.Count(t=>t.Claimable&&!t.Claimed)} 项待领取";
+    internal void RefreshWatchClock(){Raise(nameof(WatchingSessions));Raise(nameof(WatchStateText));Raise(nameof(SessionSummary));}
     public ObservableCollection<BilibiliRoomViewModel> Rooms { get; } = new();
     public ObservableCollection<BilibiliActivityViewModel> Activities { get; } = new();
     public ObservableCollection<BilibiliTaskViewModel> Tasks { get; } = new();
@@ -412,7 +416,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public int RetryingSessions { get => _retryingSessions; private set { Set(ref _retryingSessions, value); Raise(nameof(SessionSummary)); } }
     private int _failedSessions;
     public int FailedSessions { get => _failedSessions; private set { Set(ref _failedSessions, value); Raise(nameof(SessionSummary)); } }
-    public string SessionSummary => $"{ActiveSessions} / {ConfiguredSessions} 活动 · {ConnectingSessions} 连接中 · {RetryingSessions} 等待重连 · {FailedSessions} 失败";
+    public string SessionSummary => $"{WatchingSessions} / {ConfiguredSessions} 活跃 Session · {(_platform.Running?ConnectingSessions:0)} 连接中 · {(_platform.Running?RetryingSessions:0)} 等待重连 · {(_platform.Running?FailedSessions:0)} 失败";
 
     private bool _enabled;
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
@@ -568,6 +572,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     public void ApplyState(JsonElement state)
     {
         if (state.ValueKind != JsonValueKind.Object) return;
+        if(state.TryGetProperty("historicalReplay",out var replay))_historicalReplay=replay.ValueKind==JsonValueKind.True;
         var previous = _suppressSettingsDirty;
         _suppressSettingsDirty = true;
         try
@@ -635,6 +640,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     private void ApplyAccount(JsonElement account)
     {
         if (account.ValueKind != JsonValueKind.Object) return;
+        if(Long(account,"uid")!=Uid||!Bool(account,"loggedIn"))_sessionsObservedAt=null;
         LoggedIn = Bool(account, "loggedIn");
         UserName = Text(account, "userName");
         Uid = Long(account, "uid");
@@ -693,7 +699,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             {
                 Id = Text(item, "id"), Name = Text(item, "name", "任务"), Current = Number(item, "current"),
                 Limit = Number(item, "limit"), Percent = Number(item, "percent"), Completed = Bool(item, "completed"),
-                Claimed = Bool(item, "claimed"), Claimable = Bool(item, "claimable"), Status = Text(item, "status", "进行中"),
+                Claimed = Bool(item, "claimed"), Claimable = Bool(item, "claimable"),
             });
     }
 
@@ -736,6 +742,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
     private void ApplySessions(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.Object) return;
+        _sessionsObservedAt=_platform.Running?DateTimeOffset.UtcNow:null;
         ConfiguredSessions = Int(value, "configuredSessions", ConfiguredSessions);
         ActiveSessions = Int(value, "activeSessions", ActiveSessions);
         ConnectingSessions = Int(value, "connectingSessions", ConnectingSessions);
@@ -756,6 +763,7 @@ public sealed class BilibiliDropsViewModel : ObservableObject
             var count = Sessions.Count(session => session.RoomId == room.Id);
             room.SessionText = count == 0 ? "无活动 Session" : $"{count} 个 Session";
         }
+        RefreshWatchClock();
     }
 
     internal void SetQrError(string message)
