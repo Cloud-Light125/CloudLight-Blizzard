@@ -163,7 +163,7 @@ public sealed class SoopCampaignModel : ObservableObject
                     Running = _targets.GetValueOrDefault(_account) == activityId, End = V.Text(row, "endTime", V.Text(row, "endDate","结束时间未提供")),
                     Summary = $"{V.Text(row,"type")} · {Status(row)} · {V.Number(row,"taskCount")} 个任务 · {rewardCount} 件奖励",
                     Details = $"{V.Text(row, "startTime", V.Text(row, "startDate"))} → {V.Text(row, "endTime", V.Text(row, "endDate"))}\n资格：{V.Text(row, "gameAccountBindingStatus")} · {V.Text(row, "executionBlockReason", "可按官方规则参与")}\n{V.Text(row, "randomNotice")}\n频道：{string.Join("、", V.Rows(row, "channelIds").Select(x => x.GetString()))} 分类：{string.Join("、", V.Rows(row, "categoryNames").Select(x => x.GetString()))}\n{V.Text(row, "rules")}\n活动 ID：{activityId} · 游戏 ID：{id}" };
-                campaign.Changed = () => { ExplicitSelection = true; MarkDirty(); };
+                campaign.Changed = () => { if (_applying) return; ExplicitSelection = true; MarkDirty(); };
                 campaign.LoadRewards=()=>V.Rows(row,"items").Select((item,index)=>
                 {
                     var known=official&&!random&&V.Get(item,"viewMinutes").ValueKind==JsonValueKind.Number;
@@ -175,7 +175,7 @@ public sealed class SoopCampaignModel : ObservableObject
                 }).ToArray();
                 _campaignCache[key]=(signature,campaign);campaigns.Add(campaign);
             }
-            game.Changed = () => { ExplicitSelection = true; MarkDirty(); };
+            game.Changed = () => { if (_applying) return; ExplicitSelection = true; MarkDirty(); };
             Sync(game.Campaigns,campaigns);game.Notify();games.Add(game);
         }
         Sync(Games,games);

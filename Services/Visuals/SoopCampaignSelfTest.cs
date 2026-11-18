@@ -46,6 +46,10 @@ internal static class SoopCampaignSelfTest
             var model=new SoopCampaignModel();model.Apply(state);
             check(model.Games.Count==5&&model.Games[0].Campaigns.Count==4&&model.Games.Count(g=>g.Selected)==4,"SOOP four selected games and multiple activities use exact IDs");
             check(model.Games.SelectMany(g=>g.Campaigns).All(c=>!c.RewardsMaterialized),"SOOP catalog application creates zero reward projections before realization");
+            var legacy=new SoopCampaignModel();legacy.Apply(state);
+            var legacyState=JsonSerializer.SerializeToElement(new{campaigns=state.GetProperty("campaigns"),settings=new{campaign_selection_mode="legacy",selected_games=Array.Empty<string>(),campaign_priorities=new Dictionary<string,string[]>(),priority_mission_id="auto"}});
+            legacy.Apply(legacyState);
+            check(!legacy.ExplicitSelection&&!legacy.Dirty&&legacy.Games.All(g=>!g.Selected),"SOOP cache refresh cannot turn legacy intent into selected-only watch policy");
             model.Move(model.Games[0].Campaigns[1],-99);
             var saved=JsonSerializer.SerializeToElement(model.SettingsPayload());
             var reopened=new SoopCampaignModel();reopened.Apply(JsonSerializer.SerializeToElement(new{settings=saved,campaigns=state.GetProperty("campaigns")}));
