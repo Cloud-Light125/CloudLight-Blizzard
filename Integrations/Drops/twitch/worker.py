@@ -70,6 +70,7 @@ class TwitchWorker(WorkerBase):
             "get_campaigns": self.get_campaigns,
             "get_channels": self.get_channels,
             "claim_drop": self.claim_drop,
+            "claim_all_drops": self.claim_all_drops,
             "select_channel": self.select_channel,
             "reload": self.reload,
             "get_games": self.get_games,
@@ -92,6 +93,7 @@ class TwitchWorker(WorkerBase):
             if self._data_lease is not None:
                 self._data_lease.close()
                 self._data_lease = None
+            self._loop.close()
 
     def _core_path(self) -> Path | None:
         configured = os.environ.get("CLOUDLIGHT_TWITCH_CORE", "").strip()
@@ -434,6 +436,10 @@ class TwitchWorker(WorkerBase):
 
     async def _shutdown_client_safely(self, client: Any) -> None:
         try:
+            client._claim_stopping = True
+            gate = getattr(client, "_claim_coordinator", None)
+            if gate is not None:
+                await gate.cancel_pending()
             await client.shutdown()
         except asyncio.CancelledError:
             self.logger.debug("Twitch core shutdown was cancelled; forcing session cleanup")
@@ -481,6 +487,8 @@ class TwitchWorker(WorkerBase):
             "available_drops_check": self._settings.available_drops_check,
             "auto_claim_drops": self._settings.auto_claim_drops,
             "priority_mode": mode.name,
+            "campaign_watch_priority": copy.deepcopy(getattr(self._settings, "campaign_watch_priority", {})),
+            "campaign_display_sort": getattr(self._settings, "campaign_display_sort", "recommended"),
         }
 
     def _account_summary(self) -> str:
@@ -502,11 +510,13 @@ class TwitchWorker(WorkerBase):
             "inventory": self.get_inventory({}), "channels": self.get_channels({}),
             "currentChannel": self._current_channel(), "proxy": self.proxy,
             "currentDrop": self._current_drop(),
+            "watchSchedule": dict(getattr(self._client, "_cloudlight_schedule", {})),
             "inventorySource": "remote" if getattr(self._client, "_cloudlight_inventory_loaded", False) else "cache" if self._last_snapshot else "unavailable",
             "lastInventorySyncAt": str(getattr(self._client, "_cloudlight_inventory_updated_at", self._inventory_sync_at)),
             "availableGames": available_games, "games": available_games,
             "websockets": self._websocket_state(), "languages": self.get_languages({}),
             "watchRequests": dict(getattr(self._client, "_cloudlight_watch_requests", {})),
+            "claimOperations": {"submitted": getattr(getattr(self._client, "_claim_coordinator", None), "attempts", 0)},
             "coreAvailable": bool(self._core), "coreError": self._core_error,
             "networkDiagnostics": list(getattr(self._client, '_cloudlight_network_diagnostics', self._last_network_trace)),
             "proxyPolicy": self._safe_proxy_policy(),
@@ -664,6 +674,7 @@ class TwitchWorker(WorkerBase):
             "language", "dark_mode", "exclude", "priority", "autostart_tray",
             "connection_quality", "tray_notifications", "enable_badges_emotes",
             "available_drops_check", "auto_claim_drops", "priority_mode",
+            "campaign_watch_priority", "campaign_display_sort",
         }
         previous = copy.deepcopy(self._settings._settings)
         staged = copy.deepcopy(previous)
@@ -678,6 +689,16 @@ class TwitchWorker(WorkerBase):
                 value = self._core["PriorityMode"][mode_name]
             elif key == "connection_quality":
                 value = max(1, min(6, int(value)))
+            elif key == "campaign_watch_priority":
+                from campaign_priority import validate_priorities
+                validate_priorities(value)
+                # Merge by stable game ID, retaining other games and unknown fields.
+                merged = copy.deepcopy(staged.get(key, {}))
+                for game_id, entry in value.items():
+                    merged[game_id] = {**merged.get(game_id, {}), **entry}
+                value = merged
+            elif key == "campaign_display_sort" and value not in {"recommended", "ending", "name", "progress", "status"}:
+                raise ValueError("显示排序无效")
             staged[key] = value
         self._settings._store.encode(staged)
         self._settings._settings = staged
@@ -687,7 +708,18 @@ class TwitchWorker(WorkerBase):
             self._settings._settings = previous
             raise
         if self._client is not None:
-            self.reload({})
+            client = self._client
+            if set(changes) <= {"campaign_watch_priority", "campaign_display_sort"}:
+                if "campaign_watch_priority" in changes:
+                    def changed():
+                        if self._client is not client:
+                            return
+                        client._campaign_priority_changed = True
+                        if client._state is self._core["State"].IDLE:
+                            client.change_state(self._core["State"].GAMES_UPDATE)
+                    self._loop.call_soon_threadsafe(changed)
+            else:
+                self.reload({})
         return self._settings_dict()
 
     def on_proxy_changed(self) -> None:
@@ -923,12 +955,10 @@ class TwitchWorker(WorkerBase):
             self._inventory_sync_at = ""
 
     @staticmethod
-    def _find_drop(client: Any, drop_id: str) -> Any | None:
-        for campaign in client.inventory:
-            for drop in campaign.drops:
-                if drop.id == drop_id:
-                    return drop
-        return None
+    def _find_drop(client: Any, drop_id: str, campaign_id: str = "") -> Any | None:
+        matches = [drop for campaign in client.inventory for drop in campaign.drops
+                   if drop.id == drop_id and (not campaign_id or campaign.id == campaign_id)]
+        return matches[0] if len(matches) == 1 else None
 
     def _current_drop(self) -> dict[str, Any] | None:
         client = self._client
@@ -938,52 +968,161 @@ class TwitchWorker(WorkerBase):
         return self._drop_snapshot(drop)
 
     def claim_drop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from claim_guard import MESSAGES
         drop_id = str(payload.get("id", "")).strip()
         if not drop_id:
-            return {"status": "not_found", "state": self.load_state({})}
+            return {"status": "not_found", "message": MESSAGES["not_found"], "state": self.load_state({})}
         client = self._client
         if client is None or not self.running:
             self.logger.warning("Twitch 奖励领取失败：掉宝服务尚未运行")
-            return {"status": "not_running", "state": self.load_state({})}
-        return self._submit(self._claim_drop(client, drop_id), timeout=60)
+            return {"status": "not_running", "message": MESSAGES["not_running"], "state": self.load_state({})}
+        return self._submit(self._claim_drop(client, drop_id, campaign_id=str(payload.get("campaignId", ""))), timeout=90)
 
-    async def _claim_drop(self, client: Any, drop_id: str) -> dict[str, Any]:
-        drop = self._find_drop(client, drop_id)
+    async def _claim_drop(self, client: Any, drop_id: str, *, refresh: bool = True, retry: bool = True, campaign_id: str = "") -> dict[str, Any]:
+        from claim_guard import MESSAGES
+        from claim_guard import coordinator
+        gate = coordinator(client)
+        async with gate.transaction():
+            attempts = gate.attempts
+            result = await self._claim_drop_locked(client, drop_id, refresh=refresh, retry=retry, campaign_id=campaign_id)
+            result["submitted"] = gate.attempts > attempts
+            result["message"] = MESSAGES.get(result["status"], MESSAGES["failed"])
+            return result
+
+    async def _claim_drop_locked(self, client: Any, drop_id: str, *, refresh: bool, retry: bool, campaign_id: str = "") -> dict[str, Any]:
+        from claim_guard import coordinator
+        gate = coordinator(client)
+        if refresh:
+            try:
+                async with asyncio.timeout(20):
+                    await client.fetch_inventory()
+            except Exception:
+                return {"status": "inventory_error", "state": self.load_state({})}
+        drop = self._find_drop(client, drop_id, campaign_id)
         if drop is None:
             self.logger.warning("Twitch 奖励暂时无法领取：未找到对应奖励")
             return {"status": "not_found", "state": self.load_state({})}
         name = drop.name
+        prior = gate.pending(drop)
         if drop.is_claimed:
+            gate.record(drop, "already_claimed")
             return {"status": "already_claimed", "state": self.load_state({})}
-        if not drop.watch_requirement_completed or not drop.can_claim:
+        if not drop.watch_requirement_completed or not drop.can_claim or not drop.campaign.eligible:
             self.logger.warning("Twitch 奖励暂时无法领取：%s", name)
             return {"status": "not_claimable", "state": self.load_state({})}
+        if prior and prior["status"] == "unconfirmed":
+            if not refresh or not retry or time.monotonic() - prior["at"] < 60:
+                return {"status": "unconfirmed", "state": self.load_state({})}
+            # A later, explicit operation may retry only after a fresh official
+            # read still identifies this same instance as claimable.
+            gate.record(drop, "retry_ready")
+            client._claim_results.pop(gate.drop_key(drop), None)
+        with self._control_lock:
+            stopping = self._controls_pending > 0
+        if stopping or client is not self._client or not self.running or getattr(client, "_claim_stopping", False):
+            return {"status": "not_submitted", "state": self.load_state({})}
 
         try:
             # TimedDrop.claim() invokes the TwitchDropsMiner ClaimDrop GQL mutation.
-            if not await drop.claim():
-                self.logger.warning("Twitch 奖励暂时无法领取：%s", name)
-                return {"status": "failed", "state": self.load_state({})}
+            await drop.claim()
+            status = (gate.pending(drop) or {}).get("status", "unconfirmed")
+            if status in {"claimed", "already_claimed"}:
+                status = "unconfirmed"
+                gate.record(drop, status)
 
             # Refresh only the Core inventory. Do not restart the worker/state machine
             # or disturb the currently watched campaign/channel.
-            await client.fetch_inventory()
-            refreshed_drop = self._find_drop(client, drop_id)
+            if not refresh:
+                return {"status": status, "state": self.load_state({})}
+            async with asyncio.timeout(20):
+                await client.fetch_inventory()
+            refreshed_drop = self._find_drop(client, drop_id, drop.campaign.id)
             if refreshed_drop is None or not refreshed_drop.is_claimed:
                 self.logger.warning("Twitch 奖励领取结果尚未同步：%s", name)
-                return {"status": "unconfirmed", "state": self.load_state({})}
+                return {"status": status, "state": self.load_state({})}
 
+            gate.record(drop, "claimed")
+            if hasattr(refreshed_drop, "notify_claim_confirmed"):
+                refreshed_drop.notify_claim_confirmed()
             self.logger.info("Twitch 奖励领取成功：%s", name)
+            client._campaign_priority_changed = True
             return {"status": "claimed", "state": self.load_state({})}
         except Exception as exc:
             if self._runtime_error_category(exc) == "authentication":
                 self.logger.warning("Twitch 登录状态已失效，请重新登录")
-                status = "authentication_error"
+                status = "unconfirmed"
             else:
                 self.logger.warning("Twitch 奖励领取失败：网络连接异常")
-                status = "network_error"
-            self.logger.debug("Twitch manual claim detail", exc_info=True)
+                status = "unconfirmed"
             return {"status": status, "state": self.load_state({})}
+
+    def claim_all_drops(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._client is None or not self.running:
+            from claim_guard import MESSAGES
+            return {"status": "not_running", "message": MESSAGES["not_running"], "results": [], "state": self.load_state({})}
+        return self._submit(self._claim_all_drops(self._client), timeout=280)
+
+    async def _claim_all_drops(self, client: Any) -> dict[str, Any]:
+        from claim_guard import coordinator
+        gate = coordinator(client)
+        if gate.batch:
+            return {"status": "busy", "message": "本账号已有批量领取正在执行。", "results": []}
+        gate.batch = True
+        try:
+            async with gate.transaction():
+                return await self._claim_all_locked(client)
+        finally:
+            gate.batch = False
+
+    async def _claim_all_locked(self, client: Any) -> dict[str, Any]:
+        from claim_guard import MESSAGES, coordinator
+        try:
+            async with asyncio.timeout(20):
+                await client.fetch_inventory()
+        except Exception:
+            return {"status": "inventory_error", "message": MESSAGES["inventory_error"], "results": [], "state": self.load_state({})}
+        # Snapshot IDs only; each operation re-resolves the latest inventory object.
+        ids = list(dict.fromkeys((c.id, d.id) for c in client.inventory for d in c.drops
+                                if c.eligible and d.can_claim and not d.is_claimed and d.watch_requirement_completed))
+        results = []
+        deadline = time.monotonic() + 230
+        for campaign_id, drop_id in ids:
+            with self._control_lock:
+                stop_pending = self._controls_pending > 0
+            if time.monotonic() >= deadline or stop_pending:
+                results.append({"id": drop_id, "campaignId": campaign_id, "status": "not_submitted", "message": MESSAGES["not_submitted"]})
+                continue
+            event("claim_progress", {"total": len(ids), "current": self._find_drop(client, drop_id, campaign_id).name, "results": results})
+            result = await self._claim_drop(client, drop_id, refresh=False, retry=False, campaign_id=campaign_id)
+            results.append({"id": drop_id, "campaignId": campaign_id, "status": result["status"], "submitted": result["submitted"], "message": result["message"]})
+            event("claim_result", results[-1])
+            await asyncio.sleep(0.5)
+        refresh_error = ""
+        try:
+            async with asyncio.timeout(20):
+                await client.fetch_inventory()
+        except Exception:
+            refresh_error = "库存回查暂未完成，请稍后刷新。结果不确定的请求不会自动重发。"
+        if not refresh_error:
+            for result in results:
+                drop = self._find_drop(client, result["id"], result["campaignId"])
+                if drop is not None and drop.is_claimed:
+                    result["status"] = "claimed" if result.get("submitted", False) else "already_claimed"
+                    coordinator(client).record(drop, result["status"])
+                    if result["status"] == "claimed":
+                        drop.notify_claim_confirmed()
+                    result["message"] = MESSAGES[result["status"]]
+        success = sum(r["status"] == "claimed" for r in results)
+        skipped = sum(r["status"] == "already_claimed" for r in results)
+        unknown = sum(r["status"] == "unconfirmed" for r in results)
+        pending = sum(r["status"] == "not_submitted" for r in results)
+        client._campaign_priority_changed = True
+        summary = {"status": "completed", "total": len(ids), "success": success, "skipped": skipped,
+                   "unknown": unknown, "pending": pending,
+                   "failed": len(results) - success - skipped - unknown - pending, "results": results,
+                   "message": refresh_error, "current": ""}
+        event("claim_progress", summary)
+        return {**summary, "state": self.load_state({})}
 
     def get_channels(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         if self._client is None:

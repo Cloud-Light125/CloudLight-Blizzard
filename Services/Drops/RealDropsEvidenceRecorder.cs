@@ -37,7 +37,8 @@ internal sealed class RealDropsEvidenceRecorder : TraceListener
         "online", "dropsEnabled", "watchRequests", "channelId", "attempts", "lastResult", "lastAttemptAt", "lastSuccessAt",
         "successes", "failures", "consecutiveFailures", "playlistStatus", "segmentStatus", "failure", "code", "stage", "lastAcceptedAt", "accepted", "httpStatus", "transport", "benefitIds",
         "status", "phase", "method", "http", "host", "path", "route", "attempt", "elapsedMs", "replayable",
-        "auto_claim_drops", "settings", "_workerGeneration", "_workerSequence", "_stateTime", "_snapshotStarted"
+        "auto_claim_drops", "settings", "_workerGeneration", "_workerSequence", "_stateTime", "_snapshotStarted",
+        "watchSchedule", "rank", "campaignName", "eligibleCampaignIds", "claimOperations", "submitted", "gameId"
     };
 
     internal static void Attach(MainWindow window, string output)
@@ -115,7 +116,7 @@ internal sealed class RealDropsEvidenceRecorder : TraceListener
                     { source = "Worker JSONL received by Host", receivedAt = DateTimeOffset.Now, generation, state = Safe(state) }));
                 }
                 var eventName = V.Text(envelope, "event");
-                if (eventName is "watch_request" or "current_channel" or "drop" or "network_request" or "connection_status" || V.Has(state, "inventory"))
+                if (eventName is "watch_request" or "watch_schedule" or "claim_progress" or "claim_result" or "current_channel" or "drop" or "network_request" or "connection_status" || V.Has(state, "inventory"))
                     File.AppendAllText(Path.Combine(_output, "protocol-summary.jsonl"), JsonSerializer.Serialize(new
                     {
                         receivedAt = DateTimeOffset.Now, generation, eventName, sequence = V.Number(envelope, "sequence"),
@@ -166,11 +167,19 @@ internal sealed class RealDropsEvidenceRecorder : TraceListener
                 requiredMinutes = visual.FeaturedReward?.Required, percent = visual.FeaturedReward?.Percent, estimate = visual.FeaturedReward?.Estimate,
                 benefits = visual.FeaturedReward?.Benefits.Select(b => new { b.Id, b.Name, imageUrlSha256 = Hash(b.ImageUrl) }), images,
                 tiles, window = new { _window.ActualWidth, _window.ActualHeight, dpi = VisualTreeHelper.GetDpi(_window).PixelsPerInchX }
+                ,claimActions=_drops.TwitchInventory.AllCampaigns.SelectMany(c=>c.Drops).Select(d=>new{d.Id,d.CampaignId,d.Claimed,d.CanClaim,d.Current,d.Required,button=d.ClaimAction?.ButtonText,enabled=d.ClaimAction?.CanExecute,busy=d.ClaimAction?.Busy,message=d.ClaimAction?.Message}),
+                _drops.TwitchInventory.PrioritySummary,_drops.TwitchInventory.BatchClaimSummary
             };
             var json = JsonSerializer.Serialize(sample);
             if (Hash(json) == _lastUiHash) return;
             _lastUiHash = Hash(json);
             File.AppendAllText(Path.Combine(_output, "wpf-samples.jsonl"), JsonSerializer.Serialize(new { sampledAt = DateTimeOffset.Now, sample }) + Environment.NewLine);
+            if(_window.ActualWidth>0&&_window.ActualHeight>0&&_window.IsVisible)
+            {
+                var bitmap=new RenderTargetBitmap((int)_window.ActualWidth,(int)_window.ActualHeight,96,96,PixelFormats.Pbgra32);
+                bitmap.Render(_window);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var stream=File.Create(Path.Combine(_output,"wpf-latest.png"));png.Save(stream);
+            }
         }
         catch (Exception ex) { RecordFailure(ex); }
     }

@@ -14,6 +14,16 @@ internal static class UpdateSafetySelfTest
     internal static async Task RunAsync(string workspace, StringBuilder report)
     {
         void Check(bool ok, string label) { if (!ok) throw new InvalidOperationException(label); report.AppendLine("PASS " + label); }
+        foreach(var current in new[]{"2.1.10","2.1.9","3.0.0"})
+        foreach(var tag in new[]{"3.0.0","v3.0.0"})
+        {
+            using var client=new HttpClient(new Handler((request,token)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {Content=new StringContent(JsonSerializer.Serialize(new {version="3.0.0",tag,name="CloudLight Blizzard 3.0.0",htmlUrl="https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/tag/"+tag,
+                assets=new[]{new{name="CloudLight-Blizzard-3.0.0-win-x64-Setup.exe",downloadUrl="https://github.com/Cloud-Light125/CloudLight-Blizzard/releases/download/"+tag+"/CloudLight-Blizzard-3.0.0-win-x64-Setup.exe",size=123,digest="sha256:"+new string('a',64)}}}))})));
+            using var service=new UpdateService(client,current);var result=await service.CheckAsync();
+            Check(result.LatestVersion=="3.0.0"&&result.HasUpdate==(current!="3.0.0")&&result.InstallerName=="CloudLight-Blizzard-3.0.0-win-x64-Setup.exe"&&result.InstallerDigest is not null,
+                $"SIMULATED release contract {current} -> {tag}: exact asset and digest; same-version builds do not update");
+        }
         var bytes = Enumerable.Range(0, 16384).Select(i => (byte)(i % 251)).ToArray();
         bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
         foreach (var mode in new[] { "fallback", "proxy", "no-fallback", "range-etag", "range-date", "cancel", "bad-hash", "bad-size" })

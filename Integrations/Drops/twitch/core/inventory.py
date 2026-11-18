@@ -85,6 +85,7 @@ class BaseDrop:
                     if (bid := benefit.id) in claimed_benefits
                 ]
             )
+            and len(dts) == len(self.benefits)
             and all(self.starts_at <= dt < self.ends_at for dt in dts)
         ):
             self.is_claimed = True
@@ -161,6 +162,8 @@ class BaseDrop:
         return (
             self.claim_id is not None
             and not self.is_claimed
+            and self.campaign.eligible
+            and getattr(self, "real_current_minutes", 0) >= getattr(self, "required_minutes", 0)
             and datetime.now(timezone.utc) < self.campaign.ends_at + timedelta(hours=24)
         )
 
@@ -179,24 +182,27 @@ class BaseDrop:
         return delim.join(benefit.name for benefit in self.benefits)
 
     async def claim(self) -> bool:
-        result = await self._claim()
-        if result:
-            self.is_claimed = result
-            claim_text = (
-                f"{self.campaign.game.name}\n"
-                f"{self.rewards_text()} "
-                f"({self.campaign.claimed_drops}/{self.campaign.total_drops})"
-            )
-            # two different claim texts, becase a new line after the game name
-            # looks ugly in the output window - replace it with a space
-            self._twitch.print(
-                _("status", "claimed_drop").format(drop=claim_text.replace('\n', ' '))
-            )
-            logger.info("掉宝奖励已完成并领取：%s", self.name)
-            self._twitch.gui.tray.notify(claim_text, _("gui", "tray", "notification_title"))
-        else:
-            logger.error("Twitch 掉宝领取可能失败（Drop ID：%s）", self.id)
-        return result
+        from claim_guard import claim_once
+        return await claim_once(self, self._claim_and_notify)
+
+    async def _claim_and_notify(self) -> bool:
+        # Only an independent official Inventory may set is_claimed. In
+        # particular, a lost/late read must not publish an optimistic UI event.
+        return await self._claim()
+
+    def notify_claim_confirmed(self) -> None:
+        if not self.is_claimed:
+            return
+        sent = getattr(self._twitch, "_confirmed_claim_notifications", None)
+        if sent is None:
+            sent = self._twitch._confirmed_claim_notifications = set()
+        key = (self.campaign.id, self.id)
+        if key in sent:
+            return
+        sent.add(key)
+        claim_text = f"{self.campaign.game.name}\n{self.rewards_text()} ({self.campaign.claimed_drops}/{self.campaign.total_drops})"
+        self._twitch.print(_("status", "claimed_drop").format(drop=claim_text.replace('\n', ' ')))
+        self._twitch.gui.tray.notify(claim_text, _("gui", "tray", "notification_title"))
 
     async def _claim(self) -> bool:
         """
@@ -213,9 +219,8 @@ class BaseDrop:
                 )
             )
         except GQLException:
-            # regardless of the error, we have to assume
-            # the claiming operation has potentially failed
-            return False
+            # Preserve uncertainty for the shared guard; never replay a mutation automatically.
+            raise
         data = response["data"]
         if "errors" in data and data["errors"]:
             return False
@@ -226,6 +231,7 @@ class BaseDrop:
                 data["claimDropRewards"]["status"]
                 in ("ELIGIBLE_FOR_ALL", "DROP_INSTANCE_ALREADY_CLAIMED")
             ):
+                self._claim_response_status = data["claimDropRewards"]["status"]
                 return True
         return False
 
@@ -264,7 +270,7 @@ class TimedDrop(BaseDrop):
     # TDM_CLAIM_TOGGLE_PATCH_BEGIN: drop-progress-semantics
     @property
     def watch_requirement_completed(self) -> bool:
-        return self.real_current_minutes >= self.required_minutes or self.can_claim
+        return self.real_current_minutes >= self.required_minutes
 
     @property
     def pending_claim(self) -> bool:
@@ -282,7 +288,7 @@ class TimedDrop(BaseDrop):
     def eligible_for_local_progression(self) -> bool:
         blocked_check = getattr(self._twitch, "is_drop_progression_blocked", None)
         return (
-            (self._twitch.settings.auto_claim_drops or not self.watch_requirement_completed)
+            not self.watch_requirement_completed
             and (blocked_check is None or not blocked_check(self.id))
         )
     # TDM_CLAIM_TOGGLE_PATCH_END: drop-progress-semantics
@@ -360,9 +366,6 @@ class TimedDrop(BaseDrop):
 
     async def claim(self) -> bool:
         result = await super().claim()
-        if result:
-            self.real_current_minutes = self.required_minutes
-            self.extra_current_minutes = 0
         self._on_state_changed()
         return result
 

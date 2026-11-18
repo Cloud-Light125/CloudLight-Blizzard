@@ -50,6 +50,7 @@ public partial class App : Application
             return;
         }
         string? dropsAcceptanceRoot = null;
+#if CLOUDLIGHT_LIVE_AUDIT
         if (e.Args.Length >= 2 && e.Args[0] == "--drops-acceptance")
         {
             dropsAcceptanceRoot = Path.GetFullPath(e.Args[1]).TrimEnd(Path.DirectorySeparatorChar);
@@ -61,6 +62,7 @@ public partial class App : Application
             AppPaths.UseSelfTestRoot(dropsAcceptanceRoot);
             SetCurrentProcessExplicitAppUserModelID("CloudLightBlizzard.RealDropsAcceptance");
         }
+#endif
         if (e.Args.Length >= 2 && e.Args[0] == "--cloud-services-live-selftest")
         {
             IsHeadlessSelfTest = true;
@@ -188,9 +190,15 @@ public partial class App : Application
         var mainWindow = new global::CloudLightBlizzard.MainWindow(startHidden, logSession, settings: settings);
         if (dropsAcceptanceRoot is not null) mainWindow.Title += " · Drops 本地验收";
         MainWindow = mainWindow;
+#if CLOUDLIGHT_LIVE_AUDIT
         if (dropsAcceptanceRoot is not null && e.Args.Contains("--drops-evidence"))
             RealDropsEvidenceRecorder.Attach(mainWindow, Path.Combine(dropsAcceptanceRoot, "evidence"));
+#endif
         if (!startHidden) mainWindow.Show();
+#if CLOUDLIGHT_LIVE_AUDIT
+        if(dropsAcceptanceRoot is not null&&e.Args.Contains("--twitch-live-audit"))
+            Dispatcher.BeginInvoke(new Action(async()=>await TwitchLiveAudit.RunAsync(mainWindow,dropsAcceptanceRoot,e.Args.Contains("--approved-river-once"))));
+#endif
     }
 
     private static void RunSelfTest()

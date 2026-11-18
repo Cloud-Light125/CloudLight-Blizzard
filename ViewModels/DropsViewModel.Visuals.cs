@@ -7,6 +7,7 @@ namespace CloudLightBlizzard.ViewModels;
 public sealed partial class DropsViewModel
 {
     private readonly Dictionary<DropsPlatform, PlatformOverviewModel> _visuals = [];
+    public SoopCampaignModel SoopCampaigns { get; } = new();
     private TwitchInventoryModel? _twitchInventory;
     public TwitchInventoryModel TwitchInventory
     {
@@ -30,5 +31,6 @@ public sealed partial class DropsViewModel
     {
         VisualFor(platform).Apply(state);
         if(platform==DropsPlatform.Twitch)TwitchInventory.Apply(state);
+        if(platform==DropsPlatform.Soop)SoopCampaigns.Apply(state);
     }
 }

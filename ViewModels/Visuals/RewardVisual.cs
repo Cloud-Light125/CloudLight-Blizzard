@@ -11,6 +11,7 @@ public sealed record BenefitVisual(string Id,string Name,string Type,string Imag
 /// <summary>Immutable, read-only UI projection. Official values never include timer estimates.</summary>
 public sealed record RewardVisual
 {
+    public TwitchClaimAction? ClaimAction { get; init; }
     public string Id { get; init; } = "";
     public string Title { get; init; } = "尚未选择奖励";
     public string Campaign { get; init; } = "";
@@ -36,20 +37,24 @@ public sealed record RewardVisual
     public bool IsCurrent { get; init; }
     public bool Expired { get; init; }
     public bool Upcoming { get; init; }
+    public bool IsRandom { get; init; }
+    public bool OfficialProgressKnown { get; init; } = true;
+    public string AccountId { get; init; } = "";
     public string EndsAt { get; init; } = "";
-    public bool WatchCompleted => Completed || Required > 0 && Current >= Required;
-    public double Percent => Required > 0 ? Math.Clamp(Current * 100 / Required, 0, 100) : 0;
-    public string PercentText => Required > 0 ? $"{Percent:0.#}%" : "—";
-    public string ProgressText => Required > 0 ? $"{Current:0.#} / {Required:0.#} {Unit}" : "等待官方进度";
-    public string RemainingText => Required > 0 ? $"还需 {Math.Max(0, Required - Current):0.#} {Unit}" : "所需进度尚未确认";
+    public bool WatchCompleted => Completed || !IsRandom && OfficialProgressKnown && Required > 0 && Current >= Required;
+    public double Percent => !IsRandom && OfficialProgressKnown && Required > 0 ? Math.Clamp(Current * 100 / Required, 0, 100) : 0;
+    public string PercentText => !IsRandom && OfficialProgressKnown && Required > 0 ? $"{Percent:0.#}%" : "—";
+    public string ProgressText => IsRandom ? "随机掉宝" : !OfficialProgressKnown ? "尚无账号官方进度" : Required > 0 ? $"{Current:0.#} / {Required:0.#} {Unit}" : "等待官方进度";
+    public string RemainingText => IsRandom ? "参与不代表必定获奖" : !OfficialProgressKnown ? Required > 0 ? $"官方要求 {Required:0.#} 分钟 · 进度待确认" : "官方要求待确认" : Required > 0 ? $"还需 {Math.Max(0, Required - Current):0.#} {Unit}" : "所需进度尚未确认";
+    public Visibility ProgressVisibility => !IsRandom && OfficialProgressKnown && Required > 0 ? Visibility.Visible : Visibility.Collapsed;
     public string EstimateText => Estimate > 0 ? $"本地预计新增约 {Estimate:0.#} 分钟 · 等待官方确认" : "官方进度与本地观察时长独立记录";
-    public string StateText => Claimed ? "已领取" : CanClaim ? "已完成 · 待领取" : WatchCompleted ? "已完成 · 领取未开放" : Current > 0 ? "部分完成" : "尚未开始";
-    public string StateKind => Claimed ? "claimed" : CanClaim ? "claimable" : WatchCompleted ? "completed" : Current>0 ? "progress" : "pending";
-    public string StateBadge => StateKind switch {"claimed"=>"✓ 已领取","claimable"=>"● 待领取","completed"=>"✓ 已完成","progress"=>"部分完成",_=>"未开始"};
+    public string StateText => Claimed ? "已领取" : CanClaim ? "官方标记可领取" : IsRandom ? "随机掉宝 · 参与不代表必定获奖" : !OfficialProgressKnown ? "官方进度待确认" : WatchCompleted ? "已完成 · 领取未开放" : Current > 0 ? "部分完成" : "尚未开始";
+    public string StateKind => Claimed ? "claimed" : CanClaim ? "claimable" : WatchCompleted ? "completed" : IsRandom ? "random" : !OfficialProgressKnown ? "unknown" : Current>0 ? "progress" : "pending";
+    public string StateBadge => StateKind switch {"claimed"=>"✓ 已领取","claimable"=>"● 待领取","completed"=>"✓ 已完成","progress"=>"部分完成","random"=>"随机型","unknown"=>"待确认",_=>"未开始"};
     public string EligibilityText => Expired ? "活动已结束" : Upcoming ? "活动未开始" : Eligible==false ? "当前不符合资格" : PreconditionsSatisfiedForMining==false ? "前置阶段未满足" : Eligible==true ? "可参与" : "资格状态待确认";
     public Visibility EligibilityVisibility => Expired||Upcoming||Eligible==false||PreconditionsSatisfiedForMining==false ? Visibility.Visible : Visibility.Collapsed;
-    public string OfficialProgressText => Required>0 ? $"{(Brand=="Soop"?"官方 viewTime":"官方进度")}：{ProgressText}" : "等待官方进度确认";
-    public string CompletionText => Claimed ? "✓ 已领取" : "100% 已完成";
+    public string OfficialProgressText => IsRandom ? "随机掉宝 · 参与不代表必定获奖" : OfficialProgressKnown && Required>0 ? $"{(Brand=="Soop"?"官方 viewTime":"官方进度")}：{ProgressText}" : "等待官方进度确认";
+    public string CompletionText => Claimed ? "✓ 已领取" : IsRandom ? "官方标记可领取" : !OfficialProgressKnown ? "官方标记已完成" : "100% 已完成";
     public Visibility IncompleteVisibility => WatchCompleted||Claimed||CanClaim ? Visibility.Collapsed : Visibility.Visible;
     public Visibility CompleteVisibility => IncompleteVisibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     public string PrerequisiteSummary => PreconditionsSatisfiedForMining==false ? "需前置阶段" : PreconditionDropIds.Count==0 ? "" : PreconditionsSatisfiedForMining==true ? "前置已满足" : "前置待确认";

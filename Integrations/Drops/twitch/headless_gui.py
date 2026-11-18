@@ -281,6 +281,9 @@ class LoginForm:
 
 
 class GUIManager:
+    def campaign_schedule(self, record: dict[str, Any]) -> None:
+        event("watch_schedule", record)
+
     def network_request(self, record: dict[str, Any]) -> None:
         event('network_request', record)
 

@@ -1,0 +1,90 @@
+<UserControl x:Class="CloudLightBlizzard.Views.Drops.Soop.SoopCampaignPanel" x:Name="Panel" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:c="clr-namespace:CloudLightBlizzard.Controls" xmlns:local="clr-namespace:CloudLightBlizzard.Views.Drops.Soop" xmlns:visual="clr-namespace:CloudLightBlizzard.ViewModels.Visuals">
+    <UserControl.Resources>
+        <DataTemplate DataType="{x:Type local:SoopGameView}">
+            <Border Background="{DynamicResource App.SurfaceAlt}" BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="8,12" Margin="0,8,0,6" AllowDrop="True" Drop="OnDrop" PreviewMouseMove="OnDrag">
+                <DockPanel LastChildFill="True">
+                    <WrapPanel DockPanel.Dock="Right" Visibility="{Binding EditVisibility,ElementName=Panel}">
+                        <Button Content="置顶" Tag="-99" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0"/>
+                        <Button Content="↑" Tag="-1" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0" ToolTip="上移游戏"/>
+                        <Button Content="↓" Tag="1" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0" ToolTip="下移游戏"/>
+                    </WrapPanel>
+                    <StackPanel>
+                        <WrapPanel>
+                            <ToggleButton Content="{Binding Disclosure}" Click="OnExpandGame" Width="32" Height="30" Margin="0,0,8,0" ToolTip="展开或折叠游戏活动"/>
+                            <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <CheckBox Content="加入观看队列" IsChecked="{Binding Selected,Mode=TwoWay}" Visibility="{Binding EditVisibility,ElementName=Panel}" VerticalAlignment="Center" Foreground="{DynamicResource Text.Primary}"/>
+                            <TextBlock Text="{Binding Source.PriorityText}" Foreground="{DynamicResource Accent.Primary}" VerticalAlignment="Center" Margin="8,0"/>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Counts}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="40,5,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type visual:SoopCampaign}">
+            <Border Background="{DynamicResource App.Surface}" BorderBrush="{DynamicResource App.Border}" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,0,12" AllowDrop="True" Drop="OnDrop" PreviewMouseMove="OnDrag" Tag="SoopCampaignGroup">
+                <StackPanel>
+                    <DockPanel>
+                        <WrapPanel DockPanel.Dock="Right" Visibility="{Binding EditVisibility,ElementName=Panel}">
+                            <Button Content="置顶" Tag="-99" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0"/>
+                            <Button Content="↑" Tag="-1" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0"/>
+                            <Button Content="↓" Tag="1" Click="OnMove" Style="{DynamicResource SecondaryButton}" Margin="3,0"/>
+                        </WrapPanel>
+                        <Button Content="活动详情 →" DockPanel.Dock="Right" Click="OnCampaignDetails" Style="{DynamicResource SecondaryButton}" MinHeight="32" FontSize="13" Margin="8,0,0,0"/>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" MaxHeight="48" ToolTip="{Binding Title}"/>
+                            <WrapPanel Margin="0,4,0,0">
+                                <TextBlock Text="{Binding Summary}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,12,0"/>
+                                <TextBlock Text="{Binding PlanText}" FontSize="13" Foreground="{DynamicResource Accent.Primary}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock Text="{Binding TimeText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <WrapPanel Margin="0,5,0,8">
+                        <CheckBox Content="参与此活动（保存后生效）" IsChecked="{Binding Selected,Mode=TwoWay}" Visibility="{Binding EditVisibility,ElementName=Panel}" Foreground="{DynamicResource Text.Primary}" Margin="0,0,12,0"/>
+                        <TextBlock Text="{Binding Eligibility}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap"/>
+                    </WrapPanel>
+                    <ItemsControl ItemsSource="{Binding Rewards}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><c:RewardTilePanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate><DataTemplate><c:RewardCard Reward="{Binding Visual}" Title="{Binding Name}" ImageUrl="{Binding ImageUrl}"/></DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding Id,StringFormat=活动 ID（dropsIdx）：{0}}" FontSize="12" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Border Style="{DynamicResource SurfaceCard}" Margin="0,14,0,0">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <StackPanel>
+                <TextBlock Text="{Binding Heading,ElementName=Panel}" Style="{DynamicResource SectionTitle}"/>
+                <TextBlock Text="{Binding Model.ModeNotice,ElementName=Panel}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,8"/>
+                <WrapPanel Margin="0,4,0,8">
+                    <TextBlock Text="账号" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox Width="150" ItemsSource="{Binding Model.Accounts,ElementName=Panel}" SelectedItem="{Binding Model.Account,ElementName=Panel,Mode=TwoWay}" Style="{DynamicResource ThemeComboBox}"/>
+                    <TextBox x:Name="Search" Width="190" Style="{DynamicResource HintTextBox}" Tag="搜索游戏或活动" TextChanged="OnSearch" Margin="8,0"/>
+                    <ComboBox x:Name="Scope" Width="205" SelectionChanged="OnFilter" SelectedIndex="{Binding Model.DisplayScope,ElementName=Panel,Mode=TwoWay}" Style="{DynamicResource ThemeComboBox}">
+                        <ComboBoxItem Content="全部活动，已选游戏置顶"/><ComboBoxItem Content="仅显示已选游戏"/><ComboBoxItem Content="可参与游戏"/>
+                    </ComboBox>
+                </WrapPanel>
+                <WrapPanel Visibility="{Binding EditVisibility,ElementName=Panel}" Margin="0,0,0,8">
+                    <CheckBox Content="仅观看勾选的游戏与活动" IsChecked="{Binding Model.ExplicitSelection,ElementName=Panel,Mode=TwoWay}" Foreground="{DynamicResource Text.Primary}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <ComboBox Width="200" Style="{DynamicResource ThemeComboBox}" SelectedIndex="{Binding Model.Strategy,ElementName=Panel,Mode=TwoWay}">
+                        <ComboBoxItem Content="用户自定义顺序"/><ComboBoxItem Content="最早结束"/><ComboBoxItem Content="最短剩余观看时间"/><ComboBoxItem Content="完成度最高"/><ComboBoxItem Content="完成度最低"/>
+                    </ComboBox>
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,8">
+                    <ComboBox x:Name="Lifecycle" Width="150" SelectionChanged="OnFilter" SelectedIndex="0" Style="{DynamicResource ThemeComboBox}"><ComboBoxItem Content="全部生命周期"/><ComboBoxItem Content="进行中"/><ComboBoxItem Content="已安排"/><ComboBoxItem Content="已结束"/></ComboBox>
+                    <ComboBox x:Name="Kind" Width="150" Margin="8,0" SelectionChanged="OnFilter" SelectedIndex="0" Style="{DynamicResource ThemeComboBox}"><ComboBoxItem Content="全部类型"/><ComboBoxItem Content="随机 / 抽奖型"/><ComboBoxItem Content="任务 / 固定型"/></ComboBox>
+                    <Button Content="展开筛选结果" Click="OnExpandAll" Style="{DynamicResource SecondaryButton}" MinHeight="32" FontSize="13"/>
+                    <Button Content="折叠全部" Click="OnCollapseAll" Style="{DynamicResource SecondaryButton}" MinHeight="32" FontSize="13" Margin="8,0,0,0"/>
+                </WrapPanel>
+                <TextBlock Text="选择与排序后点击页面底部“保存设置”。可拖动游戏或同游戏内的活动；取消勾选保留顺序。" Visibility="{Binding EditVisibility,ElementName=Panel}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,0,0,8"/>
+            </StackPanel>
+            <!-- Bounded, flat game headers + activity rows allow pixel recycling even inside the workspace ScrollViewer. -->
+            <ListBox x:Name="GameList" Grid.Row="1" Height="{Binding ListHeight,ElementName=Panel}" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="0.5">
+                <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><ContentPresenter/></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+            </ListBox>
+            <TextBlock x:Name="Empty" Grid.Row="2" Text="暂无匹配的官方活动。请刷新账号；已保存的队列将保留。" Foreground="{DynamicResource Text.Muted}" Margin="0,12" TextWrapping="Wrap"/>
+        </Grid>
+    </Border>
+</UserControl>

@@ -608,20 +608,73 @@ class Twitch:
         self.gui.save(force=force)
         self.settings.save(force=force)
 
-    def get_priority(self, channel: Channel) -> int:
+    def get_priority(self, channel: Channel) -> tuple[int, int]:
         """
-        Return a priority number for a given channel.
+        Return (game preference, campaign preference) for an eligible channel.
+        Special campaigns retain their ability to progress in other categories.
+        """
+        return min(((game_rank, rank) for game_rank, game in enumerate(self.wanted_games)
+                    for rank, campaign in enumerate(self.prioritized_campaigns(game))
+                    if self.campaign_matches_channel(campaign, channel)), default=(MAX_INT, MAX_INT))
 
-        0 has the highest priority.
-        Higher numbers -> lower priority.
-        MAX_INT (a really big number) signifies the lowest possible priority.
-        """
-        if (
-            (game := channel.game) is None  # None when OFFLINE or no game set
-            or game not in self.wanted_games  # we don't care about the played game
-        ):
-            return MAX_INT
-        return self.wanted_games.index(game)
+    def prioritized_campaigns(self, game=None):
+        from campaign_priority import ordered
+        return ordered((c for c in self.inventory if (game is None or c.game == game)
+                        and c.can_earn() and not c.finished),
+                       getattr(self.settings, "campaign_watch_priority", {}))
+
+    @staticmethod
+    def campaign_matches_channel(campaign, channel):
+        available = getattr(channel, "_cloudlight_available_campaigns", None)
+        return campaign.can_earn(channel) and (available is None or campaign.id in available)
+
+    async def select_watch_channel(self, channels):
+        """Check Twitch's per-channel campaign list, not just the directory category."""
+        channels = list(channels)
+        selected = self.gui.channels.get_selection()
+        candidates = sorted((ch for ch in channels if ch.online and
+                             any(c.game in self.wanted_games and c.can_earn(ch) for c in self.inventory)), key=self.get_priority)
+        if selected is not None and selected in candidates:
+            candidates.remove(selected)
+            candidates.insert(0, selected)
+        async def verify(channel):
+            if time() - getattr(channel, "_cloudlight_campaigns_checked_at", 0) >= 120:
+                channel._cloudlight_available_campaigns = set()
+                try:
+                    async with gate:
+                        async with asyncio.timeout(12):
+                            response = await self.gql_request(GQL_QUERIES["AvailableDrops"].with_variables({"channelID": str(channel.id)}))
+                    channel._cloudlight_available_campaigns = {c["id"] for c in response["data"]["channel"]["viewerDropCampaigns"] or []}
+                    channel._cloudlight_campaigns_checked_at = time()
+                except Exception:
+                    logger.info("无法确认频道活动资格，暂时跳过：%s", channel.name)
+                    channel._cloudlight_available_campaigns = set()
+                    channel._cloudlight_campaigns_checked_at = time()
+        gate = asyncio.Semaphore(4)
+        try:
+            async with asyncio.timeout(25):
+                await asyncio.gather(*(verify(ch) for ch in candidates))
+        except TimeoutError:
+            logger.info("本次频道资格检查窗口结束，将使用已确认的候选频道。")
+        return self.choose_watch_channel(channels)
+
+    def choose_watch_channel(self, channels):
+        """The state machine and stream updates share this actual scheduling decision."""
+        selected = self.gui.channels.get_selection()
+        if selected is not None and getattr(selected, "_cloudlight_available_campaigns", None) is not None and self.can_watch(selected):
+            return selected
+        current = self.watching_channel.get_with_default(None)
+        if current is not None and self.can_watch(current):
+            target = self.get_active_campaign(current)
+            if target is not None and target.id != getattr(self, "_cloudlight_schedule", {}).get("campaignId"):
+                # A shared channel can stay online when its previous target is
+                # finished/expired. Refresh the target without stream hopping.
+                self.watch(current, update_status=False)
+        candidates = sorted((ch for ch in channels if getattr(ch, "_cloudlight_available_campaigns", None) is not None and self.can_watch(ch)), key=self.get_priority)
+        for campaign in self.prioritized_campaigns():
+            if campaign.game in self.wanted_games and not any(self.campaign_matches_channel(campaign, ch) for ch in candidates):
+                logger.info("观看优先级跳过：%s（没有合格直播频道）", campaign.name)
+        return next((ch for ch in candidates if self.should_switch(ch)), None)
 
     @staticmethod
     def _viewers_key(channel: Channel) -> int:
@@ -658,7 +711,25 @@ class Twitch:
         if not self.settings.auto_claim_drops:
             self._report_pending_claim(drop)
             return False
-        return await drop.claim()
+        from claim_guard import coordinator
+        gate = coordinator(self)
+        async with gate.transaction():
+            accepted = await drop.claim()
+            if not accepted and (gate.pending(drop) or {}).get("status") != "unconfirmed":
+                return False
+            try:
+                async with asyncio.timeout(20):
+                    await self.fetch_inventory()
+            except Exception:
+                return False
+            official = next((d for c in self.inventory if c.id == drop.campaign.id for d in c.drops if d.id == drop.id), None)
+            if official is None or not official.is_claimed:
+                return False
+            gate.record(drop, "claimed")
+            drop.is_claimed = True
+            drop._on_state_changed()
+            official.notify_claim_confirmed()
+            return True
 
     @staticmethod
     def _is_notification_already_deleted(exc: GQLException) -> bool:
@@ -965,20 +1036,9 @@ class Twitch:
                 self.gui.status.update(_("gui", "status", "switching"))
                 # Change into the selected channel, stay in the watching channel,
                 # or select a new channel that meets the required conditions
-                new_watching = None
-                selected_channel = self.gui.channels.get_selection()
-                if selected_channel is not None and self.can_watch(selected_channel):
-                    # selected channel is checked first, and set as long as we can watch it
-                    new_watching = selected_channel
-                else:
-                    # other channels additionally need to have a good reason
-                    # for a switch (including the watching one)
-                    # NOTE: we need to sort the channels every time because one channel
-                    # can end up streaming any game - channels aren't game-tied
-                    for channel in sorted(channels.values(), key=self.get_priority):
-                        if self.should_switch(channel):
-                            new_watching = channel
-                            break
+                new_watching = await self.select_watch_channel(channels.values())
+                if self._state is not State.CHANNEL_SWITCH:
+                    continue  # a stop/reload requested during qualification wins
                 watching_channel = self.watching_channel.get_with_default(None)
                 if new_watching is not None:
                     # if we have a better switch target - do so
@@ -986,6 +1046,7 @@ class Twitch:
                     # break the state change chain by clearing the flag
                     self._state_change.clear()
                 elif watching_channel is not None and self.can_watch(watching_channel):
+                    self.watch(watching_channel, update_status=False)
                     # otherwise, continue watching what we had before
                     self.gui.status.update(
                         _("status", "watching").format(channel=watching_channel.name)
@@ -999,7 +1060,7 @@ class Twitch:
                 connection = getattr(self.gui, "connection", None)
                 if connection is not None:
                     connection.update("running")
-                del new_watching, selected_channel, watching_channel
+                del new_watching, watching_channel
             elif self._state is State.RESTART:
                 raise ReloadRequest()
             elif self._state is State.EXIT:
@@ -1119,6 +1180,24 @@ class Twitch:
                         handled = True
                     else:
                         logger.log(CALL, "No active drop could be determined")
+            # Re-evaluate at a bounded safe point, including after a user saves priority.
+            if not self.can_watch(channel):
+                self.change_state(State.CHANNEL_SWITCH)
+            elif time() - getattr(self, "_campaign_switched_at", 0) >= 120:
+                if getattr(self, "_campaign_priority_changed", False) or time() - getattr(self, "_priority_checked_at", 0) >= 120:
+                    self._campaign_priority_changed = False
+                    self._priority_checked_at = time()
+                    self.change_state(State.CHANNEL_SWITCH)
+            target_id = getattr(self, "_cloudlight_schedule", {}).get("campaignId", "")
+            official = sum(d.real_current_minutes for c in self.inventory if c.id == target_id for d in c.drops)
+            observation = getattr(self, "_campaign_progress_observation", (target_id, official, time()))
+            if (target_id, official) != observation[:2]:
+                observation = (target_id, official, time())
+            elif time() - observation[2] >= 600:
+                logger.info("官方进度 10 分钟未增长，重新核对活动资格及频道；不反复切换。")
+                self.request_inventory_refresh()
+                observation = (target_id, official, time())
+            self._campaign_progress_observation = observation
             await self._watch_sleep(interval - min(time() - last_sent, interval))
 
     @task_wrapper(critical=True)
@@ -1162,7 +1241,7 @@ class Twitch:
             return False
         for campaign in self.inventory:
             if (
-                campaign.can_earn(channel)  # let the campaign do the "special games" check
+                self.campaign_matches_channel(campaign, channel)
                 and (
                     # limit watching to the games the user wants
                     channel.game is not None
@@ -1181,9 +1260,20 @@ class Twitch:
         """
         if not self.can_watch(channel):
             return False
+        if getattr(channel, "_cloudlight_available_campaigns", None) is None:
+            return False  # verified by select_watch_channel before automatic switching
         watching_channel = self.watching_channel.get_with_default(None)
         if watching_channel is None or not self.can_watch(watching_channel):
             return True
+        selected = self.gui.channels.get_selection()
+        if selected is not None and selected.id == watching_channel.id:
+            return False
+        if channel.id == watching_channel.id:
+            return False
+        # Keep a valid current stream during the observation window. Completion/offline
+        # bypass this guard; maintenance revisits priority changes after the cooldown.
+        if time() - getattr(self, "_campaign_switched_at", 0) < 120:
+            return False
         channel_order = self.get_priority(channel)
         watching_order = self.get_priority(watching_channel)
         return (
@@ -1196,6 +1286,22 @@ class Twitch:
 
     def watch(self, channel: Channel, *, update_status: bool = True):
         previous = self.watching_channel.get_with_default(None)
+        if previous is None or previous.id != channel.id:
+            self._campaign_switched_at = time()
+        target = self.get_active_campaign(channel)
+        if target is not None:
+            rank = self.prioritized_campaigns(target.game).index(target) + 1
+            decision = (target.id, channel.id, rank)
+            if getattr(self, "_campaign_decision", None) != decision:
+                logger.info("观看优先级 %d：%s · 合格频道 %s；实际累计以 Twitch 返回为准", rank, target.name, channel.name)
+                self._campaign_decision = decision
+            self._cloudlight_schedule = {"campaignId": target.id, "campaignName": target.name,
+                                         "dropId": target.first_drop.id if target.first_drop else "",
+                                         "eligibleCampaignIds": sorted(getattr(channel, "_cloudlight_available_campaigns", set()) or set()),
+                                         "rank": rank, "channelId": str(channel.id)}
+            reporter = getattr(self.gui, "campaign_schedule", None)
+            if reporter is not None:
+                reporter(self._cloudlight_schedule)
         self.gui.tray.change_icon("active")
         self.gui.channels.set_watching(channel)
         self.watching_channel.set(channel)
@@ -1216,6 +1322,10 @@ class Twitch:
                 logger.info("切换观看频道：%s → %s（原因：%s）", previous.name, channel.name, reason)
 
     def stop_watching(self):
+        self._cloudlight_schedule = {}
+        reporter = getattr(self.gui, "campaign_schedule", None)
+        if reporter is not None:
+            reporter({})
         self.gui.clear_drop()
         self.watching_channel.clear()
         self.gui.channels.clear_watching()
@@ -1450,7 +1560,10 @@ class Twitch:
     ) -> JsonType | list[JsonType]:
         from network_policy import replayable
         safe_query = replayable('POST', 'https://gql.twitch.tv/gql', {'json': ops})
-        gql_logger.debug(f"GQL Request: {ops}")
+        if safe_query:
+            gql_logger.debug(f"GQL Request: {ops}")
+        else:
+            gql_logger.debug("GQL mutation submitted (variables redacted)")
         backoff = ExponentialBackoff(maximum=60)
         # Use a flag to retry the request a single time, if a specific set of errors is encountered
         single_retry: bool = True
@@ -1464,8 +1577,11 @@ class Twitch:
                     json=ops,
                     headers=auth_state.headers(user_agent=self._client_type.USER_AGENT, gql=True),
                 ) as response:
+                    if not safe_query and response.status in {401, 403, 429}:
+                        raise aiohttp.ClientResponseError(response.request_info, response.history, status=response.status, message="Twitch mutation rejected")
                     response_json: JsonType | list[JsonType] = await response.json()
-            gql_logger.debug(f"GQL Response: {response_json}")
+            if safe_query:
+                gql_logger.debug(f"GQL Response: {response_json}")
             orig_response = response_json
             if isinstance(response_json, list):
                 response_list = response_json
@@ -1478,7 +1594,13 @@ class Twitch:
                 if "errors" in response_json:
                     if not safe_query:
                         # A mutation may already have committed on the server.
-                        raise GQLException('Twitch mutation result is uncertain; not replayed')
+                        failure = GQLException('Twitch mutation result is uncertain; not replayed')
+                        codes = {str(error.get("extensions", {}).get("code", "")).upper()
+                                 for error in response_json["errors"] if isinstance(error, dict)}
+                        failure.status = (401 if codes & {"UNAUTHENTICATED", "UNAUTHORIZED"} else
+                                          403 if codes & {"FORBIDDEN", "PERMISSION_DENIED"} else
+                                          429 if codes & {"RATE_LIMITED", "TOO_MANY_REQUESTS"} else 0)
+                        raise failure
                     for error_dict in response_json["errors"]:
                         if "message" in error_dict:
                             if (
@@ -1592,6 +1714,14 @@ class Twitch:
         return self._merge_data(campaign_ids, fetched_data)
 
     async def fetch_inventory(self) -> None:
+        from claim_guard import coordinator
+        if not hasattr(self, "_inventory_lock"):
+            self._inventory_lock = asyncio.Lock()
+        async with coordinator(self).transaction():
+            async with self._inventory_lock:
+                await self._fetch_inventory_impl()
+
+    async def _fetch_inventory_impl(self) -> None:
         status_update = self.gui.status.update
         status_update(_("gui", "status", "fetching_inventory"))
         # fetch in-progress campaigns (inventory)
@@ -1738,18 +1868,12 @@ class Twitch:
     def get_active_campaign(self, channel: Channel | None = None) -> DropsCampaign | None:
         if not self.wanted_games:
             return None
-        watching_channel = self.watching_channel.get_with_default(channel)
+        watching_channel = channel if channel is not None else self.watching_channel.get_with_default(None)
         if watching_channel is None:
             # if we aren't watching anything, we can't earn any drops
             return None
-        campaigns: list[DropsCampaign] = []
-        for campaign in self.inventory:
-            if campaign.can_earn(watching_channel):
-                campaigns.append(campaign)
-        if campaigns:
-            campaigns.sort(key=lambda c: c.remaining_minutes)
-            return campaigns[0]
-        return None
+        return next((c for game in self.wanted_games for c in self.prioritized_campaigns(game)
+                     if self.campaign_matches_channel(c, watching_channel)), None)
 
     async def get_live_streams(
         self, game: Game, *, limit: int = 20, drops_enabled: bool = True

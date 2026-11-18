@@ -125,6 +125,11 @@ public partial class DropsPage
     private void OnVisualAction(object? sender, WorkspaceActionEventArgs e)
     {
         e.Handled = true;
+        if(e.Action=="twitch:priority"){OpenTwitchCampaignPriority();return;}
+        if(e.Action=="twitch:claim-all"){ClaimAllTwitchRewards(e.Control);return;}
+        if(e.Action=="twitch:cancel-claims"){_=StopPlatformAsync(DropsPlatform.Twitch);return;}
+        if(e.Action=="twitch:claim"&&e.Control is FrameworkElement{DataContext:RewardVisual claimReward})
+        { _=ClaimTwitchRewardAsync(claimReward);return; }
         if(e.Action=="twitch:overview-all"){if(_vm is not null)_vm.TwitchInventory.OverviewPriorityOnly=false;return;}
         if(e.Action=="twitch:channels")
         {
@@ -143,8 +148,12 @@ public partial class DropsPage
             var drop=context is RewardCardVisual card?card.Drop:context as RewardVisual;
             if(drop is null)return;
             if(drop.Brand!="Twitch"){ShowWorkspace(drop.Brand=="Soop"?"accounts":"activities");return;}
-            var row=_vm?.Inventory.FirstOrDefault(r=>r.Id==drop.Id&&r.Visual.CampaignId==drop.CampaignId);
-            var content=new ContentControl{Content=(object?)row??drop,ContentTemplate=(DataTemplate)FindResource(row is null?"VisualRewardRow":"TwitchDropRowTemplate"),Margin=new Thickness(16)};
+            drop=FindTwitchReward(drop.Id,drop.CampaignId)??_vm?.TwitchInventory.WithClaimAction(drop)??drop;
+            var details=new StackPanel();
+            var cards=_vm?.TwitchInventory.AllCampaigns.FirstOrDefault(c=>c.Id==drop.CampaignId)?.Cards.Where(c=>c.Drop.Id==drop.Id).ToArray();
+            details.Children.Add(new ContentControl{Content=new{Cards=(IReadOnlyList<RewardCardVisual>?)cards??drop.Cards},ContentTemplate=(DataTemplate)FindResource("VisualRewardRow")});
+            details.Children.Add(new TextBlock{Text=drop.QualificationText+"\n"+drop.PrerequisiteText+"\n"+drop.SyncText,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,0)});
+            var content=new ContentControl{Content=details,Margin=new Thickness(16)};
             var dialog=new Window{Owner=Window.GetWindow(this),Title="Twitch 奖励详情 · "+drop.Title,Width=Math.Min(Math.Clamp(80+drop.Cards.Count*240,440,900),SystemParameters.WorkArea.Width-40),SizeToContent=SizeToContent.Height,MaxHeight=Math.Min(740,SystemParameters.WorkArea.Height-40),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled}};
             dialog.SetResourceReference(BackgroundProperty,"App.Background");dialog.SetResourceReference(ForegroundProperty,"Text.Primary");
             ThemeManager.Attach(dialog);dialog.AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnVisualAction));

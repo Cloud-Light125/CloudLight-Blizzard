@@ -149,7 +149,7 @@ class NetworkPolicyTests(unittest.IsolatedAsyncioTestCase):
         @asynccontextmanager
         async def fake(*args,**kwargs):
             calls.append(1)
-            yield SimpleNamespace(json=AsyncMock(return_value={'errors':[{'message':'service unavailable'}]}))
+            yield SimpleNamespace(status=200,json=AsyncMock(return_value={'errors':[{'message':'service unavailable'}]}))
         client=SimpleNamespace(_qgl_limiter=asyncio.Semaphore(1),request=fake,
             _client_type=SimpleNamespace(USER_AGENT='fixture'),
             get_auth=AsyncMock(return_value=SimpleNamespace(headers=lambda **kw:{})))

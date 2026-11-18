@@ -29,9 +29,12 @@
                     <Button Content="停止观看" ctrl:WorkspaceAction.Name="legacy:OnStop" Tag="Twitch" Visibility="{Binding Twitch.StopVisibility}" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />
                     <Button x:Name="TwitchRefreshButton" Content="刷新进度" ctrl:WorkspaceAction.Name="legacy:OnRefresh" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,0" x:FieldModifier="internal" />
                     <Button Content="设置" ctrl:WorkspaceAction.Name="section:settings" Style="{DynamicResource SecondaryButton}" />
+                    <Button Content="调整观看优先级" ctrl:WorkspaceAction.Name="twitch:priority" Style="{DynamicResource SecondaryButton}" Margin="8,0,0,0"/>
                 </WrapPanel>
             </Grid>
         </Border>
+        <TextBlock Text="{Binding TwitchInventory.PrioritySummary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TwitchInventory.PrioritySummary}" Margin="0,0,0,10"/>
+        <TextBlock Text="已优先选择符合条件的频道，但 Twitch 实际进度以官方返回为准。" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="{DynamicResource Text.Secondary}"/>
         <Grid behaviors:ResponsiveGrid.IsEnabled="True" behaviors:ResponsiveGrid.Breakpoint="850">
             <Grid.Style>
                 <Style TargetType="Grid">

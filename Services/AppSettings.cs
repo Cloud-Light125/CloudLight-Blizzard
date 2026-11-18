@@ -32,6 +32,7 @@ public sealed class AppSettings
     public bool AutoStartTwitch { get; set; }
     // Presentation only; never serialized to Twitch Core settings/priority_mode.
     public bool TwitchOverviewPriorityOnly { get; set; }
+    public int SoopInventoryDisplayScope { get; set; }
     public bool BilibiliEnabled { get; set; }
     public bool BilibiliUseProxy { get; set; }
     public bool AutoStartBilibili { get; set; }

@@ -480,7 +480,7 @@ class SoopWorkerContractTests(unittest.TestCase):
             finally:
                 self._close(worker)
 
-    def test_priority_keeps_upcoming_and_falls_back_after_completion(self) -> None:
+    def test_priority_keeps_upcoming_and_saved_history_after_completion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             worker = SoopWorker(root / "data", root / "soop.log")
@@ -503,8 +503,8 @@ class SoopWorkerContractTests(unittest.TestCase):
 
                     completed = self._mission("priority", completed=True)
                     reloaded._state_callback(self._state("account", [completed]))
-                    self.assertEqual(reloaded.settings["priority_mission_id"], "auto")
-                    self.assertEqual(reloaded.load_state({})["settings"]["priority_mission_id"], "auto")
+                    self.assertEqual(reloaded.settings["priority_mission_id"], "priority")
+                    self.assertEqual(reloaded.load_state({})["settings"]["priority_mission_id"], "priority")
                 finally:
                     self._close(reloaded)
 

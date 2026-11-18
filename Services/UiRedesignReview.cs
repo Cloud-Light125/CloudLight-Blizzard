@@ -188,6 +188,7 @@ internal sealed partial class UiRedesignReview
         if (index == 17) _states[DropsPlatform.Twitch] = Json(new { coreAvailable = false, coreErrorKind = "configuration", coreError = "模拟：配置无法解析。已保存的 Session 保留，可备份并恢复配置。", configuration = new { canReset = true }, accounts = Array.Empty<object>() });
         if (index == 18) _states[DropsPlatform.Twitch] = Json(new { coreAvailable = true, running = false, authState = "failed", loginErrorCode = "network_error", loginError = "模拟：连接超时，Session 尚未完成验证。", accounts = new[] { new { userId = "已保存 Session · 模拟", loggedIn = false } } });
         if (index == 19) _states[DropsPlatform.Soop] = Raw("""{"running":false,"accounts":[],"settings":{"channel_mode":"smart"}}""");
+        if(index is 10 or 11 or 20 or 41)_states[DropsPlatform.Soop]=CloudLightBlizzard.Services.Visuals.SoopCampaignSelfTest.Fixture();
         if(index is 22 or 30 or 42)_states[DropsPlatform.Bilibili]=Raw("""{"loggedIn":true,"account":{"loggedIn":true,"uid":123456,"userName":"模拟 Bilibili 账号"},"status":"已登录 · 等待开始观看","running":false,"rooms":[{"id":1,"name":"模拟赛事直播间","enabled":true}],"tasks":[{"id":"fixture-task","name":"模拟观看任务","current":18,"limit":60,"percent":30,"completed":false,"claimed":false,"claimable":false}],"activities":[]}""");
         var section = index switch { 0 => "overview", 1 or 26 or 39 => "accounts", 2 or 27 => "region", 3 => "stats", 4 => "snapshots", 40 => "about", 15 => "diagnostics", 16 or 38 => "settings", _ => "drops" };
         _window.NavigateTo(section);

@@ -25,7 +25,7 @@ public partial class CampaignInventoryView : UserControl
     {
         var view=(CampaignInventoryView)sender;
         if(args.OldValue is INotifyCollectionChanged old)old.CollectionChanged-=view.GroupsChanged;
-        if(args.NewValue is INotifyCollectionChanged next)next.CollectionChanged+=view.GroupsChanged;
+        if(view.IsLoaded&&args.NewValue is INotifyCollectionChanged next)next.CollectionChanged+=view.GroupsChanged;
         view.RebuildRows();
     }
     private bool _rowsPending;
@@ -41,7 +41,7 @@ public partial class CampaignInventoryView : UserControl
     {
         var groups=ItemsSource?.OfType<CampaignRewardGroup>().ToArray()??[];
         foreach(var old in _observed.Except(groups).ToArray()){old.PropertyChanged-=GroupUpdated;_observed.Remove(old);}
-        foreach(var group in groups.Where(g=>!_observed.Contains(g))){group.PropertyChanged+=GroupUpdated;_observed.Add(group);}
+        if(IsLoaded)foreach(var group in groups.Where(g=>!_observed.Contains(g))){group.PropertyChanged+=GroupUpdated;_observed.Add(group);}
         var rows=new List<CampaignRow>();
         // Pair small adjacent campaigns only when both keep full-size cards and separate headers.
         var halfContent=(ActualWidth-SystemParameters.VerticalScrollBarWidth)/2-40;
@@ -64,8 +64,8 @@ public partial class CampaignInventoryView : UserControl
         // before Loaded can size the viewport (hundreds of image controls on a real account).
         Height=180;
         SizeChanged+=(_,_)=>QueueRows();
-        Loaded+=(_,_)=>{for(DependencyObject? p=VisualTreeHelper.GetParent(this);p is not null;p=VisualTreeHelper.GetParent(p))if(p is ScrollViewer scroll){_outer=scroll;break;}if(_outer is not null)_outer.SizeChanged+=ViewportChanged;Dispatcher.BeginInvoke(UpdateHeight,DispatcherPriority.Loaded);};
-        Unloaded+=(_,_)=>{if(_outer is not null)_outer.SizeChanged-=ViewportChanged;_outer=null;};
+        Loaded+=(_,_)=>{if(ItemsSource is INotifyCollectionChanged source){source.CollectionChanged-=GroupsChanged;source.CollectionChanged+=GroupsChanged;}RebuildRows();for(DependencyObject? p=VisualTreeHelper.GetParent(this);p is not null;p=VisualTreeHelper.GetParent(p))if(p is ScrollViewer scroll){_outer=scroll;break;}if(_outer is not null)_outer.SizeChanged+=ViewportChanged;Dispatcher.BeginInvoke(UpdateHeight,DispatcherPriority.Loaded);};
+        Unloaded+=(_,_)=>{if(_outer is not null)_outer.SizeChanged-=ViewportChanged;_outer=null;if(ItemsSource is INotifyCollectionChanged source)source.CollectionChanged-=GroupsChanged;foreach(var group in _observed)group.PropertyChanged-=GroupUpdated;_observed.Clear();};
         IsVisibleChanged+=(_,_)=>{if(IsVisible)Dispatcher.BeginInvoke(UpdateHeight,DispatcherPriority.Loaded);};
     }
     private void ViewportChanged(object sender,SizeChangedEventArgs e)=>UpdateHeight();

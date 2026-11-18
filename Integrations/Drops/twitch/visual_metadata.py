@@ -21,7 +21,8 @@ def image_url(value: Any) -> str:
 
 
 def campaign_visual(campaign: Any) -> dict[str, Any]:
-    return {"gameImageUrl": image_url(getattr(campaign, "image_url", ""))}
+    return {"gameImageUrl": image_url(getattr(campaign, "image_url", "")),
+            "gameId": str(getattr(getattr(campaign, "game", None), "id", ""))}
 
 
 def drop_visual(drop: Any, campaign: Any = None) -> dict[str, Any]:
@@ -37,5 +38,6 @@ def drop_visual(drop: Any, campaign: Any = None) -> dict[str, Any]:
         "benefitIds": [benefit["id"] for benefit in benefits],
         "gameImageUrl": image_url(getattr(campaign, "image_url", "")),
         "game": str(getattr(getattr(campaign, "game", None), "name", "")),
+        "gameId": str(getattr(getattr(campaign, "game", None), "id", "")),
         "campaignId": str(getattr(campaign, "id", "")),
     }

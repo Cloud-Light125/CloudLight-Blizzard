@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import CancelledError as FutureCancelledError, TimeoutError as FutureTimeoutError
 import dataclasses
+import copy
 import importlib
 import importlib.util
 import json
@@ -34,9 +35,11 @@ from Shared.protocol import (
     run_worker,
 )
 from credentials import read_credentials, write_credentials
+from scheduling import QUEUE_DEFAULTS, decorate as decorate_campaign, validate as validate_queue, metadata as campaign_metadata, matches as campaign_matches
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    **QUEUE_DEFAULTS,
     "settings_version": 5,
     "auto_claim_enabled": False,
     "low_bandwidth_mode": True,
@@ -369,12 +372,14 @@ class SoopWorker(WorkerBase):
         self.accounts_dir = self.data_dir / "accounts"
         self.accounts_dir.mkdir(parents=True, exist_ok=True)
         self.settings = read_json(self.settings_path, DEFAULT_SETTINGS)
+        validate_queue(self.settings)
         self._core_error = ""
         self._core: dict[str, Any] = {}
         self._manager: Any = None
         self._manager_stopping = False
         self._account_locks: dict[str, asyncio.Lock] = {}
         self._states: dict[str, Any] = {}
+        self._queue_targets: dict[str, dict[str, Any]] = {}
         self._state_changed = threading.Condition()
         self._progress_lock = threading.RLock()
         self._progress_observations: dict[tuple[str, str, str, str, int], _ProgressObservation] = {}
@@ -476,6 +481,8 @@ class SoopWorker(WorkerBase):
                 "config": config, "auth": auth, "channel": channel,
                 "drops": drops, "multi": multi, "miner": miner, "network": network,
             }
+            from scheduling import install
+            install(self, miner, multi, channel)
             root_logger = logging.getLogger()
             root_logger.setLevel(logging.INFO)
             if self.logger.handlers and self.logger.handlers[0] not in root_logger.handlers:
@@ -1161,6 +1168,11 @@ class SoopWorker(WorkerBase):
         missions_for_channel = getattr(self._core.get("channel"), "missions_for_channel", None)
         if current_channel is None or not callable(missions_for_channel):
             return False
+        raw = getattr(mission, "raw", {}) or {}
+        if raw.get("giveCon"):
+            activity = next((e for e in getattr(state, "events", []) if str(e.drops_idx) == str(mission.drops_idx)), None)
+            rule = campaign_metadata({**raw, **(getattr(activity, "raw", {}) or {})}, str(mission.drops_idx))
+            return bool(getattr(mission, "is_event_active", False) and not self._mission_is_completed(mission) and campaign_matches(rule, current_channel))
         try:
             eligible = missions_for_channel(state.missions, current_channel)
         except Exception:
@@ -1556,37 +1568,21 @@ class SoopWorker(WorkerBase):
             row["progressDiagnostics"] = diagnostics
 
     def _normalize_priority_mission_id(self, *, fallback_if_missing: bool) -> bool:
-        """Keep a saved priority only while it remains selectable.
+        """Compatibility hook: keep the old ID; the UID queue handles fallback.
 
-        An upcoming incomplete mission is valid saved configuration even
-        though it is not an execution candidate yet.  A completed/ended
-        mission is never valid, and refreshes may clear a missing ID once the
-        complete snapshot is available.
+        Missing, future, completed and ended IDs remain saved user intent.
+        Explicit multiselection uses campaign_priorities; legacy mode retains
+        the original preferred mission before other eligible activities.
         """
-        selected = str(self.settings.get("priority_mission_id", "auto")).strip() or "auto"
-        if selected == "auto":
-            return False
-
-        tasks = [
-            task
-            for state in list(self._state_snapshot().values())
-            for task in self._tasks_for_state(state, include_ended=True)
-            if str(task.get("id", "")) == selected and not bool(task.get("eventOnly"))
-        ]
-        if not tasks and not fallback_if_missing:
-            return False
-        if any(is_actionable_task(task, allow_upcoming=True) for task in tasks):
-            return False
-
-        self.settings["priority_mission_id"] = "auto"
-        atomic_write_json(self.settings_path, self.settings)
-        return True
+        return False
 
     def _state_snapshot(self, uid: str = "") -> dict[str, Any]:
         with self._state_changed:
             return {uid: self._states[uid]} if uid and uid in self._states else ({} if uid else dict(self._states))
 
     def _state_callback(self, state: Any) -> None:
+        if not state.running:
+            self._queue_targets.pop(str(state.uid), None)
         self._observe_state_progress(state)
         with self._state_changed:
             self._states[state.uid] = state
@@ -1637,7 +1633,7 @@ class SoopWorker(WorkerBase):
             ],
         }
         row.update(_source_time_fields(mission))
-        return normalize_task_status(row)
+        return decorate_campaign(normalize_task_status(row), raw, account_progress=True)
 
     @staticmethod
     def _event_to_dict(activity: Any) -> dict[str, Any]:
@@ -1664,7 +1660,7 @@ class SoopWorker(WorkerBase):
             "items": [],
         }
         row.update(_source_time_fields(activity))
-        return normalize_task_status(row)
+        return decorate_campaign(normalize_task_status(row), raw, account_progress=False)
 
     @staticmethod
     def _inventory_to_dict(item: Any) -> dict[str, Any]:
@@ -1714,7 +1710,11 @@ class SoopWorker(WorkerBase):
             return []
 
         rows: list[dict[str, Any]] = []
-        for mission in missions_for_channel(state.missions, current_channel):
+        for mission in state.missions:
+            if not self._mission_is_eligible_for_state(state, mission):
+                continue
+            if str((getattr(mission, "raw", {}) or {}).get("giveCon") or "") in {"draw", "none"}:
+                continue
             if self._mission_is_completed(mission):
                 continue
             item = mission.active_item()
@@ -1797,7 +1797,9 @@ class SoopWorker(WorkerBase):
             "networkDownloadBps": getattr(state, "network_download_bps", 0.0),
             "networkEstimated": bool(getattr(state, "network_estimated", True)),
             "bridgeLastActivitySeconds": getattr(state, "bridge_last_activity_seconds", None),
-            "settings": {"priority_mission_id": str(self.settings.get("priority_mission_id", "auto"))},
+            "settings": self._effective_settings(),
+            "queueTarget": dict(self._queue_targets.get(str(state.uid), {})) if state.running and self._queue_targets.get(str(state.uid), {}).get("channelId") == state.channel_id else {},
+            "campaigns": self._tasks_for_state(state, include_ended=True),
             "currentProgress": self._current_progress_for_state(state),
             "progressDiagnostics": self._progress_diagnostics_for_state(state),
             "lastConfirmedAt": str(refresh_diagnostic.get("lastConfirmedAt", "") or ""),
@@ -1822,6 +1824,7 @@ class SoopWorker(WorkerBase):
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         captured_at = time.monotonic_ns()
+        states = self._state_snapshot()
         tasks = self.get_tasks({})
         return {
             "_snapshotStarted": captured_at,
@@ -1834,6 +1837,8 @@ class SoopWorker(WorkerBase):
             "displayTasks": tasks,
             "selectableTasks": [task for task in tasks if is_actionable_task(task, allow_upcoming=True)],
             "events": self.get_events({}),
+            "campaigns": [row for state in states.values() for row in self._tasks_for_state(state, include_ended=True)],
+            "queueTargets": {uid: dict(target) for uid, target in list(self._queue_targets.items()) if uid in states and states[uid].running and states[uid].channel_id == target.get("channelId")},
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
             "progressDiagnostics": self._all_progress_diagnostics(),
@@ -1858,10 +1863,15 @@ class SoopWorker(WorkerBase):
         if not isinstance(changes, dict):
             raise ValueError("settings 必须是对象")
         allowed = set(DEFAULT_SETTINGS) - {"proxy_enabled", "proxy_url", "proxy_fallback_direct"}
-        for key in allowed:
-            if key in changes:
-                self.settings[key] = changes[key]
-        self._validate_settings()
+        previous = copy.deepcopy(self.settings)
+        try:
+            for key in allowed:
+                if key in changes:
+                    self.settings[key] = copy.deepcopy(changes[key])
+            self._validate_settings()
+        except (TypeError, ValueError):
+            self.settings = previous
+            raise
         atomic_write_json(self.settings_path, self.settings)
         self._normalize_priority_mission_id(fallback_if_missing=False)
         if self.running:
@@ -1869,6 +1879,7 @@ class SoopWorker(WorkerBase):
         return self._effective_settings()
 
     def _validate_settings(self) -> None:
+        validate_queue(self.settings)
         self.settings["settings_version"] = 5
         self.settings["primary_account_uid"] = str(self.settings.get("primary_account_uid", "")).strip()
         for name, minimum, maximum in (
@@ -2140,6 +2151,7 @@ class SoopWorker(WorkerBase):
 
         with self._state_changed:
             self._states.pop(uid, None)
+        self._queue_targets.pop(uid, None)
         self._clear_progress_cache(uid)
         if uid == str(self.settings.get("primary_account_uid", "")):
             self.settings["primary_account_uid"] = ""
@@ -2338,6 +2350,9 @@ class SoopWorker(WorkerBase):
                 if name in activity_row:
                     existing[name] = activity_row[name]
             existing.update(normalize_task_status(existing))
+            # Metadata comes from the exact dropsIdx catalog join. Progress
+            # remains exclusively the current UID's mission response.
+            decorate_campaign(existing, {**getattr(next((m for m in state.missions if str(m.drops_idx) == activity_id), None), "raw", {}), **activity_raw}, account_progress=True)
         # Keep fully completed missions in the display/history snapshot even
         # after the event window closes.  Other ended activities remain in the
         # Core state for diagnostics but are not current WPF tasks.

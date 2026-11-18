@@ -25,12 +25,17 @@
                 <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" Margin="4,0,0,0"/>
             </Grid>
             <TextBlock Text="{Binding CompletionText}" Visibility="{Binding CompleteVisibility}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" Margin="0,5,0,5"/>
-            <ProgressBar Value="{Binding Percent,Mode=OneWay}" Maximum="100" Height="7" Style="{DynamicResource ThemeProgressBar}"/>
+            <ProgressBar Value="{Binding Percent,Mode=OneWay}" Maximum="100" Height="7" Visibility="{Binding ProgressVisibility}" Style="{DynamicResource ThemeProgressBar}"/>
             <TextBlock Text="{Binding EligibilityText}" Visibility="{Binding EligibilityVisibility}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding EligibilityText}" Margin="0,5,0,0"/>
             <DockPanel Margin="0,6,0,0">
                 <Button DockPanel.Dock="Right" Content="详情" c:WorkspaceAction.Name="reward:details" Visibility="{Binding DetailsVisibility,ElementName=Card}" Style="{DynamicResource SecondaryButton}" MinHeight="32" Padding="8,0" FontSize="13"/>
                 <TextBlock Text="{Binding RemainingText}" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding RemainingText}" Margin="0,0,5,0" VerticalAlignment="Center"/>
             </DockPanel>
+            <StackPanel Visibility="{Binding ClaimAction.Visibility, FallbackValue=Collapsed, TargetNullValue=Collapsed}" Margin="0,8,0,0">
+                <Button Content="{Binding ClaimAction.ButtonText}" IsEnabled="{Binding ClaimAction.CanExecute}" c:WorkspaceAction.Name="twitch:claim" Style="{DynamicResource PrimaryButton}" MinHeight="34" Padding="10,0" HorizontalAlignment="Left"/>
+                <TextBlock Text="{Binding ClaimAction.Message}" Visibility="{Binding ClaimAction.MessageVisibility}" TextWrapping="Wrap" FontSize="12.5" Margin="0,5,0,0" Foreground="{DynamicResource Status.Warning}"/>
+                <Button Content="前往 Twitch 领取" c:WorkspaceAction.Name="legacy:OnOpenTwitchInventory" Visibility="{Binding ClaimAction.MessageVisibility}" Style="{DynamicResource SecondaryButton}" MinHeight="32" Padding="8,0" Margin="0,5,0,0" HorizontalAlignment="Left" ToolTip="打开官方 Drops Inventory；请确认浏览器登录的是当前 Twitch 账号。"/>
+            </StackPanel>
         </StackPanel>
     </Border>
 </UserControl>

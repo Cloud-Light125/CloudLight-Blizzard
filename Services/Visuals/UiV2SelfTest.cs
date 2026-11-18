@@ -28,8 +28,12 @@ internal static class UiV2SelfTest
         {
             TwitchInventorySelfTest.Run(Check);
             PriorityStateSelfTest.Run(Check,output);
+            await TwitchActionsSelfTest.RunAsync(Check,output);
+            await SoopCampaignSelfTest.RunAsync(Check,output);
+#if CLOUDLIGHT_LIVE_AUDIT
             var safeEvidence=RealDropsEvidenceRecorder.SafeSnapshot(Json("""{"accounts":[{"userId":"private-user"}],"token":"private-token","authRequired":{"code":"private-code"},"inventory":[{"id":"drop","benefits":[{"id":"benefit","imageUrl":"https://static-cdn.jtvnw.net/reward.png?signature=private-signature"}]}]}""")).GetRawText();
             Check(!safeEvidence.Contains("private-")&&safeEvidence.Contains("imageUrlSha256")&&safeEvidence.Contains("benefit"),"real evidence excludes account/authentication fields and image signature parameters while retaining source hashes and IDs");
+#endif
             var health=new DropsPlatformViewModel(DropsPlatform.Twitch,"Twitch"){Running=true};var model=new PlatformOverviewModel(health);
             model.Apply(Json("""{"lastInventorySyncAt":"2026-11-16T00:00:00Z","inventory":[{"id":"other","name":"not current","currentMinutes":1,"requiredMinutes":10},{"id":"current","name":"test drop","game":"Game","campaignId":"campaign","currentMinutes":18,"requiredMinutes":60,"benefits":[{"id":"one","name":"First","type":"DIRECT_ENTITLEMENT","imageUrl":"https://static-cdn.jtvnw.net/one.png"},{"id":"two","name":"Second","type":"BADGE","imageUrl":"https://static-cdn.jtvnw.net/two.png"}]}],"currentDrop":{"id":"current","name":"test drop","campaignId":"campaign","currentMinutes":18,"requiredMinutes":60,"estimatedExtraMinutes":2,"progress":0.99,"preconditionDropIds":["prior"],"preconditionsMet":false,"preconditionsSatisfiedForMining":true,"eligible":true}}"""));
             Check(model.ActiveReward?.Id=="current"&&model.ActiveReward.CampaignId=="campaign","current drop joins by Core drop ID, not inventory position");

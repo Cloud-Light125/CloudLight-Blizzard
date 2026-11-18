@@ -31,6 +31,8 @@ class SettingsFile(TypedDict):
 default_settings: SettingsFile = {
     "proxy": URL(),
     "priority": [],
+    "campaign_watch_priority": {},
+    "campaign_display_sort": "recommended",
     "exclude": set(),
     "dark_mode": False,
     "autostart_tray": False,

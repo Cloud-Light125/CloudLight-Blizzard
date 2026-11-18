@@ -33,6 +33,18 @@ public static class FeatureSelfTest
         UpdateDownloadService.SelfTestDownloadRoot.Value = Path.Combine(workspace, "isolated-updates");
         try
         {
+            if (string.Equals(test, "packaged-workers", StringComparison.OrdinalIgnoreCase))
+            {
+                PackagedWorkersSelfTest.RunAsync(outputRoot, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
+            if (string.Equals(test, "twitch-audit", StringComparison.OrdinalIgnoreCase))
+            {
+                TwitchAuditSelfTest.RunAsync(outputRoot, report).GetAwaiter().GetResult();
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             if (string.Equals(test, "twitch-network", StringComparison.OrdinalIgnoreCase))
             {
                 TwitchProxySelfTest.RunAsync(outputRoot, report).GetAwaiter().GetResult();

@@ -164,6 +164,9 @@ class SettingsStore:
                     raise ValueError()
                 if key == 'priority' and not all(isinstance(v, str) for v in value):
                     raise ValueError()
+                if key == 'campaign_watch_priority':
+                    from campaign_priority import validate_priorities
+                    validate_priorities(value)
                 if key == 'connection_quality' and not 1 <= value <= 6:
                     raise ValueError()
                 if key == 'language' and not value.strip():

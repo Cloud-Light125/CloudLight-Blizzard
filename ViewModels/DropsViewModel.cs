@@ -1551,7 +1551,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
 
     public Task<JsonElement> RequestAsync(DropsPlatform platform, string command, object? payload = null,
         CancellationToken token = default) => platform == DropsPlatform.Twitch && _twitchCoreBlocked &&
-            command is "login" or "start" or "auto_start" or "clear_auth" or "logout" or "refresh" or "save_settings" or "claim_drop"
+            command is "login" or "start" or "auto_start" or "clear_auth" or "logout" or "refresh" or "save_settings" or "claim_drop" or "claim_all_drops"
             ? Task.FromException<JsonElement>(new InvalidOperationException(Twitch.Summary))
             : _host.RequestAsync(platform, command, payload, token);
 
@@ -2263,6 +2263,7 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
 
     internal void ApplySoopAccountStatus(JsonElement state)
     {
+        SoopCampaigns.Apply(state);
         if (!state.TryGetProperty("uid", out var uidValue) || uidValue.ValueKind != JsonValueKind.String)
             return;
         var uid = uidValue.GetString() ?? "";
@@ -3138,10 +3139,10 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
     private void OnEventReceived(object? sender, WorkerEvent message) => Dispatch(() =>
     {
         if (message.Platform == DropsPlatform.Twitch && (_twitchUserStopped || _twitchUserLoggedOut || _twitchApplicationStopping) &&
-            (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" or "watch_request" ||
+            (message.Name is "auth_required" or "login_status" or "connection_status" or "auth_state" or "current_channel" or "error" or "mining_status" or "watch_request" or "watch_schedule" ||
              message.Name == "status" && Bool(message.Payload, "running"))) return;
         if (message.Name is "state" or "account_status" or "auth_state" or "auth_required" or "login_status" or "error" or "status" or
-            "connection_status" or "network_request" or "proxy_policy" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward" or "stream" or "watch_time" or "playback" or "watch_request")
+            "connection_status" or "network_request" or "proxy_policy" or "drop" or "current_channel" or "games" or "campaigns_cleared" or "refresh_completed" or "reward" or "stream" or "watch_time" or "playback" or "watch_request" or "watch_schedule" or "claim_progress" or "claim_result")
             if (!AcceptState(message.Platform, message.Payload)) return;
         var previousProjection = _projectionPlatform;
         _projectionPlatform = message.Platform;

@@ -446,22 +446,27 @@ class HeadlessGuiContractTests(unittest.TestCase):
 
         async def fetch_inventory() -> None:
             refresh_calls.append(True)
+            if claim_calls:
+                drop.is_claimed = True
+                drop.can_claim = False
 
         drop.claim = claim
         campaign = SimpleNamespace(
             id="campaign", name="OWWC 2026 Groups Day 3",
-            game=SimpleNamespace(name="Overwatch 2"), drops=[drop],
+            game=SimpleNamespace(name="Overwatch 2"), drops=[drop], eligible=True,
         )
+        drop.campaign = campaign
+        drop.claim_id = "test-instance"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             worker = TwitchWorker(root / "data", root / "twitch.log")
             try:
                 worker.running = True
-                worker._client = SimpleNamespace(inventory=[campaign], fetch_inventory=fetch_inventory)
+                worker._client = SimpleNamespace(inventory=[campaign], fetch_inventory=fetch_inventory, settings=SimpleNamespace())
                 worker.load_state = lambda payload: {"inventory": worker.get_inventory({})}
                 result = worker.claim_drop({"id": drop.id})
                 self.assertEqual(claim_calls, [drop.id])
-                self.assertEqual(refresh_calls, [True])
+                self.assertEqual(refresh_calls, [True, True])
                 self.assertEqual(result["status"], "claimed")
                 self.assertTrue(result["state"]["inventory"][0]["claimed"])
             finally:

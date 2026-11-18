@@ -44,6 +44,9 @@ public sealed class CampaignRewardGroup : ObservableObject
     public DateTimeOffset SortEnd => DateTimeOffset.TryParse(V.Text(_source,"endsAt"),out var end) ? end : DateTimeOffset.MaxValue;
     public string Summary => $"{Drops.Count(d=>d.WatchCompleted||d.Claimed)}/{Drops.Count} Drop 完成 · {Cards.Count} 件物品 · {Drops.Count(d=>d.CanClaim&&!d.Claimed)} 可领取";
     public string ProgressSummary => V.Has(_source,"remainingMinutes") ? $"官方剩余 {V.Number(_source,"remainingMinutes"):0.#} 分钟" : "官方时长以各 Drop 为准";
+    public double RemainingMinutes => V.Number(_source,"remainingMinutes");
+    public string StartText => DateTimeOffset.TryParse(V.Text(_source,"startsAt"),out var at) ? $"开始于 {at.ToLocalTime():MM-dd HH:mm}" : "开始时间未提供";
+    public string RemainingSummary => $"已完成 {Drops.Count(d=>d.WatchCompleted||d.Claimed)} · 剩余 {Drops.Count(d=>!d.WatchCompleted&&!d.Claimed)} · {ProgressSummary}";
     public double Percent => V.Has(_source,"progress") ? Math.Clamp(V.Number(_source,"progress")*100,0,100) : 0;
     public double ContainerMaxWidth=>Cards.Count==1?360:Cards.Count==2?510:double.PositiveInfinity;
 
@@ -64,7 +67,7 @@ public sealed class CampaignRewardGroup : ObservableObject
             }
         }
         TwitchInventoryModel.Reconcile(Cards,wanted,c=>c.Key);
-        foreach(var property in new[]{nameof(Title),nameof(Game),nameof(GameId),nameof(ImageUrl),nameof(Status),nameof(EndText),nameof(Summary),nameof(ProgressSummary),nameof(Percent),nameof(ContainerMaxWidth)})Raise(property);
+        foreach(var property in new[]{nameof(Title),nameof(Game),nameof(GameId),nameof(ImageUrl),nameof(Status),nameof(StartText),nameof(EndText),nameof(Summary),nameof(RemainingSummary),nameof(RemainingMinutes),nameof(ProgressSummary),nameof(Percent),nameof(ContainerMaxWidth)})Raise(property);
     }
 }
 
@@ -73,6 +76,39 @@ public sealed class TwitchInventoryModel : ObservableObject
 {
     private readonly DropsPlatformViewModel _health;
     private readonly Dictionary<string,CampaignRewardGroup> _all=new(StringComparer.Ordinal);
+    private readonly Dictionary<string,TwitchClaimAction> _claimActions=new(StringComparer.Ordinal);
+    private string _claimOwner="";
+    public IReadOnlyCollection<CampaignRewardGroup> AllCampaigns => _all.Values;
+    public JsonElement WatchPriorities { get; private set; }
+    private string _prioritySummary="观看优先级：最早结束优先";
+    public string PrioritySummary => _prioritySummary;
+    private bool _batchClaiming;
+    private string _batchSummary = "批量领取将先读取官方库存。";
+    public bool CanClaimBatch => !_batchClaiming;
+    public bool CanCancelBatch => _batchClaiming;
+    public string BatchClaimSummary => _batchSummary;
+    internal bool BeginBatchClaim()
+    {
+        if (_batchClaiming) return false;
+        _batchClaiming = true; _batchSummary = "正在读取官方可领取集合…";
+        Raise(nameof(CanClaimBatch)); Raise(nameof(CanCancelBatch)); Raise(nameof(BatchClaimSummary)); return true;
+    }
+    internal void EndBatchClaim() { _batchClaiming = false; Raise(nameof(CanClaimBatch)); Raise(nameof(CanCancelBatch)); }
+    internal void ApplyBatchClaim(JsonElement payload)
+    {
+        var rows=V.Rows(payload,"results").ToArray();
+        int Count(string status)=>rows.Count(r=>V.Text(r,"status")==status);
+        var total=(int)V.Number(payload,"total",rows.Length);
+        var success=(int)V.Number(payload,"success",Count("claimed"));
+        var skipped=(int)V.Number(payload,"skipped",Count("already_claimed"));
+        var unknown=(int)V.Number(payload,"unknown",Count("unconfirmed"));
+        var pending=(int)V.Number(payload,"pending",Math.Max(0,total-rows.Length)+Count("not_submitted"));
+        var failed=(int)V.Number(payload,"failed",rows.Length-Count("claimed")-Count("already_claimed")-Count("unconfirmed")-Count("not_submitted"));
+        _batchSummary=$"本次符合条件 {total} · 已确认成功 {success} · 已领取 {skipped} · 失败 {failed} · 待确认 {unknown} · 未执行 {pending}";
+        var current=V.Text(payload,"current");if(current.Length>0)_batchSummary+=$"\n正在处理：{current}";
+        Raise(nameof(BatchClaimSummary));
+    }
+    public Action<string>? DisplaySortChanged { get; set; }
     private JsonElement _inventory, _campaigns;
     private string _channelId="", _watchChannelId="", _watchResult="", _sync="", _phase="", _inventorySource="";
     private DateTimeOffset? _acceptedAt;
@@ -94,7 +130,7 @@ public sealed class TwitchInventoryModel : ObservableObject
     public ObservableCollection<string> Games { get; } = ["全部游戏"];
     public string Search { get=>_search; set { if(_search==value)return;Set(ref _search,value);Filter(); } }
     public string StatusFilter { get=>_status; set { if(_status==value)return;Set(ref _status,value??"all");Filter(); } }
-    public string Sort { get=>_sort; set { if(_sort==value)return;Set(ref _sort,value??"recommended");Filter(); } }
+    public string Sort { get=>_sort; set { if(_sort==value)return;Set(ref _sort,value??"recommended");Filter();DisplaySortChanged?.Invoke(_sort); } }
     public string GameFilter { get=>_gameFilter; set { if(_gameFilter==value)return;Set(ref _gameFilter,value??"全部游戏");Filter(); } }
     public string Channel=>!_health.Running&&_channelId.Length>0?"上次使用频道："+_channel:_channel;
     public string Game=>_game;
@@ -155,6 +191,20 @@ public sealed class TwitchInventoryModel : ObservableObject
     internal void SetScope(string scope){_scope=scope;Filter();}
     internal void Apply(JsonElement state)
     {
+        if(V.Has(state,"accounts"))
+        {
+            var owner=V.Rows(state,"accounts").Select(a=>V.Text(a,"userId")).FirstOrDefault()??"";
+            if(owner!=_claimOwner){_claimActions.Clear();_claimOwner=owner;}
+        }
+        var watchSettings=V.Get(state,"settings");
+        if(V.Has(watchSettings,"campaign_watch_priority"))WatchPriorities=V.Get(watchSettings,"campaign_watch_priority").Clone();
+        if(V.Has(watchSettings,"campaign_display_sort")){_sort=V.Text(watchSettings,"campaign_display_sort","recommended");Raise(nameof(Sort));}
+        if(V.Has(state,"watchSchedule"))
+        {
+            var schedule=V.Get(state,"watchSchedule");
+            _prioritySummary=V.Has(schedule,"rank")?$"当前观看优先级：{V.Number(schedule,"rank"):0} · {V.Text(schedule,"campaignName")}":"观看优先级：等待调度";
+            Raise(nameof(PrioritySummary));
+        }
         if(V.Has(state,"inventory"))_inventory=V.Get(state,"inventory").Clone();
         if(V.Has(state,"campaigns"))_campaigns=V.Get(state,"campaigns").Clone();
         if(V.Has(state,"lastInventorySyncAt"))_sync=V.Text(state,"lastInventorySyncAt");
@@ -177,6 +227,12 @@ public sealed class TwitchInventoryModel : ObservableObject
     }
     internal void ApplyEvent(string name,JsonElement payload)
     {
+        if(name=="claim_progress")ApplyBatchClaim(payload);
+        if(name=="watch_schedule")
+        {
+            _prioritySummary=V.Has(payload,"rank")?$"当前观看优先级：{V.Number(payload,"rank"):0} · {V.Text(payload,"campaignName")}":"观看优先级：等待调度";
+            Raise(nameof(PrioritySummary));
+        }
         if(name=="current_channel")UpdateChannel(payload);
         if(name=="watch_request")UpdateWatch(payload);
         if(name=="connection_status"){_phase=V.Text(payload,"phase");if(_phase is "failed" or "waiting_retry" or "stopped"){_rejectedBefore=DateTimeOffset.UtcNow;InvalidateWatch();}}
@@ -205,6 +261,7 @@ public sealed class TwitchInventoryModel : ObservableObject
             var rewards=rows.Where(r=>V.Text(r,"campaignId")==id).Select(r=>RewardVisual.From(r,"Twitch",_sync)).ToArray();
             if(rewards.Length==0)rewards=V.Rows(campaign,"drops").Select(r=>RewardVisual.From(r,"Twitch",_sync) with{CampaignId=id,Campaign=V.Text(campaign,"name"),Game=V.Text(campaign,"game"),GameImageUrl=V.Text(campaign,"gameImageUrl")}).ToArray();
             rewards=rewards.Select(r=>r with{Expired=r.Expired||V.Bool(campaign,"expired"),Upcoming=r.Upcoming||V.Bool(campaign,"upcoming"),Eligible=r.Eligible??(V.Has(campaign,"eligible")?V.Bool(campaign,"eligible"):null)}).ToArray();
+            rewards=rewards.Select(WithClaimAction).ToArray();
             if(_selectedDrop?.CampaignId==id&&rewards.FirstOrDefault(r=>r.Id==_selectedDrop.Id) is {} selected)_selectedDrop=selected;
             if(!_all.TryGetValue(id,out var group))_all[id]=group=new(id);
             group.Update(campaign,rewards);
@@ -212,6 +269,13 @@ public sealed class TwitchInventoryModel : ObservableObject
         foreach(var removed in _all.Keys.Except(ids).ToArray())_all.Remove(removed);
         Reconcile(Games,new[]{"全部游戏"}.Concat(_all.Values.Select(g=>g.Game).Where(g=>g.Length>0).Distinct().Order()).ToArray(),s=>s);
         Filter();
+    }
+    internal RewardVisual WithClaimAction(RewardVisual reward)
+    {
+        var key=reward.CampaignId+"/"+reward.Id;
+        if(!_claimActions.TryGetValue(key,out var action))_claimActions[key]=action=new();
+        action.Update(reward);
+        return reward with { ClaimAction=action };
     }
     private void Filter()
     {
@@ -223,9 +287,9 @@ public sealed class TwitchInventoryModel : ObservableObject
             "claimed"=>g.Drops.Any(d=>d.Claimed),"active"=>!g.Expired&&!g.Upcoming,
             "ending"=>!g.Expired&&g.SortEnd<DateTimeOffset.Now.AddDays(2),_=>true
         };
-        var filtered=_all.Values.Where(g=>(_scope=="all"||g.Available&&(_scope!="priority"||g.Priority))&&Matches(g)&&
+        var filtered=_all.Values.Where(g=>(_scope=="all"||(g.Available||g.Drops.Any(d=>d.CanClaim&&!d.Claimed))&&(_scope!="priority"||g.Priority))&&Matches(g)&&
             (_gameFilter=="全部游戏"||g.Game==_gameFilter)&&(_search.Length==0||(g.Title+" "+g.Game+" "+string.Join(" ",g.Cards.Select(c=>c.Title))).Contains(_search,StringComparison.OrdinalIgnoreCase)));
-        var ordered=_sort switch {"ending"=>filtered.OrderBy(g=>g.SortEnd),"name"=>filtered.OrderBy(g=>g.Game).ThenBy(g=>g.Title),_=>Rank(filtered)};
+        var ordered=_sort switch {"ending"=>filtered.OrderBy(g=>g.SortEnd),"name"=>filtered.OrderBy(g=>g.Game).ThenBy(g=>g.Title),"progress"=>filtered.OrderByDescending(g=>g.Percent),"status"=>filtered.OrderBy(g=>g.Status),_=>Rank(filtered)};
         Reconcile(Groups,ordered.ToArray(),g=>g.Id);
         var overview=Rank(_all.Values.Where(g=>!OverviewPriorityOnly||PriorityRank(g)<int.MaxValue)).OrderBy(g=>PriorityRank(g)).ToArray();
         Reconcile(OverviewGroups,overview,g=>g.Id);

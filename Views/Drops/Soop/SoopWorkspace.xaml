@@ -74,6 +74,8 @@
             </Border>
         </StackPanel>
         <StackPanel Tag="workspace:activities">
+            <soop:SoopCampaignPanel Model="{Binding SoopCampaigns}" Heading="SOOP 官方活动与奖励" />
+            <Expander Header="账号任务与奖励背包 · 领取及兑换码" Margin="0,14,0,0">
             <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition />
@@ -127,6 +129,7 @@
                     </StackPanel>
                 </Border>
             </Grid>
+            </Expander>
             <Expander Header="进度历史与回退诊断" Margin="0,14,0,0">
                 <StackPanel Margin="8">
                     <TextBlock Text="这些记录用于排查同步与回退，不代表当前任务进度。重启后先显示历史缓存；最新进度以官方查询为准。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,0,0,8" />
@@ -135,6 +138,7 @@
             </Expander>
         </StackPanel>
         <StackPanel Tag="workspace:settings">
+            <soop:SoopCampaignPanel Model="{Binding SoopCampaigns}" Heading="游戏与活动优先级设置" Editable="True" />
             <Border x:Name="SoopSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14" x:FieldModifier="internal">
                 <StackPanel>
                     <TextBlock Text="直播间与任务策略" Style="{StaticResource SectionTitle}" />
@@ -157,7 +161,7 @@
                                         </StackPanel>
                                     </ctrl:SettingRow.Editor>
                                 </ctrl:SettingRow>
-                                <ctrl:SettingRow Title="优先任务" Description="主账号和独立账号仍按原任务策略运行。">
+                                <ctrl:SettingRow Title="旧优先任务" Description="原配置保留，迁移后使用上方队列。" Visibility="Collapsed">
                                     <ctrl:SettingRow.Editor>
                                         <StackPanel>
                                             <ComboBox x:Name="SoopPriorityMission" Style="{StaticResource ThemeComboBox}" DisplayMemberPath="Content" SelectedValuePath="Tag" x:FieldModifier="internal" />

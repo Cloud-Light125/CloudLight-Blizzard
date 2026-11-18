@@ -55,7 +55,7 @@ public partial class DropsPage : UserControl
     private void UpdateDraftHint()
     {
         if (PlatformDraftHint is not null)
-            PlatformDraftHint.Text = _settingsDrafts.Contains(_platform) || _platform == DropsPlatform.Bilibili && (_vm?.BilibiliDetails.SettingsDirty == true || BilibiliNotifierUrlBox.Password.Length > 0)
+            PlatformDraftHint.Text = _settingsDrafts.Contains(_platform) || _platform == DropsPlatform.Soop && _vm?.SoopCampaigns.Dirty == true || _platform == DropsPlatform.Bilibili && (_vm?.BilibiliDetails.SettingsDirty == true || BilibiliNotifierUrlBox.Password.Length > 0)
                 ? "有未保存的更改 · 切换页面仍会保留，点击保存后应用。"
                 : "设置已同步 · 自动启动选项即时保存，其余更改点击保存后应用。";
     }
@@ -96,7 +96,6 @@ public partial class DropsPage : UserControl
     private readonly Dictionary<DropsPlatform, long> _logVisibleRevisions = Enum.GetValues<DropsPlatform>()
         .ToDictionary(platform => platform, _ => 0L);
     private readonly SemaphoreSlim _logStartGate = new(1, 1);
-    private readonly HashSet<string> _twitchClaimsInProgress = new(StringComparer.Ordinal);
     private CancellationTokenSource? _bilibiliQrPollingCts;
     private Task? _bilibiliQrPollingTask;
     private bool _shutdownStarted;
@@ -169,6 +168,8 @@ public partial class DropsPage : UserControl
         _logTail.Changed += OnLogTailChanged;
         _vm = new DropsViewModel(main.DropsHost);
         _vm.TwitchInventory.ConfigureDisplay(main.Settings);
+        _vm.SoopCampaigns.ConfigureDisplay(main.Settings);
+        _vm.TwitchInventory.DisplaySortChanged=SaveTwitchDisplaySort;
         _vm.TwitchPriorityGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
         _vm.TwitchExcludedGames.CollectionChanged += (_, _) => { if (!_populatingSettings) { _settingsDrafts.Add(DropsPlatform.Twitch); UpdateDraftHint(); } };
         _vm.BilibiliDetails.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(BilibiliDropsViewModel.SettingsDirty)) UpdateDraftHint(); };
@@ -938,11 +939,11 @@ public partial class DropsPage : UserControl
         if (_vm == null) return;
         try
         {
-            await _vm.RequestAsync(DropsPlatform.Soop, "save_settings", new { settings = new Dictionary<string, object?>
+            var soopQueueSettings = _vm.SoopCampaigns.SettingsPayload();
+            foreach (var item in new Dictionary<string, object?>
             {
                 ["channel_mode"] = SelectedTag(SoopChannelMode, "smart"),
                 ["manual_input"] = SoopManualChannel.Text.Trim(),
-                ["priority_mission_id"] = SelectedTag(SoopPriorityMission, "auto"),
                 ["preferred_bjid"] = string.IsNullOrWhiteSpace(SoopPreferredChannel.Text) ? "owesports" : SoopPreferredChannel.Text.Trim(),
                 ["auto_claim_enabled"] = SoopAutoClaim.IsChecked == true,
                 ["low_bandwidth_mode"] = SoopLowBandwidth.IsChecked == true,
@@ -951,7 +952,9 @@ public partial class DropsPage : UserControl
                 ["inventory_poll_interval"] = ParseInt(SoopInventoryInterval, 300),
                 ["channel_refresh_interval"] = ParseInt(SoopChannelInterval, 300),
                 ["reauth_retry_interval"] = ParseInt(SoopReauthInterval, 300),
-            }});
+            }) soopQueueSettings[item.Key] = item.Value;
+            await _vm.RequestAsync(DropsPlatform.Soop, "save_settings", new { settings = soopQueueSettings });
+            _vm.SoopCampaigns.Saved();
             _settingsDrafts.Remove(DropsPlatform.Soop);
             UpdateDraftHint();
             await LoadPlatformAsync(DropsPlatform.Soop);
@@ -1995,36 +1998,8 @@ public partial class DropsPage : UserControl
     private async void OnClaimTwitchDrop(object sender, RoutedEventArgs e)
     {
         if (_vm == null || sender is not Button { DataContext: DropsRow row }) return;
-        if (!_twitchClaimsInProgress.Add(row.Id)) return;
-        if (!row.TryBeginTwitchClaim())
-        {
-            _twitchClaimsInProgress.Remove(row.Id);
-            return;
-        }
-
-        try
-        {
-            var result = await _vm.RequestAsync(
-                DropsPlatform.Twitch, "claim_drop", new { id = row.Id });
-            if (result.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.Object)
-            {
-                _vm.ApplyState(DropsPlatform.Twitch, state);
-                PopulateSettings(DropsPlatform.Twitch, state);
-            }
-
-            var status = Text(result, "status");
-            if (status is not ("claimed" or "already_claimed"))
-                ShowInfo("Twitch 奖励领取失败，请稍后重试。", "领取奖励");
-        }
-        catch
-        {
-            ShowInfo("Twitch 奖励领取失败，请稍后重试。", "领取奖励");
-        }
-        finally
-        {
-            row.EndTwitchClaim();
-            _twitchClaimsInProgress.Remove(row.Id);
-        }
+        var reward=FindTwitchReward(row.Id);
+        if(reward is not null)await ClaimTwitchRewardAsync(reward);
     }
 
     private void RefreshTwitchGameChoices()
