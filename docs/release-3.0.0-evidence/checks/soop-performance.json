@@ -1,0 +1,28 @@
+{
+  "kind": "OFFICIAL read-only snapshot replay in real WPF",
+  "games": 54,
+  "activities": 426,
+  "totalRewards": 617,
+  "modelInitMs": 38.3092,
+  "initialLayoutMs": 207.4707,
+  "coldCards": 17,
+  "realizedCardsAfterExpandAll": 17,
+  "filterMs": 21.8981,
+  "scrollStepMs": [
+    0.4726,
+    39.8648,
+    50.7709,
+    53.1421,
+    16.7474,
+    171.2449,
+    130.6804,
+    80.1559,
+    79.6814,
+    73.8228,
+    148.3764,
+    87.0483
+  ],
+  "privateBytesBeforeScroll": 272957440,
+  "privateBytesAfterScroll": 283897856,
+  "scope": "single local run; no hardware-independent FPS or soak claim"
+}

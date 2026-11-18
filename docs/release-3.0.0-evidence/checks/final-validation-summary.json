@@ -1,0 +1,98 @@
+{
+  "appBuildCommit": "7bd39c83a2e32a504784754afbacda99a6636d9e",
+  "workerBuildCommit": "3257e430aac7b42118b652021d934abc3012d1e3",
+  "distributionStatus": "LOCAL-ONLY",
+  "publicRelease": "BLOCKED",
+  "tests": {
+    "all": {
+      "status": "PASS",
+      "passLines": 0
+    },
+    "account-safety": {
+      "status": "PASS",
+      "passLines": 55
+    },
+    "region-verified": {
+      "status": "PASS",
+      "passLines": 0
+    },
+    "update-safety": {
+      "status": "PASS",
+      "passLines": 51
+    },
+    "exit-safety": {
+      "status": "PASS",
+      "passLines": 87
+    },
+    "twitch-audit": {
+      "status": "PASS",
+      "passLines": 10
+    },
+    "packaged-workers": {
+      "status": "PASS",
+      "passLines": 35
+    },
+    "soop-timeout": {
+      "status": "PASS",
+      "passLines": 7
+    },
+    "ui-v2": {
+      "status": "PASS",
+      "passLines": 133
+    },
+    "ui-host": {
+      "status": "PASS",
+      "passLines": 347
+    },
+    "ui-review": {
+      "status": "PASS",
+      "passLines": 8,
+      "layoutCombinations": 528
+    },
+    "twitch-frozen": {
+      "status": "PASS",
+      "tests": 121,
+      "remoteNetwork": "DENIED"
+    },
+    "soop-frozen": {
+      "status": "PASS",
+      "tests": 60,
+      "remoteNetwork": "DENIED"
+    },
+    "python": {
+      "status": "PASS",
+      "counts": [
+        5,
+        8,
+        121,
+        60,
+        21
+      ]
+    },
+    "installerPayload": {
+      "status": "PASS",
+      "files": 564,
+      "systemInstall": "NOT TESTED"
+    },
+    "installerRetention": {
+      "status": "PASS",
+      "scope": "isolated fixtures; abort before actual installation"
+    }
+  },
+  "hashes": {
+    "app/CloudLight Blizzard.exe": "58af0f9e5e8e9b71fa86a01a6caff971f204f0a96b0fd586865aab6da50cd218",
+    "app/CloudLight Blizzard.dll": "ee8634d38d6df67886b555f83b014725ce14d9695be5726ffd55a4c3bd654b6b",
+    "workers/twitch/twitch-worker.exe": "62311167e869cfe78ef589c7abe1befeaa0ebd83968567851305a6e677c86c9c",
+    "workers/soop/soop-worker.exe": "2a0f25e1ebaade2f91e6c2f0a98531f91ced01c6bf08c55b1cbdf3619edc2cd9",
+    "workers/bilibili/bilibili-worker.exe": "9f87b786a6f07ab4b53b4064511d23d2bf4a673d06ac374e91610f9a8533493f",
+    "workers/youtube/youtube-worker.exe": "4592388f4cb997823081e017e7b411017235357e07b1b3b286846ae401cba1e3",
+    "installer/CloudLight-Blizzard-3.0.0-win-x64-Setup.exe": "b1592638acf5e0c530f2e12a9188669e7d27ed08390853910d45049d14bd7dde"
+  },
+  "limits": [
+    "public redistribution rights not established",
+    "real system installation and upgrade NOT TESTED",
+    "real long-running/multi-account watching and random award NOT TESTED",
+    "new real Twitch claims NOT TESTED",
+    "prior claim narrative remains in intermediate Git history; current file sanitized"
+  ]
+}

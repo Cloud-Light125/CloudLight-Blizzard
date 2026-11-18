@@ -1,0 +1,27 @@
+{
+  "reviewedAt": "2026-11-18T12:59:24.1883495+08:00",
+  "directUpstream": {
+    "default_branch": "master",
+    "full_name": "tom1230123/soop-drops-miner",
+    "license": null
+  },
+  "upstreamTree": {
+    "licenseFiles": [],
+    "sha": "3283f5db1b2ce52d81441731cd41728ed262d5d8"
+  },
+  "fixedCoreTree": {
+    "licenseFiles": [],
+    "sha": "6050b8a35690b091996a1efedad4655b1b094cac"
+  },
+  "decision": "BLOCKED: insufficient direct-upstream rights evidence for public frozen binary redistribution",
+  "upstreamReadmeReview": {
+    "source": "https://github.com/tom1230123/soop-drops-miner/blob/3283f5db1b2ce52d81441731cd41728ed262d5d8/README.md",
+    "author": "www5329",
+    "positiveEvidence": [
+      "可单独分发 exe 文件",
+      "分发衍生版本时请保留免责说明，并告知使用者相关风险"
+    ],
+    "fullDisclaimer": "README refers to the in-program disclaimer",
+    "decision": "Distribution intent exists; rights-holder authority and scope for the exact modified Core embedded in this public frozen bundle remain unconfirmed. Not a decision based solely on license=null."
+  }
+}
