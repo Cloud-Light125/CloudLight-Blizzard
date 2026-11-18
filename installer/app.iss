@@ -1,5 +1,5 @@
 ﻿#define AppName "CloudLight Blizzard"
-#define AppVer  "2.1.10"
+#define AppVer  "3.0.0"
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"
@@ -10,7 +10,7 @@ AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
 AppName={#AppName}
 AppVersion={#AppVer}
 AppVerName={#AppName} {#AppVer}
-VersionInfoVersion=2.1.10.0
+VersionInfoVersion=3.0.0.0
 VersionInfoProductVersion={#AppVer}
 VersionInfoTextVersion={#AppVer}
 VersionInfoProductTextVersion={#AppVer}
@@ -31,8 +31,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-CloseApplications=force
-CloseApplicationsFilter=CloudLight Blizzard.exe
+CloseApplications=no
 RestartApplications=no
 
 [Languages]
@@ -64,6 +63,35 @@ var
   SettingsBackupRoot: String;
   SettingsBackupReady: Boolean;
   SettingsRestoreAttempted: Boolean;
+
+function OpenExistingForWrite(FileName: String; Access, Share: Cardinal;
+  Security: Integer; Disposition, Attributes: Cardinal; Template: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+function CloseFileHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function PayloadFileIsBusy(const RelativePath: String): Boolean;
+var
+  FileName: String;
+  Handle: THandle;
+begin
+  Result := False;
+  FileName := ExpandConstant('{app}\') + RelativePath;
+  if not FileExists(FileName) then Exit;
+  { Opening an existing file for write performs no writes. Windows rejects an
+    active executable image, including an independently running Worker. }
+  Handle := OpenExistingForWrite(FileName, $40000000, 7, 0, 3, $80, 0);
+  if Handle = THandle(-1) then
+    Result := True
+  else
+    CloseFileHandle(Handle);
+end;
+
+function IsNewerProductVersion(const VersionMS, VersionLS: Cardinal): Boolean;
+begin
+  Result := (VersionMS > $00030000) or
+    ((VersionMS = $00030000) and (VersionLS > 0));
+end;
 
 function BackupSettingsFile(const RelativePath: String): Boolean;
 var
@@ -181,12 +209,52 @@ begin
     end;
 end;
 
+function CopyVerifiedPayload(const SourceRoot, DestinationRoot, Relative: String): Boolean;
+var
+  FindRec: TFindRec;
+  SourcePath, DestinationPath, Child: String;
+begin
+  Result := True;
+  SourcePath := AddBackslash(SourceRoot) + Relative;
+  DestinationPath := AddBackslash(DestinationRoot) + Relative;
+  if not ForceDirectories(DestinationPath) then
+  begin
+    Result := False;
+    Exit;
+  end;
+  if FindFirst(AddBackslash(SourcePath) + '*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+        begin
+          Child := AddBackslash(Relative) + FindRec.Name;
+          if Relative = '' then Child := FindRec.Name;
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          begin
+            if not CopyVerifiedPayload(SourceRoot, DestinationRoot, Child) then Result := False;
+          end
+          else
+          begin
+            Log('PAYLOAD_FILE_SHA256 ' + Child + '=' + Lowercase(GetSHA256OfFile(AddBackslash(SourceRoot) + Child)));
+            if not CopyFile(AddBackslash(SourceRoot) + Child, AddBackslash(DestinationRoot) + Child, True) then Result := False;
+          end;
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 function VerifyInstallerPayload: Boolean;
 var
   PayloadExeFile: String;
   PayloadFile: String;
   PayloadExeHash: String;
   PayloadHash: String;
+  PayloadOutput: String;
+  PayloadRoot: String;
 begin
   Result := False;
   try
@@ -203,6 +271,19 @@ begin
     PayloadHash := Lowercase(GetSHA256OfFile(PayloadFile));
     Log('PAYLOAD_VERIFY EXE_SHA256=' + PayloadExeHash);
     Log('PAYLOAD_VERIFY DLL_SHA256=' + PayloadHash);
+    PayloadOutput := ExpandConstant('{param:PAYLOADOUT|}');
+    if PayloadOutput <> '' then
+    begin
+      { This mode aborts before installation and only writes a new directory.
+        Never overwrite an installed tree, configuration, or prior extraction. }
+      if DirExists(PayloadOutput) or FileExists(PayloadOutput) then
+        RaiseException('PAYLOADOUT must be a new directory.');
+      ExtractTemporaryFiles('{app}\*');
+      PayloadRoot := ExpandConstant('{tmp}\') + '{app}';
+      if not CopyVerifiedPayload(PayloadRoot, PayloadOutput, '') then
+        RaiseException('Payload extraction failed.');
+      Log('PAYLOAD_EXTRACT PASS: ' + PayloadOutput);
+    end;
     Log('PAYLOAD_VERIFY PASS');
     Result := True;
   except
@@ -269,6 +350,63 @@ begin
   Result := True;
 end;
 
+function VerifyAllRetainedUserFiles: Boolean;
+var
+  Paths: TArrayOfString;
+  I: Integer;
+  TestRoot, FileName, Expected: String;
+  Actual: AnsiString;
+begin
+  Result := False;
+  TestRoot := ExpandConstant('{tmp}\CloudLight-All-Data-Preserve-SelfTest');
+  SetArrayLength(Paths, 13);
+  Paths[0] := 'settings.json';
+  Paths[1] := 'drops\twitch\settings.json';
+  Paths[2] := 'drops\soop\settings.json';
+  Paths[3] := 'drops\youtube\config.json';
+  Paths[4] := 'drops\bilibili\settings.json';
+  Paths[5] := 'drops\twitch\cookies.jar';
+  Paths[6] := 'drops\twitch\claim-journal.json';
+  Paths[7] := 'drops\soop\accounts\synthetic\cookies.json';
+  Paths[8] := 'drops\soop\credentials\synthetic.bin';
+  Paths[9] := 'drops\bilibili\state.json';
+  Paths[10] := 'accounts\synthetic\manifest.json';
+  Paths[11] := 'accounts\synthetic\Battle.net.config';
+  Paths[12] := 'region-switch\backups\synthetic.config';
+  UserDataRoot := AddBackslash(TestRoot) + 'data';
+  SettingsBackupRoot := AddBackslash(TestRoot) + 'backup';
+  for I := 0 to GetArrayLength(Paths) - 1 do
+  begin
+    FileName := AddBackslash(UserDataRoot) + Paths[I];
+    if not ForceDirectories(ExtractFileDir(FileName)) then Exit;
+    Expected := '{"syntheticOnly":true,"preserved":"' + IntToStr(I) +
+      '","campaign_watch_priority":{"1":{"mode":"custom","campaignIds":["b","a"]}},"uncertain":"unconfirmed"}';
+    if not SaveStringToFile(FileName, Expected, False) then Exit;
+    if I < 5 then
+    begin
+      if not BackupSettingsFile(Paths[I]) then Exit;
+      if not SaveStringToFile(FileName, '{"syntheticOnly":true,"changed":true}', False) then Exit;
+    end;
+  end;
+  SettingsBackupReady := True;
+  if not RestoreUserSettings then Exit;
+  for I := 0 to GetArrayLength(Paths) - 1 do
+  begin
+    Expected := '{"syntheticOnly":true,"preserved":"' + IntToStr(I) +
+      '","campaign_watch_priority":{"1":{"mode":"custom","campaignIds":["b","a"]}},"uncertain":"unconfirmed"}';
+    if not LoadStringFromFile(AddBackslash(UserDataRoot) + Paths[I], Actual) then Exit;
+    if Actual <> Expected then Exit;
+    Log('ALL_DATA_PRESERVE_TEST PASS: ' + Paths[I]);
+  end;
+  Log('ALL_DATA_PRESERVE_TEST PASS: 13 isolated synthetic files');
+  if not IsNewerProductVersion($00030001, 0) or
+     not IsNewerProductVersion($00030000, 1) or
+     IsNewerProductVersion($00030000, 0) or
+     IsNewerProductVersion($00020001, 0) then Exit;
+  Log('PRODUCT_DOWNGRADE_GUARD_TEST PASS');
+  Result := True;
+end;
+
 procedure InitializeWizard;
 begin
   if PayloadVerifyRequested then
@@ -278,7 +416,8 @@ begin
   end;
   if SettingsPreserveTestRequested then
   begin
-    VerifySettingsPreservation;
+    if VerifySettingsPreservation and VerifyAllRetainedUserFiles then
+      Log('ALL_PRESERVATION_CHECKS PASS');
     Abort;
   end;
 end;
@@ -290,6 +429,10 @@ var
   DotPosition: Integer;
   MajorVersion: Integer;
 begin
+#if FileExists(PublishDir + "\coreclr.dll")
+  Result := True;
+  Exit;
+#endif
   Result := False;
 
   { .NET writes x64 shared-framework versions as value names under this key.
@@ -341,10 +484,33 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExistingMS, ExistingLS: Cardinal;
 begin
   Result := '';
   if PayloadVerifyRequested or SettingsPreserveTestRequested then
     Exit;
+  if GetVersionNumbers(ExpandConstant('{app}\CloudLight Blizzard.dll'), ExistingMS, ExistingLS) and
+     IsNewerProductVersion(ExistingMS, ExistingLS) then
+  begin
+    Result := '安装目录包含比 3.0.0 更新的 CloudLight Blizzard；为避免覆盖新版程序与 Worker，安装已阻止。';
+    Exit;
+  end;
+  if CheckForMutexes('Local\CloudLight Blizzard.SingleInstance') then
+  begin
+    Result := 'CloudLight Blizzard 仍在运行。请从程序菜单正常退出，等待后台停止后重试安装。';
+    Exit;
+  end;
+  if PayloadFileIsBusy('{#AppExe}') or
+     PayloadFileIsBusy('CloudLight Blizzard.dll') or
+     PayloadFileIsBusy('_internal\drops\twitch\twitch-worker.exe') or
+     PayloadFileIsBusy('_internal\drops\soop\soop-worker.exe') or
+     PayloadFileIsBusy('_internal\drops\bilibili\bilibili-worker.exe') or
+     PayloadFileIsBusy('_internal\drops\youtube\youtube-worker.exe') then
+  begin
+    Result := '安装目录的程序或 Worker 仍在使用或不可写。请正常退出相关 CloudLight Blizzard 实例后重试。';
+    Exit;
+  end;
   if not BackupUserSettings then
     Result := '无法在安装前安全备份 CloudLight Blizzard 设置。' + #13#10 +
       '为避免设置丢失，本次安装已取消。';

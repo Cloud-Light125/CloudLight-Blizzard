@@ -64,6 +64,14 @@ builds without such authorization; Local and adapter-only builds remain
 available. This is the publisher's declaration, not a newly inferred MIT/GPL
 license for the direct upstream. Original source and upstream attribution remain.
 
+Rechecked 2026-11-18: the GitHub API still reports no explicit license for direct
+upstream commit `3283f5db1b2ce52d81441731cd41728ed262d5d8`; the bundled Core
+commit has no license file either. No rights-holder grant covering the upstream
+contribution and frozen public binaries has been established. The publisher's
+declaration alone is insufficient. Full public 3.0.0 distribution is BLOCKED;
+both provenance generation and the publish gate now require a confirmed
+upstream-rights review. Local candidates remain LOCAL-ONLY.
+
 ## CloudLight Overwatch YouTube Watcher
 
 - Source: <https://github.com/yundan125/CloudLight-Overwatch-YouTube-Watcher>

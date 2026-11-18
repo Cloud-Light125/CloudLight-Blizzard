@@ -2,12 +2,13 @@
 import { handleAnnouncements, handleFeedback, handleLatestUpdate } from "../src/index";
 import type { Env } from "../src/index";
 
+const releaseMonth = new Date().toISOString().slice(0, 7);
 const release = {
   id: 42,
-  tag_name: "feedback-logs-2026-08",
-  name: "CloudLight Blizzard Feedback Logs 2026-08",
+  tag_name: `feedback-logs-${releaseMonth}`,
+  name: `CloudLight Blizzard Feedback Logs ${releaseMonth}`,
   upload_url: "https://uploads.github.com/repos/owner/private-feedback/releases/42/assets{?name,label}",
-  html_url: "https://github.com/owner/private-feedback/releases/tag/feedback-logs-2026-08",
+  html_url: `https://github.com/owner/private-feedback/releases/tag/feedback-logs-${releaseMonth}`,
 };
 
 function environment(): Env {

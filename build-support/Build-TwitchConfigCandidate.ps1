@@ -87,7 +87,7 @@ try {
         } elseif (-not $content.Contains('SETTINGS_PRESERVE_TEST PASS')) { throw 'Settings preservation test failed.' }
     }
     if ((& git status --porcelain | Out-String).Trim() -or (& git rev-parse HEAD | Out-String).Trim() -ne $commit) { throw 'Source changed during build.' }
-    $metadata = [ordered]@{version='2.1.10';commit=$commit;sourceState='clean';purpose='Local';scope='Twitch';uiAcceptance=$uiStatus;
+    $metadata = [ordered]@{version='3.0.0';commit=$commit;sourceState='clean';purpose='Local';scope='Twitch';uiAcceptance=$uiStatus;
         frozenConfiguration='PASS';installedToSystem=$false;officialClaimTests='NOT RUN';workers=$manifest.workers;workerBuilds=$builds;
         appDllSha256=(Get-FileHash -LiteralPath $dll).Hash.ToLowerInvariant();installerSha256=(Get-FileHash -LiteralPath $installer.FullName).Hash.ToLowerInvariant()}
     $metadata | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputRoot 'candidate.json') -Encoding utf8

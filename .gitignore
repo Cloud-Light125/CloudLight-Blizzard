@@ -46,3 +46,6 @@ _tool/
 *.pcapng
 OverWatch_Career_Record/
 icon/
+/artifacts/
+/docs/ui-redesign-v2/screenshots.zip
+/docs/ui-redesign-v2/screenshots-priority.zip

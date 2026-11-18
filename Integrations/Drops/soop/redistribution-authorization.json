@@ -8,6 +8,13 @@
   "coreCommit": "6050b8a35690b091996a1efedad4655b1b094cac",
   "coreSha256": "65801b6e10f1777cd08af4ae0c6903003b2544c6bfd58b60f7295ba77d879be6",
   "binaryRedistribution": true,
+  "upstreamRightsReview": {
+    "status": "blocked",
+    "reviewedAt": "2026-11-18",
+    "reason": "No explicit license or rights-holder grant was found for direct upstream 3283f5db1b2ce52d81441731cd41728ed262d5d8 or bundled Core 6050b8a35690b091996a1efedad4655b1b094cac. The publisher declaration is insufficient to establish upstream public binary redistribution rights.",
+    "evidenceUrls": ["https://github.com/tom1230123/soop-drops-miner", "https://github.com/Cloud-Light125/cloudlight-soop-drops-miner/tree/6050b8a35690b091996a1efedad4655b1b094cac"],
+    "allowsFrozenBinaries": false
+  },
   "scope": "Bundle this exact modified SOOP Core in CloudLight Blizzard installers distributed through this repository's GitHub Releases.",
   "requiredNotices": "Retain original SOOP source and direct-upstream attribution in THIRD_PARTY_NOTICES.md. This publisher declaration does not replace third-party licenses or independently establish an upstream license."
 }

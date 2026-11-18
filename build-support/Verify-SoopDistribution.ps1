@@ -10,6 +10,12 @@ function Get-DistributionSha256([string]$Path) {
     finally { $algorithm.Dispose(); $stream.Dispose() }
 }
 $record = Get-Content -LiteralPath $Authorization -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not $record.upstreamRightsReview -or $record.upstreamRightsReview.status -ne 'confirmed' -or
+    $record.upstreamRightsReview.allowsFrozenBinaries -ne $true -or
+    $record.upstreamRightsReview.coversCoreCommit -ne $record.coreCommit -or
+    -not $record.upstreamRightsReview.evidenceUrls -or -not $record.upstreamRightsReview.rightsHolders) {
+    throw 'SOOP public distribution BLOCKED: direct-upstream redistribution evidence, including frozen binaries, is not confirmed.'
+}
 $build = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
 $recordHash = Get-DistributionSha256 $Authorization
 if ($record.schema -ne 1 -or $record.repository -ne 'Cloud-Light125/CloudLight-Blizzard' -or

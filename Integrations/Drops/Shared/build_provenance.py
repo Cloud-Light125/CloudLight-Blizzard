@@ -53,6 +53,11 @@ def core_info(root: Path) -> dict:
 
 def authorize_core(core: dict, record_path: Path) -> None:
     record = json.loads(record_path.read_text(encoding="utf-8-sig"))
+    review = record.get("upstreamRightsReview", {}) if isinstance(record, dict) else {}
+    if (review.get("status") != "confirmed" or review.get("allowsFrozenBinaries") is not True
+            or review.get("coversCoreCommit") != core["commit"] or not review.get("evidenceUrls")
+            or not review.get("rightsHolders")):
+        raise RuntimeError("SOOP public distribution BLOCKED: publisher declaration alone does not establish direct-upstream redistribution rights.")
     if (not isinstance(record, dict) or record.get("schema") != 1
             or record.get("repository") != "Cloud-Light125/CloudLight-Blizzard"
             or record.get("binaryRedistribution") is not True
