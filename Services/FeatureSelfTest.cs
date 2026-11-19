@@ -132,6 +132,12 @@ public static class FeatureSelfTest
                 report.AppendLine("OVERALL: PASS");
                 return;
             }
+            if (string.Equals(test,"snapshot-deletion",StringComparison.OrdinalIgnoreCase))
+            {
+                SnapshotDeletionSelfTest.Run(workspace,report);
+                report.AppendLine("OVERALL: PASS");
+                return;
+            }
             RunGameLocatorTest(workspace, report);
             RunAccountSnapshotTest(workspace, report);
             RunLoginVerificationTest(report);
@@ -148,6 +154,7 @@ public static class FeatureSelfTest
             RunAccountPreferenceTest(workspace, report);
             RunAppPathsMigrationTest(workspace, report);
             RunProductizationTests(workspace, report).GetAwaiter().GetResult();
+            SnapshotDeletionSelfTest.Run(workspace,report);
             report.AppendLine("OVERALL: PASS");
         }
         catch (Exception ex)

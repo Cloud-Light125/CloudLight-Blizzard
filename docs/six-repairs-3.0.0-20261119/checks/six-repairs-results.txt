@@ -1,0 +1,96 @@
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1366x768-light
+PASS wheel fixture has actual outer-page overflow 1366x768-light
+PASS normal wheel over virtualized list moves whole page 1366x768-light
+PASS quick navigation reaches channel policy 1366x768-light
+PASS page scroll does not consume list's independent offset 1366x768-light
+PASS 425+ activity replay retains reward virtualization 1366x768-light
+PASS snapshot actions use Fluent styles and 36 DIP 1366x768-light
+PASS About owns actual update and feedback surfaces above collapsed licenses 1366x768-light
+PASS expanded licenses preserve all component entries 1366x768-light
+PASS old update navigation opens About top 1366x768-light
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1366x768-dark
+PASS wheel fixture has actual outer-page overflow 1366x768-dark
+PASS normal wheel over virtualized list moves whole page 1366x768-dark
+PASS quick navigation reaches channel policy 1366x768-dark
+PASS page scroll does not consume list's independent offset 1366x768-dark
+PASS 425+ activity replay retains reward virtualization 1366x768-dark
+PASS snapshot actions use Fluent styles and 36 DIP 1366x768-dark
+PASS About owns actual update and feedback surfaces above collapsed licenses 1366x768-dark
+PASS expanded licenses preserve all component entries 1366x768-dark
+PASS old update navigation opens About top 1366x768-dark
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1600x900-light
+PASS wheel fixture has actual outer-page overflow 1600x900-light
+PASS normal wheel over virtualized list moves whole page 1600x900-light
+PASS quick navigation reaches channel policy 1600x900-light
+PASS page scroll does not consume list's independent offset 1600x900-light
+PASS 425+ activity replay retains reward virtualization 1600x900-light
+PASS snapshot actions use Fluent styles and 36 DIP 1600x900-light
+PASS About owns actual update and feedback surfaces above collapsed licenses 1600x900-light
+PASS expanded licenses preserve all component entries 1600x900-light
+PASS old update navigation opens About top 1600x900-light
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1600x900-dark
+PASS wheel fixture has actual outer-page overflow 1600x900-dark
+PASS normal wheel over virtualized list moves whole page 1600x900-dark
+PASS quick navigation reaches channel policy 1600x900-dark
+PASS page scroll does not consume list's independent offset 1600x900-dark
+PASS 425+ activity replay retains reward virtualization 1600x900-dark
+PASS snapshot actions use Fluent styles and 36 DIP 1600x900-dark
+PASS About owns actual update and feedback surfaces above collapsed licenses 1600x900-dark
+PASS expanded licenses preserve all component entries 1600x900-dark
+PASS old update navigation opens About top 1600x900-dark
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1920x1080-light
+PASS wheel fixture has actual outer-page overflow 1920x1080-light
+PASS normal wheel over virtualized list moves whole page 1920x1080-light
+PASS quick navigation reaches channel policy 1920x1080-light
+PASS page scroll does not consume list's independent offset 1920x1080-light
+PASS 425+ activity replay retains reward virtualization 1920x1080-light
+PASS snapshot actions use Fluent styles and 36 DIP 1920x1080-light
+PASS About owns actual update and feedback surfaces above collapsed licenses 1920x1080-light
+PASS expanded licenses preserve all component entries 1920x1080-light
+PASS old update navigation opens About top 1920x1080-light
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+PASS all official game group names resolve 1920x1080-dark
+PASS wheel fixture has actual outer-page overflow 1920x1080-dark
+PASS normal wheel over virtualized list moves whole page 1920x1080-dark
+PASS quick navigation reaches channel policy 1920x1080-dark
+PASS page scroll does not consume list's independent offset 1920x1080-dark
+PASS 425+ activity replay retains reward virtualization 1920x1080-dark
+PASS snapshot actions use Fluent styles and 36 DIP 1920x1080-dark
+PASS About owns actual update and feedback surfaces above collapsed licenses 1920x1080-dark
+PASS expanded licenses preserve all component entries 1920x1080-dark
+PASS old update navigation opens About top 1920x1080-dark
+PASS actual snapshot view model deletion re-reads disk and clears old selection
+PASS actual snapshot view model preserves active snapshot with explicit explanation
+PASS actual active-snapshot dialog exposes the safe region-navigation button
+PASS active-snapshot dialog navigates to region workflow without clearing pointer or deleting files
+PASS moved UpdatePanel exposes cancellation during actual fake-handler download
+PASS moved UpdatePanel cancellation stops download and restores controls; no installer launched
+PASS moved FeedbackPanel submits once through isolated handler and renders report ID
+mock-request Soop/load_state
+mock-request YouTube/load_state
+mock-request Twitch/load_state
+mock-request Bilibili/load_state
+binding-errors=0

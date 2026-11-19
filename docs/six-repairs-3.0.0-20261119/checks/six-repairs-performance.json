@@ -1,0 +1,50 @@
+[
+  {
+    "width": 1366,
+    "height": 768,
+    "dark": false,
+    "catalogMs": 107.3817,
+    "activities": 426,
+    "realizedRewardCards": 0
+  },
+  {
+    "width": 1366,
+    "height": 768,
+    "dark": true,
+    "catalogMs": 7.4451,
+    "activities": 426,
+    "realizedRewardCards": 0
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "dark": false,
+    "catalogMs": 7.8982,
+    "activities": 426,
+    "realizedRewardCards": 0
+  },
+  {
+    "width": 1600,
+    "height": 900,
+    "dark": true,
+    "catalogMs": 7.1435,
+    "activities": 426,
+    "realizedRewardCards": 0
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "dark": false,
+    "catalogMs": 7.6278,
+    "activities": 426,
+    "realizedRewardCards": 0
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "dark": true,
+    "catalogMs": 9.0013,
+    "activities": 426,
+    "realizedRewardCards": 0
+  }
+]

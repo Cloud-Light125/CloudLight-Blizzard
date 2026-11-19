@@ -23,7 +23,7 @@ public sealed class PlatformOverviewModel : ObservableObject
     public string RuntimeSummary=>Brand=="Soop" ? Health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Crashed ? "Worker 已异常退出" : !Health.Running ? "已停止观看" :
         Health.ConnectionState is Services.Drops.DropsConnectionState.Failed or Services.Drops.DropsConnectionState.WaitingRetry or Services.Drops.DropsConnectionState.Recovering ? "连接失败 · 等待恢复" :
         Accounts.Any(a=>a.HasWatchEvidence) ? $"{Accounts.Count(a=>a.HasWatchEvidence)} 个账号观看请求已接受 · 官方进度单独确认" :
-        Accounts.Any(a=>a.Running)?"Worker 运行中 · 等待账号有效观看":"Worker 运行中 · 无活跃账号观看" :
+        Accounts.Any(a=>a.Running)?"Worker 运行中 · 认证与心跳分别确认":"Worker 运行中 · 无活跃账号观看" :
         _runtimeSummary.Length>0?_runtimeSummary:Brand=="YouTube"?Health.Status:Health.Running?"Worker 运行中 · 观看状态需单独确认":"已停止观看";
     internal void UpdateRuntimeSummary(string value){if(_runtimeSummary==value)return;_runtimeSummary=value;Raise(nameof(RuntimeSummary));}
     public string AccountText { get=>_accountText; private set=>Set(ref _accountText,value); }
@@ -61,14 +61,14 @@ public sealed class PlatformOverviewModel : ObservableObject
             if((e.PropertyName==nameof(health.ConnectionState)&&health.ConnectionState is Services.Drops.DropsConnectionState.Failed or Services.Drops.DropsConnectionState.WaitingRetry or Services.Drops.DropsConnectionState.Recovering)||
                 e.PropertyName==nameof(health.WorkerLifecycle)&&health.WorkerLifecycle==Services.Drops.WorkerLifecycle.Crashed)
             {
-                for(var index=0;index<Accounts.Count;index++){_accountRejectedBefore[Accounts[index].Id]=DateTimeOffset.UtcNow;Accounts[index]=Accounts[index] with{WatchAcceptedAt=null,OfficialGrowth=false,ConnectionText="连接失败 · 等待重试"};}
+                for(var index=0;index<Accounts.Count;index++){_accountRejectedBefore[Accounts[index].Id]=DateTimeOffset.UtcNow;Accounts[index]=Accounts[index] with{WatchAcceptedAt=null,OfficialGrowth=false,ConnectionText="连接失败 · 等待重试",Evidence=Accounts[index].Evidence is {} evidence ? evidence with{Worker=health.WorkerLifecycle,Correlated=false,HeartbeatState="expired"}:null};}
                 NotifyVisuals();
             }
             if(e.PropertyName==nameof(health.Running))
             {
                 _observedStart=health.Running?DateTimeOffset.Now:null;
                 if(!health.Running&&_activeReward is {} reward)_activeReward=reward with{IsCurrent=false};
-                if(!health.Running)for(var index=0;index<Accounts.Count;index++)Accounts[index]=Accounts[index] with{Running=false,WatchAcceptedAt=null,OfficialGrowth=false};
+                if(!health.Running)for(var index=0;index<Accounts.Count;index++)Accounts[index]=Accounts[index] with{Running=false,WatchAcceptedAt=null,OfficialGrowth=false,Evidence=Accounts[index].Evidence is {} evidence ? evidence with{Worker=health.WorkerLifecycle,Correlated=false,HeartbeatState="expired"}:null};
                 NotifyVisuals();
             }
         };
@@ -131,6 +131,7 @@ public sealed class PlatformOverviewModel : ObservableObject
     {
         var uid=V.Text(account,"uid",V.Text(account,"userId"));
         if(string.IsNullOrWhiteSpace(uid)) return;
+        if (Brand=="Soop") { UpdateSoopAccount(account,uid); return; }
         // Progress is read only from this UID's current official response, never from history.
         var old=Accounts.FirstOrDefault(a=>a.Id==uid);
         var rewards=V.Has(account,"currentProgress") ? V.Rows(account,"currentProgress").Where(p=>!V.Has(p,"account")||V.Text(p,"account")==uid).Select(p=>RewardVisual.From(p,Brand,"")).ToArray() : old?.Rewards??[];
@@ -163,13 +164,56 @@ public sealed class PlatformOverviewModel : ObservableObject
         }
         NotifyVisuals();
     }
+    private void UpdateSoopAccount(JsonElement account,string uid)
+    {
+        var old=Accounts.FirstOrDefault(a=>a.Id==uid);
+        var progress=V.Rows(account,"currentProgress").Where(p=>V.Text(p,"account",uid)==uid).ToArray();
+        if(progress.Length==0&&V.Has(account,"officialProgress"))
+            progress=V.Rows(account,"officialProgress").Where(p=>V.Text(p,"account")==uid).ToArray();
+        var target=V.Text(V.Get(account,"queueTarget"),"campaignId");
+        if(target.Length>0)progress=progress.OrderBy(p=>SoopAccountEvidence.ProgressCampaign(p,uid)==target?0:1).ToArray();
+        var rewards=V.Has(account,"currentProgress")||V.Has(account,"officialProgress") ? progress.Select(p=>RewardVisual.From(p,Brand,"") with{CampaignId=SoopAccountEvidence.ProgressCampaign(p,uid)}).ToArray() : old?.Rewards??[];
+        // Missing/failed reads retain the last official value, with explicit freshness.
+        if (rewards.Count==0 && V.Text(V.Get(account,"officialEvidence"),"status") is "failed" or "stale") rewards=old?.Rewards??[];
+        var changesEvidence=V.Has(account,"authenticationState")||V.Has(account,"heartbeatEvidence")||V.Has(account,"officialEvidence")||V.Has(account,"running")||V.Has(account,"channelId")||V.Has(account,"bridgeConnected");
+        var evidence=(changesEvidence || old?.Evidence is null ? SoopAccountEvidence.From(account,uid,Health.WorkerLifecycle,old?.Evidence) : old.Evidence) with{Recovering=Health.ConnectionState is Services.Drops.DropsConnectionState.Recovering or Services.Drops.DropsConnectionState.WaitingRetry};
+        var running=V.Bool(account,"running",old?.Running??false)&&Health.Running;
+        var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),running,evidence.Authentication=="verified",
+            evidence.ChannelId,evidence.Campaign,rewards.FirstOrDefault(),V.Text(account,"avatarUrl",old?.ImageUrl??""))
+        {
+            Evidence=evidence, Rewards=rewards,ChannelId=evidence.ChannelId,
+            Phase="",Historical=V.Bool(account,"historicalReplay",old?.Historical??false),
+            WatchAcceptedAt=evidence.HeartbeatFresh && DateTimeOffset.TryParse(evidence.HeartbeatTime,out var at)?at:null,
+            OfficialGrowth=evidence.GrowthConfirmed,ConnectionText=evidence.ChannelState
+        };
+        if(old is null)Accounts.Add(row);else Accounts[Accounts.IndexOf(old)]=row;
+        Channel=(Accounts.FirstOrDefault(a=>a.Running)??Accounts.FirstOrDefault(a=>a.IsPrimary))?.Channel??"尚未选择频道";
+        SessionText=Accounts.Any(a=>a.LoggedIn)?"已验证":"未验证";
+        NotifyVisuals();
+    }
+    internal void ResetSoopGeneration()
+    {
+        if(Brand!="Soop")return;
+        for(var i=0;i<Accounts.Count;i++)
+            Accounts[i]=Accounts[i] with{LoggedIn=false,Running=false,WatchAcceptedAt=null,OfficialGrowth=false,
+                Evidence=(Accounts[i].Evidence??new()) with{Authentication="unverified",Worker=Health.WorkerLifecycle,Correlated=false,HeartbeatState="expired",OfficialState="stale"}};
+        SessionText="未验证";NotifyVisuals();
+    }
     private void NotifyVisuals()
     {
         foreach(var name in new[]{nameof(RuntimeSummary),nameof(FeaturedReward),nameof(FeaturedLabel),nameof(RewardVisibility),nameof(EmptyRewardVisibility),nameof(RewardCount),nameof(CampaignCount),nameof(ClaimableCount),nameof(AccountCount),nameof(SyncText),nameof(TaskSummary),nameof(FeaturedImageUrl),nameof(FeaturedProgress),nameof(FeaturedPercent),nameof(ObservedDurationText),nameof(OfficialChangeText),nameof(RewardPreview),nameof(CampaignPreview),nameof(NextActionText),nameof(EmptyTaskText)}) Raise(name);
     }
     internal void RefreshClock()
     {
-        if(Brand=="Soop")for(var index=0;index<Accounts.Count;index++)if(Accounts[index].WatchAcceptedAt is {} at&&!WatchEvidence.Recent(at))Accounts[index]=Accounts[index] with{WatchAcceptedAt=null,OfficialGrowth=false};
+        if(Brand=="Soop")for(var index=0;index<Accounts.Count;index++)
+        {
+            var account=Accounts[index];var evidence=account.Evidence;
+            if(evidence is null)continue;
+            var next=evidence with{Worker=Health.WorkerLifecycle,Recovering=Health.ConnectionState is Services.Drops.DropsConnectionState.Recovering or Services.Drops.DropsConnectionState.WaitingRetry,
+                HeartbeatState=evidence.HeartbeatState=="success"&&!evidence.HeartbeatFresh?"expired":evidence.HeartbeatState,
+                OfficialState=evidence.OfficialState is not ("unread" or "failed" or "stale")&&!evidence.OfficialFresh?"stale":evidence.OfficialState};
+            if(next!=evidence)Accounts[index]=account with{Evidence=next,OfficialGrowth=next.GrowthConfirmed,WatchAcceptedAt=next.HeartbeatFresh?account.WatchAcceptedAt:null};
+        }
         Raise(nameof(SyncText));Raise(nameof(ObservedDurationText));Raise(nameof(RuntimeSummary));
     }
     internal void RefreshBilibili(BilibiliDropsViewModel details)

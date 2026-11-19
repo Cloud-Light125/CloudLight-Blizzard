@@ -1,0 +1,56 @@
+PASS SIMULATED release contract 2.1.10 -> 3.0.0: exact asset and digest; same-version builds do not update
+PASS SIMULATED release contract 2.1.10 -> v3.0.0: exact asset and digest; same-version builds do not update
+PASS SIMULATED release contract 2.1.9 -> 3.0.0: exact asset and digest; same-version builds do not update
+PASS SIMULATED release contract 2.1.9 -> v3.0.0: exact asset and digest; same-version builds do not update
+PASS SIMULATED release contract 3.0.0 -> 3.0.0: exact asset and digest; same-version builds do not update
+PASS SIMULATED release contract 3.0.0 -> v3.0.0: exact asset and digest; same-version builds do not update
+PASS fallback verified exact file content
+PASS fallback length/MZ/SHA256 validation completed
+PASS fallback expected handler counts
+PASS fallback distinct request objects
+PASS fallback file handles released
+PASS proxy verified exact file content
+PASS proxy length/MZ/SHA256 validation completed
+PASS proxy expected handler counts
+PASS proxy file handles released
+PASS disabled fallback fails without direct request
+PASS range-etag Range preserved
+PASS range-etag If-Range preserved
+PASS range-etag verified exact file content
+PASS range-etag length/MZ/SHA256 validation completed
+PASS range-etag expected handler counts
+PASS range-etag distinct request objects
+PASS range-etag file handles released
+PASS range-date Range preserved
+PASS range-date If-Range preserved
+PASS range-date verified exact file content
+PASS range-date length/MZ/SHA256 validation completed
+PASS range-date expected handler counts
+PASS range-date distinct request objects
+PASS range-date file handles released
+PASS cancellation stops routing without fallback/repeated download
+PASS bad-hash rejected after successful fallback
+PASS bad-size rejected after successful fallback
+PASS absent client before deadline waits
+PASS absent client at deadline terminates
+PASS stale target cache cannot confirm absent client
+PASS running client waits for target login
+PASS running wrong account times out
+PASS changed local pointer is NOT authenticated login
+PASS correct pointer on login page remains unconfirmed
+PASS real expiry precedes timeout
+PASS running client with only old cached target is not confirmed
+PASS old cached target cannot hide real auth expiry
+PASS reliable auth expiry precedes deadline even if client subsequently exits
+PASS old expiry log ignored by new attempt cursor
+PASS unverified success-shaped log cannot manufacture target/session-bound authentication
+PASS fresh appended expiry is reported
+PASS later startup gets fresh evidence scope, no inherited expiry
+PASS truncated historic log not reread as fresh failure
+PASS copied historical logs ignored
+PASS failed/unknown cursor cannot attribute historical evidence to this attempt
+NOT TESTED authenticated success/event ordering: no reliable positive target/session-bound source exists; production stays unconfirmed rather than inventing success
+TEST 4A online update installer lifecycle: PASS (settings persisted before launch/streams closed/verification/launch ordering/CTS cancellation/launch failure)
+TEST 4 Worker updates: PASS (semantic versions/release/assets/rate-limit/cache/skip/manual/failure/delay/single-flight)
+TEST 11 updater resilience: PASS (retry/exhaustion/404/Range/ignored Range/ETag/metadata mismatch/digest)
+OVERALL: PASS

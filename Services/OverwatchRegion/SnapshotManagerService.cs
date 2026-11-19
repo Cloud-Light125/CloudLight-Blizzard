@@ -104,7 +104,7 @@ public sealed class SnapshotManagerService
             throw new InvalidDataException("快照标识无效，已阻止删除。");
         var pointer = _store.LoadPointer();
         if (string.Equals(pointer?.GenerationId, generationId, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("当前正在使用的快照不能删除，请先重新准备区服文件。");
+            throw new InvalidOperationException("当前使用的快照不能直接删除，请先通过区服准备流程解除引用。");
         var deleted = _store.DeleteGeneration(generationId);
         WriteLog($"delete id={generationId} result={deleted}");
         return deleted;

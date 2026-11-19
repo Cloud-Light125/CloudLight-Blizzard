@@ -1,0 +1,27 @@
+{
+  "soop": {
+    "tests": 82,
+    "result": "PASS",
+    "scope": "offline contract/integration; no real claims or watching"
+  },
+  "twitch": {
+    "tests": 121,
+    "result": "PASS",
+    "scope": "offline contract/integration; no real claims or watching"
+  },
+  "bilibili": {
+    "tests": 21,
+    "result": "PASS",
+    "scope": "offline contract/integration; no real claims or watching"
+  },
+  "youtube": {
+    "tests": 8,
+    "result": "PASS",
+    "scope": "offline contract/integration; no real claims or watching"
+  },
+  "Shared": {
+    "tests": 5,
+    "result": "PASS",
+    "scope": "offline contract/integration; no real claims or watching"
+  }
+}

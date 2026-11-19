@@ -120,7 +120,15 @@ public partial class AboutPage : UserControl
     ];
 
     public AboutPage() => InitializeComponent();
-    public void Initialize(MainViewModel main) => DataContext = main;
+    public void Initialize(MainViewModel main)
+    {
+        DataContext = main;
+        SoftwareUpdatePanel.Initialize(main);
+        FeedbackPanel.Initialize(main.Settings, main.FeedbackService);
+    }
+    internal void FocusUpdateSection() { AboutScrollViewer.ScrollToTop(); SoftwareUpdatePanel.FocusUpdateSection(); }
+    internal void RefreshUpdateInfo() => SoftwareUpdatePanel.RefreshUpdateInfo();
+    internal void CancelUpdateDownload() => SoftwareUpdatePanel.CancelUpdateDownload();
 
     private void OnOpenSource(object sender, RoutedEventArgs e)
     {

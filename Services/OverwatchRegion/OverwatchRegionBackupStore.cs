@@ -6,6 +6,9 @@ namespace CloudLightBlizzard.Services.OverwatchRegion;
 
 public sealed class OverwatchRegionBackupStore
 {
+    // Shared across store instances that refer to the same managed root.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> MutationGates = new(StringComparer.OrdinalIgnoreCase);
+    private object MutationGate => MutationGates.GetOrAdd(Root, _ => new object());
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -56,14 +59,25 @@ public sealed class OverwatchRegionBackupStore
 
     public bool DeleteGeneration(string id)
     {
-        if (!IsSafeGenerationId(id)) throw new InvalidDataException("区服快照标识无效。");
-        var path = GenerationRoot(id);
-        if (!Directory.Exists(path)) return false;
-        EnsureNoReparsePointsInTree(path);
-        if (LoadGeneration(id) is null)
-            throw new InvalidOperationException("指定目录不是 CloudLight Blizzard 管理的区服快照。");
-        Directory.Delete(path, true);
-        return true;
+        lock (MutationGate)
+        {
+            if (!IsSafeGenerationId(id)) throw new InvalidDataException("区服快照标识无效。");
+            // Validate the managed root as well as its descendants before any recursive delete.
+            EnsureNoReparsePointsAlongPath(Path.GetPathRoot(Root)!, GenerationsRoot);
+            var path = GenerationRoot(id);
+            var pointer = LoadPointer();
+            if (File.Exists(ActiveGenerationFile) && pointer is null)
+                throw new InvalidDataException("当前快照引用无法读取，无法安全确认删除范围。请先检查区服准备状态。");
+            if (string.Equals(pointer?.GenerationId, id, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("当前使用的快照不能直接删除，请先通过区服准备流程解除引用。");
+            if (!Directory.Exists(path)) return false;
+            EnsureNoReparsePointsInTree(path);
+            if (LoadGeneration(id) is null)
+                throw new InvalidOperationException("指定目录不是 CloudLight Blizzard 管理的区服快照。");
+            Directory.Delete(path, true);
+            if (Directory.Exists(path)) throw new IOException("删除后快照目录仍存在，请检查权限或文件占用。");
+            return true;
+        }
     }
 
     public static bool IsSafeGenerationId(string? id) =>
@@ -141,14 +155,17 @@ public sealed class OverwatchRegionBackupStore
 
     public void Activate(string generationId, OverwatchRegion currentRegion)
     {
-        var previous = LoadPointer()?.GenerationId;
-        WriteJson(ActiveGenerationFile, new ActiveGenerationPointer
+        lock (MutationGate)
         {
-            GenerationId = generationId,
-            PreviousGenerationId = previous == generationId ? null : previous,
-            LastSuccessfulRegion = currentRegion,
-            LastSuccessfulGenerationId = generationId,
-        });
+            var previous = LoadPointer()?.GenerationId;
+            WriteJson(ActiveGenerationFile, new ActiveGenerationPointer
+            {
+                GenerationId = generationId,
+                PreviousGenerationId = previous == generationId ? null : previous,
+                LastSuccessfulRegion = currentRegion,
+                LastSuccessfulGenerationId = generationId,
+            });
+        }
     }
     public void SaveGenerationReferenceManifest(string id, OverwatchRegionManifest manifest) =>
         WriteJson(GenerationReferenceManifestFile(id, manifest.Region), manifest);

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Media.Imaging;
 using Path = System.Windows.Shapes.Path;
 
 namespace CloudLightBlizzard.Controls;
@@ -15,6 +16,16 @@ public sealed class PlatformIcon : Viewbox
     private static void Changed(DependencyObject value, DependencyPropertyChangedEventArgs e) => ((PlatformIcon)value).Draw();
     private void Draw()
     {
+        if (Platform == "Soop")
+        {
+            // Exact official favicon bytes, including all native DPI frames.
+            var decoder = BitmapDecoder.Create(new Uri("pack://application:,,,/Assets/Brand/soop-official.ico"), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            var frame = decoder.Frames.OrderByDescending(f=>f.PixelWidth).First();
+            frame.Freeze();
+            Child = new Image { Source = frame, Width=28, Height=28, Stretch=Stretch.Uniform };
+            Stretch = Stretch.Uniform;
+            return;
+        }
         var canvas = new Canvas { Width = 28, Height = 28 };
         var color = Platform switch { "Twitch" => "#9146FF", "Bilibili" => "#ED69AA", "YouTube" => "#EA3546", "Overwatch"=>"#F49C21", "BattleNet"=>"#168DEC", "Soop"=>"#3679F5", _ => "#635BEE" };
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));

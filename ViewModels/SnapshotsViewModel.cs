@@ -109,12 +109,8 @@ public sealed class SnapshotsViewModel : ObservableObject
         try
         {
             var deleted = Service.Delete(item.GenerationId);
-            if (deleted)
-            {
-                Items.Remove(item);
-                SnapshotCount = Items.Count;
-                if (ReferenceEquals(SelectedSnapshot, item)) SelectedSnapshot = Items.FirstOrDefault();
-            }
+            // Re-read disk after deletion rather than treating removal of a UI row as success.
+            RefreshAsync().GetAwaiter().GetResult();
             StatusText = deleted ? "快照已删除。" : "快照不存在或已经删除。";
             return deleted;
         }

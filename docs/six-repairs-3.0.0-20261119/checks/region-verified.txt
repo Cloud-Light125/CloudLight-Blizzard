@@ -1,0 +1,6 @@
+Game locator: PASS (binary tags, forward/back slashes, spaces/Unicode, retail executable, JSON compatibility)
+VerifiedDifference region preparation: PASS (per-file Step2/Step3 classification, partial daily restore, zero-usable old Active protection, legacy FullSnapshot)
+CORE TEST 1 legacy Ready -> Step4: PASS
+CORE TEST 2 status check + temporary cleanup: PASS
+CORE TEST 3 reset current side + switch other side: PASS
+OVERALL: PASS

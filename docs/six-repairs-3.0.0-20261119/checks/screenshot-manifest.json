@@ -1,0 +1,326 @@
+[
+  {
+    "path": "screenshots/01-unverified-worker-1366x768-dark-SIMULATED.png",
+    "sha256": "663992d48cd976eb534ce635c14e6d8bf43eb0dd1f8999151ef9ee0db4722165"
+  },
+  {
+    "path": "screenshots/01-unverified-worker-1366x768-light-SIMULATED.png",
+    "sha256": "617664df47b8e5372aaf809c66a615e4d426517b648154461f25b19102d9f0ec"
+  },
+  {
+    "path": "screenshots/01-unverified-worker-1600x900-dark-SIMULATED.png",
+    "sha256": "f096248d156a3e91390e5e5b4c902e62709c38e71a60cd88a7cab2e160d6579d"
+  },
+  {
+    "path": "screenshots/01-unverified-worker-1600x900-light-SIMULATED.png",
+    "sha256": "ab1eed2df454e2150b11859cefbeb4da556661f798a772dd0a5ba571c6cba2ac"
+  },
+  {
+    "path": "screenshots/01-unverified-worker-1920x1080-dark-SIMULATED.png",
+    "sha256": "68580daf0883c12c6491bd58295398471f931390b3a1299eb8a88065e5bd65e3"
+  },
+  {
+    "path": "screenshots/01-unverified-worker-1920x1080-light-SIMULATED.png",
+    "sha256": "fb46218585290384cf8c5f28f9adb2e8229e59fbd12fecc13e8038ab65e5c1c9"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1366x768-dark-SIMULATED.png",
+    "sha256": "2635fbf4cdb4b5beada95cffe4efa40f2a94c53a9d5898b59a88f53c22eadc22"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1366x768-light-SIMULATED.png",
+    "sha256": "de1a38bb2fdfa876e33084118c305423e8e9b2b021e75e1ba85efaaa670ea1ea"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1600x900-dark-SIMULATED.png",
+    "sha256": "1e39df0ab563e45c99fca0341f6e5c7b925f3772ad3358dc3e28e281938e8fe2"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1600x900-light-SIMULATED.png",
+    "sha256": "fbb4f2ed0909e147fa04ace6c94129d51b16b86c99961075e2723da918855855"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1920x1080-dark-SIMULATED.png",
+    "sha256": "e917a7d312a72fb7104341eef70b45035c0962944ed3719dd754ebea2ab61418"
+  },
+  {
+    "path": "screenshots/02-verified-waiting-channel-1920x1080-light-SIMULATED.png",
+    "sha256": "d35d8f8302e1f94231ce4ecf2c78c9a3ae20ec7c3e870bf515770aacabcf6602"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1366x768-dark-SIMULATED.png",
+    "sha256": "dda17cc98033ea129ef75138a698f94d3bcda20b61117e8137f7db82b860da4f"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1366x768-light-SIMULATED.png",
+    "sha256": "546bcc3e3c1cc0c57b3fc4fad86dd8a594e45e39cf207af5fe49a936be7cc2a5"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1600x900-dark-SIMULATED.png",
+    "sha256": "d5b895fde2bb59ea76eea6db53f5a49b316076cfcd6b05b72e2a9471826fe201"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1600x900-light-SIMULATED.png",
+    "sha256": "3ab6b7d807863896c08eac080c9e4f888fcdcec38c22df7abb0224505c71952b"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1920x1080-dark-SIMULATED.png",
+    "sha256": "05cd5ef960b7347ec907cdc2e443bf380bca2dcbf24f4afeb830cbf5a0a07f52"
+  },
+  {
+    "path": "screenshots/03-heartbeat-official-unconfirmed-1920x1080-light-SIMULATED.png",
+    "sha256": "f6bfa33f553b2193fa62437b513a20a286fcee72e58858edbe57aa11c1fbe0b1"
+  },
+  {
+    "path": "screenshots/04-official-growth-1366x768-dark-SIMULATED.png",
+    "sha256": "f05de216b59afe62732b5fef35ed7a0d177fa17294b275be34c68d33d4f9f4c7"
+  },
+  {
+    "path": "screenshots/04-official-growth-1366x768-light-SIMULATED.png",
+    "sha256": "a65637dd465e1111f90da2e3f56a9c690d4b7b5bd3782d865d4ff0b1a39f3c50"
+  },
+  {
+    "path": "screenshots/04-official-growth-1600x900-dark-SIMULATED.png",
+    "sha256": "d7f2a7fb8a72f6291cfa2c1edc02c97a50fbe343a4e9201f720f1a09b33f2ff1"
+  },
+  {
+    "path": "screenshots/04-official-growth-1600x900-light-SIMULATED.png",
+    "sha256": "db484fbfb4c998370959a0847345e8b92d02420bf4848fe15fa1fbd665e7cd50"
+  },
+  {
+    "path": "screenshots/04-official-growth-1920x1080-dark-SIMULATED.png",
+    "sha256": "30fdd5a3921a50f9177945d9f179fca0ec6ce69186799f27e5491bd62391a51c"
+  },
+  {
+    "path": "screenshots/04-official-growth-1920x1080-light-SIMULATED.png",
+    "sha256": "214281e067582393cd732453ac9c45e1e9e6a0d57d8a868c92825f23094a3e0f"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1366x768-dark-OFFICIAL-REPLAY.png",
+    "sha256": "a5fd76e4cf988d7ac745ed8649ab03490325c2f126990663119971f876f8318f"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1366x768-light-OFFICIAL-REPLAY.png",
+    "sha256": "03552f7ae90618e62cc6821e07bb0e8916be4bf2e118034c007e34b9182eddc4"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1600x900-dark-OFFICIAL-REPLAY.png",
+    "sha256": "baf4bfcd5c918dcfeddcd415d3c74e654d47ab114c22475a6ab2b14c7e3af94f"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1600x900-light-OFFICIAL-REPLAY.png",
+    "sha256": "437119e77bdee21e37df4a7d14e173469c8cec976bd52aa53e9de5c04e9bb2b4"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1920x1080-dark-OFFICIAL-REPLAY.png",
+    "sha256": "1fc104744bf83bd3cd5b9e8069a6ca42ed9e14a2392fdf1c3333b9d8905d8853"
+  },
+  {
+    "path": "screenshots/05-official-game-names-1920x1080-light-OFFICIAL-REPLAY.png",
+    "sha256": "6491e1d9bc68f573676145d35fee8569e80d4bfbeda70a916b0f6759e6c99886"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1366x768-dark-OFFICIAL-REPLAY.png",
+    "sha256": "12095baf99d4b87024d0f88429033db349329491abcb07b1d611a62207821717"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1366x768-light-OFFICIAL-REPLAY.png",
+    "sha256": "85acb4cf257b3091929d7923d7ccf164606b4ed68f96293301c53bee825df70e"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1600x900-dark-OFFICIAL-REPLAY.png",
+    "sha256": "6d102ea7cd21409b8aedd50ef49150b56e1b07f6b597683fb58ff2f7ba5971d9"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1600x900-light-OFFICIAL-REPLAY.png",
+    "sha256": "a7e416e1384bf7ebb45e61125dfb64d5f71b7d6f0919b235287ec567bb9110d0"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1920x1080-dark-OFFICIAL-REPLAY.png",
+    "sha256": "512cda9f2c8f05618ebed8e952eb9ec97824adc4d065f0e8cb4de20467f474a0"
+  },
+  {
+    "path": "screenshots/06-watch-configuration-1920x1080-light-OFFICIAL-REPLAY.png",
+    "sha256": "88316025bbeed5ac7fd9dda0ba58389994e0fc9deeafae3533ec7eb507ea9285"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1366x768-dark-OFFICIAL-REPLAY.png",
+    "sha256": "67358db6a3fdbca18d9cd3175104f44bace536033560b2d9064e3615cf815ac5"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1366x768-light-OFFICIAL-REPLAY.png",
+    "sha256": "e92df14f18414b2e996de879edc5592ef9135539c5d3717070d0edae7c1d1984"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1600x900-dark-OFFICIAL-REPLAY.png",
+    "sha256": "e85b634c4a2818ef7b4e9d3bcaad77d6fc1f00ed6049d11532152853edca0a1c"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1600x900-light-OFFICIAL-REPLAY.png",
+    "sha256": "daa1501a19512b9670be8115414c94595301b5463b7f644a3b534b231dc56da1"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1920x1080-dark-OFFICIAL-REPLAY.png",
+    "sha256": "4f55e05b9570c5925fcd4303fb0851e6961ab8f08e91a408492f3cb07c364b47"
+  },
+  {
+    "path": "screenshots/07-channel-policy-1920x1080-light-OFFICIAL-REPLAY.png",
+    "sha256": "dff9b3ab5621ba4d9f49f42cac1b637411fcd07a69cd282ce82d4a5bc5604d3e"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1366x768-dark-SIMULATED.png",
+    "sha256": "d1297c3ea26a92368bb18268bffb3cad20b9c7ee32573c79bb254d2e0e648f49"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1366x768-light-SIMULATED.png",
+    "sha256": "20a3f1e219adbd768d7b09d67638a228c4fd0370294a32a0162e8379f107a705"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1600x900-dark-SIMULATED.png",
+    "sha256": "df92e01f3dc5ae1ba217b2c02a4f6c9ff7224986bb46c02583126f5afbb4cac1"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1600x900-light-SIMULATED.png",
+    "sha256": "2d77d8bc262d3455868704899d2a9fc9c082e3c75b5abf2cda2efd8aae81fdfa"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1920x1080-dark-SIMULATED.png",
+    "sha256": "ce2b82d0aa0d23cd57a3ab088fdaa3094b89b9858420b08a0c6a9be0cdda22c3"
+  },
+  {
+    "path": "screenshots/08-snapshot-fluent-1920x1080-light-SIMULATED.png",
+    "sha256": "578c0ef05c35332b05ffdb2f20d4cccf1c2be40791773b2d79492502cc075d04"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1366x768-dark-SIMULATED.png",
+    "sha256": "afebc3224eace33144af63fb7dea05abe842207190a36206046771438aa21224"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1366x768-light-SIMULATED.png",
+    "sha256": "5381e3cfdab3538e5f6e8b6ac51ccf612c1806ffcb5624cc17765ffd4c8e32c5"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1600x900-dark-SIMULATED.png",
+    "sha256": "ca9764f3c91da8c4f5c5b62f815255794e4c6293622d4f421585f25a1c25989e"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1600x900-light-SIMULATED.png",
+    "sha256": "901283336fb4f3e14e848c6aa3ae2bba1147bb8087509124f6af79734dc2574e"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1920x1080-dark-SIMULATED.png",
+    "sha256": "e6bc63ad861248d9c0ddea36b47c8627eece4c0d822ecb4d808405627cf82e0b"
+  },
+  {
+    "path": "screenshots/09-about-updates-top-1920x1080-light-SIMULATED.png",
+    "sha256": "8b73cdd1b4315c57f95ffe2c4e7d8b1de76388e4b4a6af81bd0af40681fd2c0c"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1366x768-dark-SIMULATED.png",
+    "sha256": "bfcc309fd065acfa8d2577c1153d98a910305bf0a8671a5b9bc7c75bf49c3c0e"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1366x768-light-SIMULATED.png",
+    "sha256": "afbbbccbb0d6e2cc538d694642196b5de842794cfc8ab6da1500d4dd8b7612b8"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1600x900-dark-SIMULATED.png",
+    "sha256": "037b33e50da900e68c59facb13b51ec815a3e4b16eba46d1fdfe0522758f67db"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1600x900-light-SIMULATED.png",
+    "sha256": "c9549167ca5032f9292f602b2bab1f9e1a9899b3d2f04ceefe5dd4e851bce157"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1920x1080-dark-SIMULATED.png",
+    "sha256": "9e1f597a2a0dbb9564e782d3c76afe1605f6feb328468a9a525c20832070c16f"
+  },
+  {
+    "path": "screenshots/10-about-feedback-1920x1080-light-SIMULATED.png",
+    "sha256": "ab16dcb0250eca4754948b4804c89df1696bd2d40a865b93cfd97886bc5ffbde"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1366x768-dark-SIMULATED.png",
+    "sha256": "a16cea94388bf2a937efad8fe9d247b597b234c9539b18cb956e7d2e15a7fa9b"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1366x768-light-SIMULATED.png",
+    "sha256": "bdec5aa98968b078cbb1cb67bb6e5430f61ccfe1f543e011a54493ede9ab9f0b"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1600x900-dark-SIMULATED.png",
+    "sha256": "d1a440f81a4f4aa96a1778e38788e0bd5d4175b77562b8b8ec350a6dd33ad3f9"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1600x900-light-SIMULATED.png",
+    "sha256": "60e2ee9f857a1be32ecd1f88e097533c025e27b8c79e4374730052fd7db57e1a"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1920x1080-dark-SIMULATED.png",
+    "sha256": "9e8216bd3ca559398b9635753e5538d59b5e19918809a44b796bc9fa52554b3d"
+  },
+  {
+    "path": "screenshots/11-licenses-collapsed-1920x1080-light-SIMULATED.png",
+    "sha256": "2ff63560c95f7437e62ae6d41a6a323140c0919001698dccc5bb7fbcb3fa2746"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1366x768-dark-SIMULATED.png",
+    "sha256": "b7b73a46d90c1a153814db4e931bcc50b44063f156eb53cd37268f5903081714"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1366x768-light-SIMULATED.png",
+    "sha256": "4c9f40138d63d58ac12549e477694012162e3afaea52fa671fd2d02eac35d363"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1600x900-dark-SIMULATED.png",
+    "sha256": "d4433e2268221395dc255e69c2445b6395b949f77f512b18920964a7d3cad225"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1600x900-light-SIMULATED.png",
+    "sha256": "a91225f5fa61c96ce9df8c944a1e615d571dd4718d555b0c5f6350e15bd19901"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1920x1080-dark-SIMULATED.png",
+    "sha256": "e5a83d2806c99f96b30d8ff6689f100bdeb6e569ab2d7cbb9d55ee86cee5bc86"
+  },
+  {
+    "path": "screenshots/12-licenses-expanded-1920x1080-light-SIMULATED.png",
+    "sha256": "6f66604b9d8f98332524b8242a733ebe1b7609cbc72221fd50eebe4622b865d1"
+  },
+  {
+    "path": "screenshots/13-isolated-delete-success-SIMULATED.png",
+    "sha256": "1dbd2553e1ed7570cbea06a2f28d2d8dc8bd501a8437ff6bfe74e0d4e7f61887"
+  },
+  {
+    "path": "screenshots/14-active-protected-SIMULATED.png",
+    "sha256": "d209a717ce093b0f009d26c7c47e27cdf09928d58bf21f68a89812c355790060"
+  },
+  {
+    "path": "screenshots/14b-active-protected-dialog-SIMULATED.png",
+    "sha256": "48e71818f29af2c5b700b7d6ad2a1597df1f26fc15dedf2540e85c0246085a49"
+  },
+  {
+    "path": "screenshots/15-about-download-cancelled-SIMULATED.png",
+    "sha256": "73a780bea1703dd871530e694d18ee6b9dee0ce7a985a6f771f1dcfbbe1f988e"
+  },
+  {
+    "path": "screenshots/16-about-feedback-success-SIMULATED.png",
+    "sha256": "51daa0012e3b936d127643536595dbed47c6c196dcf60d322e0e3f297b1fbb3c"
+  },
+  {
+    "path": "screenshots/17-native-wheel-reward-image-OFFICIAL-REPLAY.png",
+    "sha256": "fba5115cecc428f4d605b5b1ca83248d3115abe6504c0f8e517c1d4b585e16c3"
+  },
+  {
+    "path": "screenshots/18-native-delete-success-SIMULATED.png",
+    "sha256": "7203b75308e7a5214df81fe3f377ff8dfa663f45a6af7ebf495ecb11e26aff33"
+  },
+  {
+    "path": "screenshots/about-before-ecc75f3-SIMULATED.png",
+    "sha256": "ec1c4bf00cffff8a3c62af6c1b768f49d87a84d4f858400282545d36213a98ce"
+  },
+  {
+    "path": "screenshots/settings-before-ecc75f3-SIMULATED.png",
+    "sha256": "d27ca143faebe2ece5aafcd476b5e8640e3a30277de9c7ed1c9c98f0017a1960"
+  }
+]

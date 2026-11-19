@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Windows.Media;
 using CloudLightBlizzard.Controls;
 using CloudLightBlizzard.Services;
 using CloudLightBlizzard.ViewModels.Visuals;
@@ -44,11 +45,26 @@ public partial class SoopCampaignPanel : UserControl
     public SoopCampaignPanel()
     {
         InitializeComponent();GameList.ItemsSource=_visible;
+        GameList.PreviewMouseWheel += OnGameWheel;
         _searchDelay.Tick+=(_,_)=>{_searchDelay.Stop();Refresh();};
         Loaded+=(_,_)=>{Subscribe();_autoHeight=ReadLocalValue(ListHeightProperty)==DependencyProperty.UnsetValue;_owner=Window.GetWindow(this);if(_owner is not null)_owner.SizeChanged+=OnWindowSize;ResizeList();Refresh();};
         Unloaded+=(_,_)=>{if(_subscribed&&Model is not null)Model.Updated-=Refresh;_subscribed=false;_searchDelay.Stop();if(_owner is not null)_owner.SizeChanged-=OnWindowSize;_owner=null;};
         PreviewMouseLeftButtonDown+=(_,e)=>_dragOrigin=e.GetPosition(this);
         AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnRewardAction));
+    }
+    private void OnGameWheel(object sender, MouseWheelEventArgs e)
+    {
+        // The bounded list keeps recycling reward visuals. Normal wheel always
+        // moves the page; Shift+wheel or its explicit scrollbar browses the list.
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
+        DependencyObject? parent = this;
+        while ((parent = VisualTreeHelper.GetParent(parent)) is not null)
+        {
+            if (parent is not ScrollViewer page) continue;
+            e.Handled = true;
+            page.ScrollToVerticalOffset(page.VerticalOffset - e.Delta);
+            return;
+        }
     }
     private void OnWindowSize(object sender,SizeChangedEventArgs e)=>ResizeList();
     private void ResizeList(){if(_autoHeight&&_owner is not null)SetCurrentValue(ListHeightProperty,Math.Clamp(_owner.ActualHeight-430,260,660));}

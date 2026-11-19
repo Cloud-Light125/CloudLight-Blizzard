@@ -1,0 +1,4 @@
+ ✓ test/feedback.test.ts (12 tests) 39ms
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Duration  5.04s (transform 3.70s, setup 0ms, collect 3.71s, tests 39ms, environment 0ms, prepare 250ms)

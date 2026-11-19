@@ -195,7 +195,7 @@ if (-not $SoopAdapterOnly -and (Test-Path -LiteralPath (Join-Path $SoopCorePath 
     )
 }
 if ($Platforms -contains "soop") {
-    Build-Worker -Platform "soop" -ExtraArgs ($soopArgs + $tlsRuntimeArgs)
+    Build-Worker -Platform "soop" -ExtraArgs ($soopArgs + $tlsRuntimeArgs + @('--add-data', "$(Join-Path $dropsRoot 'soop\game-catalog.official.json');."))
 }
 
 if ($Platforms -contains "bilibili") {

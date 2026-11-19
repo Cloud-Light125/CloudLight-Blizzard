@@ -27,6 +27,8 @@ def adapter_sources(repo: Path) -> dict:
     root = repo / 'Integrations' / 'Drops'
     files = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(root.rglob('*.py')) if 'tests' not in p.parts and '__pycache__' not in p.parts}
+    directory = root / 'soop/game-catalog.official.json'
+    files['soop/game-catalog.official.json'] = hashlib.sha256(directory.read_bytes()).hexdigest()
     return {"sha256": hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), "files": files}
 
 

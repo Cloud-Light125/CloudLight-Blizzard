@@ -1,0 +1,232 @@
+{
+  "source": "https://drops.sooplive.com/api/get_drops_game_category_list.php",
+  "queriedAt": "2026-11-18T18:50:25.448892+08:00",
+  "data": [
+    {
+      "gameIdx": "228",
+      "gameTitle": "Global"
+    },
+    {
+      "gameIdx": "321",
+      "gameTitle": "SOOP X 넥슨 N커넥트"
+    },
+    {
+      "gameIdx": "4",
+      "gameTitle": "리그 오브 레전드"
+    },
+    {
+      "gameIdx": "12",
+      "gameTitle": "오버워치"
+    },
+    {
+      "gameIdx": "14",
+      "gameTitle": "발로란트"
+    },
+    {
+      "gameIdx": "8",
+      "gameTitle": "PUBG: 배틀그라운드"
+    },
+    {
+      "gameIdx": "447",
+      "gameTitle": "테일즈런너"
+    },
+    {
+      "gameIdx": "6",
+      "gameTitle": "전략적 팀 전투"
+    },
+    {
+      "gameIdx": "16",
+      "gameTitle": "스타크래프트 II"
+    },
+    {
+      "gameIdx": "327",
+      "gameTitle": "브롤스타즈"
+    },
+    {
+      "gameIdx": "248",
+      "gameTitle": "배틀그라운드 모바일"
+    },
+    {
+      "gameIdx": "30",
+      "gameTitle": "FC 온라인"
+    },
+    {
+      "gameIdx": "32",
+      "gameTitle": "서든어택"
+    },
+    {
+      "gameIdx": "164",
+      "gameTitle": "FC 모바일"
+    },
+    {
+      "gameIdx": "18",
+      "gameTitle": "이터널 리턴"
+    },
+    {
+      "gameIdx": "88",
+      "gameTitle": "철권 8"
+    },
+    {
+      "gameIdx": "10",
+      "gameTitle": "스타크래프트"
+    },
+    {
+      "gameIdx": "42",
+      "gameTitle": "스트리트 파이터 6"
+    },
+    {
+      "gameIdx": "112",
+      "gameTitle": "숲 시네티 소통방송"
+    },
+    {
+      "gameIdx": "170",
+      "gameTitle": "웰컴 버추얼"
+    },
+    {
+      "gameIdx": "236",
+      "gameTitle": "종합게임"
+    },
+    {
+      "gameIdx": "244",
+      "gameTitle": "명조: 워더링 웨이브"
+    },
+    {
+      "gameIdx": "269",
+      "gameTitle": "JTBC"
+    },
+    {
+      "gameIdx": "28",
+      "gameTitle": "먼뜰리 게임 파티"
+    },
+    {
+      "gameIdx": "242",
+      "gameTitle": "여행"
+    },
+    {
+      "gameIdx": "285",
+      "gameTitle": "아크시스템웍스"
+    },
+    {
+      "gameIdx": "299",
+      "gameTitle": "숲피커"
+    },
+    {
+      "gameIdx": "305",
+      "gameTitle": "음악SOOP"
+    },
+    {
+      "gameIdx": "307",
+      "gameTitle": "마인드스포츠"
+    },
+    {
+      "gameIdx": "313",
+      "gameTitle": "먹방/쿡방"
+    },
+    {
+      "gameIdx": "325",
+      "gameTitle": "웰컴 투 숲트리머"
+    },
+    {
+      "gameIdx": "335",
+      "gameTitle": "토크/캠방"
+    },
+    {
+      "gameIdx": "363",
+      "gameTitle": "MBN"
+    },
+    {
+      "gameIdx": "365",
+      "gameTitle": "마비노기 모바일"
+    },
+    {
+      "gameIdx": "369",
+      "gameTitle": "격투기 중계"
+    },
+    {
+      "gameIdx": "371",
+      "gameTitle": "스포츠! SOOP!"
+    },
+    {
+      "gameIdx": "381",
+      "gameTitle": "천하제일SOOP단타대회"
+    },
+    {
+      "gameIdx": "383",
+      "gameTitle": "국영방송"
+    },
+    {
+      "gameIdx": "385",
+      "gameTitle": "WKBL"
+    },
+    {
+      "gameIdx": "387",
+      "gameTitle": "TV조선"
+    },
+    {
+      "gameIdx": "389",
+      "gameTitle": "숲토어"
+    },
+    {
+      "gameIdx": "423",
+      "gameTitle": "뱅드림 아워노트"
+    },
+    {
+      "gameIdx": "429",
+      "gameTitle": "도깨비의세계"
+    },
+    {
+      "gameIdx": "435",
+      "gameTitle": "SOOP SOOPers 공식 서포터즈"
+    },
+    {
+      "gameIdx": "437",
+      "gameTitle": "아이치-나고야 아시안 패러게임"
+    },
+    {
+      "gameIdx": "441",
+      "gameTitle": "템빨"
+    },
+    {
+      "gameIdx": "449",
+      "gameTitle": "마인크래프트"
+    },
+    {
+      "gameIdx": "451",
+      "gameTitle": "SOOP SOOPers 수퍼걸즈 도전기"
+    },
+    {
+      "gameIdx": "453",
+      "gameTitle": "우리카드 배구단 공식 응원중계"
+    },
+    {
+      "gameIdx": "455",
+      "gameTitle": "월드 오브 워크래프트: 포에버"
+    },
+    {
+      "gameIdx": "459",
+      "gameTitle": "AGF"
+    },
+    {
+      "gameIdx": "461",
+      "gameTitle": "지스타_컬쳐랜드부스탐방_장지수"
+    },
+    {
+      "gameIdx": "463",
+      "gameTitle": "이데일리TV"
+    },
+    {
+      "gameIdx": "465",
+      "gameTitle": "27년도 영어 수능 대전"
+    },
+    {
+      "gameIdx": "467",
+      "gameTitle": "그랜드 테프트 오토 VI"
+    }
+  ],
+  "retainedVerifiedNames": [
+    {
+      "gameIdx": "379",
+      "gameTitle": "배구중계"
+    }
+  ]
+}

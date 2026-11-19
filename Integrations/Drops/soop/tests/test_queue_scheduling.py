@@ -231,5 +231,38 @@ class QueueIntegration(unittest.TestCase):
             self.assertEqual(miner._heartbeat.channel.user_id,'room-b')
             self.assertEqual(self.worker._queue_targets['A']['campaignId'],'b')
 
+    def test_real_read_boundary_serializes_auth_and_official_progress_without_watching(self):
+        miner=self.miner()
+        self.assertFalse(self.worker._state_to_dict(miner.get_state())['loggedIn'])
+        miner._drops=SimpleNamespace(_request=AsyncMock(return_value={'data':[]}),
+            get_missions=AsyncMock(return_value=miner._missions),get_events=AsyncMock(return_value=[]),
+            get_inventory=AsyncMock(return_value=[]))
+        with patch.object(self.channels,'fetch_live_drops_channels',new=AsyncMock(return_value=([],[]))):
+            state=self.worker._submit(miner.force_refresh())
+        wire=self.worker._state_to_dict(state)
+        self.assertTrue(wire['loggedIn'])
+        self.assertFalse(wire['running'])
+        self.assertEqual(wire['authenticationState'],'verified')
+        self.assertEqual(wire['officialEvidence']['uid'],'A')
+        self.assertEqual(wire['officialEvidence']['status'],'synced')
+        self.assertEqual(wire['officialProgress'][0]['currentMinutes'],10)
+        self.assertEqual(wire['heartbeatEvidence']['status'],'not_sent')
+        # No enabling, code lookup or claim operation exists on this fake client.
+        miner._drops.get_inventory.assert_awaited_once_with(with_codes=False)
+
+    def test_real_heartbeat_serializes_exact_uid_room_broadcast_and_campaign(self):
+        self.worker._queue_targets['A']={'campaignId':'a','channelId':'room-a'}
+        beat=self.worker._core['miner'].WatchHeartbeat('A',self.live('room-a'))
+        base=type(beat).__mro__[1]
+        async def accepted(instance,session):
+            return self.worker._core['miner'].HeartbeatStatus.SUCCESS
+        with patch.object(base,'send',new=accepted):
+            self.worker._submit(beat.send(object()))
+        evidence=self.worker.evidence.snapshot('A')['heartbeatEvidence']
+        self.assertEqual((evidence['uid'],evidence['channelId'],evidence['broadcastNo'],evidence['campaignId']),
+            ('A','room-a','123','a'))
+        self.assertEqual(evidence['status'],'success')
+        self.assertFalse(self.worker.evidence.snapshot('A')['loggedIn'])
+
 
 if __name__ == '__main__': unittest.main()

@@ -6,6 +6,7 @@ games and channels. Account state and the current target live on each miner.
 from __future__ import annotations
 
 import time
+import json
 import asyncio
 from contextlib import nullcontext
 from typing import Any
@@ -127,22 +128,70 @@ def install(worker, miner_module, multi_module, channel_module):
 
     class QueueHeartbeat(heartbeat_base):
         _cloudlight_heartbeat_base = heartbeat_base
+        def switch_channel(self, channel, **kwargs):
+            result = super().switch_channel(channel, **kwargs)
+            target = worker._queue_targets.get(str(self.uid), {})
+            worker.evidence.target(self.uid, channel.user_id, channel.broad_no, target.get('campaignId', ''))
+            return result
+
         async def send(self, session):
-            target = (self.channel.user_id, self.channel.broad_no)
-            result = await super().send(session)
-            if target != (self.channel.user_id, self.channel.broad_no):
-                # A delayed old-room response cannot certify or reject the new
-                # channel after a scheduler switch on the same heartbeat object.
+            target = worker._queue_targets.get(str(self.uid), {})
+            token = worker.evidence.begin(self.uid, self.channel.user_id, self.channel.broad_no, target.get('campaignId', ''))
+            try:
+                result = await super().send(session)
+            except (asyncio.TimeoutError, TimeoutError):
+                worker.evidence.finish(self.uid, token, 'timeout')
+                raise
+            except Exception:
+                worker.evidence.finish(self.uid, token, 'failure')
+                raise
+            # Re-read the target after awaiting; an A -> B -> A switch still
+            # changes the epoch and cannot accept the old A response.
+            current = worker._queue_targets.get(str(self.uid), {})
+            worker.evidence.target(self.uid, self.channel.user_id, self.channel.broad_no, current.get('campaignId', ''))
+            if not worker.evidence.finish(self.uid, token, getattr(result, 'value', str(result))):
                 self.last_success_time = None
                 self.connection_healthy = False
                 self.consecutive_failures = 0
                 self.last_response_status = miner_module.HeartbeatStatus.UNKNOWN
-                self.last_response_result = '频道已切换，等待当前频道心跳'
+                self.last_response_result = '频道或活动已切换，旧心跳已失效'
                 return miner_module.HeartbeatStatus.UNKNOWN
             return result
 
     class QueueMiner(base):
         _cloudlight_queue_base = base
+        def _emit_state(self, status=None):
+            # Core emits from inside _fetch_missions before our authenticated
+            # response timestamp is attached. Publish one consistent payload.
+            if getattr(self, '_reading_official', False):
+                return
+            super()._emit_state(status)
+
+        def _record_official(self, missions):
+            values = {}
+            campaigns = {}
+            for mission in missions:
+                for index, item in enumerate(mission.items):
+                    if int(item.give_term or 0) <= 0 or (getattr(mission, 'raw', {}) or {}).get('giveCon') in {'none', 'draw'}:
+                        continue
+                    key = worker._progress_key(str(self.uid), mission, index, item)
+                    identity = json.dumps(key[1:], ensure_ascii=True, separators=(',', ':'))
+                    values[identity] = int(item.view_time or 0)
+                    campaigns[identity] = str(mission.drops_idx)
+            worker.evidence.official(self.uid, values, campaigns)
+
+        async def _fetch_missions(self):
+            self._reading_official = True
+            try:
+                await super()._fetch_missions()
+                self._record_official(self._missions)
+            except Exception as exc:
+                worker.evidence.failure(self.uid, '官方读取失败', worker._is_authentication_error(exc))
+                raise
+            finally:
+                self._reading_official = False
+                self._emit_state()
+
         async def run(self):
             self._running = True
             self._stop.clear()
@@ -204,13 +253,21 @@ def install(worker, miner_module, multi_module, channel_module):
                     await self._sync_channel()
             except Exception:
                 self._missions, self._events, self._available_channels = previous
+                worker.evidence.failure(self.uid, '活动刷新失败，保留此前完整快照')
                 raise
             self._emit_state()
 
         async def _fetch_events(self):
             await self._ensure_session()
-            categories = await self._drops._request('POST', 'get_drops_game_category_list.php', json_body={'filter': 'none'})
-            names = {str(x['gameIdx']): str(x.get('gameTitle') or '') for x in categories.get('data') or [] if isinstance(x, dict) and x.get('gameIdx')}
+            try:
+                categories = await self._drops._request('POST', 'get_drops_game_category_list.php', json_body={'filter': 'none'})
+            except miner_module.DropsAuthenticationError:
+                raise
+            except Exception:
+                self._log.warning('官方游戏目录读取失败，保留已验证名称缓存')
+                categories = {'data': []}
+            worker.game_catalog.update(categories.get('data') or [])
+            names = worker.game_catalog.names
             result = {}
             # 'none' is the official web app's all-lifecycle filter.
             for page in range(1, 201):
@@ -273,7 +330,9 @@ def install(worker, miner_module, multi_module, channel_module):
             if chosen and (self._current is None or chosen.user_id != self._current.user_id):
                 self._queue_switched_at = now
             self._queue_target = target['id'] if target else ''
+            worker.evidence.target(self.uid, chosen.user_id if chosen else '', chosen.broad_no if chosen else '', self._queue_target)
             worker._queue_targets[self.uid] = {'campaignId': self._queue_target, 'gameId': target['gameId'] if target else '',
+                'campaignTitle': target['title'] if target else '',
                 'channelId': chosen.user_id if chosen else '', 'mode': mode,
                 'status': '手动频道；所选活动资格未确认' if chosen and not target else ('执行所选活动' if target else '等待可执行活动或合资格频道')}
             return chosen
@@ -304,10 +363,12 @@ def install(worker, miner_module, multi_module, channel_module):
                     inventory = await self._drops.get_inventory(with_codes=False)
                     live, _ = await channel_module.fetch_live_drops_channels(self._session, self.cookies, missions)
                     self._missions, self._inventory, self._available_channels = missions, inventory, live
+                    self._record_official(missions)
                     if self._running:
                         await self._sync_channel()
-                except Exception:
+                except Exception as exc:
                     self._missions, self._events, self._inventory, self._available_channels = previous
+                    worker.evidence.failure(self.uid, '官方读取失败，保留此前完整快照', worker._is_authentication_error(exc))
                     raise
                 self._emit_state()
                 return self.get_state()

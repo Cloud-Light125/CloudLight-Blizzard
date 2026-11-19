@@ -138,7 +138,13 @@
             </Expander>
         </StackPanel>
         <StackPanel Tag="workspace:settings">
-            <soop:SoopCampaignPanel Model="{Binding SoopCampaigns}" Heading="游戏与活动优先级设置" Editable="True" />
+            <WrapPanel Margin="0,0,0,8">
+                <Button Content="游戏与活动优先级" Tag="priority" Click="OnNavigateSettings" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,8"/>
+                <Button Content="直播间与任务策略" Tag="channel" Click="OnNavigateSettings" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,8"/>
+                <Button Content="运行偏好" Tag="preferences" Click="OnNavigateSettings" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,8"/>
+                <Button Content="刷新与恢复" ctrl:WorkspaceAction.Name="section:advanced" Style="{DynamicResource SecondaryButton}" Margin="0,0,8,8"/>
+            </WrapPanel>
+            <soop:SoopCampaignPanel x:Name="PrioritySection" Model="{Binding SoopCampaigns}" Heading="游戏与活动优先级设置" Editable="True" />
             <Border x:Name="SoopSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,14,0,0" CornerRadius="14" x:FieldModifier="internal">
                 <StackPanel>
                     <TextBlock Text="直播间与任务策略" Style="{StaticResource SectionTitle}" />
@@ -178,7 +184,7 @@
                                 <TextBox x:Name="SoopPreferredChannel" Style="{StaticResource HintTextBox}" Tag="owesports" x:FieldModifier="internal" />
                             </StackPanel>
                         </StackPanel>
-                        <StackPanel Grid.Column="1">
+                        <StackPanel Grid.Column="1" x:Name="PreferencesSection">
                             <TextBlock Text="运行偏好" Style="{DynamicResource VisualHeading}" />
                             <StackPanel>
                                 <ctrl:SettingRow Title="低流量模式" Description="降低观看流量，保留官方心跳与任务查询。" ReflowWidth="300">

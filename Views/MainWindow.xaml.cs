@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -236,7 +236,7 @@ public partial class MainWindow : Window
             dialog.ShowDialog();
             if (dialog.SkipVersion) _vm.UpdateChecks.SkipVersion(result.LatestVersion);
             else if (dialog.Action == UpdateDialogAction.Later) _vm.UpdateChecks.RemindLater();
-            _settingsPage.RefreshUpdateInfo();
+            _aboutPage.RefreshUpdateInfo();
             if (dialog.Action == UpdateDialogAction.OpenRelease)
                 OpenUpdateRelease(result.ReleaseUrl);
             else if (dialog.Action == UpdateDialogAction.InstallDownloaded &&
@@ -277,8 +277,8 @@ public partial class MainWindow : Window
 
     internal void OpenUpdateSettings()
     {
-        SettingsNav.IsChecked = true;
-        _settingsPage.FocusUpdateSection();
+        AboutNav.IsChecked = true;
+        _aboutPage.FocusUpdateSection();
     }
 
     private void HandleNotificationAction(string action)
@@ -751,7 +751,7 @@ public partial class MainWindow : Window
         _dropsPage.BeginShutdown();
         _vm.DropsHost.BeginShutdown();
         _accountDrainTask = _vm.BeginShutdownAsync();
-        _settingsPage.CancelUpdateDownload();
+        _aboutPage.CancelUpdateDownload();
         _vm.CancelSwitchPlan();
         if (!_updateCancellationDisposed)
             _updateCancellation.Cancel();

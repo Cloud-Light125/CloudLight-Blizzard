@@ -31,12 +31,39 @@ public partial class SnapshotsPage : UserControl
                     _vm.Regenerate();
                 break;
             case "delete":
+                if (item.IsActive)
+                {
+                    ShowActiveSnapshotNotice();
+                    break;
+                }
                 if (MessageBox.Show($"确定删除此 CloudLight Blizzard 快照？\n\n模式：{item.ModeText}\n文件：{item.FileCountText}\n大小：{item.SizeText}\n\n只会删除受管理的快照路径，不会删除游戏文件。", "删除快照", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
-                    _vm.Delete(item);
+                {
+                    var deleted = _vm.Delete(item);
+                    MessageBox.Show(Window.GetWindow(this), deleted ? "快照已删除" : _vm.StatusText,
+                        deleted ? "删除完成" : "未能删除快照", MessageBoxButton.OK,
+                        deleted ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                }
                 break;
             case "details":
                 _vm.ShowDetails(item);
                 break;
         }
+    }
+
+    internal void ShowActiveSnapshotNotice() => CreateActiveSnapshotNotice().ShowDialog();
+
+    internal Window CreateActiveSnapshotNotice()
+    {
+        var panel = new StackPanel { Margin = new Thickness(24) };
+        panel.Children.Add(new TextBlock { Text = "当前使用的快照不能直接删除，请先通过区服准备流程解除引用。", TextWrapping = TextWrapping.Wrap, MaxWidth = 420, Margin = new Thickness(0,0,0,20) });
+        var navigate = new Button { Content = "前往区服切换", HorizontalAlignment = HorizontalAlignment.Right };
+        navigate.SetResourceReference(StyleProperty, "PrimaryButton");
+        panel.Children.Add(navigate);
+        var dialog = new Window { Title = "当前快照受保护", Owner = Window.GetWindow(this), Content = panel, SizeToContent = SizeToContent.WidthAndHeight, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize };
+        dialog.SetResourceReference(Window.BackgroundProperty, "App.Background");
+        dialog.SetResourceReference(Window.ForegroundProperty, "Text.Primary");
+        Services.ThemeManager.Attach(dialog);
+        navigate.Click += (_,_) => { dialog.Close(); OnOpenRegion(this, new RoutedEventArgs()); };
+        return dialog;
     }
 }

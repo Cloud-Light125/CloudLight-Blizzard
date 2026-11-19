@@ -1,4 +1,4 @@
-<UserControl xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Pages.AboutPage" x:Name="AboutRoot" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
+<UserControl xmlns:behaviors="clr-namespace:CloudLightBlizzard.Behaviors" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:pages="clr-namespace:CloudLightBlizzard.Views.Pages" xmlns:ctrl="clr-namespace:CloudLightBlizzard.Controls" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="CloudLightBlizzard.Views.Pages.AboutPage" x:Name="AboutRoot" Foreground="{DynamicResource Text.Primary}" Background="{DynamicResource App.Background}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolVisibility" />
         <Style x:Key="AboutLabel" TargetType="TextBlock">
@@ -18,8 +18,10 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <ctrl:PageHeader Title="关于" Description="CloudLight Blizzard 的版本与运行信息。" />
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer x:Name="AboutScrollViewer" VerticalScrollBarVisibility="Auto" Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="0,12,4,16">
+                <pages:UpdatePanel x:Name="SoftwareUpdatePanel"/>
+                <pages:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0"/>
                 <Border Style="{DynamicResource HeroCard}" Margin="0,8,0,18" Background="{DynamicResource AccSoft}">
                     <StackPanel>
                         <Image Source="pack://application:,,,/Assets/app.png" Width="64" Height="64" HorizontalAlignment="Left" Margin="0,0,0,18" />
@@ -29,7 +31,7 @@
                         <TextBlock Text="第三方组件和许可证随当前产品分发内容一并整理如下。" Foreground="{DynamicResource Text.Muted}" Margin="0,10,0,0" />
                     </StackPanel>
                 </Border>
-                <Expander Header="开源组件与许可证" IsExpanded="True" Margin="0,16,0,0">
+                <Expander x:Name="LicensesExpander" Header="开源组件与许可证" IsExpanded="False" Margin="0,16,0,0">
                     <Border Style="{StaticResource SurfaceCard}" Margin="0,14,0,0">
                         <StackPanel>
                             <DockPanel LastChildFill="True">

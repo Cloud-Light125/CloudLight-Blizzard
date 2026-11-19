@@ -378,6 +378,10 @@ class SoopWorker(WorkerBase):
         self._manager: Any = None
         self._manager_stopping = False
         self._account_locks: dict[str, asyncio.Lock] = {}
+        from watch_evidence import WatchEvidence
+        from game_catalog import GameCatalog
+        self.evidence = WatchEvidence()
+        self.game_catalog = GameCatalog(self.data_dir / 'game-catalog.json')
         self._states: dict[str, Any] = {}
         self._queue_targets: dict[str, dict[str, Any]] = {}
         self._state_changed = threading.Condition()
@@ -599,6 +603,7 @@ class SoopWorker(WorkerBase):
                 previous.set()
 
     def _publish_reauthentication_status(self, uid: str, status: str) -> None:
+        self.evidence.auth(uid, "awaiting_login" if "重新添加账号" in status else "verifying" if "正在" in status else "failed")
         state = self._state_snapshot().get(uid)
         if state is not None:
             state.running = False
@@ -664,6 +669,7 @@ class SoopWorker(WorkerBase):
         return self._account_locks.setdefault(uid, asyncio.Lock())
 
     async def _stop_account_session(self, manager: Any, uid: str) -> None:
+        self.evidence.stop(uid)
         async with self._account_lifecycle_lock(uid):
             await manager.stop_account_and_wait(uid)
 
@@ -761,6 +767,7 @@ class SoopWorker(WorkerBase):
                 self._publish_reauthentication_status(uid, f"自动重新登录失败，{interval} 秒后重试")
 
     def _handle_authentication_failure(self, uid: str, *, restart: bool) -> bool:
+        self.evidence.auth(uid, "expired")
         if self._manager_stopping or self.shutdown_requested:
             return False
         with self._reauth_guard:
@@ -1785,6 +1792,7 @@ class SoopWorker(WorkerBase):
             mission_rows.append(mission_row)
         return {
             "uid": state.uid, "running": state.running, "status": state.status,
+            **self.evidence.snapshot(str(state.uid)),
             "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
             "channelId": state.channel_id, "channelName": state.channel_nick, "broadcastNo": state.broad_no,
             "connectionHealthy": state.connection_healthy, "bridgeConnected": state.bridge_connected,
@@ -1799,8 +1807,16 @@ class SoopWorker(WorkerBase):
             "bridgeLastActivitySeconds": getattr(state, "bridge_last_activity_seconds", None),
             "settings": self._effective_settings(),
             "queueTarget": dict(self._queue_targets.get(str(state.uid), {})) if state.running and self._queue_targets.get(str(state.uid), {}).get("channelId") == state.channel_id else {},
-            "campaigns": self._tasks_for_state(state, include_ended=True),
+            "campaigns": [self.game_catalog.decorate(row) for row in self._tasks_for_state(state, include_ended=True)],
             "currentProgress": self._current_progress_for_state(state),
+            "officialProgress": [
+                {"account": str(state.uid), "id": str(mission["id"]) + "/" + str(index),
+                 "campaignId": str(mission["id"]), "reward": item.get("name", ""),
+                 "currentMinutes": item["viewMinutes"], "requiredMinutes": item.get("requiredMinutes", 0)}
+                for mission in mission_rows if mission.get("officialProgressAvailable")
+                for index, item in enumerate(mission.get("items", []))
+                if isinstance(item.get("viewMinutes"), (int, float))
+            ],
             "progressDiagnostics": self._progress_diagnostics_for_state(state),
             "lastConfirmedAt": str(refresh_diagnostic.get("lastConfirmedAt", "") or ""),
             "refreshDiagnostic": refresh_diagnostic,
@@ -1837,7 +1853,8 @@ class SoopWorker(WorkerBase):
             "displayTasks": tasks,
             "selectableTasks": [task for task in tasks if is_actionable_task(task, allow_upcoming=True)],
             "events": self.get_events({}),
-            "campaigns": [row for state in states.values() for row in self._tasks_for_state(state, include_ended=True)],
+            "campaigns": [self.game_catalog.decorate(row) for state in states.values() for row in self._tasks_for_state(state, include_ended=True)],
+            "gameCatalog": dict(self.game_catalog.names),
             "queueTargets": {uid: dict(target) for uid, target in list(self._queue_targets.items()) if uid in states and states[uid].running and states[uid].channel_id == target.get("channelId")},
             "inventory": self.get_inventory({}),
             "currentProgress": self.get_current_progress({}),
@@ -1997,6 +2014,7 @@ class SoopWorker(WorkerBase):
                 # matching lastConfirmedAt diagnostic.
                 self._state_callback(state)
             except Exception as exc:
+                self.evidence.failure(uid, "官方读取失败", self._is_authentication_error(exc))
                 if self._is_authentication_error(exc):
                     self._handle_authentication_failure(uid, restart=is_running)
                 error = "刷新已因停止或请求超时取消，保留此前成功数据。" if self._read_interrupted else str(exc)
@@ -2093,7 +2111,12 @@ class SoopWorker(WorkerBase):
             raise ValueError("账号和密码不能为空")
         if not self._cancel_reauthentication(userid, wait=True):
             raise RuntimeError("SOOP 自动重登仍在结束中，请稍后重试。")
-        cookies = self._submit(self._core["auth"].login(userid, password, config=self._app_config()))
+        self.evidence.auth(userid, "verifying")
+        try:
+            cookies = self._submit(self._core["auth"].login(userid, password, config=self._app_config()))
+        except Exception:
+            self.evidence.auth(userid, "failed")
+            raise
         try:
             write_credentials(self._credentials_path(userid), userid, password)
         except Exception as exc:
@@ -2106,6 +2129,8 @@ class SoopWorker(WorkerBase):
             raise RuntimeError("登录成功，但无法使用 Windows DPAPI 安全保存凭据。") from exc
         self._allow_reauthentication(userid)
         self._reauth_last_attempt.pop(userid, None)
+        # Cookie persistence is not validation. The normal read-only refresh
+        # following login must complete before this UID is counted as verified.
         return {"userid": userid, "saved": bool(cookies), "credentialSaved": True}
 
     def logout(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -2169,7 +2194,7 @@ class SoopWorker(WorkerBase):
         for uid in accounts:
             state = self._state_snapshot().get(uid)
             result.append(self._state_to_dict(state) if state else {
-                "uid": uid, "running": False, "status": "已保存",
+                "uid": uid, "running": False, "status": "已保存", **self.evidence.snapshot(str(uid)),
                 "channelId": None, "channelName": None, "primary": uid == primary_uid,
             })
         return result
@@ -2283,6 +2308,7 @@ class SoopWorker(WorkerBase):
     def stop_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         uid = str(payload.get("userid", payload.get("uid", ""))).strip()
         self._cancel_reauthentication(uid)
+        self.evidence.stop(uid)
         if self._manager is not None:
             self._submit(self._stop_account_session(self._manager, uid), timeout=20)
             self.running = bool(self._running_uids(self._manager))
@@ -2356,6 +2382,8 @@ class SoopWorker(WorkerBase):
         # Keep fully completed missions in the display/history snapshot even
         # after the event window closes.  Other ended activities remain in the
         # Core state for diagnostics but are not current WPF tasks.
+        for row in rows:
+            self.game_catalog.decorate(row)
         if include_ended:
             return rows
         return [

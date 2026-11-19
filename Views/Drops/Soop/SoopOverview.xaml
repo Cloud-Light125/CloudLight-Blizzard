@@ -21,7 +21,7 @@
             </Grid>
         </Border>
         <UniformGrid Columns="3">
-            <ctrl:MetricTile Label="已登录账号" Value="{Binding SoopVisual.AccountCount}" Caption="保留各自 Session" />
+            <ctrl:MetricTile Label="已验证登录账号" Value="{Binding SoopVisual.AccountCount}" Caption="仅统计真实认证成功" />
             <ctrl:MetricTile Label="奖励背包" Value="{Binding SoopVisual.RewardCount}" Caption="UID 隔离与绑定保护" />
             <ctrl:MetricTile Label="可领取奖励" Value="{Binding SoopVisual.ClaimableCount}" Caption="领取前仍重新验证" />
         </UniformGrid>
@@ -49,11 +49,21 @@
                                 <ctrl:VisualImage SourceUrl="{Binding ImageUrl}" Brand="Soop" Width="46" Height="46" Margin="0,0,12,0" />
                                 <StackPanel>
                                     <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding LoginText}" FontSize="13" Margin="0,5,0,0"/>
                                     <TextBlock Text="{Binding WorkerText}" FontSize="12.5" Margin="0,5,0,0"/>
                                     <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource Accent.Primary}" FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </DockPanel>
-                            <StackPanel Margin="0,14,0,14"><TextBlock Text="{Binding Task}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Channel}" Style="{DynamicResource VisualCaption}" Margin="0,5,0,5"/><TextBlock Text="{Binding Phase}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/><ItemsControl ItemsSource="{Binding Rewards}" ItemTemplate="{DynamicResource VisualRewardRow}"/><TextBlock Text="{Binding EmptyTaskText}" FontSize="14" TextWrapping="Wrap"/></StackPanel>
+                            <StackPanel Margin="0,14,0,14">
+                                <TextBlock Text="{Binding ChannelText}" FontSize="14" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding TargetText}" Style="{DynamicResource VisualCaption}" Margin="0,5"/>
+                                <TextBlock Text="{Binding HeartbeatText}" FontSize="14" ToolTip="{Binding HeartbeatDetails}"/>
+                                <TextBlock Text="{Binding HeartbeatDetails}" Style="{DynamicResource VisualCaption}" TextWrapping="Wrap" Margin="0,5"/>
+                                <TextBlock Text="{Binding ProgressText,StringFormat=官方进度：{0}}" FontSize="16" Margin="0,6"/>
+                                <TextBlock Text="{Binding OfficialText}" Style="{DynamicResource VisualCaption}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Reward.Title}" FontSize="13" TextWrapping="Wrap" Margin="0,6"/>
+                                <TextBlock Text="{Binding EmptyTaskText}" FontSize="14" TextWrapping="Wrap"/>
+                            </StackPanel>
                             <TextBlock Text="{Binding SyncText}" Style="{DynamicResource VisualCaption}" Margin="0,0,0,8"/>
                             <WrapPanel>
                                 <Button Content="启动账号" Visibility="{Binding StartVisibility}" ctrl:WorkspaceAction.Name="soop:start" Style="{DynamicResource PrimaryButton}" Margin="0,0,8,0" />

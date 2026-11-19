@@ -1,0 +1,88 @@
+PASS cleanup remains on owning Dispatcher
+PASS generate: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS late generate cannot start poller
+PASS generate: late success not applied during exit
+PASS cleanup remains on owning Dispatcher
+PASS waiting: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS waiting: late success not applied during exit
+PASS cleanup remains on owning Dispatcher
+PASS network: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS network: late success not applied during exit
+PASS cleanup remains on owning Dispatcher
+PASS queued-success: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS queued-success: late success not applied during exit
+PASS cleanup remains on owning Dispatcher
+PASS cancel-race: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS cancel-race: late success not applied during exit
+PASS cleanup remains on owning Dispatcher
+PASS update: real QR generate/poll cancelled, duplicate exit/dispose safe, no restart
+PASS update: late success not applied during exit
+PASS real unresponsive isolated Worker reaped; new work rejected; double Host dispose safe
+PASS Host reports critical failure when owned Worker exit cannot be confirmed: False
+PASS real unresponsive isolated Worker reaped; new work rejected; double Host dispose safe
+PASS Host reports critical failure when owned Worker exit cannot be confirmed: True
+PASS actual window close-to-tray preserves lifecycle
+PASS cancel preserves exit state
+PASS actual Closing cancels both initial and repeated exit
+PASS actual window fences buttons before cleanup
+PASS installer waits for account transaction drain
+PASS duplicate update exit rejected
+PASS actual update exit launches fake installer after cleanup
+PASS update exit cancels real page QR and launches exactly once
+PASS failed account transaction is still drained before installer decision
+PASS account: actual window installer invocation count and result correct
+PASS account: completed controlled exit never resumes disposed UI/services
+PASS account: strict readiness/failure reason retained
+PASS account: repeated installation cannot start another installer
+PASS account: one-shot launch gate
+PASS pending-journal: actual window installer invocation count and result correct
+PASS pending-journal: completed controlled exit never resumes disposed UI/services
+PASS pending-journal: strict readiness/failure reason retained
+PASS pending-journal: repeated installation cannot start another installer
+PASS pending-journal: one-shot launch gate
+PASS update gate protects old recovery evidence without auto-cleaning
+PASS page: actual window installer invocation count and result correct
+PASS page: completed controlled exit never resumes disposed UI/services
+PASS page: strict readiness/failure reason retained
+PASS page: repeated installation cannot start another installer
+PASS page: one-shot launch gate
+PASS host: actual window installer invocation count and result correct
+PASS host: completed controlled exit never resumes disposed UI/services
+PASS host: strict readiness/failure reason retained
+PASS host: repeated installation cannot start another installer
+PASS host: one-shot launch gate
+PASS settings: actual window installer invocation count and result correct
+PASS settings: completed controlled exit never resumes disposed UI/services
+PASS settings: strict readiness/failure reason retained
+PASS settings: repeated installation cannot start another installer
+PASS settings: one-shot launch gate
+PASS failed account transaction is still drained before installer decision
+PASS cleanup budget never abandons in-flight restore or launches installer
+PASS timeout: actual window installer invocation count and result correct
+PASS timeout: completed controlled exit never resumes disposed UI/services
+PASS timeout: strict readiness/failure reason retained
+PASS timeout: repeated installation cannot start another installer
+PASS timeout: one-shot launch gate
+PASS warning: actual window installer invocation count and result correct
+PASS warning: completed controlled exit never resumes disposed UI/services
+PASS warning: strict readiness/failure reason retained
+PASS warning: repeated installation cannot start another installer
+PASS warning: one-shot launch gate
+PASS launcher: actual window installer invocation count and result correct
+PASS launcher: completed controlled exit never resumes disposed UI/services
+PASS launcher: strict readiness/failure reason retained
+PASS launcher: repeated installation cannot start another installer
+PASS launcher: one-shot launch gate
+PASS actual GUI Busy and lease established before first await
+PASS actual GUI double clicks/save/add and simultaneous CLI cannot enter files
+PASS actual GUI releases Busy after one switch pipeline
+PASS isolated cache genuinely points at target
+PASS actual GUI correct pointer + running process remains waiting without auth proof
+PASS CLI uses same conservative semantics for correct local pointer
+PASS fixture client remains absent
+PASS actual GUI consumes absent-client timeout and clears pending verification
+PASS actual GUI allows bounded revalidation after later client start
+PASS late client startup cannot inherit local-pointer login success
+PASS GUI/CLI explicit expiry overrides correct pointer; saved snapshot not deleted
+PASS cleanup exception still completes second-close gate and retains original error
+OVERALL: PASS

@@ -15,8 +15,6 @@
             <RadioButton Content="网络代理" Tag="network" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
             <RadioButton Content="通知" Tag="notifications" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
             <RadioButton Content="数据与存储" Tag="data" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
-            <RadioButton Content="更新" Tag="updates" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
-            <RadioButton Content="反馈" Tag="feedback" GroupName="SettingsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnSettingsWorkspaceChanged" Margin="0,0,0,8" Height="44" HorizontalAlignment="Stretch" />
         </StackPanel>
         <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" Grid.Column="1" Margin="0,22,0,0">
             <StackPanel Margin="0,0,4,16">
@@ -163,39 +161,6 @@
                             <TextBlock x:Name="CacheText" Foreground="{DynamicResource Text.Muted}" Margin="0,9,0,0" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
-                </StackPanel>
-                <StackPanel Tag="workspace:updates">
-                    <Border x:Name="UpdateSettingsCard" Style="{StaticResource SurfaceCard}" Margin="0,16,0,0">
-                        <StackPanel>
-                            <TextBlock Text="软件更新" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
-                            <TextBlock Text="当前版本" FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap" />
-                            <TextBlock x:Name="CurrentVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,0" TextWrapping="Wrap" />
-                            <TextBlock Text="启动 CloudLight Blizzard 后会自动检查正式版本更新。" Foreground="{DynamicResource Text.Muted}" Margin="0,6,0,12" TextWrapping="Wrap" />
-                            <Button x:Name="CheckUpdateButton" Content="检查更新" HorizontalAlignment="Left" Style="{StaticResource PrimaryButton}" Padding="16,0" Click="OnCheckUpdate" />
-                            <StackPanel x:Name="UpdateAvailablePanel" Margin="0,15,0,0" Visibility="Collapsed">
-                                <TextBlock x:Name="UpdateAvailableText" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock x:Name="InstallerValidationText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed" />
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button x:Name="OpenUpdateLinkButton" Content="打开更新链接" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="0,0,10,0" Click="OnOpenUpdateLink" />
-                                    <Button x:Name="OnlineUpdateButton" Content="在线更新" Style="{StaticResource PrimaryButton}" Padding="14,0" Click="OnOnlineUpdate" />
-                                </StackPanel>
-                                <StackPanel x:Name="UpdateDownloadPanel" Margin="0,12,0,0" Visibility="Collapsed">
-                                    <ProgressBar x:Name="UpdateDownloadProgressBar" Height="8" Minimum="0" Maximum="100" />
-                                    <TextBlock x:Name="UpdateDownloadText" Foreground="{DynamicResource Text.Muted}" Margin="0,7,0,0" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </StackPanel>
-                            <StackPanel x:Name="SkippedUpdatePanel" Margin="0,15,0,0" Visibility="Collapsed">
-                                <TextBlock Text="已忽略更新" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock x:Name="SkippedVersionText" Foreground="{DynamicResource Text.Secondary}" Margin="0,5,0,9" TextWrapping="Wrap" />
-                                <Button Content="恢复此版本提示" HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnRestoreSkippedUpdate" />
-                            </StackPanel>
-                            <TextBlock x:Name="UpdateHistoryText" Foreground="{DynamicResource Text.Muted}" TextWrapping="Wrap" Margin="0,15,0,0" />
-                            <TextBlock x:Name="UpdateFailureText" Foreground="{DynamicResource Status.Warning}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-                <StackPanel Tag="workspace:feedback">
-                    <ns4:FeedbackPanel x:Name="FeedbackPanel" Margin="0,16,0,0" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

@@ -58,6 +58,7 @@
             <StackPanel>
                 <TextBlock Text="{Binding Heading,ElementName=Panel}" Style="{DynamicResource SectionTitle}"/>
                 <TextBlock Text="{Binding Model.ModeNotice,ElementName=Panel}" TextWrapping="Wrap" Foreground="{DynamicResource Text.Secondary}" Margin="0,8"/>
+                <TextBlock Text="滚轮滚动整页；按住 Shift 滚轮或拖动列表右侧滚动条浏览更多游戏。展开分组后按需加载奖励。" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}" Margin="0,0,0,8"/>
                 <WrapPanel Margin="0,4,0,8">
                     <TextBlock Text="账号" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <ComboBox Width="150" ItemsSource="{Binding Model.Accounts,ElementName=Panel}" SelectedItem="{Binding Model.Account,ElementName=Panel,Mode=TwoWay}" Style="{DynamicResource ThemeComboBox}"/>

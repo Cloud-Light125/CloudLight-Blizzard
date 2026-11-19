@@ -5,6 +5,11 @@ public partial class SoopWorkspace:UserControl
 {
     public event Action<string,object,RoutedEventArgs>? ActionRequested;
     public SoopWorkspace()=>InitializeComponent();
+    private void OnNavigateSettings(object sender,RoutedEventArgs e)
+    {
+        var section = (sender as Button)?.Tag as string;
+        (section == "priority" ? (FrameworkElement)PrioritySection : section == "preferences" ? PreferencesSection : SoopSettingsCard).BringIntoView();
+    }
     private void OnAutoStartChanged(object sender,RoutedEventArgs e)=>ActionRequested?.Invoke("OnAutoStartChanged",sender,e);
     private void OnClaimSoopReward(object sender,RoutedEventArgs e)=>ActionRequested?.Invoke("OnClaimSoopReward",sender,e);
     private void OnCopySoopCode(object sender,RoutedEventArgs e)=>ActionRequested?.Invoke("OnCopySoopCode",sender,e);

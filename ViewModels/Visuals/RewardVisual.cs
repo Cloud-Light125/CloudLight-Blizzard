@@ -96,6 +96,13 @@ public sealed record CampaignVisual(string Id, string Title, string Game, string
 
 public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool Running, bool LoggedIn, string Channel, string Task, RewardVisual? Reward, string ImageUrl)
 {
+    public SoopAccountEvidence? Evidence {get;init;}
+    public string LoginText => Evidence?.LoginText ?? (LoggedIn ? "登录状态：已验证登录" : "登录状态：未验证");
+    public string ChannelText => Evidence?.ChannelText ?? Channel;
+    public string TargetText => Evidence?.TargetText ?? Task;
+    public string HeartbeatText => Evidence?.HeartbeatText ?? "观看心跳：尚未发送";
+    public string HeartbeatDetails => Evidence?.HeartbeatDetails ?? "";
+    public string OfficialText => Evidence?.OfficialText ?? "官方进度状态：尚未读取";
     public IReadOnlyList<RewardVisual> Rewards {get;init;}=[];
     public string EmptyTaskText => Rewards.Count==0 ? LoggedIn ? "等待该账号官方任务刷新" : "连接账号后查看官方任务" : "";
     public DateTimeOffset? WatchAcceptedAt {get;init;}
@@ -103,14 +110,14 @@ public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool 
     public bool Historical {get;init;}
     public string ChannelId {get;init;}="";
     public string ConnectionText {get;init;}="等待合资格频道";
-    public bool HasWatchEvidence=>LoggedIn&&Running&&!Historical&&WatchAcceptedAt is {} at&&WatchEvidence.Recent(at)&&Rewards.Any(r=>!r.WatchCompleted&&!r.Claimed&&!r.Expired&&!r.Upcoming&&r.Eligible!=false);
-    public string WorkerText=>Running?"Worker 运行中":"Worker 已停止";
-    public string StateText => Historical ? "历史官方快照 · 非实时观看" : !LoggedIn ? "尚未登录" : !Running ? "已停止观看" :
-        HasWatchEvidence ? OfficialGrowth ? "官方 viewTime 已确认增长" : "观看请求已接受 · 官方进度待确认" : ConnectionText;
-    public string SyncText => Reward?.SyncText ?? "尚无该账号官方同步";
+    public bool HasWatchEvidence=>LoggedIn&&Running&&!Historical&&(Evidence?.HeartbeatFresh ?? (WatchAcceptedAt is {} at&&WatchEvidence.Recent(at)))&&Rewards.Any(r=>!r.WatchCompleted&&!r.Claimed&&!r.Expired&&!r.Upcoming&&r.Eligible!=false);
+    public string WorkerText=>Evidence?.WorkerText ?? (Running?"Worker 运行中":"Worker 已停止");
+    public string StateText => Historical ? "历史官方快照 · 非实时观看" : !LoggedIn ? Evidence?.WatchText ?? "尚未登录" : !Running ? "已停止观看" :
+        Evidence?.WatchText ?? (HasWatchEvidence ? OfficialGrowth ? "官方 viewTime 已确认增长" : "观看请求已接受 · 官方进度待确认" : ConnectionText);
+    public string SyncText => Evidence?.SyncText ?? Reward?.SyncText ?? "尚无该账号官方同步";
     public string Phase {get;init;}="";
     public string RoleText => IsPrimary ? "主账号" : "独立账号";
-    public string ProgressText => Reward?.ProgressText ?? "等待该账号官方刷新";
+    public string ProgressText => Reward?.ProgressText ?? "尚无该账号官方分钟";
     public double Percent => Reward?.Percent ?? 0;
     public Visibility StartVisibility=>Running?Visibility.Collapsed:Visibility.Visible;
     public Visibility StopVisibility=>Running?Visibility.Visible:Visibility.Collapsed;

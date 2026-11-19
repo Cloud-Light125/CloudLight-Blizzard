@@ -124,3 +124,7 @@ by the new Worker UI architecture.
 
 The NuGet package metadata remains the authoritative source for any
 transitive package notices.
+
+# SOOP official platform mark
+
+The unchanged favicon from `https://res.sooplive.com/favicon.ico` identifies the SOOP platform. Provenance, SHA256 and brand restrictions are recorded in `THIRD_PARTY_LICENSES/SOOP-Brand-Source.txt`. Written permission for external brand use has not been supplied; public distribution remains pending separate authorization review. This does not resolve the independent SOOP Core redistribution restriction. No official affiliation is claimed.

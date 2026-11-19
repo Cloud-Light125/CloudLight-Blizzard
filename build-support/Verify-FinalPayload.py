@@ -61,7 +61,9 @@ def inspect_worker(repo, executable, out):
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(data)
         if platform == 'soop':
-            assert signature(pyz.extract('scheduling')) == signature(compile((repo/'Integrations/Drops/soop/scheduling.py').read_bytes(), '', 'exec')), 'Stale SOOP scheduling'
+            for module in ('scheduling','watch_evidence','game_catalog'):
+                assert signature(pyz.extract(module)) == signature(compile((repo/f'Integrations/Drops/soop/{module}.py').read_bytes(), '', 'exec')), f'Stale SOOP {module}'
+            assert archive.extract('game-catalog.official.json') == (repo/'Integrations/Drops/soop/game-catalog.official.json').read_bytes(), 'Stale SOOP official game directory'
             assert core_files == embedded['soopCore']['files']
             authorization = json.loads((repo / 'Integrations/Drops/soop/redistribution-authorization.json').read_text('utf-8-sig'))
             assert embedded['soopCore']['sha256'] == authorization['coreSha256']

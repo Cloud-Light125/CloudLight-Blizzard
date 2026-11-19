@@ -324,6 +324,8 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
             (gen < previous.Generation || gen == previous.Generation &&
              (stateTime > 0 && previous.StateTime > 0 ? stateTime < previous.StateTime ||
                  stateTime == previous.StateTime && seq < previous.Sequence : seq < previous.Sequence))) return false;
+        if(platform==DropsPlatform.Soop && (!_stateVersions.TryGetValue(platform,out var generationBefore)||generationBefore.Generation!=gen))
+            SoopVisual.ResetSoopGeneration();
         _stateVersions[platform] = (gen, seq, stateTime);
         return true;
     }
@@ -2274,8 +2276,8 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         var accountRow = new DropsRow
         {
             Id = uid, Primary = uid,
-            Secondary = $"直播间：{Text(state, "channelName", "尚未进入")} · {Text(state, "status")}",
-            Status = Bool(state, "running") ? "运行中" : "已停止", Payload = state.Clone(),
+            Secondary = $"直播间：{Text(state, "channelName", "尚未进入")} · {SoopVisual.Accounts.FirstOrDefault(a=>a.Id==uid)?.LoginText}",
+            Status = SoopVisual.Accounts.FirstOrDefault(a=>a.Id==uid)?.WorkerText ?? "Worker：未启动", Payload = state.Clone(),
         };
         if (accountIndex >= 0) accountRows[accountIndex] = accountRow;
         else accountRows.Add(accountRow);
@@ -2342,8 +2344,8 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         AddRows(state, "accounts", Accounts, item => new DropsRow
         {
             Id = Text(item, "uid"), Primary = Text(item, "uid"),
-            Secondary = $"直播间：{Text(item, "channelName", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
-            Status = (Bool(item, "primary") ? "主账号 · " : "") + (Bool(item, "running") ? "运行中" : "已停止"),
+            Secondary = $"{Visuals.SoopAccountEvidence.From(item,Text(item,"uid"),vm.WorkerLifecycle,null).LoginText} · 直播间：{Text(item, "channelId", "尚未进入")} · 任务：{Text(item, "missionTitle", "等待刷新")}",
+            Status = (Bool(item, "primary") ? "主账号 · " : "") + Visuals.SoopAccountEvidence.From(item,Text(item,"uid"),vm.WorkerLifecycle,null).WorkerText,
             Payload = item.Clone(),
         });
         AddSoopTaskRows(state);

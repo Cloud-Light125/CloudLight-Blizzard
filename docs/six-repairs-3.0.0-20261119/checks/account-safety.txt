@@ -1,0 +1,62 @@
+PASS journal create-directory: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal snapshot-1: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal snapshot-2: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal journal: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal staging: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal applying-journal: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS journal cleanup: target/backup bytes preserved; preparation cleanup/retry or retained fence verified
+PASS source reparse point rejected without following target
+TEST issue #3 save/discovery/migration/UI state: PASS (empty source, locks, staging/manifest/meta/validation/promotion failures, old snapshot preserved, cleanup pending, legacy/current isolation, journals retained)
+TEST account store safety: PASS (strict manifest preflight, legacy compatibility, path/type/size/hash/managed/excluded validation, write-failure rollback)
+PASS same-account rapid second request rejected during precheck
+PASS different-account rapid request rejected during precheck
+PASS CLI/GUI independent gates cannot overlap
+PASS CLI addaccount cannot bypass GUI lease
+PASS save/delete/relogin share lease
+PASS no destructive call during held precheck
+PASS separate OS process cannot acquire held account lease
+PASS separate OS process acquires released account lease
+PASS only first switch reaches mutation pipeline, in order
+PASS manifest failure aborts pipeline
+PASS manifest blocks downstream launch/writes
+PASS lease released after manifest failure
+PASS quit failure aborts pipeline
+PASS quit blocks downstream launch/writes
+PASS lease released after quit failure
+PASS region failure aborts pipeline
+PASS region blocks downstream launch/writes
+PASS lease released after region failure
+PASS restore failure aborts pipeline
+PASS restore blocks downstream launch/writes
+PASS lease released after restore failure
+PASS running game rejects switch
+PASS running game rejects addaccount
+PASS running game remains untouched
+PASS unknown backup ID rejected
+PASS unavailable retains explicit GUI/CLI account-only or partial-region diagnosis
+PASS precheck retains explicit GUI/CLI account-only or partial-region diagnosis
+PASS partial retains explicit GUI/CLI account-only or partial-region diagnosis
+PASS shutdown waits in-flight restore rather than abandoning transaction
+PASS shutdown rejects new operation
+PASS shutdown cancels subsequent launch
+PASS drain preserves earlier mutation failure rather than reporting installer safety
+PASS no Battle.net restart after shutdown intent
+PASS no-primary CLI core executes same protected pipeline but does not invent authentication success
+PASS GUI/CLI authentication cursor begins after old client shutdown/restore and before new launch
+PASS CLI addaccount uses protected clear/login pipeline and does not claim authentication
+PASS CLI reports manifest failure without false success
+PASS CLI reports quit failure without false success
+PASS CLI reports region failure without false success
+PASS CLI reports restore failure without false success
+PASS CLI core rejects running game for switch and addaccount
+PASS CLI missing target rejected
+PASS CLI unconfirmed login has nonzero exit status
+PASS parallel CLI commands cannot bypass shared file lease
+PASS CLI core rejects exiting operation gate
+PASS CLI validates command shape and positive account ID before data access
+PASS existing primary (idle/busy/exiting/tray) explicitly rejects independent CLI lifetime
+TEST 1 account controlled mirror: PASS (recursive/manifest/A-B cleanup/exclusions; A-B-A-B leaves backup contents/timestamps unchanged)
+TEST 8 account switch pipeline: PASS (strict read-only-backup order/fail-fast/no launch after region failure)
+TEST 2 login state machine: PASS (90s delay does not expire; only explicit evidence requires login)
+TEST 10 app paths migration: PASS (settings/accounts/logs/default move/custom preserved)
+OVERALL: PASS

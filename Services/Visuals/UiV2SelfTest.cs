@@ -28,6 +28,7 @@ internal static class UiV2SelfTest
         {
             TwitchInventorySelfTest.Run(Check);
             PriorityStateSelfTest.Run(Check,output);
+            SoopEvidenceSelfTest.Run(Check);
             await TwitchActionsSelfTest.RunAsync(Check,output);
             await SoopCampaignSelfTest.RunAsync(Check,output);
 #if CLOUDLIGHT_LIVE_AUDIT

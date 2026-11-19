@@ -67,8 +67,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Integrations\Drops\soop\game-catalog.official.json" LogicalName="SoopGameCatalog" />
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\app.png" />
+    <Resource Include="Assets\Brand\soop-official.ico" />
     <Compile Remove="test-output\**\*.cs" />
     <Compile Remove="release\**\*.cs" />
     <Page Remove="release\**\*.xaml" />

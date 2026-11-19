@@ -1,0 +1,19 @@
+PASS snapshots active generation protected at storage boundary; pointer unchanged
+PASS snapshots cancelled confirmation performs no mutation
+PASS snapshots ordinary snapshot removed on disk and absent after fresh List
+PASS snapshots expired non-active snapshot deleted safely
+PASS snapshots missing directory has explicit false result
+PASS snapshots damaged unverified record rejected with actionable exception
+PASS snapshots file lock raises deletion failure and never reports success
+PASS snapshots path traversal or absolute ID rejected: ../outside
+PASS snapshots path traversal or absolute ID rejected: ..\outside
+PASS snapshots path traversal or absolute ID rejected: C:\game
+PASS snapshots path traversal or absolute ID rejected: .
+PASS snapshots path traversal or absolute ID rejected: ..
+PASS snapshots path traversal or absolute ID rejected: bad/name
+PASS snapshots path traversal or absolute ID rejected: bad:name
+PASS snapshots isolated junction fixture created
+PASS snapshots real junction deletion refused and target preserved
+PASS snapshots unreadable active pointer fails closed
+PASS snapshots game sentinel, active and unrelated snapshots preserved
+OVERALL: PASS

@@ -81,10 +81,10 @@
                         <TextBlock Text="{Binding UsedText}" Style="{StaticResource SnapshotDetailValue}" />
                     </StackPanel>
                     <WrapPanel Margin="0,10,0,0">
-                        <Button Content="查看详情" Tag="details" Height="28" Padding="10,0" Click="OnSnapshotAction" />
-                        <Button Content="重新生成" Tag="regenerate" Height="28" Padding="10,0" Margin="6,0,0,0" Click="OnSnapshotAction" />
-                        <Button Content="打开目录" Tag="open" Height="28" Padding="10,0" Margin="6,0,0,0" Click="OnSnapshotAction" />
-                        <Button Content="删除" Tag="delete" Height="28" Padding="10,0" Margin="6,0,0,0" Style="{StaticResource DangerButton}" Click="OnSnapshotAction" />
+                        <Button Content="查看详情" Style="{DynamicResource SecondaryButton}" Tag="details" Height="36" Padding="12,0" Click="OnSnapshotAction" />
+                        <Button Content="重新生成" Style="{DynamicResource SecondaryButton}" Tag="regenerate" Height="36" Padding="12,0" Margin="6,0,0,0" Click="OnSnapshotAction" />
+                        <Button Content="打开目录" Style="{DynamicResource SecondaryButton}" Tag="open" Height="36" Padding="12,0" Margin="6,0,0,0" Click="OnSnapshotAction" />
+                        <Button Content="删除" Tag="delete" Height="36" Padding="12,0" Margin="6,0,0,0" Style="{StaticResource DangerButton}" Click="OnSnapshotAction" />
                     </WrapPanel>
                 </StackPanel>
             </Border>

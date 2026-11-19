@@ -42,7 +42,7 @@ public sealed record SoopCampaignReward(string Name, string ImageUrl, RewardVisu
 public sealed class SoopGame : ObservableObject
 {
     public string Id { get; init; } = "";
-    public string Name { get; init; } = "";
+    public string Name { get; internal set; } = "";
     public ObservableCollection<SoopCampaign> Campaigns { get; } = [];
     public int Priority { get; internal set; }
     public string PriorityText => Selected ? $"已选游戏 · 优先级 {Priority}" : $"未选择 · 顺序 {Priority}";
@@ -98,6 +98,7 @@ public sealed class SoopCampaignModel : ObservableObject
 
     public void Apply(JsonElement state)
     {
+        SoopGameNames.Apply(state);
         RememberDraft();
         if (state.TryGetProperty("settings", out var settings) && settings.TryGetProperty("campaign_selection_mode", out _)) _settings = settings.Clone();
         var incremental = V.Text(state, "uid");
@@ -140,7 +141,8 @@ public sealed class SoopCampaignModel : ObservableObject
             var gameRows = rows.Where(r => V.Text(r, "gameId") == id).ToList();
             var order = priorities.ValueKind == JsonValueKind.Object && priorities.TryGetProperty(id, out var array) ? array.EnumerateArray().Select(x => x.GetString() ?? "").ToList() : [];
             var displayOrder = savedOrder.ValueKind == JsonValueKind.Object && savedOrder.TryGetProperty(id, out var saved) ? saved.EnumerateArray().Select(x => x.GetString() ?? "").ToList() : order;
-            if (!_gameCache.TryGetValue(id,out var game)) _gameCache[id] = game = new SoopGame { Id = id, Name = V.Text(_rows.Values.FirstOrDefault(r=>V.Text(r,"gameId")==id),"gameName",id) };
+            if (!_gameCache.TryGetValue(id,out var game)) _gameCache[id] = game = new SoopGame { Id = id };
+            game.Name = SoopGameNames.Resolve(id, V.Text(_rows.Values.FirstOrDefault(r=>V.Text(r,"gameId")==id),"gameName",game.Name));
             game.Selected = selected.Contains(id) || (!_explicit && gameRows.Any(r=>V.Text(r,"id")==old));
             game.Priority=games.Count+1;
             var campaigns=new List<SoopCampaign>();
@@ -151,7 +153,7 @@ public sealed class SoopCampaignModel : ObservableObject
                 var rewardCount=V.Rows(row,"items").Count();
                 var random=V.Text(row,"giveCon") is "none" or "draw" || V.Text(row,"type").Contains("随机") || V.Text(row,"type").Contains("抽奖");
                 var key=_account+"\0"+activityId;
-                var signature=(row.ValueKind==JsonValueKind.Object?row.GetRawText():"")+"|"+(_targets.GetValueOrDefault(_account)==activityId);
+                var signature=(row.ValueKind==JsonValueKind.Object?row.GetRawText():"")+"|"+(_targets.GetValueOrDefault(_account)==activityId)+"|"+game.Name;
                 if(_campaignCache.TryGetValue(key,out var cached)&&cached.Signature==signature)
                 {cached.Campaign.Selected=order.Contains(activityId)||(!_explicit&&activityId==old);campaigns.Add(cached.Campaign);continue;}
                 var campaign = new SoopCampaign { Id = activityId, GameId = id, GameName = game.Name,

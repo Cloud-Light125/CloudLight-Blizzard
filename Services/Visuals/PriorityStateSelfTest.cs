@@ -73,8 +73,8 @@ internal static class PriorityStateSelfTest
             check(reward.StateBadge=="部分完成"&&!reward.StateText.Contains("观看"),"STATE matrix: qualification never overwrites partial official progress");
         check((partial with{Current=120}).StateKind=="completed"&&(partial with{CanClaim=true}).StateKind=="claimable"&&(partial with{Claimed=true}).StateKind=="claimed","STATE matrix: completed, claimable and claimed remain separate");
 
-        var soopHealth=new DropsPlatformViewModel(DropsPlatform.Soop,"Soop"){Running=true};var soop=new PlatformOverviewModel(soopHealth);
-        JsonElement Account(string uid,bool running,int minutes)=>J(new{uid,loggedIn=true,running,channelId="room-"+uid,connectionHealthy=true,bridgeConnected=true,heartbeatStatus="success",heartbeatLastSuccess=DateTimeOffset.UtcNow.ToString("o"),lastConfirmedAt=DateTimeOffset.UtcNow.ToString("o"),currentProgress=new[]{new{account=uid,id="task-"+uid,reward="Reward "+uid,currentMinutes=minutes,requiredMinutes=30,watchEligible=true}}});
+        var soopHealth=new DropsPlatformViewModel(DropsPlatform.Soop,"Soop"){Running=true,WorkerLifecycle=WorkerLifecycle.Running};var soop=new PlatformOverviewModel(soopHealth);
+        JsonElement Account(string uid,bool running,int minutes)=>SoopEvidenceSelfTest.Account(uid:uid,running:running,room:"room-"+uid,minutes:minutes,official:minutes==6?"grown":"synced");
         soop.UpdateAccount(Account("A",false,15));soop.UpdateAccount(Account("B",true,5));
         check(!soop.Accounts[0].HasWatchEvidence&&soop.Accounts[0].StateText=="已停止观看"&&soop.Accounts[0].Reward?.StateBadge=="部分完成"&&soop.Accounts[1].HasWatchEvidence,"SOOP 1: stopped A and active B use independent UID runtime and official viewTime");
         soop.UpdateAccount(J(new{uid="B",running=true,connectionHealthy=false}));check(!soop.Accounts[1].HasWatchEvidence&&!soop.RuntimeSummary.Contains("已接受"),"SOOP 2: shared Worker running without a valid account connection is not viewing");
