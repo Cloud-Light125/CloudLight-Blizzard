@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net;
 using System.IO.Compression;
 using System.Net.Http;
@@ -2396,8 +2396,18 @@ public static class FeatureSelfTest
         var current = withHistory.Single(item => item.IsActive);
         Assert(!historical.IsActive && current.IsActive,
             "only the newest generation is marked as current");
+        var previousDeleteBlocked = false;
+        try { snapshots.Delete(generationId); }
+        catch (InvalidOperationException) { previousDeleteBlocked = true; }
+        Assert(previousDeleteBlocked, "immediate predecessor remains protected for recovery");
+
+        File.WriteAllText(Path.Combine(game, "region.dat"), "CN");
+        await manager.StartPreparationAsync(game, GameRegion.China);
+        File.WriteAllText(Path.Combine(game, "region.dat"), "INT");
+        Assert(await manager.ContinuePreparationAsync(game) == RegionBackupState.Ready,
+            "third verified generation advances the rollback pointer");
         Assert(snapshots.Delete(generationId) && !snapshots.List().Any(item => item.GenerationId == generationId),
-            "historical snapshot can be deleted while current snapshot remains protected");
+            "old unreferenced history can be deleted while the current and previous snapshots stay protected");
 
         report.AppendLine("TEST 12 snapshots and switch preview: PASS (direct state/listing, missing/corrupt/expired, legacy-file ignore, delete safety, historical deletion, read-only preview, shared plan, disk and invalid snapshot blockers)");
     }
