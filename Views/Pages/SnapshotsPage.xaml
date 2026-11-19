@@ -105,7 +105,7 @@
             <StackPanel Margin="0,12,4,16">
                 <Border x:Name="SnapshotSummaryCard" Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}">
                     <DockPanel>
-                        <ctrl:PlatformIcon Platform="Overwatch" Width="50" Height="50" Margin="0,0,18,0" />
+                        <ctrl:PlatformIcon Platform="Overwatch" Style="{StaticResource PlatformIconHeader}" />
                         <StackPanel>
                             <TextBlock Text="{Binding SnapshotCount,StringFormat=区服快照 · {0} 个}" FontSize="24" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding SnapshotBytesText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" />

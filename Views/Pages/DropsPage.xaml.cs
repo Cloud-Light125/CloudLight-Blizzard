@@ -139,10 +139,7 @@ public partial class DropsPage : UserControl
             var compact = ActualHeight < 620;
             DropsPageHeader.IsCompact = compact;
             DropsLayout.Margin = compact ? new Thickness(18, 10, 18, 10) : new Thickness(24, 22, 24, 16);
-            PlatformTabsBar.Margin = new Thickness(0, 0, 0, 6);
-            var narrowTabs = ActualWidth < 860;
-            PlatformTabsBar.ColumnDefinitions[0].Width = narrowTabs ? new GridLength(0) : new GridLength(160);
-            PlatformPageTitle.Visibility = narrowTabs ? Visibility.Collapsed : Visibility.Visible;
+            PlatformPageTitle.Visibility = ActualWidth < 720 ? Visibility.Collapsed : Visibility.Visible;
             TwitchIntro.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             TwitchLoginCard.Padding = new Thickness(12,8,12,8);
             TwitchWorkspace.TwitchOverview.ApplyCompact(compact);

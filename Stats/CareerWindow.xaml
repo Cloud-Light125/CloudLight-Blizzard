@@ -335,7 +335,7 @@
             <Border x:Name="OverlayPanel" Background="{DynamicResource Stats.Bg}">
                 <Border Style="{StaticResource Stats.CardStyle}" Padding="30" MinWidth="0" HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="820" Margin="32">
                     <StackPanel>
-                        <ctrl:PlatformIcon Platform="Overwatch" Width="76" Height="76" HorizontalAlignment="Center" Margin="0,0,0,24" />
+                        <ctrl:PlatformIcon Platform="Overwatch" Width="72" Height="72" Margin="0,0,0,24" />
                         <TextBlock x:Name="OverlayTitle" Text="正在读取生涯数据…" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource Stats.Tx1}" HorizontalAlignment="Center" />
                         <TextBlock x:Name="OverlayHint" Text="数据来自暴雪公开生涯页,第一次查询可能会慢一点。" FontSize="14" Foreground="{DynamicResource Stats.Tx2}" Margin="0,8,0,0" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="590" TextWrapping="Wrap" />
                         <ProgressBar x:Name="OverlayBar" IsIndeterminate="True" Height="4" Width="220" Margin="0,14,0,0" Foreground="{DynamicResource Stats.Accent}" Background="{DynamicResource Stats.Divider}" BorderThickness="0" />

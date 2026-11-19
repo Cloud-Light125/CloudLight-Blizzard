@@ -29,11 +29,11 @@
                     <Border Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="82" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ctrl:PlatformIcon Platform="Overwatch" Width="62" Height="62" VerticalAlignment="Top" HorizontalAlignment="Left" />
+                            <ctrl:PlatformIcon Platform="Overwatch" Style="{StaticResource PlatformIconHeader}" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="守望先锋 · 区服控制台" FontSize="23" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding RegionGuide.CurrentFileText}" FontSize="19" Margin="0,12,0,6" />

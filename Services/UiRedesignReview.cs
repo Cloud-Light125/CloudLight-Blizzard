@@ -144,6 +144,7 @@ internal sealed partial class UiRedesignReview
             if (_automated)
             {
                 if(File.Exists(Path.Combine(_output,"snapshot-cleanup-test.flag")))await RunSnapshotCleanupReviewAsync();
+                else if (File.Exists(Path.Combine(_output, "platform-icons-test.flag"))) await RunPlatformIconsReviewAsync();
                 else if(File.Exists(Path.Combine(_output,"six-repairs-test.flag")))await RunSixRepairsAsync();
                 else if(File.Exists(Path.Combine(_output,"priority-state-test.flag")))await RunPriorityStateAsync();
                 else if(File.Exists(Path.Combine(_output,"density-test.flag")))await RunDensityAsync();

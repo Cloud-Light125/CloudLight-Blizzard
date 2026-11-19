@@ -2,13 +2,55 @@
     <ScrollViewer Background="{DynamicResource App.Background}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="28,24,28,24">
         <c:PageHeader Title="总览" Description="账号、游戏与正在进行的奖励，在这里汇集。"/>
         <Grid Margin="0,24,0,16" b:ResponsiveGrid.IsEnabled="True"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-            <Border Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}" Margin="0,0,16,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions><c:PlatformIcon Platform="BattleNet" Width="48" Height="48" VerticalAlignment="Top" HorizontalAlignment="Left"/><StackPanel Grid.Column="1"><TextBlock Text="BATTLE.NET" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="{Binding CurrentAccount.DisplayName,TargetNullValue=尚未检测到当前账号,FallbackValue=尚未检测到当前账号}" FontSize="22" FontWeight="SemiBold" Margin="0,8,0,8" TextWrapping="Wrap"/><TextBlock Text="{Binding ReadyCountText}" FontSize="14"/><TextBlock Text="本地账号指向 · 认证以 Battle.net 为准" Style="{DynamicResource VisualCaption}" Margin="0,5,0,16"/><Button Content="管理账号 →" Tag="accounts" Click="OnNavigate" Style="{DynamicResource PrimaryButton}" HorizontalAlignment="Left"/></StackPanel></Grid></Border>
-            <Border Grid.Column="1" Style="{DynamicResource HeroCard}" Margin="0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions><c:PlatformIcon Platform="Overwatch" Width="48" Height="48" VerticalAlignment="Top" HorizontalAlignment="Left"/><StackPanel Grid.Column="1"><TextBlock Text="OVERWATCH" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/><TextBlock Text="{Binding GameRegionTitle}" FontSize="22" FontWeight="SemiBold" Margin="0,8,0,8" TextWrapping="Wrap"/><TextBlock Text="{Binding GameRegionSummary}" Style="{DynamicResource VisualCaption}"/><TextBlock Text="{Binding GameRegionPath}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" Margin="0,5,0,16"/><Button Content="游戏与区服 →" Tag="region" Click="OnNavigate" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left"/></StackPanel></Grid></Border>
+            <Border Style="{DynamicResource HeroCard}" Background="{DynamicResource AccSoft}" Margin="0,0,16,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <c:PlatformIcon Platform="BattleNet" Style="{StaticResource PlatformIconHeader}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="BATTLE.NET" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/>
+                        <TextBlock Text="{Binding CurrentAccount.DisplayName,TargetNullValue=尚未检测到当前账号,FallbackValue=尚未检测到当前账号}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Grid.Row="1" Margin="0,8,0,0">
+                        <TextBlock Text="{Binding ReadyCountText}" FontSize="14"/>
+                        <TextBlock Text="本地账号指向 · 认证以 Battle.net 为准" Style="{DynamicResource VisualCaption}" Margin="0,5,0,16"/>
+                        <Button Content="管理账号 →" Tag="accounts" Click="OnNavigate" Style="{DynamicResource PrimaryButton}" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Border Grid.Column="1" Style="{DynamicResource HeroCard}" Margin="0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <c:PlatformIcon Platform="Overwatch" Style="{StaticResource PlatformIconHeader}"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="OVERWATCH" FontSize="13" Foreground="{DynamicResource Text.Secondary}"/>
+                        <TextBlock Text="{Binding GameRegionTitle}" FontSize="22" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Grid.Row="1" Margin="0,8,0,0">
+                        <TextBlock Text="{Binding GameRegionSummary}" Style="{DynamicResource VisualCaption}"/>
+                        <TextBlock Text="{Binding GameRegionPath}" FontSize="13" Foreground="{DynamicResource Text.Secondary}" TextTrimming="CharacterEllipsis" Margin="0,5,0,16"/>
+                        <Button Content="游戏与区服 →" Tag="region" Click="OnNavigate" Style="{DynamicResource SecondaryButton}" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
         </Grid>
         <DockPanel Margin="0,8,0,14"><TextBlock Text="掉宝任务工作台" Style="{DynamicResource VisualHeading}"/><TextBlock Text="各平台独立状态 · 官方进度单独确认" FontSize="13" Foreground="{DynamicResource Text.Secondary}" HorizontalAlignment="Right"/></DockPanel>
         <ItemsControl x:Name="PlatformStatusList"><ItemsControl.ItemsPanel><ItemsPanelTemplate><c:RewardTilePanel MinimumTileWidth="430" MaximumTileWidth="720" StretchSparseRows="True"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate>
             <Border Style="{DynamicResource HeroCard}" Margin="0"><StackPanel>
-                <DockPanel><Button Content="{Binding NextActionText}" Tag="{Binding Health.Platform}" Click="OnPlatform" Style="{DynamicResource SecondaryButton}" DockPanel.Dock="Right"/><c:PlatformIcon Platform="{Binding Brand}" Width="32" Height="32" Margin="0,0,12,0"/><StackPanel><TextBlock Text="{Binding Name}" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="{Binding RuntimeSummary}" FontSize="13" Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+                <DockPanel><Button Content="{Binding NextActionText}" Tag="{Binding Health.Platform}" Click="OnPlatform" Style="{DynamicResource SecondaryButton}" DockPanel.Dock="Right"/><c:PlatformIcon Platform="{Binding Brand}" Style="{StaticResource PlatformIconSmall}" Margin="0,0,12,0"/><StackPanel><TextBlock Text="{Binding Name}" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="{Binding RuntimeSummary}" FontSize="13" Foreground="{DynamicResource Accent.Primary}" Margin="0,4,0,0"/></StackPanel></DockPanel>
                 <Grid Margin="0,18,0,14" Visibility="{Binding RewardVisibility}"><Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition/></Grid.ColumnDefinitions><c:VisualImage SourceUrl="{Binding FeaturedImageUrl}" Brand="{Binding Brand}" Width="120" Height="120" Margin="0,0,12,0"/>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding TaskSummary}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding FeaturedReward.StateText}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/><TextBlock Text="{Binding FeaturedProgress}" FontSize="15" Foreground="{DynamicResource Accent.Primary}" Margin="0,6,0,0"/><ProgressBar Value="{Binding FeaturedPercent,Mode=OneWay}" Maximum="100" Height="9" Style="{DynamicResource ThemeProgressBar}" Margin="0,10,0,0"/></StackPanel>
                 </Grid>

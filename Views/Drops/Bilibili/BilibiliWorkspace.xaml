@@ -5,7 +5,7 @@
             <Border Style="{DynamicResource HeroCard}">
                 <DockPanel>
                     <Button DockPanel.Dock="Right" Content="退出登录" Command="{Binding BilibiliDetails.LogoutCommand}" Visibility="{Binding BilibiliDetails.LogoutVisibility}" Style="{DynamicResource DangerButton}" />
-                    <ctrl:PlatformIcon Platform="Bilibili" Width="40" Height="40" Margin="0,0,16,0" />
+                    <ctrl:PlatformIcon Platform="Bilibili" Style="{StaticResource PlatformIconHeader}" />
                     <TextBlock Text="{Binding BilibiliDetails.AccountStatus}" FontSize="20" VerticalAlignment="Center" />
                 </DockPanel>
             </Border>

@@ -1,0 +1,9 @@
+Battle.net and Bilibili marks: Simple Icons, CC0-1.0 artwork.
+https://github.com/simple-icons/simple-icons/blob/develop/icons/battledotnet.svg
+https://github.com/simple-icons/simple-icons/blob/develop/icons/bilibili.svg
+https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md
+
+Overwatch emblem: Blizzard Entertainment, vector archived by Wikimedia Commons.
+https://commons.wikimedia.org/wiki/File:Overwatch_circle_logo.svg
+
+Platform marks identify the respective services. The trademarks remain the property of their owners.

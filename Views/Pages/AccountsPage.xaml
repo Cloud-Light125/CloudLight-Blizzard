@@ -19,19 +19,21 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <ctrl:PlatformIcon Platform="BattleNet" Width="52" Height="52" HorizontalAlignment="Left" Margin="0,0,0,14" />
-                                <TextBlock Text="当前账号（本地配置指向，认证请在 Battle.net 确认）" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" />
-                                <StackPanel Visibility="{Binding HasCurrentVisibility}" Margin="0,7,0,0">
-                                    <TextBlock Text="{Binding CurrentAccount.DisplayName}" FontSize="21" FontWeight="SemiBold" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                                        <TextBlock Text="{Binding CurrentAccount.BattleTag}" Foreground="{DynamicResource Text.Secondary}" />
-                                        <TextBlock Text="  ·  " Foreground="{DynamicResource Text.Muted}" />
-                                        <TextBlock Text="{Binding CurrentAccount.RegionText}" Foreground="{DynamicResource Accent.Primary}" />
+                            <DockPanel>
+                                <ctrl:PlatformIcon Platform="BattleNet" Style="{StaticResource PlatformIconHeader}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="当前账号（本地配置指向，认证请在 Battle.net 确认）" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" />
+                                    <StackPanel Visibility="{Binding HasCurrentVisibility}" Margin="0,7,0,0">
+                                        <TextBlock Text="{Binding CurrentAccount.DisplayName}" FontSize="21" FontWeight="SemiBold" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                            <TextBlock Text="{Binding CurrentAccount.BattleTag}" Foreground="{DynamicResource Text.Secondary}" />
+                                            <TextBlock Text="  ·  " Foreground="{DynamicResource Text.Muted}" />
+                                            <TextBlock Text="{Binding CurrentAccount.RegionText}" Foreground="{DynamicResource Accent.Primary}" />
+                                        </StackPanel>
                                     </StackPanel>
+                                    <TextBlock Text="当前未检测到登录账号。" Visibility="{Binding NoCurrentVisibility}" Margin="0,7,0,0" Foreground="{DynamicResource Text.Secondary}" />
                                 </StackPanel>
-                                <TextBlock Text="当前未检测到登录账号。" Visibility="{Binding NoCurrentVisibility}" Margin="0,7,0,0" Foreground="{DynamicResource Text.Secondary}" />
-                            </StackPanel>
+                            </DockPanel>
                             <WrapPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0,0,0">
                                 <Button Content="打开 Battle.net" Style="{StaticResource PrimaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnLaunchClient" />
                                 <Button Content="更新账号备份" Style="{StaticResource SecondaryButton}" Padding="15,0" Margin="0,0,8,8" Click="OnSaveCurrent" />

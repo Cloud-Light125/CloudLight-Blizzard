@@ -16,43 +16,46 @@
         </ctrl:PageHeader>
         <Grid x:Name="PlatformTabsBar" Margin="0,0,0,6" Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="160" />
-                <ColumnDefinition />
-                <ColumnDefinition />
-                <ColumnDefinition />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <RadioButton x:Name="SoopTab" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged" Grid.Column="1">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Soop}">
-                    <ctrl:PlatformIcon Platform="Soop" Width="20" Height="20" Margin="0,0,10,0" />
-                    <Ellipse x:Name="SoopStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
-                    <TextBlock Text="SOOP" />
-                </StackPanel>
-            </RadioButton>
-            <RadioButton x:Name="YouTubeTab" Grid.Column="4" Tag="YouTube" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding YouTube}">
-                    <ctrl:PlatformIcon Platform="YouTube" Width="20" Height="20" Margin="0,0,10,0" />
-                    <Ellipse x:Name="YouTubeStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
-                    <TextBlock Text="YouTube" />
-                </StackPanel>
-            </RadioButton>
-            <RadioButton x:Name="TwitchTab" Grid.Column="2" Tag="Twitch" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Twitch}">
-                    <ctrl:PlatformIcon Platform="Twitch" Width="20" Height="20" Margin="0,0,10,0" />
-                    <Ellipse x:Name="TwitchStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
-                    <TextBlock Text="Twitch" />
-                </StackPanel>
-            </RadioButton>
-            <RadioButton x:Name="BilibiliTab" Grid.Column="3" Tag="Bilibili" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}" Checked="OnPlatformChanged">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" DataContext="{Binding Bilibili}">
-                    <ctrl:PlatformIcon Platform="Bilibili" Width="20" Height="20" Margin="0,0,10,0" />
-                    <Ellipse x:Name="BilibiliStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
-                    <TextBlock Text="哔哩哔哩" />
-                </StackPanel>
-            </RadioButton>
-            <TextBlock x:Name="PlatformPageTitle" Text="掉宝管理" FontSize="26" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <ctrl:AnnouncementBell Grid.Column="5" Margin="8,0,0,0" />
+            <TextBlock x:Name="PlatformPageTitle" Text="掉宝管理" FontSize="26" FontWeight="SemiBold" Margin="0,0,24,0" VerticalAlignment="Center" />
+            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                <RadioButton x:Name="SoopTab" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}"
+                             AutomationProperties.Name="SOOP" Checked="OnPlatformChanged">
+                    <StackPanel Orientation="Horizontal" DataContext="{Binding Soop}">
+                        <ctrl:PlatformIcon Platform="Soop" Margin="0,0,8,0" />
+                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <TextBlock Text="SOOP" VerticalAlignment="Center" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="TwitchTab" Tag="Twitch" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}"
+                             AutomationProperties.Name="Twitch" Checked="OnPlatformChanged">
+                    <StackPanel Orientation="Horizontal" DataContext="{Binding Twitch}">
+                        <ctrl:PlatformIcon Platform="Twitch" Margin="0,0,8,0" />
+                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <TextBlock Text="Twitch" VerticalAlignment="Center" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="BilibiliTab" Tag="Bilibili" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}"
+                             AutomationProperties.Name="哔哩哔哩" Checked="OnPlatformChanged">
+                    <StackPanel Orientation="Horizontal" DataContext="{Binding Bilibili}">
+                        <ctrl:PlatformIcon Platform="Bilibili" Margin="0,0,8,0" />
+                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <TextBlock Text="哔哩哔哩" VerticalAlignment="Center" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="YouTubeTab" Tag="YouTube" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}"
+                             AutomationProperties.Name="YouTube" Checked="OnPlatformChanged">
+                    <StackPanel Orientation="Horizontal" DataContext="{Binding YouTube}">
+                        <ctrl:PlatformIcon Platform="YouTube" Margin="0,0,8,0" />
+                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <TextBlock Text="YouTube" VerticalAlignment="Center" />
+                    </StackPanel>
+                </RadioButton>
+            </WrapPanel>
+            <ctrl:AnnouncementBell Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center" />
         </Grid>
         <WrapPanel x:Name="WorkspaceNavigation" Margin="0,8,0,8" Grid.Row="2">
             <RadioButton Content="概览" Tag="overview" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" />

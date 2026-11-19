@@ -312,24 +312,36 @@
         </Style.Triggers>
     </Style>
     <Style x:Key="PlatformTab" TargetType="RadioButton" BasedOn="{StaticResource NavigationButton}">
-        <Setter Property="MinWidth" Value="0" />
-        <Setter Property="Height" Value="38" />
-        <Setter Property="Margin" Value="0,0,8,0" />
-        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="MinHeight" Value="42" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
-                    <Border x:Name="Frame" CornerRadius="10" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="0,0,0,2" Padding="14,10">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border x:Name="Frame" CornerRadius="10" Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True" />
+                                <Condition Property="IsChecked" Value="False" />
+                                <Condition Property="IsEnabled" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Frame" Property="Background" Value="{DynamicResource Hover}" />
+                        </MultiTrigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Frame" Property="Background" Value="{DynamicResource AccSoft}" />
                             <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource Accent.Primary}" />
                             <Setter Property="Foreground" Value="{DynamicResource Accent.Primary}" />
                         </Trigger>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Frame" Property="Background" Value="{DynamicResource Hover}" />
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Frame" Property="Opacity" Value="0.55" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

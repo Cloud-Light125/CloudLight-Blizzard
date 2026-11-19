@@ -1,5 +1,10 @@
 ﻿#define AppName "CloudLight Blizzard"
-#define AppVer  "3.0.0"
+#define AppMajor 3
+#define AppMinor 0
+#define AppPatch 1
+#define AppVer Str(AppMajor) + "." + Str(AppMinor) + "." + Str(AppPatch)
+#define AppVersionMS AppMajor * 65536 + AppMinor
+#define AppVersionLS AppPatch * 65536
 #define AppExe  "CloudLight Blizzard.exe"
 #ifndef PublishDir
   #define PublishDir "..\publish"
@@ -10,7 +15,7 @@ AppId={{8F3A2B10-9C4D-4E7F-A1B2-3C4D5E6F7A8B}
 AppName={#AppName}
 AppVersion={#AppVer}
 AppVerName={#AppName} {#AppVer}
-VersionInfoVersion=3.0.0.0
+VersionInfoVersion={#AppVer}.0
 VersionInfoProductVersion={#AppVer}
 VersionInfoTextVersion={#AppVer}
 VersionInfoProductTextVersion={#AppVer}
@@ -89,8 +94,8 @@ end;
 
 function IsNewerProductVersion(const VersionMS, VersionLS: Cardinal): Boolean;
 begin
-  Result := (VersionMS > $00030000) or
-    ((VersionMS = $00030000) and (VersionLS > 0));
+  Result := (VersionMS > {#AppVersionMS}) or
+    ((VersionMS = {#AppVersionMS}) and (VersionLS > {#AppVersionLS}));
 end;
 
 function BackupSettingsFile(const RelativePath: String): Boolean;
@@ -399,10 +404,10 @@ begin
     Log('ALL_DATA_PRESERVE_TEST PASS: ' + Paths[I]);
   end;
   Log('ALL_DATA_PRESERVE_TEST PASS: 13 isolated synthetic files');
-  if not IsNewerProductVersion($00030001, 0) or
-     not IsNewerProductVersion($00030000, 1) or
-     IsNewerProductVersion($00030000, 0) or
-     IsNewerProductVersion($00020001, 0) then Exit;
+  if not IsNewerProductVersion({#AppVersionMS} + 1, 0) or
+     not IsNewerProductVersion({#AppVersionMS}, {#AppVersionLS} + 1) or
+     IsNewerProductVersion({#AppVersionMS}, {#AppVersionLS}) or
+     IsNewerProductVersion($00030000, 0) then Exit;
   Log('PRODUCT_DOWNGRADE_GUARD_TEST PASS');
   Result := True;
 end;
@@ -493,7 +498,7 @@ begin
   if GetVersionNumbers(ExpandConstant('{app}\CloudLight Blizzard.dll'), ExistingMS, ExistingLS) and
      IsNewerProductVersion(ExistingMS, ExistingLS) then
   begin
-    Result := '安装目录包含比 3.0.0 更新的 CloudLight Blizzard；为避免覆盖新版程序与 Worker，安装已阻止。';
+    Result := '安装目录包含比 {#AppVer} 更新的 CloudLight Blizzard；为避免覆盖新版程序与 Worker，安装已阻止。';
     Exit;
   end;
   if CheckForMutexes('Local\CloudLight Blizzard.SingleInstance') then
