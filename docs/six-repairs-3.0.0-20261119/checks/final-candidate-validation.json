@@ -1,0 +1,85 @@
+{
+  "version": "3.0.0",
+  "distribution": "LOCAL-ONLY",
+  "buildSourceCommit": "84d2a9740ebfed4c68e20032f6bf3bf245c615ec",
+  "sourceManifestSha256": "c96e81fe3b9989085b74cec14cb8b8b6fbf740b4636fbac758a3480fb032f006",
+  "installer": {
+    "path": "release/candidates/3.0.0-six-repairs-local-20261119-84d2a97/installer/CloudLight-Blizzard-3.0.0-win-x64-Setup.exe",
+    "bytes": 152427549,
+    "sha256": "710c79b14dbd9a46b79a5d0abb7227f17d8576223efd2d8b222d05bed0349071"
+  },
+  "stages": {
+    "Freeze": "PASS",
+    "Publish": "PASS",
+    "Validate": "PASS",
+    "Package": "PASS",
+    "Extract": "PASS"
+  },
+  "packagedFeatureChecks": {
+    "all": "PASS",
+    "account-safety": "PASS",
+    "region-verified": "PASS",
+    "update-safety": "PASS",
+    "exit-safety": "PASS",
+    "twitch-audit": "PASS",
+    "packaged-workers": "PASS",
+    "soop-timeout": "PASS"
+  },
+  "packagedWpfComponents": {
+    "pass": 203,
+    "fail": 0,
+    "sourceFixtureChecksNotInPayload": 3
+  },
+  "packagedWpfReview": {
+    "result": "PASS",
+    "bindingErrors": 0
+  },
+  "installerExtraction": {
+    "files": 565,
+    "allPayloadHashesMatched": true
+  },
+  "installerSettingsPreservation": "PASS; intentionally aborted before system installation, exit 1",
+  "extractedUiHost": {
+    "exeHiddenFirstRun": {
+      "pass": 346,
+      "fail": 0,
+      "blocked": 1,
+      "exit": 2,
+      "reason": "Windows clipboard busy, HRESULT 0x800401D0"
+    },
+    "exeHiddenFreshDirectoryRetry": {
+      "pass": 346,
+      "fail": 0,
+      "blocked": 1,
+      "exit": 2,
+      "reason": "Same clipboard block"
+    },
+    "sameExtractedAssemblyViaDotnet": {
+      "pass": 346,
+      "fail": 0,
+      "blocked": 1,
+      "exit": 2
+    }
+  },
+  "soopCore": {
+    "commit": "6050b8a35690b091996a1efedad4655b1b094cac",
+    "dirty": true,
+    "sha256": "65801b6e10f1777cd08af4ae0c6903003b2544c6bfd58b60f7295ba77d879be6",
+    "fileCount": 24,
+    "matchesPreviouslyValidatedByteBaseline": true,
+    "redistributionAuthorized": false
+  },
+  "realClaims": 0,
+  "realWatching": 0,
+  "realFeedback": 0,
+  "systemInstall": "NOT TESTED",
+  "publicTagCreated": false,
+  "publicReleaseCreated": false,
+  "restrictedBinariesUploaded": false,
+  "permissionProfile": {
+    "sandbox": "danger-full-access",
+    "approval": "never",
+    "differsFromReadableGlobalPermissions": false,
+    "subagentsUsed": false
+  }
+}

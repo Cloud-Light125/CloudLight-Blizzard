@@ -1,0 +1,8 @@
+{
+  "scope": "index version of all added/modified files since ecc75f3; includes already committed repair sources and final staged documents",
+  "files": 155,
+  "findings": [],
+  "restrictedCoreOrInstallerIncluded": false,
+  "resourceReview": "Original official favicon provenance, SHA256 and brand restrictions preserved; unconfirmed brand permission recorded separately from SOOP Core; installer remains LOCAL-ONLY",
+  "result": "PASS"
+}
