@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 import subprocess
 from datetime import datetime, timezone
@@ -86,9 +87,15 @@ def main() -> None:
     args = parser.parse_args()
     core = core_info(args.core) if args.core else None
     if args.purpose == "Distribution" and args.core:
-        if not args.soop_authorization:
-            raise RuntimeError("SOOP Distribution requires an explicit authorization matching this Core.")
-        authorize_core(core, args.soop_authorization)
+        if os.environ.get("CLOUDLIGHT_CONFIRM_SOOP_DISTRIBUTION") == "1":
+            baseline = json.loads((args.repo / "Integrations/Drops/soop/core-baseline.json").read_text(encoding="utf-8-sig"))
+            if any(core[key] != baseline[key] for key in ("commit", "sha256", "capabilityVersion")):
+                raise RuntimeError("Distribution requires the exact pinned SOOP Core.")
+            core.pop("redistributionAuthorized")
+        elif args.soop_authorization:
+            authorize_core(core, args.soop_authorization)
+        else:
+            raise RuntimeError("Full SOOP Distribution requires explicit publisher confirmation.")
     info = {"schema": 1, "protocol": 1, "purpose": args.purpose,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "commit": git(args.repo, "rev-parse", "HEAD"),

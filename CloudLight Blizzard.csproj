@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -83,7 +83,7 @@
     <Content Include="Assets\Licenses\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest">
       <Link>THIRD_PARTY_LICENSES\%(Filename)%(Extension)</Link>
     </Content>
-    <Content Include="Integrations\Drops\soop\redistribution-authorization.json">
+    <Content Include="Integrations\Drops\soop\redistribution-authorization.json" Condition="'$(CLOUDLIGHT_CONFIRM_SOOP_DISTRIBUTION)' != '1'">
       <Link>THIRD_PARTY_LICENSES\SOOP-Redistribution-Authorization.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

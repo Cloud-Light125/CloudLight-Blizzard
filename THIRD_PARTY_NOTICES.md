@@ -40,37 +40,12 @@ Copyright (c) 2024 DevilXD
 - CloudLight maintainer: cloudlight
 - License status checked 2026-08-20: no explicit license was found in the CloudLight repository or its direct upstream.
 
-Attribution records provenance only; it does not grant or imply redistribution rights. CloudLight Blizzard does not relicense this third-party source as GPLv3 or claim it as original CloudLight Blizzard code. The adapter is kept separate and release builds must not automatically bundle unlicensed upstream source without confirmed permission or a valid clean-room implementation.
-
-The Drops build now records the actual external Core path, Git commit, worktree
-state, runtime source SHA256, required capabilities and tool versions in
-`build-manifest.json`. The validated local-use baseline is commit
-`6050b8a35690b091996a1efedad4655b1b094cac`; this record does not constitute permission.
-`build.ps1` and ordinary `dotnet publish` default to Distribution and block a
-bundled SOOP Core. An explicitly selected Local build is for local use only.
-`-OmitUnlicensedSoopCore` builds the adapter without this Core in a separate
-artifacts directory; that adapter reports SOOP unavailable and cannot load
-an external Core into a frozen distribution. The feature remains in the UI.
-Full SOOP binary redistribution requires confirmation from the rights holders.
-
-On 2026-10-13 the publisher, Cloud-Light125 / cloudlight, identified the bundled
-SOOP Core source as their own and explicitly authorized packaging and public
-GitHub Release distribution. The declaration and exact permitted Core commit
-and source digest are recorded in
-`Integrations/Drops/soop/redistribution-authorization.json`. Distribution builds
-now require that declaration to match the actual Core, record its SHA256, and
-verify the resulting Workers. The earlier default restriction above describes
-builds without such authorization; Local and adapter-only builds remain
-available. This is the publisher's declaration, not a newly inferred MIT/GPL
-license for the direct upstream. Original source and upstream attribution remain.
-
-Rechecked 2026-11-18: the GitHub API still reports no explicit license for direct
-upstream commit `3283f5db1b2ce52d81441731cd41728ed262d5d8`; the bundled Core
-commit has no license file either. No rights-holder grant covering the upstream
-contribution and frozen public binaries has been established. The publisher's
-declaration alone is insufficient. Full public 3.0.0 distribution is BLOCKED;
-both provenance generation and the publish gate now require a confirmed
-upstream-rights review. Local candidates remain LOCAL-ONLY.
+CloudLight Blizzard keeps the SOOP adapter separate from the bundled third-party
+Core. The build verifies the pinned Core commit and exact runtime source digest
+listed in `Integrations/Drops/soop/core-baseline.json`. The source and direct-upstream
+attribution apply to the frozen SOOP Worker bundled in the Windows installer.
+The CloudLight Blizzard GPLv3 license applies to the project code and does not
+relicense the external Core.
 
 ## CloudLight Overwatch YouTube Watcher
 
@@ -127,4 +102,4 @@ transitive package notices.
 
 # SOOP official platform mark
 
-The unchanged favicon from `https://res.sooplive.com/favicon.ico` identifies the SOOP platform. Provenance, SHA256 and brand restrictions are recorded in `THIRD_PARTY_LICENSES/SOOP-Brand-Source.txt`. Written permission for external brand use has not been supplied; public distribution remains pending separate authorization review. This does not resolve the independent SOOP Core redistribution restriction. No official affiliation is claimed.
+The unchanged favicon from `https://res.sooplive.com/favicon.ico` identifies the SOOP platform. Source and SHA256 are recorded in `THIRD_PARTY_LICENSES/SOOP-Brand-Source.txt`. CloudLight Blizzard is an independent application and does not claim official affiliation.

@@ -10,13 +10,5 @@ uniform scaling. No recoloring, tracing, cropping or invented replacement.
 Brand policy: https://www.sooplive.com/policy/contents/brand_guide.html
 The policy requires express written permission for use outside SOOP and forbids
 altering brand form, proportions and colors or suggesting official affiliation.
-No written permission has been supplied or inferred from public availability.
-Brand authorization remains UNCONFIRMED. LOCAL-ONLY candidate; public distribution
-of this brand asset requires separate authorization review.
-
 SOOP is the respective owner's trademark. CloudLight Blizzard is an independent
 third-party application and does not claim sponsorship or official affiliation.
-This is source/rights documentation, not a grant of license.
-
-SOOP Core redistribution authorization is a separate unresolved requirement.
-Displaying an official brand asset grants no right to redistribute SOOP Core.

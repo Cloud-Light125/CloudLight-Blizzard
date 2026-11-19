@@ -1,6 +1,6 @@
 # Twitch 真实账号验收
 
-验收日期：2026-11-16 至 2026-11-17，Asia/Shanghai。账号 UID 末四位 3382；原用户数据目录未覆盖。认证、真实图片、官方进度及观看/停止分项验收通过；没有执行真实 Claim。
+验收日期：2026-11-16 至 2026-11-17，Asia/Shanghai。原用户数据目录未覆盖。认证、真实图片、官方进度及观看/停止分项验收通过；没有执行真实 Claim。
 
 ## 真实链路与证据
 
@@ -16,23 +16,6 @@
 - 实际多 Benefit：Hearty Homecoming / Palia，Campaign `d6a79a3e-fd63-43ed-906d-3a8443cd8184`。Tier One 的 4 件、Tier Two 的 3 件全部显示；分别共享所属 Drop 的 0/60、0/180 分钟，资格不足单独标明。没有按 Benefit 发明独立进度。
 - 实际完成/可领取：Butterfly Wardrobe 的 Profile Icon / Portrait Frame / Belonging 分别 30/30、90/90、180/180，均显示“已完成 · 待领取”。只检查展示，未点击领取。
 - 正常停止后当前 Drop 清除，已确认的 50/120 留在活动卡，观看状态改为已停止；正常退出释放本次 Worker。手动停止与再次开始均使用原保护逻辑。
-
-## 实际 WPF 截图
-
-| 截图 | 内容 |
-|---|---|
-| [01](screenshots-real/01-session-verified.png) | 真实 Session 验证成功 |
-| [02](screenshots-real/02-initial-official-images-no-channel.png) | 修复前真实图片已显示，但无频道、历史完成奖励占主卡 |
-| [04](screenshots-real/04-density-overview-watching.png) | 高密度概览、实际当前奖励、频道与官方分钟 |
-| [05](screenshots-real/05-density-activities-watching.png) | 多 Campaign 的真实物品网格 |
-| [06](screenshots-real/06-density-activities-maximized.png) | 最大化活动页，3 Campaign / 8 张完整真实奖励卡 |
-| [07](screenshots-real/07-real-multiple-benefits.png) | 真实 Palia 3 Drop / 8 Benefit，全部图片与共享进度 |
-| [08](screenshots-real/08-real-benefit-details.png) | 真实多 Benefit 原详情入口 |
-| [09](screenshots-real/09-real-completed-claimable.png) | 真实已完成、可领取的 3 奖励，未提交 Claim |
-| [10](screenshots-real/10-density-overview-maximized.png) | 真实当前观看概览，50/120、41.7%、剩余 70 |
-| [11](screenshots-real/11-real-stopped-progress-retained.png) | 手动停止后未自动复活，官方 50/120 保留 |
-
-真实截图与 `screenshots-density-simulated/` 严格分开。物理显示器 125%；WPF RenderTargetBitmap 输出为 96 DPI 栅格，不能由 PNG 像素大小推断物理 DPI。
 
 ## 分项结果与边界
 

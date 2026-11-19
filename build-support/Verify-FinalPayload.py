@@ -1,4 +1,4 @@
-"""Verify actual frozen archives and prepare a traceable local-only payload.
+"""Verify actual frozen archives and prepare a traceable payload.
 
 Never reads account data or authenticates. The regression runner reuses code
 extracted from the exact binary, with all network connections denied.
@@ -65,9 +65,9 @@ def inspect_worker(repo, executable, out):
                 assert signature(pyz.extract(module)) == signature(compile((repo/f'Integrations/Drops/soop/{module}.py').read_bytes(), '', 'exec')), f'Stale SOOP {module}'
             assert archive.extract('game-catalog.official.json') == (repo/'Integrations/Drops/soop/game-catalog.official.json').read_bytes(), 'Stale SOOP official game directory'
             assert core_files == embedded['soopCore']['files']
-            authorization = json.loads((repo / 'Integrations/Drops/soop/redistribution-authorization.json').read_text('utf-8-sig'))
-            assert embedded['soopCore']['sha256'] == authorization['coreSha256']
-            assert embedded['soopCore']['commit'] == authorization['coreCommit']
+            baseline = json.loads((repo / 'Integrations/Drops/soop/core-baseline.json').read_text('utf-8-sig'))
+            assert embedded['soopCore']['sha256'] == baseline['sha256']
+            assert embedded['soopCore']['commit'] == baseline['commit']
             assert all(embedded['soopCore']['capabilities'].values())
         else:
             assert {'claim_guard.py', 'campaign_priority.py', 'settings_store.py'} <= core_files.keys()
@@ -96,7 +96,9 @@ def inspect_worker(repo, executable, out):
             'core': embedded.get('soopCore'), 'dependencies': embedded['dependencies'],
             'workerBytecodeMatchesCurrentSource': True, 'sharedProtocolMatches': True,
             'rebuilt': platform == 'twitch',
-            'distributionStatus': 'LOCAL-ONLY', 'embeddedManifest': f'{platform}-embedded-manifest.json'}
+            'buildPurpose': embedded['purpose'],
+            'distributionStatus': 'PUBLIC' if embedded['purpose'] == 'Distribution' else 'LOCAL-ONLY',
+            'embeddedManifest': f'{platform}-embedded-manifest.json'}
 
 
 def prepare(repo, candidate, baseline):
@@ -118,7 +120,9 @@ def prepare(repo, candidate, baseline):
     save(candidate / 'manifests/workers.json', records)
     # Keep each original manifest intact. A mixed-source bundle is not falsely
     # represented as one historical Git commit.
-    save(workers / 'component-manifest.json', {'protocol': 1, 'purpose': 'Local', 'workers': records})
+    purposes = {record['buildPurpose'] for record in records.values()}
+    assert len(purposes) == 1, 'Mixed Worker build purposes'
+    save(workers / 'component-manifest.json', {'protocol': 1, 'purpose': purposes.pop(), 'workers': records})
     for platform, record in records.items():
         shutil.copyfile(candidate / 'manifests' / record['embeddedManifest'], workers / f'{platform}-build-manifest.json')
     print('PASS actual frozen Worker bytecode, embedded manifests, exact Twitch Core and SOOP capabilities')

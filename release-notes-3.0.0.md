@@ -1,13 +1,11 @@
 # CloudLight Blizzard 3.0.0
 
-**发布状态：BLOCKED / LOCAL-ONLY，尚未公开发布。** SOOP 直接上游的公众再分发及冻结二进制授权证据不足。以下为待放行发行说明，不能据此宣称已有正式下载或自动更新。
-
 ## 新界面
 
 - Windows 11 风格 UI V2，统一导航、卡片、按钮、深浅色主题和自适应布局。
 - Twitch 使用官方奖励图片、活动分组与高密度奖励网格。
 - SOOP 按游戏、活动和奖励分组，直接展示共享奖励卡片，支持账号、显示范围、搜索、生命周期及活动类型筛选。
-- SOOP 使用可回收列表、折叠游戏延迟加载及异步图片缓存；显示筛选独立于实际观看计划。
+- SOOP 的活动、奖励和背包共用整页滚动，保留列表虚拟化及图片懒加载。概览账号卡分别显示登录、Worker、直播间、心跳、官方进度和等待原因。
 
 ## Twitch
 
@@ -21,24 +19,20 @@
 - 保留多游戏、同游戏多活动、五种活动策略与游戏／活动排序。
 - 官方 `dropsIdx` 精确区分活动；奖励卡片显示官方 `viewTime`、目标分钟、剩余时间和确认状态。
 - 随机活动明确提示“参与不代表必定获奖”，不生成确定百分比；缺少官方图片使用统一占位。
-- 保留精确频道资格、完成后自动切换、无合格频道等待、Heartbeat 切换及迟到心跳保护。
+- 智能选台按官方活动和频道资格匹配，兼容分类号前导零，展示选台诊断；任务完成后自动切换，无合资格直播时按策略重查。
 - 多账号的进度、资格及目标按 UID 隔离；每账号同一时刻只观看一个直播间。
 - 游戏与活动优先级集中在“观看配置”，修改仍需点击“保存设置”。领取及兑换码继续通过账号背包入口执行 UID 保护。
 
 ## 其他模块
 
 - 保留 Bilibili 现有任务、观看和领取流程，以及 YouTube Worker 兼容性。
-- 保留 Battle.net 账号保护、区服备份与切换、更新下载校验和退出清理。
+- Battle.net 保留账号保护及区服备份和切换。区服快照提供详情、删除及当前快照保护。
+- 更新和反馈迁移到「关于」。更新分别报告接口失败、无新版本、下载校验和安装状态，支持代理、限时重试、取消及 GitHub 手动下载。
 - 安装器保留用户数据和设置，不强制结束 Battle.net 或游戏进程。
 
-## 安装、升级与验证说明
+## 下载与升级
 
-- 目标为 Windows 10 / 11 x64；本地候选为 Windows x64 自包含包，包含 .NET 8 Windows Desktop Runtime，无需单独安装该运行时。
-- 预计正式资产名：`CloudLight-Blizzard-3.0.0-win-x64-Setup.exe`。本轮未上传该资产，勿将本地候选视为公开版本。
-- 旧版 2.1.x 可通过现有更新协议识别更高的 3.0.0；已安装 3.0.0 候选的用户无法仅靠相同版本号自动更新至另一构建。需要后续更高版本解决，未擅自提高本次版本号。
-- 升级保留各平台 Session、账号、优先级、claim-journal、Battle.net 数据、区服备份及应用设置；实际完整系统安装／升级须在安全隔离 Windows 环境验证。
-- 没有进行新的真实 Twitch Claim、SOOP 长时间或双账号持续观看、随机活动实际获奖测试。合成状态及官方只读快照回放不等于真实观看收益验证。
-- 第三方许可证和来源见 `THIRD_PARTY_NOTICES.md`、包内 `THIRD_PARTY_LICENSES` 及构建清单。SOOP Core 仍受公开分发阻断。
-- 校验方式：`Get-FileHash -LiteralPath '.\CloudLight-Blizzard-3.0.0-win-x64-Setup.exe' -Algorithm SHA256`，与同目录 `SHA256SUMS.txt` 比对。
-
-最终验收结果和未完成项见 `docs/release-3.0.0-final.md`。
+- 下载安装包 `CloudLight-Blizzard-3.0.0-win-x64-Setup.exe`，支持 Windows 10 / 11 x64。自包含 .NET 8 Windows Desktop Runtime。
+- 已安装旧版本的用户可在软件中检查更新。此前安装了 `3.0.0` 测试版的用户可手动下载安装包。
+- 用 PowerShell 执行 `Get-FileHash -LiteralPath '.\CloudLight-Blizzard-3.0.0-win-x64-Setup.exe' -Algorithm SHA256`，与 `SHA256SUMS.txt` 比对。构建清单记录发布提交和四个 Worker 的来源及摘要。
+- 第三方来源和许可证随安装包提供，详见 `THIRD_PARTY_NOTICES.md` 及 `THIRD_PARTY_LICENSES`。

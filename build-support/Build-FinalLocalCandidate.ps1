@@ -3,7 +3,8 @@ param(
     [string]$CandidateRoot = '',
     [string]$RecordRoot = '',
     [string]$AppRoot = '',
-    [string]$ValidationName = 'app'
+    [string]$ValidationName = 'app',
+    [ValidateSet('Local','Distribution')][string]$DropsBuildPurpose = 'Local'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -61,7 +62,7 @@ switch ($Stage) {
             if ((Get-FileHash -LiteralPath $destination).Hash.ToLowerInvariant() -ne $file.sha256) { throw 'Snapshot identity mismatch.' }
         }
         $env:MSBuildEnableWorkloadResolver = 'false'
-        & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained true -o $AppRoot "-p:BuildCommit=$baseCommit" "-p:BaseCommit=$baseCommit" '-p:WorkingTreeModified=false' "-p:SourceManifestSha256=$sourceHash" "-p:BuildTimestamp=$([DateTimeOffset]::Now.ToString('o'))" '-p:DropsBuildPurpose=Local' "-p:DropsArtifactsRoot=$(Join-Path $CandidateRoot 'workers')" *> (Join-Path $validation 'publish.log')
+        & dotnet publish 'CloudLight Blizzard.csproj' -c Release -r win-x64 --self-contained true -o $AppRoot "-p:BuildCommit=$baseCommit" "-p:BaseCommit=$baseCommit" '-p:WorkingTreeModified=false' "-p:SourceManifestSha256=$sourceHash" "-p:BuildTimestamp=$([DateTimeOffset]::Now.ToString('o'))" "-p:DropsBuildPurpose=$DropsBuildPurpose" "-p:DropsArtifactsRoot=$(Join-Path $CandidateRoot 'workers')" *> (Join-Path $validation 'publish.log')
         if ($LASTEXITCODE -ne 0) { throw 'Release publish failed.' }
         $noticeTarget = Join-Path $AppRoot 'THIRD_PARTY_LICENSES\Python'
         New-Item -ItemType Directory -Path $noticeTarget -Force | Out-Null

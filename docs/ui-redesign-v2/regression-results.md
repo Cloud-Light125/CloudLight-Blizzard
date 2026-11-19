@@ -16,7 +16,7 @@
 - Release 编译/发布成功，无编译警告或错误。实际候选启动、正常停止和退出已验；最终发布目录由 Build-UiV2InventoryCandidate.ps1 从提交重建，应用 BuildCommit、散列和各自验证记录见该目录 candidate.json / validation。
 - Worker 源码无改动，全部复用已验证二进制；Twitch 来源 25fc6bbb，SHA256 bc4816a3cc7edf4088236f9786af4822eb0dc8fde317e294c145e8c975313ac2。SOOP/Bilibili/YouTube 保留各自来源清单，不把主程序新提交写成旧 Worker 的构建提交。
 
-本地证据：test-output/real-twitch-20261116/checks/；full-layout-delivery/；density-final-source/；private-real-data/evidence/（包含私有 Session 的同级目录，禁止加入 Git）。可提交的精简证据：real-evidence-summary.json、density-results.txt 及两类分目录截图。
+本地证据：test-output/real-twitch-20261116/checks/；full-layout-delivery/；density-final-source/；private-real-data/evidence/（包含私有 Session 的同级目录，禁止加入 Git）。可提交的精简证据：real-evidence-summary.json、density-results.txt 及隔离界面截图。
 
 REAL E2E：认证、官方活动/背包、官方奖励图/封面、多 Benefit、官方分钟 0→33、重开后35→50、观看请求/频道、停止通过。真实领取、SOOP/Bilibili 真实登录、YouTube 真实播放和真实故障注入 NOT TESTED；100/150% 物理 DPI NOT TESTED。未运行长期内存压力测试。真实证据和边界见 real-twitch-e2e.md。
 
