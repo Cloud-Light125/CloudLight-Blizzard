@@ -189,6 +189,16 @@ public static class UiVisualTreeSelfTest
 
             var aboutPage = typeof(MainWindow).GetField("_aboutPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as AboutPage;
+            var licensesExpander = aboutPage is null ? null : FindNamed(aboutPage, "LicensesExpander") as Expander;
+            Assert(licensesExpander is { IsExpanded: false }, checks, "关于页许可证默认折叠，优先展示更新和反馈");
+            if (licensesExpander is not null)
+            {
+                // Collapsed content is deliberately not realized by WPF. Exercise
+                // the same expansion as the user before inspecting its visuals.
+                licensesExpander.IsExpanded = true;
+                window.UpdateLayout();
+                DrainDispatcher(window.Dispatcher);
+            }
             var componentsList = aboutPage is null ? null : FindNamed(aboutPage, "ThirdPartyComponentsList") as ItemsControl;
             Assert(componentsList is not null && componentsList.Items.Count >= 6,
                 checks, $"关于页第三方组件列表已实例化（实际 {componentsList?.Items.Count ?? 0} 项）");
@@ -201,6 +211,7 @@ public static class UiVisualTreeSelfTest
                    FindVisual(aboutPage, value => value is Button button && button.Content as string == "打开上游项目") is not null &&
                    FindVisual(aboutPage, value => value is Button button && button.Content as string == "打开第三方说明") is not null,
                 checks, "关于页第三方组件提供上游项目与第三方说明入口");
+            if (licensesExpander is not null) licensesExpander.IsExpanded = false;
 
             var snapshotsPage = typeof(MainWindow).GetField("_snapshotsPage", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(window) as SnapshotsPage;

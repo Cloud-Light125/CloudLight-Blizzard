@@ -37,6 +37,7 @@
 | Twitch ClaimCoordinator、领取保护及活动优先级 | 121 PASS |
 | Bilibili / YouTube / Shared | 21 / 8 / 5 PASS；Python 合计 237 |
 | WPF 完整组件、SOOP 状态矩阵、图片缓存/取消/延迟加载 | 206 PASS、0 FAIL；[组件报告](checks/ui-v2-selftest.txt) |
+| 完整 UI/Host 与真实 JSONL | 348 PASS、0 FAIL；默认折叠与实际展开后许可证内容/入口均检查；[报告](checks/ui-host-selftest.txt) |
 | 六项修复真实 WPF 专项矩阵 | 67 PASS、0 FAIL、0 Binding Error；[报告](checks/six-repairs-results.txt) |
 | FeatureSelfTest all | PASS；[报告](checks/all.txt) |
 | Battle.net 账号安全 | PASS，隔离数据；[报告](checks/account-safety.txt) |
@@ -78,6 +79,8 @@
 ## 保留的失败记录与边界
 
 早期检查曾因无外层溢出的折叠活动页而无法验证滚动位移，改为展开真实背包区、确认有外层溢出后验证原位移断言。更新面板隔离夹具最初缺少 `sha256:` 前缀，被既有摘要校验正确阻止，修正夹具后通过，未放宽校验。重复使用旧 UI 测试目录导致六项缓存请求计数断言失败；换全新隔离目录后 206/206 通过，未修改缓存业务或测试期望。
+
+额外解包 UI/Host 检查最初有两个许可证视觉查找失败：旧自检未展开默认折叠的 Expander。现增加“默认折叠”断言并实际展开后再执行原有组件文字及链接断言，最后恢复折叠；原完整性检查全部保留。真实窗口还发现保护提示漏把导航按钮加入布局，已修复并验证按钮可见、能安全导航且不删除活动快照。
 
 BLOCKED：公众再分发 SOOP Core 和站外品牌授权未确认。新安装候选仅 LOCAL-ONLY；不创建 3.0.0 Tag、GitHub Release，不上传受限 Core 或安装包。
 

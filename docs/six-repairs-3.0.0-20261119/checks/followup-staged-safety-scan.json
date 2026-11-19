@@ -1,0 +1,8 @@
+{
+  "scope": "exact staged added/modified files",
+  "files": 3,
+  "findings": [],
+  "resourceReview": "official SOOP original favicon, native DPI frames, source/SHA256/brand policy recorded; brand permission unconfirmed separately from Core; LOCAL-ONLY release only",
+  "restrictedCoreStaged": false,
+  "result": "PASS"
+}
