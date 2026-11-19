@@ -27,6 +27,29 @@ public sealed class SnapshotDescriptor
     public string RootPath { get; init; } = "";
 }
 
+public sealed record SnapshotCleanupPolicy(bool Enabled, int HistoryLimit)
+{
+    public static int NormalizeLimit(int value) => value is -1 or 0 or 1 or 2 or 3 or 5 ? value : 2;
+}
+
+public enum SnapshotCleanupDisposition { Protected, Retained, Delete }
+
+public sealed record SnapshotCleanupEntry(string GenerationId, long Bytes, SnapshotCleanupDisposition Disposition, string Reason)
+{
+    public string DisplayText => $"{GenerationId}  ·  {Reason}" +
+        (Bytes > 0 ? $"  ·  {UpdateDownloadService.FormatBytes(Bytes)}" : "");
+}
+
+public sealed record SnapshotCleanupPlan(string Root, int HistoryLimit, string? BlockedReason,
+    IReadOnlyList<SnapshotCleanupEntry> Entries)
+{
+    public IEnumerable<SnapshotCleanupEntry> ToDelete => Entries.Where(entry => entry.Disposition == SnapshotCleanupDisposition.Delete);
+    public int ProtectedCount => Entries.Count(entry => entry.Disposition == SnapshotCleanupDisposition.Protected);
+    public long ReclaimableBytes => ToDelete.Sum(entry => entry.Bytes);
+}
+
+public sealed record SnapshotCleanupResult(int Removed, long Bytes, IReadOnlyList<string> Failures);
+
 /// <summary>只负责读取和编排现有 OverwatchRegionManager；不在 UI 重复 hash/copy 算法。</summary>
 public sealed class SnapshotManagerService
 {
@@ -46,16 +69,16 @@ public sealed class SnapshotManagerService
 
     public IReadOnlyList<SnapshotDescriptor> List()
     {
+        using var operation = _store.BeginRegionOperation();
         var pointer = _store.LoadPointer();
         var result = new List<SnapshotDescriptor>();
         foreach (var id in _store.EnumerateGenerationIds())
         {
             var root = _store.GenerationRoot(id);
-            var backupRoot = Path.Combine(root, "backups");
-            var files = Directory.Exists(backupRoot)
-                ? OverwatchRegionBackupStore.EnumerateFilesWithoutReparse(backupRoot)
-                : Array.Empty<string>();
-            var totalBytes = files.Sum(path => new FileInfo(path).Length);
+            var backupPrefix = Path.Combine(root, "backups") + Path.DirectorySeparatorChar;
+            var storedFiles = OverwatchRegionBackupStore.EnumerateFilesWithoutReparse(root);
+            var files = storedFiles.Where(path => path.StartsWith(backupPrefix, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var totalBytes = storedFiles.Sum(path => new FileInfo(path).Length);
             var active = string.Equals(pointer?.GenerationId, id, StringComparison.OrdinalIgnoreCase);
             var generation = _store.LoadGeneration(id);
             if (generation is null)
@@ -67,7 +90,7 @@ public sealed class SnapshotManagerService
                     Mode = RegionBackupMode.FullSnapshot,
                     CreatedAtUtc = Directory.GetCreationTimeUtc(root),
                     LastUsedAtUtc = active ? pointer?.ActivatedAtUtc : (DateTime?)null,
-                    FileCount = files.Count,
+                    FileCount = files.Length,
                     TotalBytes = totalBytes,
                     State = hasPair ? SnapshotDisplayState.Corrupt : SnapshotDisplayState.Missing,
                     StateReason = hasPair ? "快照记录无法读取" : "快照记录文件缺失",
@@ -87,7 +110,7 @@ public sealed class SnapshotManagerService
                 TargetRegion = generation.TargetRegion,
                 CreatedAtUtc = generation.CreatedAtUtc,
                 LastUsedAtUtc = active ? pointer?.ActivatedAtUtc : (DateTime?)null,
-                FileCount = expectedFiles > 0 ? expectedFiles : files.Count,
+                FileCount = expectedFiles > 0 ? expectedFiles : files.Length,
                 TotalBytes = totalBytes,
                 State = display.State,
                 StateReason = display.Reason,
@@ -100,14 +123,125 @@ public sealed class SnapshotManagerService
 
     public bool Delete(string generationId)
     {
-        if (!OverwatchRegionBackupStore.IsSafeGenerationId(generationId))
-            throw new InvalidDataException("快照标识无效，已阻止删除。");
-        var pointer = _store.LoadPointer();
-        if (string.Equals(pointer?.GenerationId, generationId, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("当前使用的快照不能直接删除，请先通过区服准备流程解除引用。");
+        using var operation = _store.BeginRegionOperation();
         var deleted = _store.DeleteGeneration(generationId);
         WriteLog($"delete id={generationId} result={deleted}");
         return deleted;
+    }
+
+    public SnapshotCleanupPlan ScanCleanup(int historyLimit)
+    {
+        using var operation = _store.BeginRegionOperation();
+        return BuildCleanupPlan(historyLimit);
+    }
+
+    public SnapshotCleanupResult Clean(SnapshotCleanupPlan preview, int currentLimit)
+    {
+        using var operation = _store.BeginRegionOperation();
+        if (!string.Equals(preview.Root, _store.Root, StringComparison.OrdinalIgnoreCase) || preview.HistoryLimit != currentLimit)
+            throw new InvalidOperationException("快照目录或保留设置已变化，请重新扫描。");
+        var current = BuildCleanupPlan(currentLimit);
+        if (current.BlockedReason is { } blocked)
+            throw new InvalidOperationException(blocked);
+        if (!preview.ToDelete.SequenceEqual(current.ToDelete))
+            throw new InvalidOperationException("快照或保护状态已变化，请重新扫描并确认。");
+        return DeletePlanned(current, "手动清理");
+    }
+
+    // Called by the region manager while its preparation/switch guard is still held.
+    internal void PruneAfterActivation(int historyLimit)
+    {
+        var plan = BuildCleanupPlan(historyLimit);
+        if (plan.BlockedReason is { } blocked)
+            WriteLog($"自动清理已跳过 · {blocked}");
+        else
+            DeletePlanned(plan, "自动清理");
+    }
+
+    private SnapshotCleanupPlan BuildCleanupPlan(int historyLimit)
+    {
+        historyLimit = SnapshotCleanupPolicy.NormalizeLimit(historyLimit);
+        string? blocked = null;
+        IReadOnlyDictionary<string, string> protectedIds = new Dictionary<string, string>();
+        try
+        {
+            protectedIds = _store.GetSnapshotProtection();
+            if (_store.HasPendingSnapshotRecovery())
+                blocked = "检测到未完成的区服准备或恢复，暂不可清理。";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            blocked = ex.Message;
+        }
+
+        var entries = new List<SnapshotCleanupEntry>();
+        IReadOnlyList<string> directories;
+        try { directories = _store.ListCleanupDirectories(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return new SnapshotCleanupPlan(_store.Root, historyLimit, ex.Message, entries);
+        }
+
+        var eligible = new List<(string Id, long Bytes, DateTime Created)>();
+        foreach (var id in directories)
+        {
+            if (blocked is not null)
+            {
+                entries.Add(new(id, 0, SnapshotCleanupDisposition.Protected, blocked));
+                continue;
+            }
+            if (protectedIds.TryGetValue(id, out var reason))
+            {
+                entries.Add(new(id, 0, SnapshotCleanupDisposition.Protected, reason));
+                continue;
+            }
+            try
+            {
+                if (_store.LoadGeneration(id) is not { State: RegionBackupState.Ready or RegionBackupState.Stale } item)
+                {
+                    entries.Add(new(id, 0, SnapshotCleanupDisposition.Protected, "缺少可验证的已完成快照记录"));
+                    continue;
+                }
+                eligible.Add((id, _store.MeasureGeneration(id), item.CreatedAtUtc));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                entries.Add(new(id, 0, SnapshotCleanupDisposition.Protected, ex.Message));
+            }
+        }
+        var position = 0;
+        foreach (var item in eligible.OrderByDescending(item => item.Created).ThenByDescending(item => item.Id, StringComparer.Ordinal))
+        {
+            var retain = historyLimit < 0 || position++ < historyLimit;
+            entries.Add(new(item.Id, item.Bytes, retain ? SnapshotCleanupDisposition.Retained : SnapshotCleanupDisposition.Delete,
+                retain ? "按历史保留数量保留" : "将删除"));
+        }
+        return new(_store.Root, historyLimit, blocked, entries);
+    }
+
+    private SnapshotCleanupResult DeletePlanned(SnapshotCleanupPlan plan, string operation)
+    {
+        var failures = new List<string>();
+        var removed = 0;
+        long bytes = 0;
+        foreach (var item in plan.ToDelete)
+        {
+            try
+            {
+                if (!_store.DeleteGeneration(item.GenerationId))
+                    throw new IOException("快照目录已不存在");
+                removed++;
+                bytes += item.Bytes;
+            }
+            catch (Exception ex)
+            {
+                var failure = $"{item.GenerationId} · {ex.Message}";
+                failures.Add(failure);
+                WriteLog($"{operation}失败 · {failure}");
+            }
+        }
+        WriteLog($"{operation}完成 · 已删除 {removed} 份 · {bytes} 字节 · 失败 {failures.Count} 份");
+        return new(removed, bytes, failures);
     }
 
     private static SnapshotDisplayStatus ToDisplayState(OverwatchRegionGeneration generation,
@@ -128,7 +262,7 @@ public sealed class SnapshotManagerService
         return new(SnapshotDisplayState.Normal, "");
     }
 
-    private static void WriteLog(string message)
+    internal static void WriteLog(string message)
     {
         try
         {

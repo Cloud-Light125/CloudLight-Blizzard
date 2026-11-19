@@ -71,5 +71,126 @@ internal static class SnapshotDeletionSelfTest
         Check(blocked&&Directory.Exists(store.GenerationRoot("cancelled")),"unreadable active pointer fails closed");
         File.WriteAllBytes(store.ActiveGenerationFile,pointer);
         Check(File.ReadAllText(sentinel)=="must survive"&&Directory.Exists(store.GenerationRoot("active")),"game sentinel, active and unrelated snapshots preserved");
+        RunRetentionAsync(workspace, report).GetAwaiter().GetResult();
+    }
+
+    private static async Task RunRetentionAsync(string workspace, StringBuilder report)
+    {
+        void Check(bool condition, string label)
+        {
+            if (!condition) throw new InvalidOperationException(label);
+            report.AppendLine("PASS snapshot retention " + label);
+        }
+
+        var directory = Path.Combine(workspace, "snapshot-retention");
+        var game = Path.Combine(directory, "synthetic-game");
+        Directory.CreateDirectory(game);
+        var executable = Path.Combine(game, "Overwatch.exe");
+        var difference = Path.Combine(game, "fixture.bin");
+        File.WriteAllText(executable, "synthetic game executable");
+        var disabled = new SnapshotCleanupPolicy(false, 2);
+        var baseline = new OverwatchRegionManager(Path.Combine(directory, "baseline"), () => false, 0,
+            cleanupPolicy: () => disabled);
+        var policy = new SnapshotCleanupPolicy(true, 2);
+        var manager = new OverwatchRegionManager(Path.Combine(directory, "managed"), () => false, 0,
+            cleanupPolicy: () => policy);
+        var store = manager.BackupStore;
+        var service = new SnapshotManagerService(manager);
+
+        async Task<string> Generate(OverwatchRegionManager target)
+        {
+            File.WriteAllBytes(difference, Enumerable.Repeat((byte)0x43, 512 * 1024).ToArray());
+            await target.StartPreparationAsync(game, OverwatchRegion.China);
+            File.WriteAllBytes(difference, Enumerable.Repeat((byte)0x49, 512 * 1024).ToArray());
+            Check(await target.ContinuePreparationAsync(game) == RegionBackupState.Ready, "activated verified fixture");
+            return target.BackupStore.LoadPointer()!.GenerationId;
+        }
+        static long Bytes(OverwatchRegionBackupStore target) =>
+            OverwatchRegionBackupStore.EnumerateFilesWithoutReparse(target.GenerationsRoot).Sum(file => new FileInfo(file).Length);
+
+        var produced = new List<string>();
+        for (var index = 0; index < 6; index++)
+        {
+            await Generate(baseline);
+            produced.Add(await Generate(manager));
+        }
+        var baselineStore = baseline.BackupStore;
+        var beforeBytes = Bytes(baselineStore);
+        var afterBytes = Bytes(store);
+        Check(baselineStore.EnumerateGenerationIds().Count == 6 && store.EnumerateGenerationIds().Count == 4 &&
+              afterBytes < beforeBytes, $"six runs disabled=6/{beforeBytes} bytes; enabled=4/{afterBytes} bytes; reclaimed={beforeBytes - afterBytes} bytes");
+        Check(store.EnumerateGenerationIds().ToHashSet().SetEquals(produced.Skip(2)), "default keeps active, previous and two eligible history entries");
+
+        var stable = store.EnumerateGenerationIds().ToHashSet();
+        await manager.StartPreparationAsync(game, OverwatchRegion.China);
+        var waiting = service.ScanCleanup(0);
+        Check(waiting.BlockedReason?.Contains("未完成") == true && !waiting.ToDelete.Any(), "pending recovery protects all snapshots");
+        File.Delete(executable);
+        var failed = false;
+        try { await manager.ContinuePreparationAsync(game); }
+        catch (DirectoryNotFoundException) { failed = true; }
+        Check(failed && stable.SetEquals(store.EnumerateGenerationIds()), "failed preparation never prunes existing generations");
+        File.WriteAllText(executable, "synthetic game executable");
+        manager.CancelPreparation();
+
+        policy = new SnapshotCleanupPolicy(true, 0);
+        File.WriteAllText(store.ActiveGenerationFile, "{broken");
+        Check(service.ScanCleanup(0).BlockedReason?.Contains("指针") == true, "corrupt current pointer blocks cleanup before activation");
+        var active = await Generate(manager);
+        Check(store.EnumerateGenerationIds().Count == 5 && stable.All(id => store.EnumerateGenerationIds().Contains(id)),
+            "repairing a corrupt pointer by activation does not prune the uncertain history");
+
+        policy = new SnapshotCleanupPolicy(false, 0);
+        var previous = active;
+        active = await Generate(manager);
+        Check(store.EnumerateGenerationIds().Count == 6, "disabling automatic cleanup keeps all prior snapshots");
+        policy = new SnapshotCleanupPolicy(true, -1);
+        previous = active;
+        active = await Generate(manager);
+        Check(store.EnumerateGenerationIds().Count == 7 && !service.ScanCleanup(-1).ToDelete.Any(), "unlimited policy leaves every generation and plans no removals");
+
+        var pointer = store.LoadPointer()!;
+        pointer.LastSuccessfulGenerationId = produced[^1];
+        OverwatchRegionBackupStore.WriteJson(store.ActiveGenerationFile, pointer);
+        var preview = service.ScanCleanup(0);
+        Check(preview.ProtectedCount == 3 && preview.ToDelete.Count() == 4 &&
+              !preview.ToDelete.Any(item => item.GenerationId == active || item.GenerationId == previous ||
+                                            item.GenerationId == pointer.LastSuccessfulGenerationId),
+            "active, previous and separate last-success pointer are protected outside the quota");
+        using (manager.BackupStore.BeginRegionOperation())
+        {
+            var busy = false;
+            try { service.Clean(preview, 0); }
+            catch (InvalidOperationException) { busy = true; }
+            Check(busy, "cleanup refuses a concurrent preparation or switch lease");
+        }
+
+        var savedPrevious = pointer.PreviousGenerationId;
+        pointer.PreviousGenerationId = preview.ToDelete.First().GenerationId;
+        OverwatchRegionBackupStore.WriteJson(store.ActiveGenerationFile, pointer);
+        var stale = false;
+        try { service.Clean(preview, 0); }
+        catch (InvalidOperationException) { stale = true; }
+        Check(stale && store.EnumerateGenerationIds().Count == 7, "confirmation cannot delete when protection changed after scanning");
+        pointer.PreviousGenerationId = savedPrevious;
+        OverwatchRegionBackupStore.WriteJson(store.ActiveGenerationFile, pointer);
+
+        var beforeManual = Bytes(store);
+        var removed = service.Clean(preview, 0);
+        Check(removed.Removed == 4 && removed.Failures.Count == 0 && removed.Bytes == preview.ReclaimableBytes &&
+              beforeManual - Bytes(store) == preview.ReclaimableBytes &&
+              preview.ToDelete.All(item => !Directory.Exists(store.GenerationRoot(item.GenerationId))),
+            $"manual preview matches four actual removals and {removed.Bytes} bytes reclaimed");
+
+        var reopened = new OverwatchRegionManager(store.Root, () => false, 0, cleanupPolicy: () => policy);
+        var switched = await reopened.SwitchGameRegionAsync(game, OverwatchRegion.China);
+        Check(switched.Verified && File.ReadAllBytes(difference)[0] == 0x43 && reopened.HasActiveGeneration,
+            "reopened store switches the synthetic game using the remaining verified snapshot");
+        policy = new SnapshotCleanupPolicy(true, 1);
+        var expectedPrevious = reopened.BackupStore.LoadPointer()!.GenerationId;
+        var newActive = await Generate(reopened);
+        var updated = reopened.BackupStore.EnumerateGenerationIds();
+        Check(updated.Count == 3 && updated.Contains(newActive) && updated.Contains(expectedPrevious),
+            "changed retention becomes active on the next successful preparation");
     }
 }

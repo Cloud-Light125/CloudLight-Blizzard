@@ -17,7 +17,9 @@ internal static class AccountCommandRunner
             var reader = new AccountReader(paths);
             var controller = new BattleNetController(paths);
             var profiles = new AppDataStore(paths);
-            var regions = new OverwatchRegionManager(settings.RegionStoragePath);
+            var regions = new OverwatchRegionManager(settings.RegionStoragePath,
+                cleanupPolicy: () => new SnapshotCleanupPolicy(settings.RegionSnapshotAutoCleanup,
+                    SnapshotCleanupPolicy.NormalizeLimit(settings.RegionSnapshotHistoryLimit)));
             var log = new AccountSwitchLog();
             var service = AccountOperationService.Create(paths, settings, profiles, controller, reader, () => regions, log);
             var probe = new BattleNetAuthLogProbe(paths);

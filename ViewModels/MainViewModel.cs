@@ -378,7 +378,9 @@ public sealed class MainViewModel : ObservableObject
         _reader = new AccountReader(_paths);
         _profiles = new AppDataStore(_paths);
         _controller = new BattleNetController(_paths);
-        _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
+        _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath,
+            cleanupPolicy: () => new SnapshotCleanupPolicy(_settings.RegionSnapshotAutoCleanup,
+                SnapshotCleanupPolicy.NormalizeLimit(_settings.RegionSnapshotHistoryLimit)));
         _switchLog = new AccountSwitchLog();
         _authLogProbe = new BattleNetAuthLogProbe(_paths);
         _accountOperations = AccountOperationService.Create(_paths, _settings, _profiles, _controller,
@@ -1563,7 +1565,9 @@ public sealed class MainViewModel : ObservableObject
         if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
         _settings.RegionStoragePath = Path.GetFullPath(dialog.SelectedPath);
         _settings.Save();
-        _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath);
+        _regionManager = new OverwatchRegionManager(_settings.RegionStoragePath,
+            cleanupPolicy: () => new SnapshotCleanupPolicy(_settings.RegionSnapshotAutoCleanup,
+                SnapshotCleanupPolicy.NormalizeLimit(_settings.RegionSnapshotHistoryLimit)));
         _regionOperationError = "";
         _regionOperationNotice = "";
         StatusText = "已设置区服备份位置：" + _settings.RegionStoragePath;

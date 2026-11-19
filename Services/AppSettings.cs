@@ -59,6 +59,8 @@ public sealed class AppSettings
     public List<long> ExpiredAccountIds { get; set; } = new();
     public string? OverwatchGamePath { get; set; }
     public string? RegionStoragePath { get; set; }
+    public bool RegionSnapshotAutoCleanup { get; set; } = true;
+    public int RegionSnapshotHistoryLimit { get; set; } = 2;
     public RegionBackupMode RegionBackupMode { get; set; } = RegionBackupMode.VerifiedDifference;
     public bool MigrationCompleted { get; set; }
     public string? SkippedUpdateVersion { get; set; }

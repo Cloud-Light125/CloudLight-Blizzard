@@ -108,9 +108,38 @@
                         <ctrl:PlatformIcon Platform="Overwatch" Width="50" Height="50" Margin="0,0,18,0" />
                         <StackPanel>
                             <TextBlock Text="{Binding SnapshotCount,StringFormat=区服快照 · {0} 个}" FontSize="24" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SnapshotBytesText}" Foreground="{DynamicResource Text.Secondary}" Margin="0,4,0,0" />
                             <TextBlock Text="{Binding StatusText}" FontSize="14" TextWrapping="Wrap" Margin="0,10,0,0" />
                         </StackPanel>
                     </DockPanel>
+                </Border>
+                <Border x:Name="SnapshotCleanupCard" Style="{DynamicResource HeroCard}" Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="自动清理设置" Style="{DynamicResource SectionTitle}" />
+                        <WrapPanel Margin="0,10,0,6" IsEnabled="{Binding CanScan}">
+                            <ToggleButton x:Name="AutoCleanupSwitch" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AutoCleanup,Mode=TwoWay}"
+                                          AutomationProperties.Name="自动清理旧快照" VerticalAlignment="Center" />
+                            <TextBlock Text="自动清理旧快照" VerticalAlignment="Center" Margin="8,0,22,0" />
+                            <TextBlock Text="历史快照保留数量" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="SnapshotHistoryLimitPicker" Width="106" ItemsSource="{Binding RetentionOptions}" DisplayMemberPath="Label"
+                                      SelectedValuePath="Count" SelectedValue="{Binding HistoryLimit,Mode=TwoWay}" Style="{DynamicResource ThemeComboBox}"
+                                      AutomationProperties.Name="历史快照保留数量" />
+                        </WrapPanel>
+                        <TextBlock Text="当前使用、上一代及恢复依赖的快照始终保留。选择“不限制”将保留所有历史快照。"
+                                   Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" />
+                        <WrapPanel Margin="0,12,0,0">
+                            <Button Content="扫描旧快照" Style="{StaticResource SecondaryButton}" Click="OnScanCleanup" IsEnabled="{Binding CanScan}" Margin="0,0,8,0" />
+                            <Button Content="立即清理" Style="{StaticResource SecondaryButton}" Click="OnCleanSnapshots" IsEnabled="{Binding CanClean}" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding CleanupSummary}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        <ItemsControl ItemsSource="{Binding CleanupEntries}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayText}" Foreground="{DynamicResource Text.Secondary}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </Border>
                 <Grid x:Name="SnapshotWorkspace" Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
                     <Grid.Style>

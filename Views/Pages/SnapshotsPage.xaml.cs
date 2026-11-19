@@ -20,6 +20,19 @@ public partial class SnapshotsPage : UserControl
     private void OnCloseDetails(object sender, RoutedEventArgs e) => _vm?.ClearDetails();
     private void OnOpenRegion(object sender, RoutedEventArgs e) => (Window.GetWindow(this) as MainWindow)?.OpenRegion();
 
+    private async void OnScanCleanup(object sender, RoutedEventArgs e)
+    {
+        if (_vm is not null) await _vm.ScanCleanupAsync();
+    }
+
+    private async void OnCleanSnapshots(object sender, RoutedEventArgs e)
+    {
+        if (_vm is not { CanClean: true } vm) return;
+        if (MessageBox.Show(Window.GetWindow(this), "确定删除以下历史快照？\n\n" + vm.CleanupConfirmation,
+            "清理区服快照", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes)
+            await vm.CleanSnapshotsAsync();
+    }
+
     private void OnSnapshotAction(object sender, RoutedEventArgs e)
     {
         if (_vm is null || sender is not Button { DataContext: SnapshotItemViewModel item, Tag: string action }) return;

@@ -23,6 +23,53 @@ namespace CloudLightBlizzard.Services;
 
 internal sealed partial class UiRedesignReview
 {
+    private async Task RunSnapshotCleanupReviewAsync()
+    {
+        try
+        {
+            var store = _main.RegionManager.BackupStore;
+            for (var i = 1; i <= 7; i++)
+            {
+                var id = $"snapshot-fixture-{i:00}";
+                store.SaveGeneration(new OverwatchRegionGeneration
+                {
+                    GenerationId = id, State = RegionBackupState.Ready, BackupMode = RegionBackupMode.VerifiedDifference,
+                    SourceRegion = GameRegion.China, TargetRegion = GameRegion.International,
+                    CreatedAtUtc = DateTime.UtcNow.AddDays(i - 7),
+                });
+                var files = store.BackupRoot(id, GameRegion.China);
+                Directory.CreateDirectory(files);
+                await File.WriteAllBytesAsync(Path.Combine(files, "fixture.bin"), new byte[2 * 1024 * 1024]);
+                if (i >= 6) store.Activate(id, GameRegion.China);
+            }
+            _window.NavigateTo("snapshots");
+            var page = Field<SnapshotsPage>(_window, "_snapshotsPage");
+            var model = (SnapshotsViewModel)page.DataContext;
+            await page.RefreshAsync();
+            await model.ScanCleanupAsync();
+            await Settle();
+            Check(model.AutoCleanup && model.HistoryLimit == 2 && model.RetentionOptions.Count == 6, "defaults and all six retention values");
+            Check(model.SnapshotCount == 7 && model.CanClean && model.CleanupSummary.Contains("可清理 3 份"), "scan shows three actionable snapshots out of seven");
+            var picker = (ComboBox)page.FindName("SnapshotHistoryLimitPicker");
+            Check(picker.SelectedItem?.ToString() == "2 份", "selected retention displays its localized label");
+            foreach (var dark in new[] { false, true })
+            {
+                ThemeManager.Apply(dark);
+                await Settle();
+                Capture(Path.Combine(_output, dark ? "snapshot-cleanup-dark.png" : "snapshot-cleanup-light.png"));
+            }
+            await model.CleanSnapshotsAsync();
+            Check(model.SnapshotCount == 4 && model.StatusText.Contains("已删除 3 份"), "manual action deletes and refreshes list on disk in isolation");
+        }
+        catch (Exception ex) { _checks.Add("FAIL " + ex); }
+        finally
+        {
+            _checks.Add("binding-errors=" + _bindings.Errors.Count);
+            await File.WriteAllLinesAsync(Path.Combine(_output, "snapshot-cleanup-results.txt"), _checks.Concat(_bindings.Errors));
+            _window.Close();
+        }
+    }
+
     private async Task RunSixRepairsAsync()
     {
         var shots=Path.Combine(_output,"screenshots");Directory.CreateDirectory(shots);

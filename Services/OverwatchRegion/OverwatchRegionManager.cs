@@ -10,6 +10,7 @@ public sealed class OverwatchRegionManager
     private readonly OverwatchRegionScanner _scanner = new();
     private readonly OverwatchRegionBackupStore _store;
     private readonly Func<bool> _isGameRunning;
+    private readonly Func<SnapshotCleanupPolicy> _cleanupPolicy;
     private readonly Func<string, bool> _isProcessRunning;
     private readonly int _quiescenceMilliseconds;
 
@@ -18,12 +19,14 @@ public sealed class OverwatchRegionManager
     public bool HasActiveGeneration => _store.LoadActive() is not null;
 
     public OverwatchRegionManager(string? storageRoot = null, Func<bool>? gameRunning = null,
-        int quiescenceMilliseconds = 6000, Func<string, bool>? processRunning = null)
+        int quiescenceMilliseconds = 6000, Func<string, bool>? processRunning = null,
+        Func<SnapshotCleanupPolicy>? cleanupPolicy = null)
     {
         _store = new OverwatchRegionBackupStore(storageRoot);
         _isGameRunning = gameRunning ?? IsGameRunning;
         _isProcessRunning = processRunning ?? IsProcessRunning;
         _quiescenceMilliseconds = quiescenceMilliseconds;
+        _cleanupPolicy = cleanupPolicy ?? (() => new SnapshotCleanupPolicy(true, 2));
     }
 
     public static bool IsValidGameRoot(string? root) => !string.IsNullOrWhiteSpace(root) && Directory.Exists(root) &&
@@ -72,6 +75,7 @@ public sealed class OverwatchRegionManager
         RegionBackupMode backupMode = RegionBackupMode.FullSnapshot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         if (backupMode == RegionBackupMode.VerifiedDifference)
             return await StartVerifiedDifferenceAsync(gameRoot, sourceRegion, progress, cancellationToken);
         EnsureGameReady(gameRoot);
@@ -118,6 +122,7 @@ public sealed class OverwatchRegionManager
     public async Task<RegionBackupState> ContinuePreparationAsync(string gameRoot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var pending = _store.LoadPending() ?? throw new InvalidOperationException("当前没有等待继续的区服文件准备任务。");
         if (pending.BackupMode == RegionBackupMode.VerifiedDifference)
@@ -167,8 +172,10 @@ public sealed class OverwatchRegionManager
             _store.SaveGeneration(generation);
             WriteDiagnostic(generation, china, international);
             // The second captured region is still the live on-disk region when this generation becomes active.
-            _store.Activate(generation.GenerationId, pending.TargetRegion);
-            _store.DeleteStaging(generation.GenerationId);
+            var validation = await ValidateGenerationBackupsAsync(generation, null, true, cancellationToken);
+            if (!validation.Available) throw new InvalidDataException(validation.Reason);
+            await CommitGenerationAsync(generation.GenerationId, pending.TargetRegion, true, cancellationToken,
+                () => _store.DeleteStaging(generation.GenerationId));
             return RegionBackupState.Ready;
         }
         catch (OperationCanceledException)
@@ -190,6 +197,7 @@ public sealed class OverwatchRegionManager
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default,
         SwitchPlan? suppliedPlan = null)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var active = _store.LoadActive() ?? throw new InvalidOperationException(
             _store.HasLegacyData ? "区服文件功能已经升级，需要重新准备一次本地文件。" : "尚未准备国服和国际服文件。");
@@ -828,10 +836,15 @@ public sealed class OverwatchRegionManager
         };
     }
 
-    public void Reset() => _store.Clear();
+    public void Reset()
+    {
+        using var operation = _store.BeginRegionOperation();
+        _store.Clear();
+    }
 
     public void CancelPreparation()
     {
+        using var operation = _store.BeginRegionOperation();
         var pending = _store.LoadPending();
         if (pending is null) return;
         if (pending.BackupMode == RegionBackupMode.VerifiedDifference) _store.DeletePreparation();
@@ -1791,8 +1804,7 @@ public sealed class OverwatchRegionManager
             }
             if (!validation.Available) throw new InvalidDataException(validation.Reason);
             WriteDiagnostic(generation, china, international);
-            _store.Activate(generation.GenerationId, pending.SourceRegion);
-            _store.DeletePreparation();
+            await CommitGenerationAsync(generation.GenerationId, pending.SourceRegion, true, cancellationToken, _store.DeletePreparation);
             progress?.Report(new RegionProgress(
                 $"已确认 {generation.VerificationSummary.VerifiedCount:N0} 个区服差异文件，" +
                 $"自动忽略 {generation.VerificationSummary.RejectedCount:N0} 个非稳定变化，" +
@@ -1819,6 +1831,7 @@ public sealed class OverwatchRegionManager
     public async Task<RegionBackupState> RedoVerifiedStep2Async(string gameRoot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var pending = _store.LoadPending() ?? throw new InvalidOperationException("当前没有智能差异备份准备任务。");
         if (pending.BackupMode != RegionBackupMode.VerifiedDifference)
@@ -1830,6 +1843,7 @@ public sealed class OverwatchRegionManager
     public async Task<RegionBackupState> RedoVerifiedStep1Async(string gameRoot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var pending = _store.LoadPending() ?? throw new InvalidOperationException("当前没有智能差异备份准备任务。");
         if (pending.BackupMode != RegionBackupMode.VerifiedDifference)
@@ -1869,6 +1883,7 @@ public sealed class OverwatchRegionManager
     public async Task<Step4VerificationResult> VerifyFourthStepAsync(string gameRoot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的智能差异备份。");
         var original = active.Generation;
@@ -1978,7 +1993,7 @@ public sealed class OverwatchRegionManager
             var validation = await ValidateGenerationBackupsAsync(generation, null, true, cancellationToken,
                 allowPerFileIssues: true);
             if (!validation.Available) throw new InvalidDataException(validation.Reason);
-            _store.Activate(generationId, original.TargetRegion);
+            await CommitGenerationAsync(generationId, original.TargetRegion, validation.Issues is not { Count: > 0 }, cancellationToken);
             RegionSwitchLog.Write("VerifiedDifferenceStep4Ready", current: ToCurrent(original.TargetRegion),
                 generationId: generationId,
                 detail: $"Previous={original.GenerationId}; DoubleVerified={generation.Step4Summary.DoubleVerifiedCount}; " +
@@ -2124,6 +2139,7 @@ public sealed class OverwatchRegionManager
         RegionFileCheckResult checkedResult, IProgress<RegionProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的区服文件。");
         var generation = active.Generation;
         var currentReference = LoadReferenceManifest(generation, checkedResult.Region, out var currentComplete);
@@ -2180,6 +2196,7 @@ public sealed class OverwatchRegionManager
     public async Task<RegionResetResult> ResetCurrentRegionStateAsync(string gameRoot,
         IProgress<RegionProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var operation = _store.BeginRegionOperation();
         EnsureGameReady(gameRoot);
         var active = _store.LoadActive() ?? throw new InvalidOperationException("尚未准备可用的区服文件。");
         var original = active.Generation;
@@ -2305,10 +2322,10 @@ public sealed class OverwatchRegionManager
             _store.SaveGenerationManifest(generationId, international);
             _store.SaveGenerationReferenceManifest(generationId, scan.Manifest);
             _store.SaveGeneration(generation);
-            var validation = await ValidateGenerationBackupsAsync(generation, Other(current), true,
+            var validation = await ValidateGenerationBackupsAsync(generation, null, true,
                 cancellationToken, allowPerFileIssues: true);
             if (!validation.Available) throw new InvalidDataException(validation.Reason);
-            _store.Activate(generationId, current);
+            await CommitGenerationAsync(generationId, current, validation.Issues is not { Count: > 0 }, cancellationToken);
             return new RegionResetResult(generationId, current, updated, degraded, potential, warnings);
         }
         catch
@@ -2316,6 +2333,38 @@ public sealed class OverwatchRegionManager
             if (_store.LoadPointer()?.GenerationId != generationId)
                 try { if (Directory.Exists(generationRoot)) Directory.Delete(generationRoot, true); } catch { }
             throw;
+        }
+    }
+
+    private async Task CommitGenerationAsync(string generationId, OverwatchRegion region, bool fullyVerified,
+        CancellationToken cancellationToken, Action? finishPreparation = null)
+    {
+        var policy = _cleanupPolicy();
+        var shouldPrune = policy.Enabled && policy.HistoryLimit >= 0 && fullyVerified;
+        if (shouldPrune)
+        {
+            try { _store.GetSnapshotProtection(generationId); }
+            catch (Exception ex)
+            {
+                shouldPrune = false;
+                SnapshotManagerService.WriteLog($"自动清理已跳过 · 旧指针无法验证 · {ex.Message}");
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        _store.Activate(generationId, region);
+        finishPreparation?.Invoke();
+        if (!shouldPrune || cancellationToken.IsCancellationRequested) return;
+        try
+        {
+            var pointer = _store.LoadPointer();
+            if (pointer?.GenerationId != generationId || pointer.LastSuccessfulGenerationId != generationId)
+                throw new InvalidDataException("新快照的激活或恢复指针未写入成功。");
+            await Task.Run(() => new SnapshotManagerService(this).PruneAfterActivation(policy.HistoryLimit));
+        }
+        catch (Exception ex)
+        {
+            SnapshotManagerService.WriteLog($"自动清理失效 · {ex.Message}");
         }
     }
 

@@ -9,6 +9,20 @@ public sealed class OverwatchRegionBackupStore
     // Shared across store instances that refer to the same managed root.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> MutationGates = new(StringComparer.OrdinalIgnoreCase);
     private object MutationGate => MutationGates.GetOrAdd(Root, _ => new object());
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> RegionOperations = new(StringComparer.OrdinalIgnoreCase);
+
+    internal IDisposable BeginRegionOperation()
+    {
+        var gate = RegionOperations.GetOrAdd(Root, _ => new SemaphoreSlim(1, 1));
+        if (!gate.Wait(0))
+            throw new InvalidOperationException("正在准备、切换或清理区服文件，请等待当前操作完成。");
+        return new RegionOperation(gate);
+    }
+
+    private sealed class RegionOperation(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
+    }
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -31,7 +45,7 @@ public sealed class OverwatchRegionBackupStore
 
     public OverwatchRegionBackupStore(string? root = null)
     {
-        Root = Path.GetFullPath(root ?? AppPaths.Current.DefaultRegionStorageDir);
+        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root ?? AppPaths.Current.DefaultRegionStorageDir));
         Directory.CreateDirectory(GenerationsRoot);
         Directory.CreateDirectory(StagingRoot);
         Directory.CreateDirectory(PreparationRoot);
@@ -48,10 +62,10 @@ public sealed class OverwatchRegionBackupStore
             ? "china-reference-manifest.json" : "international-reference-manifest.json");
     public string GenerationFile(string id) => Path.Combine(GenerationRoot(id), "pair.json");
 
-    public IReadOnlyList<string> EnumerateGenerationIds() =>
+    public IReadOnlyList<string> EnumerateGenerationIds(bool includeReparsePoints = false) =>
         Directory.Exists(GenerationsRoot)
             ? Directory.EnumerateDirectories(GenerationsRoot)
-                .Where(path => !IsReparsePoint(path))
+                .Where(path => includeReparsePoints || !IsReparsePoint(path))
                 .Select(Path.GetFileName)
                 .Where(id => !string.IsNullOrWhiteSpace(id) && IsSafeGenerationId(id!))
                 .Cast<string>().ToList()
@@ -65,12 +79,12 @@ public sealed class OverwatchRegionBackupStore
             // Validate the managed root as well as its descendants before any recursive delete.
             EnsureNoReparsePointsAlongPath(Path.GetPathRoot(Root)!, GenerationsRoot);
             var path = GenerationRoot(id);
-            var pointer = LoadPointer();
-            if (File.Exists(ActiveGenerationFile) && pointer is null)
-                throw new InvalidDataException("当前快照引用无法读取，无法安全确认删除范围。请先检查区服准备状态。");
-            if (string.Equals(pointer?.GenerationId, id, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("当前使用的快照不能直接删除，请先通过区服准备流程解除引用。");
             if (!Directory.Exists(path)) return false;
+            if (HasPendingSnapshotRecovery())
+                throw new InvalidOperationException("检测到未完成的区服准备或恢复，暂不可清理。");
+            var protectedIds = GetSnapshotProtection();
+            if (protectedIds.TryGetValue(id, out var reason))
+                throw new InvalidOperationException($"{reason}，不能直接删除。");
             EnsureNoReparsePointsInTree(path);
             if (LoadGeneration(id) is null)
                 throw new InvalidOperationException("指定目录不是 CloudLight Blizzard 管理的区服快照。");
@@ -79,6 +93,42 @@ public sealed class OverwatchRegionBackupStore
             return true;
         }
     }
+
+    internal IReadOnlyDictionary<string, string> GetSnapshotProtection(string? newlyCreatedId = null)
+    {
+        EnsureNoReparsePointsAlongPath(Path.GetPathRoot(Root)!, GenerationsRoot);
+        EnsureNoReparsePointsAlongPath(Path.GetPathRoot(Root)!, ActiveGenerationFile);
+        var protectedIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(ActiveGenerationFile) &&
+            EnumerateGenerationIds(includeReparsePoints: true).All(id => id == newlyCreatedId))
+            return protectedIds;
+
+        var pointer = LoadPointer();
+        if (pointer is null || !IsSafeGenerationId(pointer.GenerationId) ||
+            (pointer.PreviousGenerationId is not null && !IsSafeGenerationId(pointer.PreviousGenerationId)) ||
+            (pointer.LastSuccessfulGenerationId is not null && !IsSafeGenerationId(pointer.LastSuccessfulGenerationId)) ||
+            LoadGeneration(pointer.GenerationId) is not { State: RegionBackupState.Ready or RegionBackupState.Stale })
+            throw new InvalidDataException("当前快照指针缺失、损坏或指向不可用快照，无法安全清理。");
+
+        protectedIds.Add(pointer.GenerationId, "当前使用的快照");
+        if (pointer.PreviousGenerationId is { } previous)
+            protectedIds.TryAdd(previous, "上一代快照，保留用于回滚");
+        if (pointer.LastSuccessfulGenerationId is { } successful)
+            protectedIds.TryAdd(successful, "最近成功快照，保留用于恢复");
+        return protectedIds;
+    }
+
+    internal bool HasPendingSnapshotRecovery() =>
+        Directory.Exists(PreparationCurrentRoot) || Directory.Exists(PreparationPreviousRoot) ||
+        Directory.Exists(StagingRoot) && Directory.EnumerateFileSystemEntries(StagingRoot).Any();
+
+    internal IReadOnlyList<string> ListCleanupDirectories()
+    {
+        EnsureNoReparsePointsAlongPath(Path.GetPathRoot(Root)!, GenerationsRoot);
+        return EnumerateGenerationIds(includeReparsePoints: true);
+    }
+
+    internal long MeasureGeneration(string id) => EnsureNoReparsePointsInTree(GenerationRoot(id));
 
     public static bool IsSafeGenerationId(string? id) =>
         !string.IsNullOrWhiteSpace(id) && id.Length <= 80 &&
@@ -130,7 +180,7 @@ public sealed class OverwatchRegionBackupStore
     public OverwatchRegionGeneration? LoadGeneration(string id)
     {
         var value = ReadJson<OverwatchRegionGeneration>(GenerationFile(id));
-        return value?.SchemaVersion == 2 ? value : null;
+        return value?.SchemaVersion == 2 && string.Equals(value.GenerationId, id, StringComparison.OrdinalIgnoreCase) ? value : null;
     }
     public OverwatchRegionManifest? LoadGenerationManifest(string id, OverwatchRegion region)
     {
@@ -161,7 +211,7 @@ public sealed class OverwatchRegionBackupStore
             WriteJson(ActiveGenerationFile, new ActiveGenerationPointer
             {
                 GenerationId = generationId,
-                PreviousGenerationId = previous == generationId ? null : previous,
+                PreviousGenerationId = IsSafeGenerationId(previous) && previous != generationId ? previous : null,
                 LastSuccessfulRegion = currentRegion,
                 LastSuccessfulGenerationId = generationId,
             });
@@ -177,13 +227,16 @@ public sealed class OverwatchRegionBackupStore
 
     public bool SaveLastSuccessfulRegion(string generationId, OverwatchRegion region)
     {
-        var pointer = LoadPointer();
-        if (pointer is null || !string.Equals(pointer.GenerationId, generationId, StringComparison.OrdinalIgnoreCase))
-            return false;
-        pointer.LastSuccessfulRegion = region;
-        pointer.LastSuccessfulGenerationId = generationId;
-        WriteJson(ActiveGenerationFile, pointer);
-        return true;
+        lock (MutationGate)
+        {
+            var pointer = LoadPointer();
+            if (pointer is null || !string.Equals(pointer.GenerationId, generationId, StringComparison.OrdinalIgnoreCase))
+                return false;
+            pointer.LastSuccessfulRegion = region;
+            pointer.LastSuccessfulGenerationId = generationId;
+            WriteJson(ActiveGenerationFile, pointer);
+            return true;
+        }
     }
 
     public void DeleteStaging(string id)
@@ -348,10 +401,11 @@ public sealed class OverwatchRegionBackupStore
         path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path : path + Path.DirectorySeparatorChar;
 
-    private static void EnsureNoReparsePointsInTree(string root)
+    private static long EnsureNoReparsePointsInTree(string root)
     {
         if (IsReparsePoint(root))
             throw new InvalidDataException("区服快照目录不能是符号链接或 Junction。");
+        var bytes = 0L;
         var pending = new Stack<DirectoryInfo>();
         pending.Push(new DirectoryInfo(root));
         while (pending.Count > 0)
@@ -362,8 +416,10 @@ public sealed class OverwatchRegionBackupStore
                 if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint))
                     throw new InvalidDataException("区服快照包含符号链接或 Junction，已拒绝删除。");
                 if (entry is DirectoryInfo child) pending.Push(child);
+                else if (entry is FileInfo file) bytes += file.Length;
             }
         }
+        return bytes;
     }
 
     public static T? ReadJson<T>(string path)

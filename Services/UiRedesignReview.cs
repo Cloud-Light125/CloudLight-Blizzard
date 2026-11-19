@@ -143,7 +143,8 @@ internal sealed partial class UiRedesignReview
             _scenarios.SelectedIndex = Math.Clamp(initialScenario, 0, Scenarios.Length-1);
             if (_automated)
             {
-                if(File.Exists(Path.Combine(_output,"six-repairs-test.flag")))await RunSixRepairsAsync();
+                if(File.Exists(Path.Combine(_output,"snapshot-cleanup-test.flag")))await RunSnapshotCleanupReviewAsync();
+                else if(File.Exists(Path.Combine(_output,"six-repairs-test.flag")))await RunSixRepairsAsync();
                 else if(File.Exists(Path.Combine(_output,"priority-state-test.flag")))await RunPriorityStateAsync();
                 else if(File.Exists(Path.Combine(_output,"density-test.flag")))await RunDensityAsync();
                 else await RunMatrixAsync();
