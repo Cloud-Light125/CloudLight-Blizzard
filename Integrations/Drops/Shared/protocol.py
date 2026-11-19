@@ -342,8 +342,9 @@ class WorkerBase:
             result["core"] = {"commit": expected["commit"], "dirty": expected["dirty"],
                               "sha256": actual["sha256"], "expectedSha256": expected["sha256"],
                               "matches": actual["sha256"] == expected["sha256"],
-                              "capabilities": expected["capabilities"], "capabilityVersion": expected["capabilityVersion"],
-                              "redistributionAuthorized": expected["redistributionAuthorized"]}
+                              "capabilities": expected["capabilities"], "capabilityVersion": expected["capabilityVersion"]}
+            if "redistributionAuthorized" in expected:
+                result["core"]["redistributionAuthorized"] = expected["redistributionAuthorized"]
         return result
 
     def status(self, status: str, summary: str = "") -> None:
