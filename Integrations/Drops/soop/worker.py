@@ -35,7 +35,7 @@ from Shared.protocol import (
     run_worker,
 )
 from credentials import read_credentials, write_credentials
-from scheduling import QUEUE_DEFAULTS, decorate as decorate_campaign, validate as validate_queue, metadata as campaign_metadata, matches as campaign_matches
+from scheduling import LIVE_QUEUE_SETTINGS, QUEUE_DEFAULTS, decorate as decorate_campaign, validate as validate_queue, metadata as campaign_metadata, matches as campaign_matches
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -384,6 +384,7 @@ class SoopWorker(WorkerBase):
         self.game_catalog = GameCatalog(self.data_dir / 'game-catalog.json')
         self._states: dict[str, Any] = {}
         self._queue_targets: dict[str, dict[str, Any]] = {}
+        self._queue_diagnostics: dict[str, dict[str, Any]] = {}
         self._state_changed = threading.Condition()
         self._progress_lock = threading.RLock()
         self._progress_observations: dict[tuple[str, str, str, str, int], _ProgressObservation] = {}
@@ -1590,6 +1591,7 @@ class SoopWorker(WorkerBase):
     def _state_callback(self, state: Any) -> None:
         if not state.running:
             self._queue_targets.pop(str(state.uid), None)
+            self._queue_diagnostics.pop(str(state.uid), None)
         self._observe_state_progress(state)
         with self._state_changed:
             self._states[state.uid] = state
@@ -1807,6 +1809,7 @@ class SoopWorker(WorkerBase):
             "bridgeLastActivitySeconds": getattr(state, "bridge_last_activity_seconds", None),
             "settings": self._effective_settings(),
             "queueTarget": dict(self._queue_targets.get(str(state.uid), {})) if state.running and self._queue_targets.get(str(state.uid), {}).get("channelId") == state.channel_id else {},
+            "queueDiagnostics": self._queue_diagnostics.get(str(state.uid), {}) if state.running else {},
             "campaigns": [self.game_catalog.decorate(row) for row in self._tasks_for_state(state, include_ended=True)],
             "currentProgress": self._current_progress_for_state(state),
             "officialProgress": [
@@ -1891,9 +1894,20 @@ class SoopWorker(WorkerBase):
             raise
         atomic_write_json(self.settings_path, self.settings)
         self._normalize_priority_mission_id(fallback_if_missing=False)
-        if self.running:
-            self._restart_manager()
+        changed = {key for key in allowed if previous.get(key) != self.settings.get(key)}
+        if self.running and changed:
+            if changed <= LIVE_QUEUE_SETTINGS and self._manager is not None and callable(getattr(self._manager, 'get_miner', None)):
+                self._loop.call_soon_threadsafe(self._request_queue_rescans, self._manager)
+            else:
+                self._restart_manager()
         return self._effective_settings()
+
+    def _request_queue_rescans(self, manager: Any) -> None:
+        if manager is self._manager and not self._manager_stopping:
+            for uid in manager.running_uids:
+                miner = manager.get_miner(uid)
+                if miner is not None:
+                    miner.request_queue_rescan()
 
     def _validate_settings(self) -> None:
         validate_queue(self.settings)
@@ -2177,6 +2191,7 @@ class SoopWorker(WorkerBase):
         with self._state_changed:
             self._states.pop(uid, None)
         self._queue_targets.pop(uid, None)
+        self._queue_diagnostics.pop(uid, None)
         self._clear_progress_cache(uid)
         if uid == str(self.settings.get("primary_account_uid", "")):
             self.settings["primary_account_uid"] = ""
@@ -2321,10 +2336,12 @@ class SoopWorker(WorkerBase):
 
     def _tasks_for_state(self, state: Any, *, include_ended: bool = False) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
+        mission_raw = {}
         for mission in state.missions:
             row = {"uid": state.uid, **self._mission_to_dict(mission)}
             self._decorate_mission_progress(str(state.uid), mission, row, state)
             rows.append(row)
+            mission_raw[str(mission.drops_idx)] = getattr(mission, "raw", {}) or {}
         by_id = {
             str(row["id"]): row for row in rows if str(row.get("id", ""))
         }
@@ -2378,7 +2395,7 @@ class SoopWorker(WorkerBase):
             existing.update(normalize_task_status(existing))
             # Metadata comes from the exact dropsIdx catalog join. Progress
             # remains exclusively the current UID's mission response.
-            decorate_campaign(existing, {**getattr(next((m for m in state.missions if str(m.drops_idx) == activity_id), None), "raw", {}), **activity_raw}, account_progress=True)
+            decorate_campaign(existing, {**mission_raw[activity_id], **activity_raw}, account_progress=True)
         # Keep fully completed missions in the display/history snapshot even
         # after the event window closes.  Other ended activities remain in the
         # Core state for diagnostics but are not current WPF tasks.

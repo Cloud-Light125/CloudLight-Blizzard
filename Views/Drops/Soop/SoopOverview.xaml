@@ -57,6 +57,15 @@
                             <StackPanel Margin="0,14,0,14">
                                 <TextBlock Text="{Binding ChannelText}" FontSize="14" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding TargetText}" Style="{DynamicResource VisualCaption}" Margin="0,5"/>
+                                <TextBlock Text="{Binding Evidence.Queue.Counts}" Style="{DynamicResource VisualCaption}"
+                                           Visibility="{Binding QueueDiagnosticsVisibility}" TextWrapping="Wrap"/>
+                                <Expander Header="选台诊断" Visibility="{Binding QueueDiagnosticsVisibility}" Margin="0,0,0,8">
+                                    <StackPanel Margin="0,4,0,4">
+                                        <TextBlock Text="{Binding Evidence.Queue.Message}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Evidence.Queue.Filters}" Style="{DynamicResource VisualCaption}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Evidence.Queue.Details}" Style="{DynamicResource VisualCaption}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Expander>
                                 <TextBlock Text="{Binding HeartbeatText}" FontSize="14" ToolTip="{Binding HeartbeatDetails}"/>
                                 <TextBlock Text="{Binding HeartbeatDetails}" Style="{DynamicResource VisualCaption}" TextWrapping="Wrap" Margin="0,5"/>
                                 <TextBlock Text="{Binding ProgressText,StringFormat=官方进度：{0}}" FontSize="16" Margin="0,6"/>

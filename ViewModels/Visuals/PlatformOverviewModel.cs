@@ -175,7 +175,7 @@ public sealed class PlatformOverviewModel : ObservableObject
         var rewards=V.Has(account,"currentProgress")||V.Has(account,"officialProgress") ? progress.Select(p=>RewardVisual.From(p,Brand,"") with{CampaignId=SoopAccountEvidence.ProgressCampaign(p,uid)}).ToArray() : old?.Rewards??[];
         // Missing/failed reads retain the last official value, with explicit freshness.
         if (rewards.Count==0 && V.Text(V.Get(account,"officialEvidence"),"status") is "failed" or "stale") rewards=old?.Rewards??[];
-        var changesEvidence=V.Has(account,"authenticationState")||V.Has(account,"heartbeatEvidence")||V.Has(account,"officialEvidence")||V.Has(account,"running")||V.Has(account,"channelId")||V.Has(account,"bridgeConnected");
+        var changesEvidence=V.Has(account,"authenticationState")||V.Has(account,"heartbeatEvidence")||V.Has(account,"officialEvidence")||V.Has(account,"queueDiagnostics")||V.Has(account,"running")||V.Has(account,"channelId")||V.Has(account,"bridgeConnected");
         var evidence=(changesEvidence || old?.Evidence is null ? SoopAccountEvidence.From(account,uid,Health.WorkerLifecycle,old?.Evidence) : old.Evidence) with{Recovering=Health.ConnectionState is Services.Drops.DropsConnectionState.Recovering or Services.Drops.DropsConnectionState.WaitingRetry};
         var running=V.Bool(account,"running",old?.Running??false)&&Health.Running;
         var row=new AccountVisual(uid,V.Text(account,"userName",old?.Name??uid),V.Bool(account,"primary",old?.IsPrimary??false),running,evidence.Authentication=="verified",
@@ -196,7 +196,7 @@ public sealed class PlatformOverviewModel : ObservableObject
         if(Brand!="Soop")return;
         for(var i=0;i<Accounts.Count;i++)
             Accounts[i]=Accounts[i] with{LoggedIn=false,Running=false,WatchAcceptedAt=null,OfficialGrowth=false,
-                Evidence=(Accounts[i].Evidence??new()) with{Authentication="unverified",Worker=Health.WorkerLifecycle,Correlated=false,HeartbeatState="expired",OfficialState="stale"}};
+                Evidence=(Accounts[i].Evidence??new()) with{Authentication="unverified",Worker=Health.WorkerLifecycle,Correlated=false,HeartbeatState="expired",OfficialState="stale",Queue=null,ChannelId="",ChannelName="",ChannelState="未选择频道",Campaign="",CampaignName=""}};
         SessionText="未验证";NotifyVisuals();
     }
     private void NotifyVisuals()

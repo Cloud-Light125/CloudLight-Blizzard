@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -13,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 SOOP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SOOP))
 from worker import SoopWorker
-from scheduling import matches, metadata, queue
+from scheduling import WAITING_RESCAN_SECONDS, DiscoveryError, DiscoverySession, matches, metadata, queue
 import test_worker_contract as contract
 
 
@@ -104,6 +105,120 @@ class QueueIntegration(unittest.TestCase):
         with patch.object(self.channels,'fetch_hashtag_drops_channels',new=AsyncMock(return_value=[wrong,good])):
             self.assertEqual(self.worker._submit(miner._resolve_channel()).user_id,'category-room')
         self.assertNotEqual(metadata({'title':'same'},'1')['gameId'],metadata({'title':'same'},'2')['gameId'])
+
+    def test_official_search_category_padding_and_strict_eligibility(self):
+        row = {'channelIds': [], 'categoryIds': ['00360141']}
+        channel = self.live('room')
+        channel.category_no = '360141'
+        self.assertTrue(matches(row, channel))
+        for malformed in ('category:360141', '00360142', '360-141', None):
+            channel.category_no = malformed
+            self.assertFalse(matches(row, channel))
+        channel.category_no = '360141'
+        channel.has_drops = False
+        self.assertFalse(matches(row, channel))
+        channel.has_drops = True
+        self.assertFalse(matches({**row, 'channelIds': ['another-room']}, channel))
+
+    def test_channel_discovery_distinguishes_offline_and_invalid_api_payload(self):
+        async def fake_response(kind, payload):
+            @asynccontextmanager
+            async def response(*args, **kwargs):
+                yield SimpleNamespace(raise_for_status=lambda: None, json=AsyncMock(return_value=payload))
+            discovery = DiscoverySession(SimpleNamespace(get=response, post=response))
+            request = discovery.post('player') if kind == 'player' else discovery.get('search', params={'m': kind})
+            async with request as result:
+                return await result.json()
+        self.assertEqual(self.worker._submit(fake_response('player', {'CHANNEL': {'RESULT': '0'}}))['CHANNEL']['RESULT'], 0)
+        for kind, payload in [('player', {'CHANNEL': {'RESULT': -1}}), ('player', {'CHANNEL': {'RESULT': 1}}),
+                              ('stopWord', {}), ('liveSearch', {'result': -1})]:
+            with self.subTest(kind=kind, payload=payload), self.assertRaises(DiscoveryError):
+                self.worker._submit(fake_response(kind, payload))
+        data = self.worker._submit(fake_response('liveSearch', {'REAL_BROAD': [{}, {'is_drops': True}]}))
+        self.assertEqual([room['is_drops'] for room in data['REAL_BROAD']], ['0', '1'])
+
+    def test_failed_or_offline_priority_does_not_abort_other_selected_activities(self):
+        rows = [self.raw(broadIdList=[{'userId': 'failed'}, {'userId': 'offline'}]),
+                self.raw('b', broadIdList=[{'userId': 'offline'}]),
+                self.raw('c', '2', broadIdList=[], cateList=[{'cateNo': '00000001'}])]
+        miner = self.miner(rows=rows)
+        category_room = self.live('category-room')
+        category_room.category_no = '1'
+        async def fetch(session, cookies, uid):
+            if uid == 'failed':
+                raise TimeoutError()
+            return None
+        with patch.object(self.channels, 'fetch_live_channel', side_effect=fetch) as player, \
+             patch.object(self.channels, 'fetch_hashtag_drops_channels', new=AsyncMock(return_value=[category_room])):
+            self.worker._submit(miner._sync_channel())
+        self.assertEqual(player.await_count, 2)
+        self.assertEqual(miner._heartbeat.channel.user_id, 'category-room')
+        miner._running = True
+        wire = self.worker._state_to_dict(miner.get_state())
+        stats = wire['queueDiagnostics']
+        self.assertEqual(wire['queueTarget']['campaignId'], 'c')
+        self.assertEqual((stats['candidateActivities'], stats['activitiesChecked'], stats['onlineChannels']), (3, 3, 1))
+        self.assertEqual(stats['channelFilters']['officialOffline'], 1)
+        self.assertEqual(stats['sourceErrors']['player:TimeoutError'], 1)
+
+    def test_wait_reason_distinguishes_selection_eligibility_offline_and_error(self):
+        miner = self.miner(rows=[self.raw()]); self.resolve(miner, offline=['room-a'])
+        self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'no_online_channel')
+        with patch.object(self.channels, 'fetch_live_channel', new=AsyncMock(side_effect=TimeoutError)):
+            self.assertIsNone(self.worker._submit(miner._resolve_channel()))
+        self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'channel_api_error')
+        unlinked = self.miner('B', [self.raw(ingameGiveYn='Y', acctConn=False)])
+        self.assertIsNone(self.resolve(unlinked))
+        self.assertEqual(self.worker._queue_diagnostics['B']['reason'], 'account_ineligible')
+        self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'channel_api_error')
+        self.worker.settings['campaign_priorities'] = {'game:1': ['other']}
+        self.assertIsNone(self.resolve(miner))
+        self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'selection_filtered')
+
+    def test_waiting_channel_comes_online_on_short_rescan(self):
+        miner = self.miner(rows=[self.raw()])
+        self.assertIsNone(self.resolve(miner, offline=['room-a']))
+        miner._queue_last_scan -= WAITING_RESCAN_SECONDS
+        sync = miner._sync_channel
+        async def ready():
+            await sync()
+            miner._stop.set()
+        miner._sync_channel = ready
+        with patch.object(self.channels, 'fetch_live_channel', new=AsyncMock(return_value=self.live('room-a'))):
+            self.worker._submit(miner._queue_refusal_loop())
+        self.assertEqual(miner._current.user_id, 'room-a')
+
+    def test_saved_queue_settings_wake_running_miner_without_restart(self):
+        miner = self.miner()
+        self.worker._manager = SimpleNamespace(running_uids=['A'], get_miner=lambda uid: miner)
+        self.worker.running = True
+        try:
+            with patch.object(self.worker, '_restart_manager') as restart:
+                self.worker.save_settings({'campaign_priorities': {'game:1': ['b']}})
+                self.worker._submit(asyncio.wait_for(miner._queue_wake.wait(), timeout=1))
+                restart.assert_not_called()
+            self.assertEqual(self.resolve(miner).user_id, 'room-b')
+        finally:
+            self.worker.running = False
+            self.worker._manager = None
+
+    def test_category_cooldown_rechecks_official_room_and_hashtag_together(self):
+        category_row = self.raw('b', broadIdList=[], cateList=[{'cateNo': '00000001'}])
+        miner = self.miner(rows=[self.raw(), category_row])
+        category_room = self.live('category-room')
+        async def fetch(session, cookies, uid):
+            # The player endpoint does not carry the category or Drops flag.
+            return self.models.LiveChannel(uid, uid, '123', True)
+        with patch.object(self.channels, 'fetch_live_channel', side_effect=fetch), \
+             patch.object(self.channels, 'fetch_hashtag_drops_channels', new=AsyncMock(return_value=[category_room])):
+            self.worker.settings['campaign_priorities']['game:1'] = ['b', 'a']
+            self.worker._submit(miner._sync_channel())
+            self.worker.settings['campaign_priorities']['game:1'] = ['a', 'b']
+            self.worker._submit(miner._sync_channel())
+            self.assertEqual(miner._current.user_id, 'category-room')
+            category_room.has_drops = False
+            self.worker._submit(miner._sync_channel())
+            self.assertEqual(miner._current.user_id, 'room-a')
 
     def test_manual_override_and_ow_restriction(self):
         miner = self.miner(); miner._channel_config.mode='manual'

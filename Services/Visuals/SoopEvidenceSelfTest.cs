@@ -70,6 +70,25 @@ internal static class SoopEvidenceSelfTest
         Apply(JsonSerializer.SerializeToElement(fields));
         check(!A().OfficialGrowth&&A().OfficialText.Contains("暂未增长"),"SOOP evidence: another task's growth never certifies the displayed target");
 
+        Apply(JsonSerializer.SerializeToElement(new
+        {
+            uid = "A", running = true, channelId = (string?)null, queueTarget = new { },
+            queueDiagnostics = new
+            {
+                reason = "no_online_channel", message = "所选活动的官方频道当前均无可用直播",
+                totalActivities = 427, candidateActivities = 1, activitiesChecked = 1, onlineChannels = 0, officialProbes = 6,
+                activityFilters = new { gameFilter = 7, eligibility = 1 }, channelFilters = new { officialOffline = 6 },
+            },
+        }));
+        check(A().StateText.Contains("均无可用直播") && A().Evidence is { Queue: { } diagnostics } evidence
+            && diagnostics.Counts.Contains("候选活动 1/427") && diagnostics.Filters.Contains("指定主播离线 6")
+            && evidence.ChannelId.Length == 0 && evidence.Campaign.Length == 0 && !A().HasWatchEvidence,
+            "SOOP queue: account diagnostics replace stale room/target after the last official streamer goes offline");
+        check(model.Accounts.Single(a => a.Id == "B").Evidence?.Queue is null,
+            "SOOP queue: diagnostics stay scoped to the account that supplied them");
+        model.ResetSoopGeneration();
+        check(A().Evidence?.Queue is null, "SOOP queue: new Worker generation clears old discovery diagnostics");
+
         var directory=JsonDocument.Parse(typeof(SoopGameNames).Assembly.GetManifestResourceStream("SoopGameCatalog")!).RootElement.GetProperty("data");
         foreach(var entry in directory.EnumerateArray())
             check(SoopGameNames.Resolve("game:"+V.Text(entry,"gameIdx")).Contains(V.Text(entry,"gameTitle")),"SOOP directory ID "+V.Text(entry,"gameIdx")+" resolves to official title");

@@ -420,6 +420,7 @@ internal sealed partial class UiRedesignReview
             ThemeManager.Apply(true);_window.UpdateLayout();await _window.Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);Capture(Path.Combine(renders,"dark.png"));ThemeManager.Apply(false);
             await CheckDraftsAsync();
             await CheckAuthorizationCancellationAsync();
+            await CheckSoopQueueDiagnosticsAsync(renders);
             var dpi = VisualTreeHelper.GetDpi(_window);
             File.WriteAllLines(Path.Combine(_output, "matrix-results.txt"), _checks.Append($"binding-errors={_bindings.Errors.Count}").Append($"physical-monitor-dpi={dpi.PixelsPerInchX:0}/{dpi.PixelsPerInchY:0}").Append("DPI method: equivalent DIP sizes, not physical monitor switching"));
             Environment.ExitCode = _bindings.Errors.Count > 0 || _checks.Any(c => c.StartsWith("FAIL")) ? 1 : 0;
@@ -427,6 +428,39 @@ internal sealed partial class UiRedesignReview
         catch (Exception e) { File.WriteAllText(Path.Combine(_output, "review-failure.txt"), e.ToString());Environment.ExitCode = 1; }
         finally { _window.Close(); }
     }
+
+    private async Task CheckSoopQueueDiagnosticsAsync(string renders)
+    {
+        _window.NavigateTo("drops");
+        _page.SelectPlatform(DropsPlatform.Soop);
+        _page.ShowWorkspace("overview");
+        _drops.Soop.WorkerLifecycle = WorkerLifecycle.Running;
+        _drops.ApplyState(DropsPlatform.Soop, Raw("""
+            {"running":true,"accounts":[{"uid":"隔离回放账号","running":true,"authenticationState":"verified",
+              "channelId":null,"queueTarget":{},"queueDiagnostics":{"reason":"no_online_channel",
+              "message":"所选活动的官方频道当前均无可用直播","totalActivities":427,"candidateActivities":1,
+              "activitiesChecked":1,"onlineChannels":0,"officialProbes":6,
+              "activityFilters":{"inactive":412,"completed":6,"gameFilter":7,"eligibility":1},
+              "channelFilters":{"officialOffline":6},"blockReasons":{"限次活动，账号参与资格待确认":1}}}]}
+            """));
+        await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var diagnostics = Descendants<Expander>(_page).FirstOrDefault(item => item.IsVisible && Equals(item.Header, "选台诊断"));
+        if (diagnostics is null)
+        {
+            _checks.Add("FAIL SOOP account queue diagnostics expander was not rendered");
+            return;
+        }
+        diagnostics.IsExpanded = true;
+        diagnostics.BringIntoView();
+        await _window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var visible = Descendants<TextBlock>(_page).Where(item => item.IsVisible).Select(item => item.Text).ToArray();
+        var passed = visible.Any(line => line.Contains("候选活动 1/427") && line.Contains("在线频道 0"))
+            && visible.Any(line => line.Contains("指定主播离线 6") && line.Contains("账号资格 1"))
+            && visible.Contains("所选活动的官方频道当前均无可用直播");
+        _checks.Add((passed ? "PASS" : "FAIL") + " SOOP account queue diagnostics render reason and actual stage counts from isolated JSON");
+        Capture(Path.Combine(renders, "soop-queue-diagnostics-replay.png"));
+    }
+
     private void CheckVisibleBounds(int scenario, double width, double height, double scale)
     {
         void Walk(DependencyObject parent)

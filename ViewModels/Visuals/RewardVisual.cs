@@ -100,6 +100,7 @@ public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool 
     public string LoginText => Evidence?.LoginText ?? (LoggedIn ? "登录状态：已验证登录" : "登录状态：未验证");
     public string ChannelText => Evidence?.ChannelText ?? Channel;
     public string TargetText => Evidence?.TargetText ?? Task;
+    public Visibility QueueDiagnosticsVisibility => Evidence?.Queue is null ? Visibility.Collapsed : Visibility.Visible;
     public string HeartbeatText => Evidence?.HeartbeatText ?? "观看心跳：尚未发送";
     public string HeartbeatDetails => Evidence?.HeartbeatDetails ?? "";
     public string OfficialText => Evidence?.OfficialText ?? "官方进度状态：尚未读取";
