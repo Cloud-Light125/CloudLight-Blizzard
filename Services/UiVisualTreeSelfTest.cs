@@ -389,6 +389,7 @@ public static class UiVisualTreeSelfTest
                     FindNamed(dropsPage, "BilibiliUseProxyCheck"),
                 };
                 var platformTabsBar = FindNamed(dropsPage, "PlatformTabsBar");
+                var platformButtons = FindNamed(dropsPage, "PlatformTabButtons") as WrapPanel;
                 var platformStatusDots = new[]
                 {
                     FindNamed(dropsPage, "SoopStatusDot"),
@@ -404,12 +405,11 @@ public static class UiVisualTreeSelfTest
                 dropsPage.UpdateLayout();
                 dropsHeader = platformTabsBar;
                 Assert(dropsHeader is not null && dropsNetworkSummary is Border networkSummary &&
-                       networkSummary.ActualHeight > 0 && platformTabsBar is Grid tabsGrid &&
-                       tabsGrid.Children.OfType<RadioButton>().Count() == 4,
+                       networkSummary.ActualHeight > 0 && platformButtons?.Children.OfType<RadioButton>().Count() == 4,
                     checks, "掉宝页标题、网络工作区和四个平台 Tab 均存在");
                 Assert(platformStatusDots.All(value => value is Ellipse { Style: not null, IsVisible: true }),
                     checks, "掉宝页四个平台标题均包含可见状态点和统一状态样式");
-                Assert(platformTabsBar is Grid brandTabs && brandTabs.Children.OfType<RadioButton>().Count() == 4 &&
+                Assert(platformButtons?.Children.OfType<RadioButton>().Count() == 4 &&
                        platformStatusDots.All(value=>value is Ellipse),
                     checks, "掉宝页使用带状态点的紧凑平台导航");
                 var proxyRowBelowHeader = false;

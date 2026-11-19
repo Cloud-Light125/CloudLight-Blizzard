@@ -21,12 +21,12 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="PlatformPageTitle" Text="掉宝管理" FontSize="26" FontWeight="SemiBold" Margin="0,0,24,0" VerticalAlignment="Center" />
-            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+            <WrapPanel x:Name="PlatformTabButtons" Grid.Column="1" VerticalAlignment="Center">
                 <RadioButton x:Name="SoopTab" Tag="Soop" GroupName="DropsPlatform" Style="{StaticResource PlatformTab}"
                              AutomationProperties.Name="SOOP" Checked="OnPlatformChanged">
                     <StackPanel Orientation="Horizontal" DataContext="{Binding Soop}">
                         <ctrl:PlatformIcon Platform="Soop" Margin="0,0,8,0" />
-                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <Ellipse x:Name="SoopStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
                         <TextBlock Text="SOOP" VerticalAlignment="Center" />
                     </StackPanel>
                 </RadioButton>
@@ -34,7 +34,7 @@
                              AutomationProperties.Name="Twitch" Checked="OnPlatformChanged">
                     <StackPanel Orientation="Horizontal" DataContext="{Binding Twitch}">
                         <ctrl:PlatformIcon Platform="Twitch" Margin="0,0,8,0" />
-                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <Ellipse x:Name="TwitchStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
                         <TextBlock Text="Twitch" VerticalAlignment="Center" />
                     </StackPanel>
                 </RadioButton>
@@ -42,7 +42,7 @@
                              AutomationProperties.Name="哔哩哔哩" Checked="OnPlatformChanged">
                     <StackPanel Orientation="Horizontal" DataContext="{Binding Bilibili}">
                         <ctrl:PlatformIcon Platform="Bilibili" Margin="0,0,8,0" />
-                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <Ellipse x:Name="BilibiliStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
                         <TextBlock Text="哔哩哔哩" VerticalAlignment="Center" />
                     </StackPanel>
                 </RadioButton>
@@ -50,7 +50,7 @@
                              AutomationProperties.Name="YouTube" Checked="OnPlatformChanged">
                     <StackPanel Orientation="Horizontal" DataContext="{Binding YouTube}">
                         <ctrl:PlatformIcon Platform="YouTube" Margin="0,0,8,0" />
-                        <Ellipse Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
+                        <Ellipse x:Name="YouTubeStatusDot" Style="{StaticResource PlatformStatusDot}" ToolTip="{Binding ConnectionStateText}" />
                         <TextBlock Text="YouTube" VerticalAlignment="Center" />
                     </StackPanel>
                 </RadioButton>
