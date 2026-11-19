@@ -238,12 +238,11 @@ public partial class MainWindow : Window
             else if (dialog.Action == UpdateDialogAction.Later) _vm.UpdateChecks.RemindLater();
             _aboutPage.RefreshUpdateInfo();
             if (dialog.Action == UpdateDialogAction.OpenRelease)
-                OpenUpdateRelease(result.ReleaseUrl);
+                OpenUpdateRelease(string.IsNullOrWhiteSpace(result.ReleaseUrl) ? UpdateService.ReleasesUrl : result.ReleaseUrl);
             else if (dialog.Action == UpdateDialogAction.InstallDownloaded &&
                       !string.IsNullOrWhiteSpace(dialog.DownloadedInstallerPath))
             {
-                if (await InstallDownloadedUpdate(dialog.DownloadedInstallerPath, dialog.MarkInstallerStarted))
-                    _vm.RecordSuccessfulUpdate(result);
+                await InstallDownloadedUpdate(dialog.DownloadedInstallerPath, dialog.MarkInstallerStarted, result);
             }
             return;
         }
@@ -257,7 +256,7 @@ public partial class MainWindow : Window
             MessageBox.Show("当前没有可用的正式更新。", "软件更新",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         else if (outcome.Kind == UpdateCheckOutcomeKind.Failed)
-            MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新",
+            MessageBox.Show($"{outcome.Result?.CheckStatusText} {UpdateService.ManualDownloadText}", "检查更新失败",
                 MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -437,13 +436,14 @@ public partial class MainWindow : Window
         return double.TryParse(value.ToString(), out number) ? number : 0;
     }
 
-    internal async Task<bool> InstallDownloadedUpdate(string installerPath, Action? installerStarted = null)
+    internal async Task<bool> InstallDownloadedUpdate(string installerPath, Action? installerStarted = null,
+        UpdateCheckResult? update = null)
     {
         if (_installerStarted) return true;
         if (_isExiting || _exitCleanupStarted) return false;
         if (!File.Exists(installerPath) || !PersistSettingsBeforeUpdate())
         {
-            MessageBox.Show("安装包不存在或设置无法保存，已取消安装。", "在线更新");
+            ReportUpdateFailure(File.Exists(installerPath) ? "无法保存用户设置，安装已取消。" : "经校验的安装包已不存在。");
             return false;
         }
 
@@ -473,7 +473,12 @@ public partial class MainWindow : Window
             _vm.UpdateDownloader.MarkLaunchingInstaller();
             started = _installerLaunchCoordinator.TryLaunchAndRequestShutdown(installerPath,
                 PersistSettingsBeforeUpdate,
-                () => { _installerStarted = true; installerStarted?.Invoke(); },
+                () =>
+                {
+                    _installerStarted = true;
+                    if (update is not null) _vm.RecordPendingUpdate(update);
+                    installerStarted?.Invoke();
+                },
                 () => { }, out var error);
             if (!started)
             {
@@ -490,8 +495,10 @@ public partial class MainWindow : Window
 
     private void ReportUpdateFailure(string message)
     {
+        _vm.Settings.LastUpdateInstallStatus = $"安装阶段失败 · {message}";
+        _vm.Settings.Save();
         if (UpdateFailureForSelfTest is { } report) report(message);
-        else MessageBox.Show(message, "在线更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else MessageBox.Show($"{message}\n{UpdateService.ManualDownloadText}", "安装阶段失败", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private bool PersistSettingsBeforeUpdate()

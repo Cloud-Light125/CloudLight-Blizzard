@@ -73,8 +73,9 @@
                 </StackPanel>
             </Border>
         </StackPanel>
-        <StackPanel Tag="workspace:activities">
-            <soop:SoopCampaignPanel Model="{Binding SoopCampaigns}" Heading="SOOP 官方活动与奖励" />
+        <soop:SoopCampaignPanel x:Name="ActivitiesPanel" x:FieldModifier="internal" Tag="workspace:activities"
+                                Model="{Binding SoopCampaigns}" Heading="SOOP 官方活动与奖励" />
+        <StackPanel x:Name="ActivitiesFooter" x:FieldModifier="internal" Visibility="Collapsed" Margin="0,0,0,12">
             <Expander Header="账号任务与奖励背包 · 领取及兑换码" Margin="0,14,0,0">
             <Grid Margin="0,14,0,0" behaviors:ResponsiveGrid.IsEnabled="True">
                 <Grid.ColumnDefinitions>
@@ -123,7 +124,7 @@
                             </TextBlock>
                         </Grid>
                         <WrapPanel>
-                            <Button Content="{Binding SelectedItem.SoopClaimButtonText, ElementName=SoopInventoryList, TargetNullValue=领取选中奖励, FallbackValue=领取选中奖励}" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward" />
+                            <Button x:Name="SoopClaimButton" Content="领取选中奖励" Style="{StaticResource SecondaryButton}" Padding="14,0" Click="OnClaimSoopReward" />
                             <Button Content="复制选中兑换码" Style="{StaticResource SecondaryButton}" Padding="14,0" Margin="8,0,0,0" Click="OnCopySoopCode" />
                         </WrapPanel>
                     </StackPanel>

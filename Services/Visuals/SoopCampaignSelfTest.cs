@@ -77,7 +77,7 @@ internal static class SoopCampaignSelfTest
             {
                 ThemeManager.Apply(dark);window.Width=width;window.Height=height;panel.ListHeight=height-270;await Idle();
                 await Capture(window,panel,Path.Combine(output,$"soop-cards-{width}x{height}-{(dark?"dark":"light")}-SIMULATED.png"));
-                check(Descendants<RewardCard>(panel).All(c=>c.ActualWidth>=180&&c.ActualWidth<=218),$"SOOP shared reward tiles fit {width}x{height} {(dark?"dark":"light")}");
+                check(Descendants<RewardCard>(panel).All(c=>c.Compact&&c.ActualWidth>=270&&c.ActualWidth<=342),$"SOOP shared reward tiles fit {width}x{height} {(dark?"dark":"light")}");
             }
             foreach(var(index,name)in new[]{(1,"active"),(2,"future"),(3,"ended-completed")})
             {((ComboBox)panel.FindName("Lifecycle")).SelectedIndex=index;await Idle();await Capture(window,panel,Path.Combine(output,$"soop-{name}-SIMULATED.png"));}

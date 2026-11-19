@@ -273,7 +273,8 @@ public sealed partial class DropsViewModel : ObservableObject, IDisposable
         _ => "",
     };
     public string SoopWatchStatusText => string.Join(Environment.NewLine,SoopVisual.Accounts.Select(account=>
-        $"{account.Name} · {account.StateText} · {account.Channel} · {account.SyncText}"));
+        $"{account.Name} · {account.LoginText} · {account.WorkerText} · {account.ChannelText} · {account.HeartbeatText} · {account.OfficialText}" +
+        (account.WaitReason.Length > 0 ? $" · 等待原因：{account.WaitReason}" : "")));
     private static string FormatSoopTime(string value) => DateTimeOffset.TryParse(value, out var time)
         ? time.ToLocalTime().ToString("HH:mm:ss") : "尚未确认";
     private string _twitchCurrentProgressText = "当前没有有效观看任务";

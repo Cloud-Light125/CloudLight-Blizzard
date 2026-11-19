@@ -4,7 +4,14 @@ namespace CloudLightBlizzard.Views.Drops.Soop;
 public partial class SoopWorkspace:UserControl
 {
     public event Action<string,object,RoutedEventArgs>? ActionRequested;
-    public SoopWorkspace()=>InitializeComponent();
+    public SoopWorkspace()
+    {
+        InitializeComponent();
+        SoopClaimButton.SetBinding(ContentControl.ContentProperty, new System.Windows.Data.Binding("SelectedItem.SoopClaimButtonText")
+        {
+            Source = SoopInventoryList, TargetNullValue = "领取选中奖励", FallbackValue = "领取选中奖励",
+        });
+    }
     private void OnNavigateSettings(object sender,RoutedEventArgs e)
     {
         var section = (sender as Button)?.Tag as string;

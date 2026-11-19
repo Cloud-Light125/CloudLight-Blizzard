@@ -24,6 +24,33 @@ internal static class UpdateSafetySelfTest
             Check(result.LatestVersion=="3.0.0"&&result.HasUpdate==(current!="3.0.0")&&result.InstallerName=="CloudLight-Blizzard-3.0.0-win-x64-Setup.exe"&&result.InstallerDigest is not null,
                 $"SIMULATED release contract {current} -> {tag}: exact asset and digest; same-version builds do not update");
         }
+        var checks = 0;
+        using (var client = new HttpClient(new Handler((_,_) =>
+        {
+            checks++;
+            return Task.FromResult(checks == 1
+                ? new HttpResponseMessage(HttpStatusCode.GatewayTimeout)
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"version\":\"2.1.10\"}") });
+        })))
+        using (var service = new UpdateService(client, "3.0.0"))
+        {
+            var result = await service.CheckAsync();
+            Check(checks == 2 && result.Status == UpdateCheckResultStatus.Success && !result.HasUpdate,
+                "temporary upstream 504 retries once and older public version remains no update");
+        }
+        using (var client = new HttpClient(new Handler(async (_,token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        })))
+        using (var service = new UpdateService(client, "3.0.0"))
+        using (var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(50)))
+        {
+            var cancelled = false;
+            try { await service.CheckAsync(cancel.Token); }
+            catch (OperationCanceledException) { cancelled = true; }
+            Check(cancelled, "checking cancellation aborts metadata without a retry");
+        }
         var bytes = Enumerable.Range(0, 16384).Select(i => (byte)(i % 251)).ToArray();
         bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
         foreach (var mode in new[] { "fallback", "proxy", "no-fallback", "range-etag", "range-date", "cancel", "bad-hash", "bad-size" })

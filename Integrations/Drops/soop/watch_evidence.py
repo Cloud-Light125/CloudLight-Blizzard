@@ -46,7 +46,8 @@ class WatchEvidence:
             for key in values:
                 campaign = campaign_ids.get(key, key)
                 status = 'grown' if key in grown else 'unchanged' if key in compared else 'synced'
-                if campaign_states.get(campaign) != 'grown':
+                previous = campaign_states.get(campaign)
+                if previous is None or status == 'grown' or (status == 'unchanged' and previous == 'synced'):
                     campaign_states[campaign] = status
             row['auth'] = 'verified'
             row['reads'] = {k: (v, now) for k, v in values.items()}
@@ -107,3 +108,58 @@ class WatchEvidence:
                 official['status'] = 'stale'
             return {'authenticationState': row['auth'], 'loggedIn': row['auth'] == 'verified',
                 'heartbeatEvidence': heartbeat, 'officialEvidence': official}
+
+
+def account_status_text(account):
+    """Render the same independent evidence used by the desktop account cards."""
+    uid = str(account['uid'])
+    auth = account.get('authenticationState')
+    heartbeat = account.get('heartbeatEvidence', {})
+    official = account.get('officialEvidence', {})
+    target = account.get('queueTarget', {}).get('campaignId') or ''
+    room = account.get('channelId') or ''
+    queue = account.get('queueDiagnostics', {})
+    running = account.get('running', False)
+    connected = bool(auth == 'verified' and running and room and account.get('bridgeConnected') and account.get('connectionHealthy', True))
+    correlated = (connected and str(heartbeat.get('uid')) == uid and not heartbeat.get('requestExpired')
+                  and heartbeat.get('channelId') == room and target and heartbeat.get('campaignId') == target
+                  and account.get('broadcastNo') and str(heartbeat.get('broadcastNo')) == str(account['broadcastNo']))
+    heartbeat_state = heartbeat.get('status')
+    success = heartbeat_state == 'success' and correlated
+    if success:
+        beat = '成功'
+    elif heartbeat_state == 'success' or heartbeat_state == 'expired' and heartbeat.get('lastSuccessAt'):
+        beat = '已过期'
+    else:
+        beat = {'timeout': '未成功 · 超时', 'failure': '未成功 · 请求失败', 'sending': '未成功 · 正在发送'}.get(heartbeat_state, '未成功')
+    login = {'verified': '已验证登录', 'verifying': '未验证 · 正在验证', 'expired': '未验证 · 认证失效',
+             'awaiting_login': '未验证 · 需要重新登录', 'failed': '未验证 · 登录失败'}.get(auth, '未验证')
+    if not target:
+        for key in ('currentProgress', 'officialProgress'):
+            for progress in account.get(key, []):
+                task_id = str(progress.get('id', ''))
+                target = progress.get('campaignId') or (task_id[len(uid) + 1:] if task_id.startswith(uid + ':') else '')
+                if target:
+                    break
+            if target:
+                break
+    official_state = official.get('status') if str(official.get('uid')) == uid else 'stale'
+    if official_state in {'grown', 'unchanged', 'synced'}:
+        official_state = official.get('campaignStates', {}).get(target, 'synced')
+    progress = {'grown': '已增长', 'unchanged': '未增长', 'failed': '暂未确认 · 读取失败',
+                'stale': '暂未确认 · 数据已过期'}.get(official_state, '暂未确认')
+    if auth != 'verified':
+        wait = '等待认证'
+    elif not running:
+        wait = '账号观看任务尚未启动'
+    elif queue.get('reason') != 'selected' and queue.get('message'):
+        wait = queue['message']
+    elif not room:
+        wait = '正在查找合资格频道'
+    elif not connected:
+        wait = '正在连接选中的直播间'
+    else:
+        wait = '' if success else '等待当前直播间的成功心跳'
+    return {'login': '登录状态：' + login, 'worker': 'Worker 运行中',
+            'channel': '直播间：已连接 · ' + str(account.get('channelName') or room) if connected else '直播间：未连接',
+            'heartbeat': '观看心跳：' + beat, 'official': '官方进度：' + progress, 'waitReason': wait}

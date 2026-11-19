@@ -7,6 +7,8 @@ namespace CloudLightBlizzard.Controls;
 /// <summary>Shared presentation for official progress. Actions are routed through the existing workspace.</summary>
 public partial class RewardCard : UserControl
 {
+    public static readonly DependencyProperty CompactProperty=DependencyProperty.Register(nameof(Compact),typeof(bool),typeof(RewardCard));
+    public bool Compact {get=>(bool)GetValue(CompactProperty);set=>SetValue(CompactProperty,value);}
     public static readonly DependencyProperty RewardProperty=DependencyProperty.Register(nameof(Reward),typeof(RewardVisual),typeof(RewardCard));
     public static readonly DependencyProperty TitleProperty=DependencyProperty.Register(nameof(Title),typeof(string),typeof(RewardCard),new PropertyMetadata(""));
     public static readonly DependencyProperty ImageUrlProperty=DependencyProperty.Register(nameof(ImageUrl),typeof(string),typeof(RewardCard),new PropertyMetadata(""));

@@ -27,6 +27,9 @@ public sealed class AppSettings
     public bool YouTubeUseProxy { get; set; } = true;
     public bool TwitchUseProxy { get; set; } = true;
     public bool ShowAnnouncementBadge { get; set; } = true;
+    public string? PendingUpdateFrom { get; set; }
+    public string? PendingUpdateTo { get; set; }
+    public string? LastUpdateInstallStatus { get; set; }
     public string CloudServiceBaseUrl { get; set; } = CloudServiceConfiguration.DefaultBaseUrl;
     public bool AutoStartSoop { get; set; }
     public bool AutoStartTwitch { get; set; }

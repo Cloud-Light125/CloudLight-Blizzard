@@ -164,12 +164,13 @@ class QueueIntegration(unittest.TestCase):
     def test_wait_reason_distinguishes_selection_eligibility_offline_and_error(self):
         miner = self.miner(rows=[self.raw()]); self.resolve(miner, offline=['room-a'])
         self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'no_online_channel')
+        self.assertEqual(self.worker._queue_diagnostics['A']['message'], '已检查的 1 位指定主播当前均未开播')
         with patch.object(self.channels, 'fetch_live_channel', new=AsyncMock(side_effect=TimeoutError)):
             self.assertIsNone(self.worker._submit(miner._resolve_channel()))
         self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'channel_api_error')
         unlinked = self.miner('B', [self.raw(ingameGiveYn='Y', acctConn=False)])
         self.assertIsNone(self.resolve(unlinked))
-        self.assertEqual(self.worker._queue_diagnostics['B']['reason'], 'account_ineligible')
+        self.assertEqual(self.worker._queue_diagnostics['B']['reason'], 'game_account_required')
         self.assertEqual(self.worker._queue_diagnostics['A']['reason'], 'channel_api_error')
         self.worker.settings['campaign_priorities'] = {'game:1': ['other']}
         self.assertIsNone(self.resolve(miner))

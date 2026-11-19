@@ -76,11 +76,11 @@ internal static class PriorityStateSelfTest
         var soopHealth=new DropsPlatformViewModel(DropsPlatform.Soop,"Soop"){Running=true,WorkerLifecycle=WorkerLifecycle.Running};var soop=new PlatformOverviewModel(soopHealth);
         JsonElement Account(string uid,bool running,int minutes)=>SoopEvidenceSelfTest.Account(uid:uid,running:running,room:"room-"+uid,minutes:minutes,official:minutes==6?"grown":"synced");
         soop.UpdateAccount(Account("A",false,15));soop.UpdateAccount(Account("B",true,5));
-        check(!soop.Accounts[0].HasWatchEvidence&&soop.Accounts[0].StateText=="已停止观看"&&soop.Accounts[0].Reward?.StateBadge=="部分完成"&&soop.Accounts[1].HasWatchEvidence,"SOOP 1: stopped A and active B use independent UID runtime and official viewTime");
-        soop.UpdateAccount(J(new{uid="B",running=true,connectionHealthy=false}));check(!soop.Accounts[1].HasWatchEvidence&&!soop.RuntimeSummary.Contains("已接受"),"SOOP 2: shared Worker running without a valid account connection is not viewing");
+        check(!soop.Accounts[0].HasWatchEvidence&&soop.Accounts[0].WaitReason=="账号观看任务尚未启动"&&soop.Accounts[0].Reward?.StateBadge=="部分完成"&&soop.Accounts[1].HasWatchEvidence,"SOOP 1: stopped A and active B use independent UID runtime and official viewTime");
+        soop.UpdateAccount(J(new{uid="B",running=true,connectionHealthy=false}));check(!soop.Accounts[1].HasWatchEvidence&&soop.RuntimeSummary.Contains("0 个心跳成功"),"SOOP 2: shared Worker running without a valid account connection is not viewing");
         soop.UpdateAccount(Account("B",true,6));check(soop.Accounts[1].OfficialGrowth,"SOOP 3: official viewTime increase is observed per UID/task");
-        soopHealth.ConnectionState=DropsConnectionState.Failed;check(soop.Accounts.All(a=>!a.HasWatchEvidence)&&soop.RuntimeSummary.Contains("恢复"),"SOOP recovery: connection failure invalidates account evidence and dashboard together");
-        soopHealth.Running=false;check(soop.Accounts.All(a=>!a.HasWatchEvidence)&&soop.RuntimeSummary=="已停止观看"&&soop.Accounts[0].Reward?.Current==15,"SOOP 4: global stop clears every viewing indicator while preserving per UID progress");
+        soopHealth.ConnectionState=DropsConnectionState.Failed;check(soop.Accounts.All(a=>!a.HasWatchEvidence)&&soop.Accounts.All(a=>a.WaitReason.Contains("恢复")) && soop.RuntimeSummary.Contains("0 个直播间已连接"),"SOOP recovery: connection failure invalidates account evidence and dashboard together");
+        soopHealth.Running=false;check(soop.Accounts.All(a=>!a.HasWatchEvidence)&&soop.Accounts.All(a=>!a.Running) && soop.RuntimeSummary.Contains("0 个心跳成功")&&soop.Accounts[0].Reward?.Current==15,"SOOP 4: global stop clears every viewing indicator while preserving per UID progress");
 
         var biliHealth=new DropsPlatformViewModel(DropsPlatform.Bilibili,"Bilibili"){Running=true};var bili=new BilibiliDropsViewModel(biliHealth);
         bili.ApplyState(Raw("""{"account":{"loggedIn":true,"uid":1},"tasks":[{"id":"task","current":18,"limit":60}],"sessions":{"activeSessions":0,"sessions":[]}}"""));

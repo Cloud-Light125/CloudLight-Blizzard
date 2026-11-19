@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -251,15 +251,32 @@ public sealed class MainViewModel : ObservableObject
         _dropsDiagnosticSnapshotProvider?.Invoke() ?? new DropsRuntimeDiagnosticSnapshot(
             "未初始化", "未初始化", "未初始化", "无", "无", "无", "无");
 
-    internal void RecordSuccessfulUpdate(UpdateCheckResult result)
+    internal void RecordPendingUpdate(UpdateCheckResult result)
     {
-        ArgumentNullException.ThrowIfNull(result);
-        _settings.LastSuccessfulUpdateFrom = result.CurrentVersion;
-        _settings.LastSuccessfulUpdateTo = result.LatestVersion;
-        _settings.LastSuccessfulUpdateAt = DateTimeOffset.Now;
-        _settings.LastUpdateFailure = null;
+        _settings.PendingUpdateFrom = result.CurrentVersion;
+        _settings.PendingUpdateTo = result.LatestVersion;
+        _settings.LastUpdateInstallStatus = null;
         _settings.Save();
-        UpdateDownloader.MarkCompleted();
+    }
+
+    private void ConfirmPendingUpdate()
+    {
+        if (_settings.PendingUpdateTo is not { } expected) return;
+        var current = UpdateChecks.CurrentVersion;
+        if (UpdateService.NormalizeVersion(expected) == current)
+        {
+            _settings.LastSuccessfulUpdateFrom = _settings.PendingUpdateFrom;
+            _settings.LastSuccessfulUpdateTo = current;
+            _settings.LastSuccessfulUpdateAt = DateTimeOffset.Now;
+            _settings.LastUpdateInstallStatus = null;
+        }
+        else
+        {
+            _settings.LastUpdateInstallStatus = $"安装未确认完成 · 安装器目标 {expected}，当前运行 {current}。{UpdateService.ManualDownloadText}";
+        }
+        _settings.PendingUpdateFrom = null;
+        _settings.PendingUpdateTo = null;
+        _settings.Save();
     }
 
     private string _gameRegionTitle = "当前文件：尚未识别";
@@ -353,6 +370,7 @@ public sealed class MainViewModel : ObservableObject
             DropsHost.ConfigureProxy(CreateDropsProxySettings(_settings));
         };
         UpdateChecks = new UpdateCheckCoordinator(new UpdateService(_settings, CloudHttpClients), _settings);
+        ConfirmPendingUpdate();
         _paths = paths ?? new BattleNetPaths();
         if (!string.IsNullOrEmpty(_settings.ClientExe) && File.Exists(_settings.ClientExe))
             _paths.ClientExe = _settings.ClientExe;

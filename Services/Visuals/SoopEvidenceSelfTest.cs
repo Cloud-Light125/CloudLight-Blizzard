@@ -13,7 +13,8 @@ internal static class SoopEvidenceSelfTest
         return JsonSerializer.SerializeToElement(new {
             uid,authenticationState=authentication,loggedIn=authentication=="verified",running,
             channelId=room,channelName="隔离模拟直播间",broadcastNo="1",bridgeConnected=room.Length>0,connectionHealthy=room.Length>0,
-            queueTarget=new {campaignId="task",channelId=room},
+            queueTarget=room.Length > 0 ? new {campaignId="task",channelId=room,campaignTitle="守望先锋 · Stage 3"} : null,
+            queueDiagnostics=running && room.Length == 0 ? new {reason="no_online_channel",message="已检查的 6 位指定主播当前均未开播",candidateActivities=1,totalActivities=427,activitiesChecked=1,onlineChannels=0,officialProbes=6} : null,
             heartbeatEvidence=new {status=heartbeat,uid,channelId=room,broadcastNo="1",campaignId="task",lastSuccessAt=heartbeat=="not_sent"?"":at,requestExpired=false},
             officialEvidence=new {uid,status=official,syncedAt=official=="unread"?"":at,values=new Dictionary<string,int>{{"task|cycle|tier|360",minutes}},campaignStates=new Dictionary<string,string>{{"task",official}}},
             currentProgress=new[]{new {account=uid,id="tier",campaignId="task",reward="SIMULATED · 官方分钟回放",currentMinutes=minutes,requiredMinutes=360,watchEligible=true}}
@@ -28,13 +29,13 @@ internal static class SoopEvidenceSelfTest
         Apply(Account(authentication:"unverified"));
         check(model.AccountCount=="0"&&!A().HasWatchEvidence&&A().WorkerText.Contains("运行")&&A().Evidence!.WatchText.Contains("等待认证"),"SOOP evidence 01: unverified + running Worker stays waiting for authentication");
         Apply(Account(running:false));
-        check(model.AccountCount=="1"&&!A().HasWatchEvidence&&A().StateText=="已停止观看","SOOP evidence 02: verified + stopped session retains login independently");
+        check(model.AccountCount=="1"&&!A().HasWatchEvidence&&A().WaitReason=="账号观看任务尚未启动","SOOP evidence 02: verified + stopped session retains login independently");
         Apply(Account(room:"",heartbeat:"not_sent"));
-        check(!A().HasWatchEvidence&&A().ChannelText.Contains("等待合资格频道"),"SOOP evidence 03: Worker without channel waits for eligible room");
+        check(!A().HasWatchEvidence&&A().ChannelText=="直播间：未连接","SOOP evidence 03: Worker without channel waits for eligible room");
         Apply(Account(heartbeat:"not_sent"));
-        check(!A().HasWatchEvidence&&A().HeartbeatText.Contains("尚未发送"),"SOOP evidence 04: channel connection alone never certifies heartbeat");
+        check(!A().HasWatchEvidence&&A().HeartbeatText=="观看心跳：未成功","SOOP evidence 04: channel connection alone never certifies heartbeat");
         Apply(Account(official:"unchanged"));
-        check(A().HasWatchEvidence&&!A().OfficialGrowth&&A().OfficialText.Contains("暂未增长"),"SOOP evidence 05: successful heartbeat and unchanged official minutes are independent");
+        check(A().HasWatchEvidence&&!A().OfficialGrowth&&A().OfficialText=="官方进度：未增长","SOOP evidence 05: successful heartbeat and unchanged official minutes are independent");
         Apply(Account(official:"grown",minutes:248));
         check(A().OfficialGrowth&&A().OfficialText.Contains("已增长")&&A().Reward?.Current==248,"SOOP evidence 06: correlated official growth is shown without local minute accumulation");
         Apply(Account(heartbeat:"timeout"));
@@ -68,7 +69,7 @@ internal static class SoopEvidenceSelfTest
         check(!A().OfficialGrowth,"SOOP evidence: another UID's official response never confirms account A growth");
         fields["officialEvidence"]=JsonSerializer.SerializeToElement(new {uid="A",status="grown",syncedAt=DateTimeOffset.UtcNow.ToString("o"),campaignStates=new Dictionary<string,string>{{"other-task","grown"},{"task","unchanged"}}});
         Apply(JsonSerializer.SerializeToElement(fields));
-        check(!A().OfficialGrowth&&A().OfficialText.Contains("暂未增长"),"SOOP evidence: another task's growth never certifies the displayed target");
+        check(!A().OfficialGrowth&&A().OfficialText=="官方进度：未增长","SOOP evidence: another task's growth never certifies the displayed target");
 
         Apply(JsonSerializer.SerializeToElement(new
         {

@@ -35,6 +35,7 @@ from Shared.protocol import (
     run_worker,
 )
 from credentials import read_credentials, write_credentials
+from watch_evidence import WatchEvidence, account_status_text
 from scheduling import LIVE_QUEUE_SETTINGS, QUEUE_DEFAULTS, decorate as decorate_campaign, validate as validate_queue, metadata as campaign_metadata, matches as campaign_matches
 
 
@@ -378,9 +379,9 @@ class SoopWorker(WorkerBase):
         self._manager: Any = None
         self._manager_stopping = False
         self._account_locks: dict[str, asyncio.Lock] = {}
-        from watch_evidence import WatchEvidence
         from game_catalog import GameCatalog
         self.evidence = WatchEvidence()
+        self._last_account_status = {}
         self.game_catalog = GameCatalog(self.data_dir / 'game-catalog.json')
         self._states: dict[str, Any] = {}
         self._queue_targets: dict[str, dict[str, Any]] = {}
@@ -609,7 +610,7 @@ class SoopWorker(WorkerBase):
         if state is not None:
             state.running = False
             state.status = status
-            event("account_status", self._state_to_dict(state))
+            self._publish_account_status(state)
         self.status(status, uid)
 
     async def _reauthenticate_once(
@@ -1588,6 +1589,16 @@ class SoopWorker(WorkerBase):
         with self._state_changed:
             return {uid: self._states[uid]} if uid and uid in self._states else ({} if uid else dict(self._states))
 
+    def _publish_account_status(self, state: Any) -> None:
+        payload = self._state_to_dict(state)
+        status_text = payload["watchStatusText"]
+        if self._last_account_status.get(state.uid) != status_text:
+            self._last_account_status[state.uid] = status_text
+            self.logger.info("SOOP 账号状态 · %s", " · ".join(
+                f"等待原因：{value}" if key == "waitReason" else value
+                for key, value in status_text.items() if value))
+        event("account_status", payload)
+
     def _state_callback(self, state: Any) -> None:
         if not state.running:
             self._queue_targets.pop(str(state.uid), None)
@@ -1597,7 +1608,7 @@ class SoopWorker(WorkerBase):
             self._states[state.uid] = state
             self._state_changed.notify_all()
         self._normalize_priority_mission_id(fallback_if_missing=False)
-        event("account_status", self._state_to_dict(state))
+        self._publish_account_status(state)
         active = sum(1 for item in list(self._state_snapshot().values()) if item.running)
         if state.uid == self._auto_start_uid:
             self.status("正在刷新掉宝信息…", "正在读取直播间、任务与奖励背包")
@@ -1792,7 +1803,7 @@ class SoopWorker(WorkerBase):
             mission_row = self._mission_to_dict(mission)
             self._decorate_mission_progress(str(state.uid), mission, mission_row, state)
             mission_rows.append(mission_row)
-        return {
+        account = {
             "uid": state.uid, "running": state.running, "status": state.status,
             **self.evidence.snapshot(str(state.uid)),
             "primary": state.uid == str(self.settings.get("primary_account_uid", "")),
@@ -1840,6 +1851,8 @@ class SoopWorker(WorkerBase):
                 for channel in state.available_channels
             ],
         }
+        account["watchStatusText"] = account_status_text(account)
+        return account
 
     def load_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         captured_at = time.monotonic_ns()
@@ -2208,10 +2221,13 @@ class SoopWorker(WorkerBase):
         primary_uid = str(self.settings.get("primary_account_uid", ""))
         for uid in accounts:
             state = self._state_snapshot().get(uid)
-            result.append(self._state_to_dict(state) if state else {
+            account = self._state_to_dict(state) if state else {
                 "uid": uid, "running": False, "status": "已保存", **self.evidence.snapshot(str(uid)),
                 "channelId": None, "channelName": None, "primary": uid == primary_uid,
-            })
+            }
+            if state is None:
+                account["watchStatusText"] = account_status_text(account)
+            result.append(account)
         return result
 
     def set_primary_account(self, payload: dict[str, Any]) -> dict[str, Any]:

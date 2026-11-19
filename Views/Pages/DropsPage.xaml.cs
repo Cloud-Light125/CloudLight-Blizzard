@@ -26,6 +26,29 @@ public partial class DropsPage : UserControl
     internal void ShowWorkspace(string section)
     {
         _workspaceSections[_platform] = section;
+        var activities = _platform == DropsPlatform.Soop && section == "activities";
+        if (activities && SoopActivitiesHost.Children.Count == 0)
+        {
+            SoopWorkspace.SoopPanel.Children.Remove(SoopWorkspace.ActivitiesPanel);
+            SoopWorkspace.SoopPanel.Children.Remove(SoopWorkspace.ActivitiesFooter);
+            SoopWorkspace.ActivitiesFooter.Visibility = Visibility.Visible;
+            SoopWorkspace.ActivitiesPanel.PageFooter = SoopWorkspace.ActivitiesFooter;
+            SoopActivitiesHost.Children.Add(SoopWorkspace.ActivitiesPanel);
+        }
+        if (activities && DropsScrollContent.Children.Contains(DropsRuntimeSummary))
+        {
+            DropsScrollContent.Children.Remove(DropsRuntimeSummary);
+            DockPanel.SetDock(DropsRuntimeSummary, Dock.Top);
+            SoopActivitiesHost.Children.Insert(0, DropsRuntimeSummary);
+            SoopWorkspace.ActivitiesPanel.ScrollToTop();
+        }
+        else if (!activities && SoopActivitiesHost.Children.Contains(DropsRuntimeSummary))
+        {
+            SoopActivitiesHost.Children.Remove(DropsRuntimeSummary);
+            DropsScrollContent.Children.Insert(0, DropsRuntimeSummary);
+        }
+        SoopActivitiesHost.Visibility = activities ? Visibility.Visible : Visibility.Collapsed;
+        DropsScrollViewer.Visibility = activities ? Visibility.Collapsed : Visibility.Visible;
         CloudLightBlizzard.Controls.WorkspaceSections.Show(this, section);
         foreach (var tab in WorkspaceNavigation.Children.OfType<RadioButton>())
         {

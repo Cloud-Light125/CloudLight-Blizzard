@@ -456,7 +456,7 @@ internal sealed partial class UiRedesignReview
         var visible = Descendants<TextBlock>(_page).Where(item => item.IsVisible).Select(item => item.Text).ToArray();
         var passed = visible.Any(line => line.Contains("候选活动 1/427") && line.Contains("在线频道 0"))
             && visible.Any(line => line.Contains("指定主播离线 6") && line.Contains("账号资格 1"))
-            && visible.Contains("所选活动的官方频道当前均无可用直播");
+            && visible.Any(line => line.EndsWith("所选活动的官方频道当前均无可用直播"));
         _checks.Add((passed ? "PASS" : "FAIL") + " SOOP account queue diagnostics render reason and actual stage counts from isolated JSON");
         Capture(Path.Combine(renders, "soop-queue-diagnostics-replay.png"));
     }

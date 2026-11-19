@@ -11,7 +11,8 @@ public partial class UpdatePanel : UserControl
     private MainViewModel? _vm;
     private UpdateCheckResult? _availableUpdate;
     private bool _isDownloadingUpdate, _isUpdateRunning, _installerStarted;
-    private CancellationTokenSource? _updateCts;
+    private CancellationTokenSource? _updateCts, _checkCts;
+    private string? _operationStatus;
     public UpdatePanel()
     {
         InitializeComponent();
@@ -35,7 +36,7 @@ public partial class UpdatePanel : UserControl
     public void RefreshUpdateInfo()
     {
         if (_vm == null) return;
-        CurrentVersionText.Text = _vm.UpdateChecks.CurrentVersion;
+        CurrentVersionText.Text = $"当前版本 {_vm.UpdateChecks.CurrentVersion}";
         var skipped = UpdateService.NormalizeReleaseVersion(_vm.Settings.SkippedUpdateVersion);
         SkippedUpdatePanel.Visibility = string.IsNullOrWhiteSpace(skipped)
             ? Visibility.Collapsed : Visibility.Visible;
@@ -45,11 +46,13 @@ public partial class UpdatePanel : UserControl
         var lastUpdate = _vm.Settings.LastSuccessfulUpdateAt is { } updated &&
                          !string.IsNullOrWhiteSpace(_vm.Settings.LastSuccessfulUpdateFrom) &&
                          !string.IsNullOrWhiteSpace(_vm.Settings.LastSuccessfulUpdateTo)
-            ? $"最近一次更新：{_vm.Settings.LastSuccessfulUpdateFrom} → {_vm.Settings.LastSuccessfulUpdateTo} · 成功 · {updated.ToLocalTime():yyyy-MM-dd HH:mm}"
-            : "最近一次更新：暂无更新记录";
+            ? $"最近一次确认升级：{_vm.Settings.LastSuccessfulUpdateFrom} → {_vm.Settings.LastSuccessfulUpdateTo} · {updated.ToLocalTime():yyyy-MM-dd HH:mm}"
+            : "最近一次安装器启动：暂无记录";
         UpdateHistoryText.Text = $"{lastUpdate}\n最近一次检查：{lastCheck}";
-        UpdateFailureText.Text = string.IsNullOrWhiteSpace(_vm.Settings.LastUpdateFailure)
-            ? "" : $"最近一次失败：{_vm.Settings.LastUpdateFailure}";
+        UpdateFailureText.Text = _operationStatus ??
+            (_vm.Settings.LastUpdateInstallStatus ??
+             (_vm.UpdateChecks.LastResult is null ? _vm.Settings.LastUpdateFailure ?? "" : ""));
+        UpdateFailureText.Visibility = UpdateFailureText.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateCheckingState();
     }
 
@@ -65,9 +68,12 @@ public partial class UpdatePanel : UserControl
     private async void OnCheckUpdate(object sender, RoutedEventArgs e)
     {
         if (_vm == null || _vm.UpdateChecks.IsChecking || _isDownloadingUpdate) return;
+        using var cancellation = new CancellationTokenSource();
+        _checkCts = cancellation;
+        _operationStatus = null;
         try
         {
-            var outcome = await _vm.UpdateChecks.CheckAsync(UpdateCheckMode.Manual);
+            var outcome = await _vm.UpdateChecks.CheckAsync(UpdateCheckMode.Manual, cancellation.Token);
             if (outcome.Kind == UpdateCheckOutcomeKind.UpdateAvailable && outcome.Result is { } result)
             {
                 _availableUpdate = result;
@@ -77,29 +83,32 @@ public partial class UpdatePanel : UserControl
                 OpenUpdateLinkButton.IsEnabled = !string.IsNullOrWhiteSpace(result.ReleaseUrl);
                 var canDownload = CanDownloadInstaller(result);
                 OnlineUpdateButton.IsEnabled = canDownload;
-                InstallerValidationText.Visibility = !string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) && !canDownload
-                    ? Visibility.Visible : Visibility.Collapsed;
-                InstallerValidationText.Text = "在线安装已禁用：更新服务未提供有效 SHA-256 摘要，请打开 Release 页面手动核对。";
+                InstallerValidationText.Visibility = canDownload ? Visibility.Collapsed : Visibility.Visible;
+                InstallerValidationText.Text = UpdateDownloadService.InstallerUnavailableText(result);
             }
             else
             {
                 ClearAvailableUpdate();
-                if (outcome.Kind == UpdateCheckOutcomeKind.UpToDate)
-                    MessageBox.Show($"当前版本：{_vm.UpdateChecks.CurrentVersion}", "已是最新版本",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                else if (outcome.Kind == UpdateCheckOutcomeKind.NoRelease)
-                    MessageBox.Show("当前没有可用的正式版本更新。", "软件更新",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                else if (outcome.Kind == UpdateCheckOutcomeKind.Failed)
-                    MessageBox.Show(outcome.Result?.ErrorMessage ?? "暂时无法连接更新服务器。", "暂时无法检查更新",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _operationStatus = "已取消检查更新。";
+        }
         finally
         {
+            _checkCts = null;
             RefreshUpdateInfo();
         }
+    }
+
+    private void OnCancelCheck(object sender, RoutedEventArgs e) => _checkCts?.Cancel();
+
+    private void OnOpenProjectLink(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string url } && Window.GetWindow(this) is MainWindow main)
+            main.OpenUpdateRelease(url);
     }
 
     private void OnOpenUpdateLink(object sender, RoutedEventArgs e)
@@ -141,13 +150,10 @@ public partial class UpdatePanel : UserControl
                 {
                     _installerStarted = true;
                     UpdateDownloadText.Text = "安装程序已启动，正在退出 CloudLight Blizzard…";
-                }))
-            {
-                _vm.RecordSuccessfulUpdate(update);
+                }, update))
                 return;
-            }
 
-            UpdateDownloadText.Text = "更新安装程序启动失败。";
+            UpdateDownloadText.Text = $"安装阶段失败 · 更新安装程序未启动。{UpdateService.ManualDownloadText}";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -155,11 +161,11 @@ public partial class UpdatePanel : UserControl
         }
         catch (Exception ex)
         {
-            UpdateDownloadText.Text = "在线更新失败。";
-            MessageBox.Show(ex.Message, "在线更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            UpdateDownloadText.Text = $"{(_isUpdateRunning ? "下载或校验失败" : "安装阶段失败")} · {ex.Message} {UpdateService.ManualDownloadText}";
         }
         finally
         {
+            UpdateDownloadProgressBar.IsIndeterminate = false;
             _isUpdateRunning = false;
             if (ReferenceEquals(_updateCts, cts))
                 _updateCts = null;
@@ -174,6 +180,7 @@ public partial class UpdatePanel : UserControl
 
     private void RenderUpdateDownloadProgress(UpdateDownloadProgress value)
     {
+        if (!_isUpdateRunning) return;
         if (value.Phase == UpdateDownloadPhase.WaitingRetry)
         {
             UpdateDownloadProgressBar.IsIndeterminate = true;
@@ -197,13 +204,13 @@ public partial class UpdatePanel : UserControl
                 ? $" / {UpdateDownloadService.FormatBytes(value.TotalBytes.Value)}"
                 : "";
             UpdateDownloadText.Text =
-                $"正在下载：{percentage}% · {UpdateDownloadService.FormatBytes(value.BytesReceived)}{total}";
+                $"正在下载：{percentage}% · {UpdateDownloadService.FormatBytes(value.BytesReceived)}{total}{value.SpeedText}";
         }
         else
         {
             UpdateDownloadProgressBar.IsIndeterminate = true;
             UpdateDownloadText.Text =
-                $"正在下载：{UpdateDownloadService.FormatBytes(value.BytesReceived)}";
+                $"正在下载：{UpdateDownloadService.FormatBytes(value.BytesReceived)}{value.SpeedText}";
         }
     }
 
@@ -221,16 +228,25 @@ public partial class UpdatePanel : UserControl
         RefreshUpdateInfo();
     }
 
+    internal void RenderCheckStatus(UpdateCheckResult? result, bool checking)
+    {
+        UpdateStatusText.Text = checking ? "正在检查最新版本…" : result?.CheckStatusText ?? "启动后自动检查正式更新。";
+        if (!checking && result?.Status == UpdateCheckResultStatus.Failed)
+            UpdateStatusText.Text += "\n自动检查更新失败，" + UpdateService.ManualDownloadText;
+    }
+
     private void OnUpdateCheckingChanged()
     {
         if (Dispatcher.HasShutdownStarted) return;
-        Dispatcher.BeginInvoke(UpdateCheckingState);
+        Dispatcher.BeginInvoke(RefreshUpdateInfo);
     }
 
     private void UpdateCheckingState()
     {
         if (_vm == null) return;
-        CancelDownloadButton.Visibility = _isDownloadingUpdate ? Visibility.Visible : Visibility.Collapsed;
+        RenderCheckStatus(_vm.UpdateChecks.LastResult, _vm.UpdateChecks.IsChecking);
+        CancelCheckButton.Visibility = _vm.UpdateChecks.IsChecking && _checkCts is not null ? Visibility.Visible : Visibility.Collapsed;
+        CancelDownloadButton.Visibility = _isUpdateRunning ? Visibility.Visible : Visibility.Collapsed;
         CheckUpdateButton.IsEnabled = !_vm.UpdateChecks.IsChecking && !_isDownloadingUpdate;
         CheckUpdateButton.Content = _vm.UpdateChecks.IsChecking ? "正在检查…" : "检查更新";
         if (_availableUpdate is not null)

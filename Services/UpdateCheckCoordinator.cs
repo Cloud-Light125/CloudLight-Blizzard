@@ -1,4 +1,4 @@
-﻿using CloudLightBlizzard.Models;
+using CloudLightBlizzard.Models;
 
 namespace CloudLightBlizzard.Services;
 
@@ -123,7 +123,7 @@ public sealed class UpdateCheckCoordinator
             var result = await _service.CheckAsync(UpdateChannel.Stable, cancellationToken);
             LastResult = result;
             LastCheckAt = DateTimeOffset.Now;
-            LastFailure = result.Status == UpdateCheckResultStatus.Failed ? result.ErrorMessage : null;
+            LastFailure = result.Status == UpdateCheckResultStatus.Failed ? result.CheckStatusText : null;
             _settings.LastUpdateCheckAt = LastCheckAt;
             _settings.LastUpdateFailure = LastFailure;
             _settings.Save();

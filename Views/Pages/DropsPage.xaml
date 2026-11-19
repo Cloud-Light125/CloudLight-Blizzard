@@ -67,7 +67,7 @@
             <RadioButton Content="刷新与恢复" Tag="advanced" GroupName="DropsWorkspace" Style="{StaticResource WorkspaceTab}" Checked="OnWorkspaceChanged" Visibility="Collapsed" />
         </WrapPanel>
         <ScrollViewer x:Name="DropsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Grid.Row="3">
-            <StackPanel Margin="0,0,4,12">
+            <StackPanel x:Name="DropsScrollContent" Margin="0,0,4,12">
                 <Border x:Name="DropsRuntimeSummary" Style="{StaticResource SurfaceCard}" Margin="0,0,0,8" Padding="8" CornerRadius="10" Visibility="{Binding ActivePlatform.NoticeVisibility}">
                     <Border x:Name="DropsNoticeBanner" Visibility="{Binding ActivePlatform.NoticeVisibility}" Background="{DynamicResource App.SurfaceAlt}" CornerRadius="7" Padding="6" Margin="0">
                         <StackPanel>
@@ -230,6 +230,7 @@
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
+        <DockPanel x:Name="SoopActivitiesHost" Grid.Row="3" LastChildFill="True" Visibility="Collapsed" />
         <Border x:Name="PlatformSettingsFooter" Grid.Row="4" Style="{StaticResource SurfaceCard}" Padding="16,12" Margin="0,12,0,0" Visibility="Collapsed">
             <Grid>
                 <Grid.ColumnDefinitions>

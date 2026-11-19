@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -58,7 +60,7 @@ internal sealed partial class UiRedesignReview
                     _page.ShowWorkspace("overview");await Settle();
                     var card=Descendants<TextBlock>(_page).First(t=>t.Text=="登录状态："+(name.Contains("unverified")?"未验证":"已验证登录"));
                     var overviewScroll=(ScrollViewer)_page.FindName("DropsScrollViewer");
-                    overviewScroll.ScrollToVerticalOffset(overviewScroll.VerticalOffset+card.TranslatePoint(new Point(),overviewScroll).Y-28);
+                    overviewScroll.ScrollToVerticalOffset(overviewScroll.VerticalOffset+card.TranslatePoint(new Point(),overviewScroll).Y-100);
                     await Settle();
                     Capture(Path.Combine(shots,name+"-"+suffix+"-SIMULATED.png"));
                 }
@@ -68,17 +70,63 @@ internal sealed partial class UiRedesignReview
                 Capture(Path.Combine(shots,"05-official-game-names-"+suffix+"-OFFICIAL-REPLAY.png"));
                 var panel=Descendants<SoopCampaignPanel>(_page).First(p=>p.IsVisible);
                 var list=(ListBox)panel.FindName("GameList");
+                Descendants<Button>(panel).Single(b=>Equals(b.Content,"折叠全部")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                panel.VisibleGames.First().Expanded = true;
+                await Settle();
                 Check(_drops.SoopCampaigns.Games.All(g=>!g.Name.StartsWith("game:")),"all official game group names resolve "+suffix);
-                var existing=_drops.SoopCampaigns.Games.First();var pageScroll=(ScrollViewer)_page.FindName("DropsScrollViewer");
-                // On a tall screen the collapsed activities page fits entirely.
-                // Expand its real backpack section to test an overflowing page.
-                Descendants<Expander>(_page).Single(e=>e.Header as string=="账号任务与奖励背包 · 领取及兑换码").IsExpanded=true;
-                await Settle();pageScroll.ScrollToTop();await Settle();
-                Check(pageScroll.ScrollableHeight>0,"wheel fixture has actual outer-page overflow "+suffix);
-                var before=pageScroll.VerticalOffset;
-                var wheel=new MouseWheelEventArgs(Mouse.PrimaryDevice,Environment.TickCount,-120){RoutedEvent=Mouse.PreviewMouseWheelEvent,Source=list};
-                list.RaiseEvent(wheel);await Settle();
-                Check(pageScroll.VerticalOffset>before,"normal wheel over virtualized list moves whole page "+suffix);
+                var pageScroll=(ScrollViewer)_page.FindName("DropsScrollViewer");
+                var activityScroll=panel.ActivityScroll ?? throw new InvalidOperationException("Activities has no page ScrollViewer.");
+                Check(!pageScroll.IsVisible && activityScroll.ScrollableHeight > 0, "activities uses its own full-page virtualized scroll " + suffix);
+                var rewardCard=Descendants<RewardCard>(panel).First(card => card.IsVisible);
+                Check(rewardCard.Compact && rewardCard.ActualWidth <= 340, "reward uses compact shared Fluent card " + suffix);
+                Capture(Path.Combine(shots,"05b-overwatch-expanded-"+suffix+"-OFFICIAL-REPLAY.png"));
+                if (dark == false)
+                {
+                    list.Focus();
+                    foreach (var kind in new[] {"artwork", "badge", "reward", "campaign", "title"})
+                    {
+                        activityScroll.ScrollToVerticalOffset(kind is "artwork" or "badge" ? 220 : 0);
+                        await Settle();
+                        var card=Descendants<RewardCard>(list).First(c => c.IsVisible);
+                        FrameworkElement target = kind switch
+                        {
+                            "artwork" => Descendants<VisualImage>(card).First(c => c.IsVisible),
+                            "badge" => Descendants<TextBlock>(card).First(t => t.IsVisible && t.FontSize == 11.5),
+                            "reward" => card,
+                            "campaign" => Descendants<Border>(list).First(b => b.IsVisible && Equals(b.Tag,"SoopCampaignGroup")),
+                            _ => Descendants<Button>(list).First(b => b.IsVisible && b.DataContext is SoopGameView),
+                        };
+                        Check(await NativeWheelAsync(target, activityScroll), "Windows mouse wheel over " + kind + " moves whole page " + suffix);
+                    }
+                    activityScroll.ScrollToTop();await Settle();
+                    var header=Descendants<Button>(list).First(b => b.IsVisible && b.DataContext is SoopGameView);
+                    var game=(SoopGameView)header.DataContext;
+                    header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Settle();
+                    Check(!game.Expanded, "title row collapses Overwatch " + suffix);
+                    Check(await NativeWheelAsync(Descendants<Button>(list).First(b => b.IsVisible && ReferenceEquals(b.DataContext, game)), activityScroll),
+                        "Windows mouse wheel over collapsed title moves whole page " + suffix);
+                    activityScroll.ScrollToTop();await Settle();
+                    var allGames=(ComboBox)panel.FindName("Scope");
+                    var selectedScope=allGames.SelectedIndex;
+                    allGames.SelectedIndex=0;await Settle();
+                    Descendants<Button>(panel).Single(b=>Equals(b.Content,"展开筛选结果")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Settle();
+                    Check(list.Items.Count>=425 && Descendants<RewardCard>(panel).Count()<60, "425+ activity rows stay virtualized " + suffix);
+                    var footer=(FrameworkElement)list.Items[^1];
+                    list.ScrollIntoView(footer);await Settle();
+                    Check(Descendants<Expander>(activityScroll).Any(e=>Equals(e.Header,"账号任务与奖励背包 · 领取及兑换码")), "backpack and history are reachable at page bottom " + suffix);
+                    activityScroll.ScrollToTop();await Settle();
+                    allGames.SelectedIndex=selectedScope;await Settle();
+                    var search=(TextBox)panel.FindName("Search");
+                    search.Text="守望先锋";await Task.Delay(250);await Settle();
+                    Check(panel.VisibleGames.Count==1 && panel.VisibleGames[0].Name.Contains("守望先锋"), "search still filters virtualized activities " + suffix);
+                    search.Clear();await Task.Delay(250);await Settle();
+                    var kindFilter=(ComboBox)panel.FindName("Kind");
+                    kindFilter.SelectedIndex=1;await Settle();
+                    var random=Descendants<RewardCard>(list).First(c=>c.IsVisible && c.Reward?.IsRandom == true);
+                    Check(random.Reward?.ProgressVisibility==Visibility.Collapsed, "random rewards have no deterministic progress " + suffix);
+                    Capture(Path.Combine(shots,"05c-random-reward-"+suffix+"-OFFICIAL-REPLAY.png"));
+                    kindFilter.SelectedIndex=0;await Settle();
+                }
                 _page.ShowWorkspace("settings");await Settle();
                 Descendants<Button>(_page).Single(b=>b.IsVisible&&b.Content as string=="折叠全部").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 await Settle();
@@ -153,6 +201,23 @@ internal sealed partial class UiRedesignReview
     {
         _window.NavigateTo("about");var about=Field<AboutPage>(_window,"_aboutPage");
         var update=Descendants<UpdatePanel>(about).Single();
+        var status=(TextBlock)update.FindName("UpdateStatusText");
+        foreach (var (result,expected) in new (Models.UpdateCheckResult,string)[]{
+            (new() { Status=Models.UpdateCheckResultStatus.Failed,ErrorMessage="更新接口请求超时。",HttpStatusCode=504 }, "HTTP 504"),
+            (new() { LatestVersion="2.1.10" }, "没有新版本"),
+            (new() { LatestVersion="3.0.1",HasUpdate=true }, "发现新版本"),
+            (new() { Status=Models.UpdateCheckResultStatus.NoRelease }, "暂无正式发布版本"),
+        })
+        {
+            update.RenderCheckStatus(result, false);
+            Check(status.Text.Contains(expected), "software update renders " + expected);
+            Check(Descendants<Button>(update).Count(b=>b.IsEnabled&&b.Tag is string url&&url.StartsWith(UpdateService.RepositoryUrl))==3,
+                "three project links remain actionable for " + expected);
+        }
+        update.BringIntoView();await Settle();
+        update.RenderCheckStatus(new() { Status=Models.UpdateCheckResultStatus.Failed, ErrorMessage="更新接口请求超时。", HttpStatusCode=504 }, false);
+        _window.UpdateLayout();
+        Capture(Path.Combine(shots,"15a-update-check-failure-SIMULATED.png"));
         var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory=new CloudHttpClientFactory(_main.Settings,Path.Combine(_output,"simulated-update-network.log"),_=>new HttpClient(new SixHandler(async(_,token)=>
         {
@@ -199,6 +264,40 @@ internal sealed partial class UiRedesignReview
         }
         finally{feedback.Initialize(_main.Settings,_main.FeedbackService);}
     }
+    // Dispatch an actual Windows wheel input packet and let WPF perform its normal hit test/routing.
+    private async Task<bool> NativeWheelAsync(FrameworkElement target, ScrollViewer scroll)
+    {
+        _window.Activate();
+        if (GetForegroundWindow() != new WindowInteropHelper(_window).Handle) return false;
+        var viewport = scroll.TransformToAncestor(_window).TransformBounds(new Rect(0, 0, scroll.ActualWidth, scroll.ActualHeight));
+        var bounds = target.TransformToAncestor(_window).TransformBounds(new Rect(0, 0, target.ActualWidth, target.ActualHeight));
+        bounds.Intersect(viewport);
+        if (bounds.IsEmpty || bounds.Width < 4 || bounds.Height < 4)
+        {
+            target.BringIntoView();
+            await Settle();
+            bounds = target.TransformToAncestor(_window).TransformBounds(new Rect(0, 0, target.ActualWidth, target.ActualHeight));
+            bounds.Intersect(viewport);
+        }
+        if (bounds.IsEmpty || bounds.Width < 4 || bounds.Height < 4) return false;
+        var screenPoint = _window.PointToScreen(new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+        var before = scroll.VerticalOffset;
+        if (!SetCursorPos((int)screenPoint.X, (int)screenPoint.Y)) return false;
+        await Task.Delay(60);
+        if (Mouse.DirectlyOver is not DependencyObject hovered || !target.IsAncestorOf(hovered) && !ReferenceEquals(target,hovered))
+        {
+            _checks.Add($"native pointer target {target.GetType().Name}: {Mouse.DirectlyOver?.GetType().Name ?? "none"} at {screenPoint}");
+            return false;
+        }
+        mouse_event(0x0800, 0, 0, unchecked((uint)-120), UIntPtr.Zero);
+        await Settle();
+        return scroll.VerticalOffset > before;
+    }
+
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+
     private sealed class SixHandler(Func<HttpRequestMessage,CancellationToken,Task<HttpResponseMessage>> send):HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>send(request,token);

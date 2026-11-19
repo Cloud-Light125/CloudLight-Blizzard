@@ -7,11 +7,36 @@
             <TextBlock Text="{Binding LocalEstimateText}" TextWrapping="Wrap"/>
             <TextBlock Text="{Binding SyncText}"/>
         </StackPanel></Border.ToolTip>
-        <StackPanel>
-            <Grid Height="92" Margin="0,0,0,6" Tag="RewardImageArea">
-                <c:VisualImage SourceUrl="{Binding ImageUrl,ElementName=Card}" Brand="{Binding Brand}" DecodePixelWidth="256" ImageStretch="Uniform"/>
+        <DockPanel LastChildFill="True">
+            <Grid Tag="RewardImageArea">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="DockPanel.Dock" Value="Top"/>
+                        <Setter Property="Height" Value="92"/>
+                        <Setter Property="Margin" Value="0,0,0,6"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Compact,ElementName=Card}" Value="True">
+                                <Setter Property="DockPanel.Dock" Value="Left"/>
+                                <Setter Property="Width" Value="76"/>
+                                <Setter Property="Height" Value="76"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="Margin" Value="0,0,10,0"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <c:VisualImage SourceUrl="{Binding ImageUrl,ElementName=Card}" Brand="{Binding Brand}" DecodePixelWidth="256" ImageStretch="Uniform">
+                    <c:VisualImage.Style>
+                        <Style TargetType="c:VisualImage">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Compact,ElementName=Card}" Value="True"><Setter Property="Placeholder" Value="Reward"/></DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </c:VisualImage.Style>
+                </c:VisualImage>
                 <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="5" Padding="6,3" BorderThickness="1" Background="{DynamicResource App.Surface}">
                     <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource App.Border}"/><Style.Triggers>
+                        <DataTrigger Binding="{Binding Compact,ElementName=Card}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
                         <DataTrigger Binding="{Binding StateKind}" Value="claimable"><Setter Property="BorderBrush" Value="{DynamicResource Status.Warning}"/></DataTrigger>
                         <DataTrigger Binding="{Binding StateKind}" Value="claimed"><Setter Property="BorderBrush" Value="{DynamicResource Status.Success}"/></DataTrigger>
                         <DataTrigger Binding="{Binding StateKind}" Value="completed"><Setter Property="BorderBrush" Value="{DynamicResource Status.Success}"/></DataTrigger>
@@ -19,8 +44,31 @@
                     <TextBlock Text="{Binding StateBadge}" FontSize="13" FontWeight="SemiBold"/>
                 </Border>
             </Grid>
+            <StackPanel>
+            <Border Style="{DynamicResource StatusBadge}" HorizontalAlignment="Left" Margin="0,0,0,3">
+                <Border.Visibility>
+                    <Binding Path="Compact" ElementName="Card">
+                        <Binding.Converter><BooleanToVisibilityConverter /></Binding.Converter>
+                    </Binding>
+                </Border.Visibility>
+                <TextBlock Text="{Binding StateBadge}" FontSize="11.5" Foreground="{DynamicResource Accent.Primary}"/>
+            </Border>
             <TextBlock Text="{Binding Title,ElementName=Card}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="20" LineStackingStrategy="BlockLineHeight" MaxHeight="40" MinHeight="20" ToolTip="{Binding Title,ElementName=Card}"/>
-            <Grid Margin="0,5,0,5" Visibility="{Binding IncompleteVisibility}"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid Margin="0,5,0,5">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="{Binding IncompleteVisibility}"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Compact,ElementName=Card}" Value="True"/>
+                                    <Condition Binding="{Binding IsRandom}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding ProgressText}" ToolTip="{Binding OfficialProgressText}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Accent.Primary}" Margin="4,0,0,0"/>
             </Grid>
@@ -36,6 +84,7 @@
                 <TextBlock Text="{Binding ClaimAction.Message}" Visibility="{Binding ClaimAction.MessageVisibility}" TextWrapping="Wrap" FontSize="12.5" Margin="0,5,0,0" Foreground="{DynamicResource Status.Warning}"/>
                 <Button Content="前往 Twitch 领取" c:WorkspaceAction.Name="legacy:OnOpenTwitchInventory" Visibility="{Binding ClaimAction.MessageVisibility}" Style="{DynamicResource SecondaryButton}" MinHeight="32" Padding="8,0" Margin="0,5,0,0" HorizontalAlignment="Left" ToolTip="打开官方 Drops Inventory；请确认浏览器登录的是当前 Twitch 账号。"/>
             </StackPanel>
-        </StackPanel>
+            </StackPanel>
+        </DockPanel>
     </Border>
 </UserControl>

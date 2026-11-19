@@ -21,6 +21,11 @@ public sealed class VisualImage : Grid
     internal VisualImageCache? ImageProvider { get; set; }
     internal static Func<string, CancellationToken, Task<VisualImageResult>>? ReviewLoader { get; set; }
     internal System.Windows.Media.Imaging.BitmapSource? LoadedImage => _image.Source as System.Windows.Media.Imaging.BitmapSource;
+    public static readonly DependencyProperty PlaceholderProperty = DependencyProperty.Register(
+        nameof(Placeholder), typeof(string), typeof(VisualImage), new PropertyMetadata("", (d, _) => ((VisualImage)d).UpdatePlaceholder()));
+    public string Placeholder { get => (string)GetValue(PlaceholderProperty); set => SetValue(PlaceholderProperty, value); }
+
+    private readonly System.Windows.Shapes.Path _placeholderGlyph = new() { StrokeThickness = 1.5 };
     private readonly Image _image = new() { Stretch = Stretch.Uniform };
     private readonly Viewbox _icon = new() { Width = 42, Height = 42, HorizontalAlignment = HorizontalAlignment.Center };
     private readonly TextBlock _label = new() { Text = "官方未提供图片", FontSize = 12, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(6, 10, 6, 0) };
@@ -34,8 +39,8 @@ public sealed class VisualImage : Grid
     {
         SetResourceReference(BackgroundProperty, "App.SurfaceAlt");
         _label.SetResourceReference(TextBlock.ForegroundProperty, "Text.Secondary");
-        var placeholder = new System.Windows.Shapes.Path { Data = Geometry.Parse("M2,2 H26 V26 H2 Z M4,22 L11,13 L17,19 L21,14 L25,22 M17,8 A3,3 0 1 0 23,8 A3,3 0 1 0 17,8"), StrokeThickness = 1.5, Fill = Brushes.Transparent };
-        placeholder.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Text.Secondary"); _icon.Child = placeholder;
+        _icon.Child = _placeholderGlyph;
+        UpdatePlaceholder();
         _placeholder.Children.Add(_icon); _placeholder.Children.Add(_label); Children.Add(_placeholder); Children.Add(_image);
         _retry.SetResourceReference(StyleProperty, "IconButton"); _retry.Click += (_, _) => { (ImageProvider ?? VisualImageCache.ForBrand(Brand)).Invalidate(SourceUrl); Start(); }; Children.Add(_retry);
         _viewportTimer.Tick+=(_,_)=>{_viewportTimer.Stop();EvaluateViewport();};
@@ -54,11 +59,28 @@ public sealed class VisualImage : Grid
         SizeChanged += (_, _) =>
         {
             Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, ActualWidth), Math.Max(0, ActualHeight)), 12, 12);
-            _label.Visibility = ActualWidth < 100 || ActualHeight < 85 ? Visibility.Collapsed : Visibility.Visible;
-            _icon.Width = _icon.Height = ActualWidth < 100 || ActualHeight < 85 ? 26 : 42;
+            UpdatePlaceholder();
             ScheduleViewport();
         };
     }
+    private void UpdatePlaceholder()
+    {
+        var account = Placeholder == "Account";
+        var reward = Placeholder == "Reward";
+        _placeholderGlyph.Data = Geometry.Parse(Placeholder switch
+        {
+            "Account" => "M8,7 A4,4 0 1 0 16,7 A4,4 0 1 0 8,7 M3,22 V20 Q3,15 12,15 Q21,15 21,20 V22 Z",
+            "Reward" => "M3,10 H21 V14 H3 Z M5,14 V22 H19 V14 M12,10 V22 M12,10 C1,10 5,1 9,5 Z M12,10 C23,10 19,1 15,5 Z",
+            _ => "M2,2 H26 V26 H2 Z M4,22 L11,13 L17,19 L21,14 L25,22 M17,8 A3,3 0 1 0 23,8 A3,3 0 1 0 17,8",
+        });
+        _placeholderGlyph.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, account ? "Accent.Primary" : "Text.Secondary");
+        SetResourceReference(BackgroundProperty, account ? "AccSoft" : "App.SurfaceAlt");
+        _label.Visibility = !account && (reward || (ActualWidth >= 100 && ActualHeight >= 85)) ? Visibility.Visible : Visibility.Collapsed;
+        _label.FontSize = reward ? 10 : 12;
+        _label.Margin = reward ? new Thickness(3, 4, 3, 0) : new Thickness(6, 10, 6, 0);
+        _icon.Width = _icon.Height = account ? 22 : reward ? 20 : ActualWidth < 100 || ActualHeight < 85 ? 26 : 42;
+    }
+
     private static void Changed(DependencyObject d, DependencyPropertyChangedEventArgs e) { var c = (VisualImage)d;c.Cancel();c._image.Source=null;c._displayedSource="";if(c.IsLoaded)c.ScheduleViewport(); }
     private static void StretchChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) => ((VisualImage)d)._image.Stretch = (Stretch)e.NewValue;
     private void Cancel() { _request?.Cancel(); _request?.Dispose(); _request = null; }
@@ -84,7 +106,8 @@ public sealed class VisualImage : Grid
             var result = ReviewLoader is { } loader && SourceUrl.StartsWith("review-fixture://", StringComparison.Ordinal)
                 ? await loader(SourceUrl, cts.Token) : await (ImageProvider ?? VisualImageCache.ForBrand(Brand)).LoadAsync(SourceUrl, cts.Token,DecodePixelWidth);
             if (!ReferenceEquals(_request, cts) || cts.IsCancellationRequested) return;
-            _image.Source = result.Image; _label.Text = result.State; ToolTip = result.Image is null ? result.State : null; _placeholder.Visibility = result.Image is null ? Visibility.Visible : Visibility.Collapsed;
+            _image.Source = result.Image;
+            _label.Text = Placeholder == "Reward" && string.IsNullOrWhiteSpace(SourceUrl) ? "暂无官方图片" : result.State; ToolTip = result.Image is null ? result.State : null; _placeholder.Visibility = result.Image is null ? Visibility.Visible : Visibility.Collapsed;
             _displayedSource=SourceUrl;
             _retry.Visibility = result.Image is null && VisualImageCache.IsPublicImageUri(SourceUrl, out _) ? Visibility.Visible : Visibility.Collapsed;
         }

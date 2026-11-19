@@ -26,6 +26,8 @@ public sealed class SoopCampaign : ObservableObject
     public bool Random { get; init; }
     public string Status => Completed ? "已完成" : Lifecycle switch { "ended"=>"已结束", "notYetOpen"=>"已安排", "active"=>"进行中", _=>"待确认" };
     public string PlanText => Running ? "当前观看目标" : Selected ? "已加入观看计划" : "未加入观看计划";
+    public string DisplayType => Random ? "随机型" : "固定型";
+    public string ActiveEligibility => Lifecycle == "active" && !Completed ? Eligibility : "";
     public string TimeText => $"{Start} → {End}";
     internal Func<IReadOnlyList<SoopCampaignReward>>? LoadRewards;
     private IReadOnlyList<SoopCampaignReward>? _rewards;

@@ -113,12 +113,16 @@ public sealed record AccountVisual(string Id, string Name, bool IsPrimary, bool 
     public string ConnectionText {get;init;}="等待合资格频道";
     public bool HasWatchEvidence=>LoggedIn&&Running&&!Historical&&(Evidence?.HeartbeatFresh ?? (WatchAcceptedAt is {} at&&WatchEvidence.Recent(at)))&&Rewards.Any(r=>!r.WatchCompleted&&!r.Claimed&&!r.Expired&&!r.Upcoming&&r.Eligible!=false);
     public string WorkerText=>Evidence?.WorkerText ?? (Running?"Worker 运行中":"Worker 已停止");
-    public string StateText => Historical ? "历史官方快照 · 非实时观看" : !LoggedIn ? Evidence?.WatchText ?? "尚未登录" : !Running ? "已停止观看" :
+    public string StateText => Historical ? "历史官方快照 · 非实时观看" : !LoggedIn ? Evidence?.WatchText ?? "尚未登录" : !Running ? Evidence?.WatchText ?? "已停止观看" :
         Evidence?.WatchText ?? (HasWatchEvidence ? OfficialGrowth ? "官方 viewTime 已确认增长" : "观看请求已接受 · 官方进度待确认" : ConnectionText);
     public string SyncText => Evidence?.SyncText ?? Reward?.SyncText ?? "尚无该账号官方同步";
     public string Phase {get;init;}="";
     public string RoleText => IsPrimary ? "主账号" : "独立账号";
-    public string ProgressText => Reward?.ProgressText ?? "尚无该账号官方分钟";
+    public string WaitReason => Historical ? "历史官方快照 · 非实时观看" : Evidence?.WatchText ?? "";
+    public Visibility WaitVisibility => WaitReason.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public string ProgressText => Reward?.ProgressText ?? "暂无官方分钟";
+    public string ProgressPercent => Reward is { ProgressVisibility: Visibility.Visible } reward ? reward.PercentText : "";
+    public Visibility ProgressVisibility => Reward?.ProgressVisibility ?? Visibility.Collapsed;
     public double Percent => Reward?.Percent ?? 0;
     public Visibility StartVisibility=>Running?Visibility.Collapsed:Visibility.Visible;
     public Visibility StopVisibility=>Running?Visibility.Visible:Visibility.Collapsed;

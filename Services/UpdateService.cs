@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -24,6 +25,11 @@ public sealed class UpdateService : IUpdateService, IDisposable
     public const string GitHubRepository = "CloudLight-Blizzard";
     public static string LatestReleaseApiUrl =>
         new Uri(new Uri(CloudServiceConfiguration.DefaultBaseUrl), "v1/update/latest").AbsoluteUri;
+    public const string RepositoryUrl = "https://github.com/" + GitHubOwner + "/" + GitHubRepository;
+    public const string ReleasesUrl = RepositoryUrl + "/releases";
+    public const string OfficialDownloadUrl = ReleasesUrl + "/latest";
+    public const string ManualDownloadText = "您仍可以前往 GitHub 手动下载已发布的版本。";
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(18);
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MinimumRequestInterval = TimeSpan.FromSeconds(30);
 
@@ -78,8 +84,9 @@ public sealed class UpdateService : IUpdateService, IDisposable
             var age = DateTimeOffset.UtcNow - _cachedAt;
             if (_cachedResult is not null &&
                 _cachedChannel == channel &&
-                (_cachedResult.Status == UpdateCheckResultStatus.Success
-                    ? age < SuccessCacheDuration : age < MinimumRequestInterval))
+                (_cachedResult.Status != UpdateCheckResultStatus.Failed
+                    ? age < SuccessCacheDuration
+                    : _cachedResult.FailureKind == UpdateFailureKind.RateLimited && age < MinimumRequestInterval))
                 return Task.FromResult(_cachedResult);
             _activeRequest = RunAndCacheAsync(channel, cancellationToken);
             return _activeRequest;
@@ -91,7 +98,12 @@ public sealed class UpdateService : IUpdateService, IDisposable
     {
         try
         {
-            var result = await CheckCoreAsync(channel, cancellationToken).ConfigureAwait(false);
+            var result = await CheckWithDeadlineAsync(channel, cancellationToken).ConfigureAwait(false);
+            if (result.FailureKind is UpdateFailureKind.Timeout or UpdateFailureKind.NetworkUnavailable or UpdateFailureKind.Http5xx)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                result = await CheckWithDeadlineAsync(channel, cancellationToken).ConfigureAwait(false);
+            }
             lock (_cacheGate)
             {
                 _cachedResult = result;
@@ -103,6 +115,21 @@ public sealed class UpdateService : IUpdateService, IDisposable
         finally
         {
             lock (_cacheGate) _activeRequest = null;
+        }
+    }
+
+    private async Task<UpdateCheckResult> CheckWithDeadlineAsync(UpdateChannel channel, CancellationToken callerToken)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
+        deadline.CancelAfter(RequestTimeout);
+        try
+        {
+            return await CheckCoreAsync(channel, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
+        {
+            return Failed(UpdateFailureKind.Timeout, "更新接口请求超时。请检查网络及软件代理设置。",
+                $"Update metadata exceeded {RequestTimeout.TotalSeconds:0}s or the connection timed out ({_endpoint.IdnHost}).", channel: channel);
         }
     }
 
@@ -182,21 +209,17 @@ public sealed class UpdateService : IUpdateService, IDisposable
             };
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
         catch (OperationCanceledException)
         {
-            return Failed(UpdateFailureKind.Timeout, "检查更新超时，请稍后再试。", "Update request timed out",
-                channel: channel);
+            throw;
         }
         catch (CloudNetworkException ex)
         {
             var kind = ex.Kind is CloudNetworkFailureKind.InvalidProxy or
                 CloudNetworkFailureKind.ProxyConnectionFailed or CloudNetworkFailureKind.ProxyAndDirectConnectionFailed
                 ? UpdateFailureKind.ProxyUnavailable : UpdateFailureKind.NetworkUnavailable;
-            return Failed(kind, CloudHttpClientFactory.UserMessage(ex.Kind, "update"), ex.Kind.ToString(),
+            return Failed(kind, CloudHttpClientFactory.UserMessage(ex.Kind, "update"),
+                $"{ex.Kind}; {ex.InnerException?.GetBaseException().GetType().Name}; host={_endpoint.IdnHost}",
                 channel: channel);
         }
         catch (Exception ex)
@@ -261,7 +284,8 @@ public sealed class UpdateService : IUpdateService, IDisposable
             body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (body.Length > 1000) body = body[..1000];
         }
-        catch { body = ""; }
+        catch (HttpRequestException) { body = ""; }
+        catch (IOException) { body = ""; }
 
         WorkerError? error = null;
         try { error = JsonSerializer.Deserialize<WorkerError>(body, JsonOptions); }
@@ -286,10 +310,15 @@ public sealed class UpdateService : IUpdateService, IDisposable
             return Failed(UpdateFailureKind.RateLimited, message, technical, resetAt,
                 (int)response.StatusCode, channel);
         }
+        if (response.StatusCode == HttpStatusCode.NotFound && workerError == "no_release")
+            return NoRelease(channel);
+        if (response.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.GatewayTimeout || workerError == "timeout")
+            return Failed(UpdateFailureKind.Timeout, "更新服务等待上游响应超时。", technical,
+                statusCode: (int)response.StatusCode, channel: channel);
         if ((int)response.StatusCode >= 500)
             return Failed(UpdateFailureKind.Http5xx, "更新服务暂时不可用，请稍后再试。",
                 technical, statusCode: (int)response.StatusCode, channel: channel);
-        return Failed(UpdateFailureKind.InvalidResponse, "更新服务返回了无效响应，请稍后再试。",
+        return Failed(UpdateFailureKind.HttpError, "更新接口返回了 HTTP 错误。",
             technical, statusCode: (int)response.StatusCode, channel: channel);
     }
 

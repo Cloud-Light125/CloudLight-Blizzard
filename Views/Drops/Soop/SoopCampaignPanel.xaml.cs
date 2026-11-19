@@ -14,11 +14,11 @@ public sealed class SoopGameView(SoopGame source,Action changed) : ViewModels.Ob
 {
     public SoopGame Source => source;
     public string Name => source.Name;
-    public string Counts => source.Counts;
+    public string Counts => $"{source.Campaigns.Count} 个活动 · {source.Campaigns.Count(c => c.Lifecycle == "active")} 个进行中";
     public bool Selected {get=>source.Selected;set=>source.Selected=value;}
     private bool _expanded;
-    public bool Expanded {get=>_expanded;set {if(_expanded==value)return;_expanded=value;Raise();Raise(nameof(Disclosure));changed();}}
-    public string Disclosure => Expanded ? "⌄" : "›";
+    public bool Expanded {get=>_expanded;set {if(_expanded==value)return;_expanded=value;Raise();changed();}}
+
     internal void Notify()=>Raise("");
 }
 
@@ -41,28 +41,66 @@ public partial class SoopCampaignPanel : UserControl
     private Point _dragOrigin;
     private Window? _owner;
     private bool _autoHeight;
+    public FrameworkElement? PageFooter { get; set; }
+    internal ScrollViewer? ActivityScroll { get; private set; }
+    internal void ScrollToTop() => ActivityScroll?.ScrollToTop();
     internal IReadOnlyList<SoopGameView> VisibleGames => _visible.OfType<SoopGameView>().ToArray();
     public SoopCampaignPanel()
     {
         InitializeComponent();GameList.ItemsSource=_visible;
-        GameList.PreviewMouseWheel += OnGameWheel;
+        AddHandler(Mouse.PreviewMouseWheelEvent, new MouseWheelEventHandler(OnGameWheel), handledEventsToo: true);
         _searchDelay.Tick+=(_,_)=>{_searchDelay.Stop();Refresh();};
-        Loaded+=(_,_)=>{Subscribe();_autoHeight=ReadLocalValue(ListHeightProperty)==DependencyProperty.UnsetValue;_owner=Window.GetWindow(this);if(_owner is not null)_owner.SizeChanged+=OnWindowSize;ResizeList();Refresh();};
+        Loaded += (_, _) =>
+        {
+            Subscribe();
+            if (PageFooter is not null)
+            {
+                if (LayoutRoot.Children.Contains(Filters))
+                {
+                    LayoutRoot.Children.Remove(Filters);
+                    LayoutRoot.Children.Remove(Empty);
+                    Grid.SetRow(GameList, 0);
+                    Grid.SetRowSpan(GameList, 3);
+                    GameList.Height = double.NaN;
+                    GameList.ApplyTemplate();
+                    ActivityScroll = GameList.Template.FindName("PageScroll", GameList) as ScrollViewer;
+                }
+            }
+            else
+            {
+                _autoHeight = ReadLocalValue(ListHeightProperty) == DependencyProperty.UnsetValue;
+                _owner = Window.GetWindow(this);
+                if (_owner is not null) _owner.SizeChanged += OnWindowSize;
+                ResizeList();
+            }
+            Refresh();
+        };
         Unloaded+=(_,_)=>{if(_subscribed&&Model is not null)Model.Updated-=Refresh;_subscribed=false;_searchDelay.Stop();if(_owner is not null)_owner.SizeChanged-=OnWindowSize;_owner=null;};
         PreviewMouseLeftButtonDown+=(_,e)=>_dragOrigin=e.GetPosition(this);
         AddHandler(WorkspaceAction.RequestEvent,new EventHandler<WorkspaceActionEventArgs>(OnRewardAction));
     }
     private void OnGameWheel(object sender, MouseWheelEventArgs e)
     {
-        // The bounded list keeps recycling reward visuals. Normal wheel always
-        // moves the page; Shift+wheel or its explicit scrollbar browses the list.
         if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) return;
+        if (ActivityScroll is { } activities)
+        {
+            e.Handled = true;
+            activities.ScrollToVerticalOffset(activities.VerticalOffset - e.Delta);
+            return;
+        }
+        // The embedded priority list gives the workspace first use of the wheel.
+        // At the outer edge its virtualized list can also scroll.
+        if (!GameList.IsMouseOver && !ReferenceEquals(e.OriginalSource, GameList)) return;
         DependencyObject? parent = this;
         while ((parent = VisualTreeHelper.GetParent(parent)) is not null)
         {
             if (parent is not ScrollViewer page) continue;
-            e.Handled = true;
-            page.ScrollToVerticalOffset(page.VerticalOffset - e.Delta);
+            var canScroll = e.Delta > 0 ? page.VerticalOffset > 0 : page.VerticalOffset < page.ScrollableHeight;
+            if (canScroll)
+            {
+                e.Handled = true;
+                page.ScrollToVerticalOffset(page.VerticalOffset - e.Delta);
+            }
             return;
         }
     }
@@ -99,8 +137,14 @@ public partial class SoopCampaignPanel : UserControl
                 if(view.Expanded)views.AddRange(campaigns);
             }
             if(views.Count>0)_initialized=true;
-            SoopCampaignModel.Sync(_visible,views);
             Empty.Visibility=views.Count==0?Visibility.Visible:Visibility.Collapsed;
+            if (PageFooter is not null && !LayoutRoot.Children.Contains(Filters))
+            {
+                views.Insert(0, Filters);
+                if (Empty.Visibility == Visibility.Visible) views.Add(Empty);
+                views.Add(PageFooter);
+            }
+            SoopCampaignModel.Sync(_visible,views);
         }
         finally{_refreshing=false;}
     }
@@ -140,10 +184,28 @@ public partial class SoopCampaignPanel : UserControl
     }
     internal Window CreateDetails(SoopCampaign campaign,RewardVisual? reward)
     {
-        var stack=new StackPanel{Margin=new Thickness(20)};
-        stack.Children.Add(new TextBlock{Text=campaign.Details,TextWrapping=TextWrapping.Wrap,FontSize=14,Margin=new Thickness(0,0,0,16)});
-        var rewards=reward is null?campaign.Rewards.Select(r=>r.Visual):[reward];
-        foreach(var item in rewards){stack.Children.Add(new RewardCard{Reward=item,Title=item.Title,ImageUrl=item.ImageUrl,DetailsVisibility=Visibility.Collapsed,MaxWidth=300,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,12)});stack.Children.Add(new TextBlock{Text=item.OfficialProgressText+"\n"+item.RemainingText+"\n领取状态："+(item.Claimed?"已领取":item.CanClaim?"官方标记可领取":"以账号背包的官方回查为准"),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,12)});}
+        var stack = new StackPanel { Margin = new Thickness(20) };
+        var heading = new TextBlock { Text = campaign.Title, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,8) };
+        heading.SetResourceReference(StyleProperty, "SectionTitle");
+        stack.Children.Add(heading);
+        var metadata = new TextBlock { Text = $"{campaign.DisplayType} · {campaign.Status}\n{campaign.Details}", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,16) };
+        metadata.SetResourceReference(StyleProperty, "VisualCaption");
+        stack.Children.Add(metadata);
+        var rewards = reward is null ? campaign.Rewards.Select(r => r.Visual) : [reward];
+        foreach (var item in rewards)
+        {
+            stack.Children.Add(new RewardCard
+            {
+                Reward = item, Title = item.Title, ImageUrl = item.ImageUrl, Compact = true,
+                DetailsVisibility = Visibility.Collapsed, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0,0,0,8),
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = item.Claimed ? "已领取" : item.CanClaim ? "官方标记可领取" : "领取状态以账号背包为准",
+                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12),
+            });
+        }
         var dialog=new Window{Owner=Window.GetWindow(this),FontFamily=new System.Windows.Media.FontFamily("Microsoft YaHei UI, Segoe UI"),Title="SOOP · "+(reward is null?"活动详情":"奖励详情"),Width=640,Height=640,MaxWidth=SystemParameters.WorkArea.Width-40,MaxHeight=SystemParameters.WorkArea.Height-40,Content=new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},WindowStartupLocation=WindowStartupLocation.CenterOwner};
         dialog.SetResourceReference(Window.BackgroundProperty,"App.Background");dialog.SetResourceReference(Window.ForegroundProperty,"Text.Primary");ThemeManager.Attach(dialog);return dialog;
     }

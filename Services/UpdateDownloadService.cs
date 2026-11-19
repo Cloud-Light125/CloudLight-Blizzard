@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -30,6 +31,8 @@ public sealed record UpdateDownloadProgress(
     public int MaxRetries { get; init; }
     public TimeSpan? RetryDelay { get; init; }
     public bool Resumed { get; init; }
+    public long BytesPerSecond { get; init; }
+    public string SpeedText => BytesPerSecond > 0 ? $" · {UpdateDownloadService.FormatBytes(BytesPerSecond)}/s" : "";
 }
 
 /// <summary>
@@ -40,6 +43,8 @@ public sealed class UpdateDownloadService
 {
     internal static readonly AsyncLocal<string?> SelfTestDownloadRoot = new();
     internal static string DownloadRoot => SelfTestDownloadRoot.Value ?? Path.Combine(Path.GetTempPath(), "CloudLight Blizzard", "updates");
+    private static readonly TimeSpan NetworkIdleTimeout = TimeSpan.FromSeconds(25);
+    private int _downloadActive;
     private const int BufferSize = 128 * 1024;
     private const int MaxRetryCount = 3;
     private const int MaxAttempts = MaxRetryCount + 1;
@@ -67,6 +72,26 @@ public sealed class UpdateDownloadService
         UpdateCheckResult result,
         IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Exchange(ref _downloadActive, 1) != 0)
+            throw new InvalidOperationException("已有安装包下载在进行中。");
+        try
+        {
+            return await DownloadAsync(result, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _downloadActive, 0);
+        }
+    }
+
+    internal static string InstallerUnavailableText(UpdateCheckResult result) =>
+        (string.IsNullOrWhiteSpace(result.InstallerDownloadUrl)
+            ? "此版本缺少可用的 Windows 安装包。"
+            : "更新服务未提供可验证的 SHA-256 摘要。") + " " + UpdateService.ManualDownloadText;
+
+    private async Task<string> DownloadAsync(UpdateCheckResult result,
+        IProgress<UpdateDownloadProgress>? progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(result);
         string latestVersion;
@@ -284,9 +309,24 @@ public sealed class UpdateDownloadService
         IProgress<UpdateDownloadProgress>? progress, CancellationToken token)
     {
         // The routing layer owns/disposes each attempt, including a failed proxy request.
-        using var response = await _httpClients.SendGetAsync(
-                () => CreateInstallerRequest(uri, existingBytes, metadata), "update-download", token)
-            .ConfigureAwait(false);
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(token);
+        idle.CancelAfter(NetworkIdleTimeout);
+        using var response = await ReceiveResponseAsync();
+        idle.CancelAfter(Timeout.InfiniteTimeSpan);
+
+        async Task<HttpResponseMessage> ReceiveResponseAsync()
+        {
+            try
+            {
+                return await _httpClients.SendGetAsync(
+                    () => CreateInstallerRequest(uri, existingBytes, metadata), "update-download", idle.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (!token.IsCancellationRequested)
+            {
+                throw new TimeoutException("等待下载服务器响应超时。", ex);
+            }
+        }
         if (existingBytes > 0 && (response.StatusCode == HttpStatusCode.OK ||
                                   response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable))
         {
@@ -344,14 +384,36 @@ public sealed class UpdateDownloadService
             BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var received = existingBytes;
         var buffer = new byte[BufferSize];
+        var speedWindow = Stopwatch.StartNew();
+        var previousBytes = received;
         while (true)
         {
-            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), token).ConfigureAwait(false);
+            int read;
+            idle.CancelAfter(NetworkIdleTimeout);
+            try
+            {
+                read = await input.ReadAsync(buffer.AsMemory(), idle.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (!token.IsCancellationRequested)
+            {
+                throw new TimeoutException("接收安装包数据超时。", ex);
+            }
+            idle.CancelAfter(Timeout.InfiniteTimeSpan);
             if (read == 0) break;
             await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
             received += read;
-            progress?.Report(new UpdateDownloadProgress(received, expected > 0 ? expected : null,
-                UpdateDownloadPhase.Downloading) { Resumed = resumed });
+            var seconds = speedWindow.Elapsed.TotalSeconds;
+            if (seconds >= 0.25 || received == expected)
+            {
+                progress?.Report(new UpdateDownloadProgress(received, expected > 0 ? expected : null,
+                    UpdateDownloadPhase.Downloading)
+                {
+                    Resumed = resumed,
+                    BytesPerSecond = (long)((received - previousBytes) / Math.Max(0.01, seconds)),
+                });
+                previousBytes = received;
+                speedWindow.Restart();
+            }
         }
         await output.FlushAsync(token).ConfigureAwait(false);
         return new AttemptResult(received, expected,
@@ -467,7 +529,7 @@ public sealed class UpdateDownloadService
         // HttpClient/SocketsHttpHandler reports a request timeout as a
         // TaskCanceledException when the caller token itself was not cancelled.
         // The surrounding catch already filters genuine user cancellation.
-        if (ex is OperationCanceledException) return true;
+        if (ex is OperationCanceledException or TimeoutException) return true;
         if (ex is HttpRequestException http)
         {
             if (IsCertificateError(http)) return false;

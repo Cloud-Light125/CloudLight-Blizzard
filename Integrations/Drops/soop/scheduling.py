@@ -589,8 +589,13 @@ def install(worker, miner_module, multi_module, channel_module):
                 return 'restricted_channel', '指定频道未上线或不符合当前活动规则'
             if diagnostics['candidateActivities']:
                 if diagnostics['onlineChannels']:
-                    return 'no_matching_channel', '发现在线频道，但没有符合所选活动频道规则的直播间'
-                return 'no_online_channel', '所选活动的官方频道当前均无可用直播'
+                    return 'no_matching_channel', '发现在线频道，但没有符合当前活动规则的直播间'
+                offline = diagnostics['channelFilters'].get('officialOffline', 0)
+                if offline and offline == diagnostics.get('officialProbes'):
+                    return 'no_online_channel', f'已检查的 {offline} 位指定主播当前均未开播'
+                return 'no_online_channel', '当前活动的官方频道均无可用直播'
+            if diagnostics['blockReasons'].get('需要确认当前账号的游戏绑定'):
+                return 'game_account_required', '需要确认当前账号的游戏绑定'
             if filters['eligibility']:
                 return 'account_ineligible', '当前所选活动的账号资格不足或尚未确认'
             if filters['refused']:
@@ -598,7 +603,7 @@ def install(worker, miner_module, multi_module, channel_module):
             if filters['rules']:
                 return 'rules_unverified', '无法验证所选活动的官方频道或观看规则'
             if settings.get('campaign_selection_mode') == 'selected_only':
-                return 'selection_filtered', '当前配置没有符合条件的已选活动，请检查游戏和活动选择'
+                return 'selection_filtered', '当前仅观看所选活动，暂无符合条件的已选活动'
             return 'no_active_activity', '暂无可执行的官方活动'
 
         async def _sync_channel(self):

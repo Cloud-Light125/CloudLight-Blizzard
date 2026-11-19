@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using CloudLightBlizzard.Models;
@@ -35,12 +35,12 @@ public partial class UpdateDialog : Window
         ReleaseNotesPanel.Visibility = string.IsNullOrWhiteSpace(result.ReleaseNotes)
             ? Visibility.Collapsed : Visibility.Visible;
         ReleaseNotesText.Text = result.ReleaseNotes;
-        OpenReleaseButton.IsEnabled = !string.IsNullOrWhiteSpace(result.ReleaseUrl);
+        OpenReleaseButton.IsEnabled = true;
         var canOnlineUpdate = CanDownloadInstaller(result);
         OnlineUpdateButton.IsEnabled = canOnlineUpdate;
-        if (!string.IsNullOrWhiteSpace(result.InstallerDownloadUrl) && !canOnlineUpdate)
+        if (!canOnlineUpdate)
         {
-            InstallerValidationText.Text = "在线安装已禁用：更新服务未提供有效 SHA-256 摘要，请打开 Release 页面手动核对。";
+            InstallerValidationText.Text = UpdateDownloadService.InstallerUnavailableText(result);
             InstallerValidationText.Visibility = Visibility.Visible;
         }
     }
@@ -99,8 +99,8 @@ public partial class UpdateDialog : Window
         }
         catch (Exception ex)
         {
-            DownloadProgressText.Text = "在线更新下载失败。";
-            MessageBox.Show(ex.Message, "在线更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            DownloadProgressBar.IsIndeterminate = false;
+            DownloadProgressText.Text = $"下载或校验失败 · {ex.Message} {UpdateService.ManualDownloadText}";
             SetDownloading(false);
         }
         finally
@@ -113,6 +113,7 @@ public partial class UpdateDialog : Window
 
     private void RenderDownloadProgress(UpdateDownloadProgress value)
     {
+        if (!_isUpdateRunning) return;
         if (value.Phase == UpdateDownloadPhase.WaitingRetry)
         {
             DownloadProgressBar.IsIndeterminate = true;
@@ -136,13 +137,13 @@ public partial class UpdateDialog : Window
                 ? $" / {UpdateDownloadService.FormatBytes(value.TotalBytes.Value)}"
                 : "";
             DownloadProgressText.Text =
-                $"正在下载：{percentage}% · {UpdateDownloadService.FormatBytes(value.BytesReceived)}{total}";
+                $"正在下载：{percentage}% · {UpdateDownloadService.FormatBytes(value.BytesReceived)}{total}{value.SpeedText}";
         }
         else
         {
             DownloadProgressBar.IsIndeterminate = true;
             DownloadProgressText.Text =
-                $"正在下载：{UpdateDownloadService.FormatBytes(value.BytesReceived)}";
+                $"正在下载：{UpdateDownloadService.FormatBytes(value.BytesReceived)}{value.SpeedText}";
         }
     }
 
@@ -152,7 +153,7 @@ public partial class UpdateDialog : Window
         LaterButton.IsEnabled = !value;
         CloseButton.IsEnabled = !value;
         SkipVersionBox.IsEnabled = !value;
-        OpenReleaseButton.IsEnabled = !value && !string.IsNullOrWhiteSpace(_result.ReleaseUrl);
+        OpenReleaseButton.IsEnabled = !value;
         OnlineUpdateButton.IsEnabled = !value && CanDownloadInstaller(_result);
         CancelDownloadButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         CancelDownloadButton.IsEnabled = value;
