@@ -46,18 +46,31 @@ public partial class AccountsPage : UserControl
     private async void OnLaunchClient(object sender, RoutedEventArgs e) { if (_vm != null) await _vm.LaunchClientAsync(); }
     private async void OnSaveCurrent(object sender, RoutedEventArgs e)
     {
-        if (_vm?.CurrentAccount is not { } account)
+        if (_vm is not { Busy: false } vm) return;
+        if (vm.CurrentAccount is not { } account)
         {
             MessageBox.Show("请先在 Battle.net 登录该账号，刷新列表后保存账号快照。", "尚未识别当前账号");
             return;
         }
         var confirmation = new SnapshotConfirmWindow(account.BattleTag) { Owner = Window.GetWindow(this) };
-        if (confirmation.ShowDialog() == true)
-            await _vm.SaveCurrentAsync(confirmation.ClientLoginConfirmed);
+        if (confirmation.ShowDialog() != true) return;
+        bool retry;
+        do
+        {
+            retry = false;
+            await vm.SaveCurrentAsync(confirmation.ClientLoginConfirmed, account.AccountId, error =>
+            {
+                var dialog = new SnapshotSaveErrorWindow(error, () => OnOpenSnapshots(this, new RoutedEventArgs()))
+                {
+                    Owner = Window.GetWindow(this)
+                };
+                retry = dialog.ShowDialog() == true;
+            });
+        } while (retry);
     }
     private async void OnAddAccount(object sender, RoutedEventArgs e)
     {
-        if (_vm != null && new LoginNewWindow { Owner = Window.GetWindow(this) }.ShowDialog() == true)
+        if (_vm is { Busy: false } && new LoginNewWindow { Owner = Window.GetWindow(this) }.ShowDialog() == true)
             await _vm.AddAccountAsync();
     }
     private async void OnSwitchCard(object sender, RoutedEventArgs e)

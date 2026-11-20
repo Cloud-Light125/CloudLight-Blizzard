@@ -35,7 +35,7 @@ public sealed class BattleNetAccountSnapshotManifest
 /// 保存 Battle.net 自己留在 %APPDATA%\Battle.net 的账号选择配置。
 /// 不读取或修改 UnifiedAuth、密码、注册表及 %LOCALAPPDATA%\Battle.net\Account。
 /// </summary>
-public sealed class AppDataStore
+public sealed partial class AppDataStore
 {
     private const int SupportedManifestVersion = 1;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -54,7 +54,7 @@ public sealed class AppDataStore
         Root = Path.GetFullPath(root ?? AppPaths.Current.AccountsDir);
     }
 
-    private string Dir(long id) => Path.Combine(Root, id.ToString());
+    private string Dir(long id) => Path.Combine(Root, id.ToString(CultureInfo.InvariantCulture));
     private string DataDir(long id) => Path.Combine(Dir(id), "BattleNet");
     private string MetaFile(long id) => Path.Combine(Dir(id), "meta.json");
     private string ManifestFile(long id) => Path.Combine(Dir(id), "manifest.json");
@@ -70,6 +70,8 @@ public sealed class AppDataStore
         {
             if (!File.GetAttributes(Root).HasFlag(FileAttributes.Directory)) // Exists() hides access failures.
                 throw new IOException("账号快照根路径被文件占用。");
+            using var snapshotLock = AcquireSnapshotLock(Root);
+            RecoverPreviousIfMissing(Root, id);
             try { _ = File.GetAttributes(Dir(id)); }
             catch (FileNotFoundException) { return new(AccountProfileState.Missing, null, "未保存；请登录该账号后创建快照。"); }
             catch (DirectoryNotFoundException) { return new(AccountProfileState.Missing, null, "未保存；请登录该账号后创建快照。"); }
@@ -91,6 +93,8 @@ public sealed class AppDataStore
             EnsureNoReparsePath(Root, true, "账号快照目录");
             if (!File.GetAttributes(Root).HasFlag(FileAttributes.Directory))
                 throw new IOException("账号快照根路径被文件占用：" + Root);
+            using var snapshotLock = AcquireSnapshotLock(Root);
+            RecoverInterruptedSaves();
             return Directory.EnumerateDirectories(Root)
                 .Select(path => Path.GetFileName(path))
                 .Where(name => long.TryParse(name, out var id) && id > 0 && name == id.ToString(CultureInfo.InvariantCulture))
@@ -127,88 +131,6 @@ public sealed class AppDataStore
         return result.GroupBy(m => m.AccountId).Select(g => g.OrderByDescending(m => m.SavedAtUtc).First()).ToList();
     }
 
-    public void Save(long accountId, string battleTag, bool expired = false)
-    {
-        if (accountId <= 0) throw new ArgumentException("账号 ID 必须是有效的正整数。");
-        var profile = Dir(accountId);
-        var staging = profile + ".staging-" + Guid.NewGuid().ToString("N");
-        var previous = profile + ".previous-" + Guid.NewGuid().ToString("N");
-        var stagingData = Path.Combine(staging, "BattleNet");
-        var stage = "检查源目录";
-        try
-        {
-            EnsureNoPendingRestoreJournal();
-            if (!Directory.Exists(_paths.RoamingDir))
-                throw new DirectoryNotFoundException("原始账号配置目录缺失；请在 Battle.net 登录后重试。");
-            if (IsWithinRoot(_paths.RoamingDir, Root) || IsWithinRoot(Root, _paths.RoamingDir))
-                throw new InvalidDataException("账号快照目录不能与 Battle.net 源目录重叠。");
-            EnsureNoReparsePath(Root, true, "账号快照目标目录");
-            EnsureNoReparsePath(profile, true, "已有账号快照");
-            stage = "创建 staging";
-            InjectSaveFailure(stage, staging);
-            Directory.CreateDirectory(stagingData);
-            stage = "复制账号配置";
-            var manifest = BuildManifestAndCopy(stagingData);
-            InjectSaveFailure(stage, staging);
-            stage = "写入 manifest";
-            InjectSaveFailure(stage, staging);
-            WriteDurableText(Path.Combine(staging, "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
-            stage = "写入 meta";
-            InjectSaveFailure(stage, staging);
-            WriteDurableText(Path.Combine(staging, "meta.json"), JsonSerializer.Serialize(
-                new AccountProfileMeta(accountId, battleTag, DateTime.UtcNow, expired), JsonOptions));
-            stage = "验证 staging";
-            InjectSaveFailure(stage, staging);
-            _ = ValidateSnapshotDirectory(staging, accountId);
-            stage = "提升正式快照";
-            InjectSaveFailure(stage, staging);
-            if (Directory.Exists(profile)) Directory.Move(profile, previous);
-            try
-            {
-                stage = "移动 staging";
-                InjectSaveFailure("移动 staging", staging);
-                Directory.Move(staging, profile);
-            }
-            catch
-            {
-                if (!Directory.Exists(profile) && Directory.Exists(previous)) Directory.Move(previous, profile);
-                throw;
-            }
-            // Promotion is the commit point. Cleanup failure must not report a failed save.
-            try
-            {
-                InjectSaveFailure("清理旧快照", previous);
-                if (Directory.Exists(previous)) Directory.Delete(previous, true);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                new AccountSwitchLog().Write("SnapshotCleanupPending", detail: "旧快照保留于：" + previous);
-            }
-            new AccountSwitchLog().Write("SnapshotSaved", detail: $"files={manifest.ManagedPaths.Count};destination={profile}");
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-        {
-            var reason = ex is UnauthorizedAccessException ? "目录不可写或文件无读取权限，请检查权限。" :
-                ex is InvalidDataException ? "配置或快照校验失败，请重新登录后保存。" :
-                ex is DirectoryNotFoundException ? "路径不存在，请检查磁盘和原始配置。" :
-                "请检查文件占用、磁盘空间和目录可写权限。";
-            var message = $"账号快照保存失败（{stage}）。{reason}\n源目录：{_paths.RoamingDir}\n目标目录：{profile}\n原因：{ex.Message}";
-            new AccountSwitchLog().Write("SnapshotSaveFailed", detail: $"stage={stage};type={ex.GetType().Name};source={_paths.RoamingDir};destination={profile}");
-            throw new IOException(message, ex);
-        }
-        finally
-        {
-            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
-            // If promotion AND rollback failed, previous is the last good backup.
-            // Never delete it from a finally block.
-        }
-    }
-
-    private static void InjectSaveFailure(string stage, string path)
-    {
-        if (SaveFailureForSelfTest?.Invoke(stage, path) is { } error) throw error;
-    }
-
     internal static (AccountProfileMeta Meta, BattleNetAccountSnapshotManifest Manifest, bool Legacy)
         ValidateSnapshotDirectory(string profile, long id)
     {
@@ -229,10 +151,17 @@ public sealed class AppDataStore
     /// <summary>
     /// 只执行与 Restore 相同的完整只读预检，不修改 Battle.net 目标目录。
     /// </summary>
-    public void ValidateProfile(long accountId) => PrepareRestore(accountId);
+    public void ValidateProfile(long accountId)
+    {
+        using var snapshotLock = AcquireSnapshotLock(Root);
+        RecoverPreviousIfMissing(Root, accountId);
+        PrepareRestore(accountId);
+    }
 
     public void Restore(long accountId)
     {
+        using var snapshotLock = AcquireSnapshotLock(Root);
+        RecoverPreviousIfMissing(Root, accountId);
         // 正式执行重新预检，并在任何目标写入前 staging 全部源文件。
         var plan = PrepareRestore(accountId);
         ApplyRestore(plan, accountId);
@@ -241,7 +170,18 @@ public sealed class AppDataStore
     public void Delete(long accountId)
     {
         var dir = Dir(accountId);
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        using var snapshotLock = AcquireSnapshotLock(Root);
+        RecoverPreviousIfMissing(Root, accountId);
+        if (!Directory.Exists(dir)) return;
+        EnsureNoReparseTree(dir, "待删除的账号快照");
+        // Remove recoverable predecessors first so discovery cannot resurrect a deleted profile.
+        foreach (var previous in FindPrevious(Root, accountId))
+        {
+            try { _ = ValidateSnapshotDirectory(previous, accountId); }
+            catch (InvalidDataException) { continue; }
+            DeleteTemporarySnapshot(previous);
+        }
+        Directory.Delete(dir, recursive: true);
     }
 
     public void ClearCurrentPointer()
@@ -288,11 +228,16 @@ public sealed class AppDataStore
         {
             var relative = Normalize(Path.GetRelativePath(_paths.RoamingDir, file));
             if (IsExcluded(relative, false)) { excluded.Add(relative); continue; }
-            var info = new FileInfo(file);
-            var hash = ComputeSha256(file);
-            entries.Add(new(relative, info.Length, info.LastWriteTimeUtc, false, hash));
+            var destination = SafeCombine(destinationRoot, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            var hash = Convert.ToHexString(SHA256.HashData(source));
+            source.Position = 0;
+            source.CopyTo(output);
+            output.Flush(flushToDisk: true);
+            entries.Add(new(relative, source.Length, File.GetLastWriteTimeUtc(file), false, hash));
             managed.Add(relative);
-            ForceCopy(file, SafeCombine(destinationRoot, relative));
         }
 
         return new BattleNetAccountSnapshotManifest
@@ -987,7 +932,7 @@ public sealed class AppDataStore
         _ = EnumerateFilesSafely(root);
     }
 
-    private static void EnsureNoReparsePath(string path, bool includeLeaf, string purpose)
+    internal static void EnsureNoReparsePath(string path, bool includeLeaf, string purpose)
     {
         var full = Path.GetFullPath(path);
         var current = full;

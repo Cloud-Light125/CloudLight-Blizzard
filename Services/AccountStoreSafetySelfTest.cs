@@ -1,5 +1,7 @@
 using System.IO;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
@@ -28,6 +30,7 @@ internal static class AccountStoreSafetySelfTest
             RunReparseRejection(root, report);
             RunPointerClear(root);
             RunSaveFailures(root);
+            RunWindowsSnapshotTransactions(root, report);
             RunDiscoveryAndMigration(root);
             report.AppendLine("TEST issue #3 save/discovery/migration/UI state: PASS (empty source, locks, staging/manifest/meta/validation/promotion failures, old snapshot preserved, cleanup pending, legacy/current isolation, journals retained)");
             report.AppendLine("TEST account store safety: PASS (strict manifest preflight, legacy compatibility, "
@@ -333,10 +336,10 @@ internal static class AccountStoreSafetySelfTest
         Assert(!Directory.GetFiles(test.Roaming, "*.tmp").Any(), "pointer staging released");
     }
 
-    private static Sandbox CreateSandbox(string root, string name)
+    private static Sandbox CreateSandbox(string root, string name, string? roamingRoot = null)
     {
         var sandbox = Path.Combine(root, name + "-" + Guid.NewGuid().ToString("N"));
-        var roaming = Path.Combine(sandbox, "roaming");
+        var roaming = Path.Combine(roamingRoot ?? sandbox, "roaming");
         var local = Path.Combine(sandbox, "local");
         var profiles = Path.Combine(sandbox, "profiles");
         Directory.CreateDirectory(roaming);
@@ -425,6 +428,160 @@ internal static class AccountStoreSafetySelfTest
         try { test.Store.Save(51, "Fixture#51"); } catch (IOException) { journalRejected = true; }
         Assert(journalRejected && File.ReadAllText(journal) == "retained recovery evidence", "pending restore journal also fences new saves");
         AssertFilesEqual(validBeforeJournal, CaptureFiles(Path.Combine(test.Profiles, "51")), "pending journal leaves backup untouched");
+    }
+
+    private static void RunWindowsSnapshotTransactions(string root, StringBuilder report)
+    {
+        var roamingFixture = Directory.CreateTempSubdirectory("CloudLight-AccountSnapshot-");
+        try
+        {
+            var test = CreateSandbox(root, "自定义备份目录", roamingFixture.FullName);
+            RunWindowsSnapshotTransactions(test, report);
+        }
+        finally { roamingFixture.Delete(recursive: true); }
+    }
+
+    private static void RunWindowsSnapshotTransactions(Sandbox test, StringBuilder report)
+    {
+        var config = Path.Combine(test.Roaming, "Battle.net.config");
+        var first = Path.Combine(test.Profiles, "51");
+        var savedConfig = Path.Combine(first, "BattleNet", "Battle.net.config");
+        File.WriteAllText(config, "read-only source fixture");
+        File.SetAttributes(config, FileAttributes.ReadOnly);
+        try
+        {
+            test.Store.Save(51, "Fixture#51");
+            Assert(File.GetAttributes(config).HasFlag(FileAttributes.ReadOnly), "source attributes preserved");
+            Assert(!File.GetAttributes(savedConfig).HasFlag(FileAttributes.ReadOnly), "staged files inherit writable target attributes");
+        }
+        finally { File.SetAttributes(config, FileAttributes.Normal); }
+
+        var before = CaptureFiles(first);
+        File.WriteAllText(config, "updated fixture");
+        FileStream? busyStaging = null;
+        FileStream? busyPrevious = null;
+        string? interruptedStaging = null;
+        AppDataStore.SaveFailureForSelfTest = (stage, staging) =>
+        {
+            if (stage == "移动 staging")
+            {
+                interruptedStaging = staging;
+                busyStaging = File.Open(Path.Combine(staging, "manifest.json"),
+                    FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                try { Directory.Move(staging, first); }
+                catch (IOException ex) when (ex.HResult == unchecked((int)0x80070005)) { return null; }
+                throw new InvalidOperationException("NTFS did not reproduce the locked staging rename failure.");
+            }
+            return null;
+        };
+        try
+        {
+            ExpectSaveError(test.Store, "被占用");
+            AssertFilesEqual(before, CaptureFiles(first), "NTFS staging rename failure rolled back the verified old profile");
+            Assert(interruptedStaging is not null && File.Exists(Path.Combine(interruptedStaging, "meta.json")),
+                "cleanup leaves an occupied staging tree intact");
+        }
+        finally
+        {
+            busyStaging?.Dispose();
+            AppDataStore.SaveFailureForSelfTest = null;
+        }
+
+        Task? releaseHandle = null;
+        AppDataStore.SaveFailureForSelfTest = (stage, staging) =>
+        {
+            if (stage == "移动 staging")
+            {
+                var held = File.OpenRead(Path.Combine(staging, "manifest.json"));
+                releaseHandle = Task.Run(async () =>
+                {
+                    await Task.Delay(120);
+                    held.Dispose();
+                });
+            }
+            return null;
+        };
+        try { test.Store.Save(51, "Fixture#51"); }
+        finally
+        {
+            releaseHandle?.GetAwaiter().GetResult();
+            AppDataStore.SaveFailureForSelfTest = null;
+        }
+        Assert(File.ReadAllText(savedConfig) == "updated fixture" && !Directory.Exists(interruptedStaging),
+            "bounded rename retry committed and cleaned superseded staging");
+        var verified = AppDataStore.ValidateSnapshotDirectory(first, 51);
+        Assert(!verified.Legacy && verified.Meta.AccountId == 51 &&
+               verified.Manifest.Entries.Single().Sha256 == Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(savedConfig))),
+            "committed profile has matching meta and manifest SHA256");
+
+        before = CaptureFiles(first);
+        AppDataStore.SaveFailureForSelfTest = (stage, path) =>
+        {
+            if (stage == "移动 staging") busyStaging = File.OpenRead(Path.Combine(path, "manifest.json"));
+            if (stage == "回滚旧快照") busyPrevious = File.OpenRead(Path.Combine(path, "manifest.json"));
+            return null;
+        };
+        try
+        {
+            ExpectSaveError(test.Store, "旧快照回滚失败");
+            Assert(!Directory.Exists(first) && Directory.GetDirectories(test.Profiles, "51.previous-*").Length == 1,
+                "failed rollback leaves previous intact and formal path absent");
+        }
+        finally
+        {
+            busyStaging?.Dispose();
+            busyPrevious?.Dispose();
+            AppDataStore.SaveFailureForSelfTest = null;
+        }
+        var reopened = new AppDataStore(new BattleNetPaths(Path.Combine(test.Roaming, "reopened-local"), test.Roaming), test.Profiles);
+        var unknownStaging = Path.Combine(test.Profiles, "99.staging-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(unknownStaging);
+        File.WriteAllText(Path.Combine(unknownStaging, "unidentified"), "keep");
+        Assert(reopened.ReadProfileIds().SequenceEqual(new long[] { 51 }), "fresh store recovers only previous and excludes staging");
+        AssertFilesEqual(before, CaptureFiles(first), "startup recovery validates and restores previous bytes");
+
+        var profileInfo = new DirectoryInfo(test.Profiles);
+        var deniedAcl = profileInfo.GetAccessControl();
+        using var identity = WindowsIdentity.GetCurrent();
+        var deny = new FileSystemAccessRule(identity.User!,
+            FileSystemRights.CreateDirectories | FileSystemRights.CreateFiles, AccessControlType.Deny);
+        deniedAcl.AddAccessRule(deny);
+        profileInfo.SetAccessControl(deniedAcl);
+        try
+        {
+            ExpectSaveError(reopened, "目标目录无写入权限");
+            AssertFilesEqual(before, CaptureFiles(first), "actual NTFS ACL denial preserves current backup");
+        }
+        finally
+        {
+            deniedAcl.RemoveAccessRuleSpecific(deny);
+            profileInfo.SetAccessControl(deniedAcl);
+        }
+
+        var collision = Path.Combine(test.Profiles, "52");
+        File.WriteAllText(collision, "same-name user file");
+        ExpectSaveError(reopened, "目标路径已存在", accountId: 52);
+        Assert(File.ReadAllText(collision) == "same-name user file", "same-name target is preserved");
+        File.Delete(collision);
+
+        File.WriteAllText(config, "second account");
+        var parallelSaves = Enumerable.Range(0, 4).Select(_ => Task.Run(() => reopened.Save(52, "Fixture#52"))).ToArray();
+        Task.WaitAll(parallelSaves);
+        Assert(reopened.ReadProfileIds().Order().SequenceEqual(new long[] { 51, 52 }), "rapid concurrent saves commit one valid backup per account");
+        reopened.Restore(51);
+        Assert(File.ReadAllText(config) == "updated fixture", "first account restores after restart");
+        reopened.Restore(52);
+        Assert(File.ReadAllText(config) == "second account", "second account restores after restart");
+        Assert(File.Exists(Path.Combine(unknownStaging, "unidentified")), "unidentified staging is preserved");
+        report.AppendLine("TEST Windows snapshot transactions: PASS (real 0x80070005 with open NTFS descendant, bounded retry, rollback/reopen recovery, access-denied ACL, collision, read-only source, concurrent saves, two accounts restored)");
+        report.AppendLine($"Windows snapshot test volumes: roaming={Path.GetPathRoot(test.Roaming)}, backups={Path.GetPathRoot(test.Profiles)}");
+    }
+
+    private static void ExpectSaveError(AppDataStore store, string message, long accountId = 51)
+    {
+        try { store.Save(accountId, "Fixture#" + accountId); }
+        catch (IOException ex) when (ex.Message.Contains(message, StringComparison.Ordinal)) { return; }
+        throw new InvalidOperationException("Expected snapshot save diagnostic: " + message);
     }
 
     private static void RunDiscoveryAndMigration(string root)

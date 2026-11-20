@@ -738,7 +738,8 @@ public sealed class MainViewModel : ObservableObject
             StatusText = "战网启动中。";
         }));
 
-    public Task SaveCurrentAsync(bool clientLoginConfirmed = false) => RunAccountUiAsync("保存失败", () =>
+    public Task SaveCurrentAsync(bool clientLoginConfirmed = false, long? expectedAccountId = null,
+        Action<Exception>? reportError = null) => RunAccountUiAsync("保存失败", () =>
         _accountOperations.RunExclusiveAsync(async token =>
         {
             if (OverwatchRegionManager.IsGameRunning())
@@ -748,6 +749,8 @@ public sealed class MainViewModel : ObservableObject
             ApplyAccounts(list, activeId);
             var active = activeId is null ? null : Accounts.FirstOrDefault(a => a.AccountId == activeId.Value);
             if (active is null) throw new InvalidOperationException("没有检测到当前登录的账号，请先登录。");
+            if (expectedAccountId is not null && active.AccountId != expectedAccountId)
+                throw new InvalidOperationException("当前账号已变化，请重新确认账号后保存。");
             active.IsSaving = true;
             active.SaveError = null;
             try
@@ -759,10 +762,8 @@ public sealed class MainViewModel : ObservableObject
                 token.ThrowIfCancellationRequested();
                 if (OverwatchRegionManager.IsGameRunning())
                     throw new InvalidOperationException("守望先锋已启动，已中止保存。");
-                await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag,
+                var saved = await Task.Run(() => _profiles.Save(active.AccountId, active.BattleTag,
                     expired: active.IsExpired && !clientLoginConfirmed));
-                var saved = _profiles.InspectProfile(active.AccountId);
-                if (!saved.CanRestore) throw new InvalidDataException(saved.Detail);
                 active.HasProfile = true;
                 active.ProfileStatus = saved;
                 active.SavedAtUtc = saved.Meta?.SavedAtUtc;
@@ -789,14 +790,15 @@ public sealed class MainViewModel : ObservableObject
             catch (Exception ex)
             {
                 active.SaveError = ex.Message;
-                var remaining = _profiles.InspectProfile(active.AccountId);
+                var remaining = await Task.Run(() => _profiles.InspectProfile(active.AccountId));
                 active.HasProfile = remaining.CanRestore;
                 active.ProfileStatus = remaining;
+                active.SavedAtUtc = remaining.Meta?.SavedAtUtc;
                 RebuildGroups();
                 throw;
             }
             finally { active.IsSaving = false; }
-        }));
+        }), reportError);
 
     private void ResumeUnconfirmedVerificationIfClientStarted(bool previouslyRunning)
     {
@@ -833,7 +835,7 @@ public sealed class MainViewModel : ObservableObject
         await Task.Run(_profiles.EnsureNoPendingRestoreJournal);
     }
 
-    private async Task RunAccountUiAsync(string errorTitle, Func<Task> action)
+    private async Task RunAccountUiAsync(string errorTitle, Func<Task> action, Action<Exception>? reportError = null)
     {
         if (Busy || _shuttingDown) return;
         Busy = true;
@@ -843,7 +845,11 @@ public sealed class MainViewModel : ObservableObject
         {
             if (_shuttingDown) _shutdownOperationError ??= ex;
             StatusText = errorTitle + "：" + ex.Message;
-            if (!_shuttingDown) MessageBox.Show(ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!_shuttingDown)
+            {
+                if (reportError is not null) reportError(ex);
+                else MessageBox.Show(ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
         finally { Busy = false; }
     }

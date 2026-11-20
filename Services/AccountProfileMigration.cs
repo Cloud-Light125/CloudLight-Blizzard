@@ -17,11 +17,19 @@ internal static class AccountProfileMigration
             AppDataStore.EnsureRecoveryRootEmpty(sourceRoot + ".recovery");
             AppDataStore.EnsureRecoveryRootEmpty(destinationRoot + ".recovery");
             if (!Directory.Exists(sourceRoot)) return warnings;
+            AppDataStore.EnsureNoReparsePath(destinationRoot, true, "账号迁移目标目录");
+            using var snapshotLock = AppDataStore.AcquireSnapshotLock(destinationRoot);
             foreach (var source in Directory.EnumerateDirectories(sourceRoot))
             {
                 var name = Path.GetFileName(source);
                 if (!long.TryParse(name, out var id) || id <= 0 || name != id.ToString(CultureInfo.InvariantCulture)) continue;
                 var destination = Path.Combine(destinationRoot, name);
+                try { AppDataStore.RecoverPreviousIfMissing(destinationRoot, id); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    warnings.Add($"新目录中断的保存尚未恢复，旧数据保留：{destination}（{ex.Message}）");
+                    continue;
+                }
                 // Even an incomplete existing directory belongs to the user. Keep both for diagnosis.
                 if (Directory.Exists(destination) || File.Exists(destination))
                 {
@@ -31,11 +39,13 @@ internal static class AccountProfileMigration
                     continue;
                 }
                 var staging = destination + ".staging-migration-" + Guid.NewGuid().ToString("N");
+                var ownsStaging = false;
                 try
                 {
                     var (_, sourceManifest, _) = AppDataStore.ValidateSnapshotDirectory(source, id);
                     var before = Fingerprint(source, sourceManifest);
                     Directory.CreateDirectory(staging);
+                    ownsStaging = true;
                     foreach (var file in before.Files)
                     {
                         var target = Path.Combine(staging, file);
@@ -48,7 +58,8 @@ internal static class AccountProfileMigration
                     var after = Fingerprint(source, currentManifest);
                     if (before.Digest != copied.Digest || before.Digest != after.Digest)
                         throw new InvalidDataException("迁移期间源快照变化或复制校验失败。");
-                    Directory.Move(staging, destination);
+                    AppDataStore.MoveSnapshotDirectory(staging, destination);
+                    ownsStaging = false;
                     migrated.Add("accounts/" + name);
                     log?.Invoke($"AccountMigration files={before.Files.Count};sha256={before.Digest};source={source};destination={destination}");
                 }
@@ -56,7 +67,9 @@ internal static class AccountProfileMigration
                 { warnings.Add($"账号快照迁移未完成，原数据保留：{source} → {destination}（{ex.GetType().Name}）"); }
                 finally
                 {
-                    try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
+                    try { if (ownsStaging) AppDataStore.DeleteTemporarySnapshot(staging); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+                    { warnings.Add($"账号快照迁移临时目录已保留：{staging}（{ex.Message}）"); }
                 }
             }
         }
