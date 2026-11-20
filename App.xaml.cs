@@ -22,6 +22,7 @@ public partial class App : Application
     private static string? _lastErrorDialogSignature;
     private static DateTimeOffset _lastErrorDialogAt;
     private Mutex? _singleInstance;
+    private EventWaitHandle? _showEvent;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -158,12 +159,15 @@ public partial class App : Application
         }
 
         // 单实例:已经有一个在跑,就唤起它的窗口然后本进程退出(避免托盘出现两个图标)。
-        var instanceName = dropsAcceptanceRoot is null ? MutexName : MutexName + ".DropsAcceptance." +
+        var instanceSuffix = dropsAcceptanceRoot is null ? "" : ".DropsAcceptance." +
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(dropsAcceptanceRoot)))[..16];
-        _singleInstance = new Mutex(true, instanceName, out bool isNew);
+        // Create the signal before the mutex so a wake arriving during startup
+        // stays pending until the primary has finished constructing its window.
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName + instanceSuffix);
+        _singleInstance = new Mutex(true, MutexName + instanceSuffix, out bool isNew);
         if (!isNew)
         {
-            try { EventWaitHandle.OpenExisting(ShowEventName).Set(); } catch { /* 对面可能还没建好句柄 */ }
+            _showEvent.Set();
             Shutdown(0);
             return;
         }
@@ -194,11 +198,21 @@ public partial class App : Application
         if (dropsAcceptanceRoot is not null && e.Args.Contains("--drops-evidence"))
             RealDropsEvidenceRecorder.Attach(mainWindow, Path.Combine(dropsAcceptanceRoot, "evidence"));
 #endif
-        if (!startHidden) mainWindow.Show();
+        mainWindow.StartWindow(startHidden, _showEvent);
 #if CLOUDLIGHT_LIVE_AUDIT
         if(dropsAcceptanceRoot is not null&&e.Args.Contains("--twitch-live-audit"))
             Dispatcher.BeginInvoke(new Action(async()=>await TwitchLiveAudit.RunAsync(mainWindow,dropsAcceptanceRoot,e.Args.Contains("--approved-river-once"))));
 #endif
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try { base.OnExit(e); }
+        finally
+        {
+            _showEvent?.Dispose();
+            _singleInstance?.Dispose();
+        }
     }
 
     private static void RunSelfTest()

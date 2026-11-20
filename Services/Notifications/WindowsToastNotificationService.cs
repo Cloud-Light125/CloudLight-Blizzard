@@ -84,9 +84,13 @@ public sealed class WindowsToastNotificationService : INotificationService
 
     private void OnActivated(ToastNotificationActivatedEventArgsCompat args)
     {
-        var action = args.Argument;
-        if (string.IsNullOrWhiteSpace(action)) return;
-        try { _actionRouter?.Invoke(action); }
+        if (string.IsNullOrWhiteSpace(args.Argument)) return;
+        try
+        {
+            var arguments = ToastArguments.Parse(args.Argument);
+            if (arguments.TryGetValue("action", out string action))
+                _actionRouter?.Invoke(action);
+        }
         catch (Exception ex) { WriteLog($"activation failed: {ex.GetType().Name}"); }
     }
 

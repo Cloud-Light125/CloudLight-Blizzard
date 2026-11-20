@@ -31,14 +31,19 @@ public partial class MainWindow : Window
     private readonly SettingsPage _settingsPage = new();
     private readonly AboutPage _aboutPage = new();
     private readonly System.Windows.Threading.DispatcherTimer _watchTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-    private readonly EventWaitHandle _showEvent;
-    private readonly RegisteredWaitHandle _showRegistration;
+    private RegisteredWaitHandle? _showRegistration;
+    private readonly object _restoreLock = new();
+    private (string Source, string? NotificationAction)? _pendingRestore;
+    private bool _restoreScheduled;
+    private bool _restoringWindow;
+    private bool _closeAfterRestore;
+    private WindowState _lastNonMinimizedState = WindowState.Normal;
     private System.Windows.Forms.NotifyIcon? _tray;
     private System.Windows.Forms.ContextMenuStrip? _trayMenu;
     private volatile bool _isClosing;
     private volatile bool _isExiting;
     private bool _exitRequested;
-    private bool _showSignalDisposed;
+    private bool _windowTransitionFailed;
     private bool _exitCleanupStarted;
     private Task? _exitCleanupTask;
     private Task _accountDrainTask = Task.CompletedTask;
@@ -76,13 +81,6 @@ public partial class MainWindow : Window
         _dropsNotificationGate = new DropsNotificationGate(Notify);
         InitializeComponent();
         ThemeManager.Attach(this);
-        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
-        _showRegistration = ThreadPool.RegisterWaitForSingleObject(
-            _showEvent,
-            OnShowSignal,
-            null,
-            Timeout.Infinite,
-            false);
         DataContext = _vm;
         Width = _vm.Settings.WindowWidth >= MinWidth ? _vm.Settings.WindowWidth : Width;
         Height = _vm.Settings.WindowHeight >= MinHeight ? _vm.Settings.WindowHeight : Height;
@@ -93,7 +91,8 @@ public partial class MainWindow : Window
         MinHeight = Math.Min(MinHeight, available.Height);
         Width = Math.Min(Width, available.Width);
         Height = Math.Min(Height, available.Height);
-        if (_vm.Settings.WindowMaximized) WindowState = WindowState.Maximized;
+        if (_vm.Settings.WindowMaximized)
+            WindowState = _lastNonMinimizedState = WindowState.Maximized;
 
         _accountsPage.Initialize(_vm);
         _regionPage.Initialize(_vm);
@@ -109,7 +108,7 @@ public partial class MainWindow : Window
         _settingsPage.InitializeNotificationSettings(_vm);
         _vm.RegionSwitchCompleted += OnRegionSwitchCompleted;
         _vm.DropsHost.EventReceived += OnDropsEventForNotification;
-        if (!isolatedReview) _notificationService.Initialize(action => Dispatcher.BeginInvoke(() => HandleNotificationAction(action)));
+        if (!isolatedReview) _notificationService.Initialize(action => RequestWindowRestore("Windows notification", action));
         _accountsPage.OpenStatsRequested += row => { StatsNav.IsChecked = true; _statsPage.SelectAccount(row); };
         _pagesReady = true;
         SizeChanged += (_, _) =>
@@ -124,7 +123,6 @@ public partial class MainWindow : Window
         SetupTray();
         if (startHidden)
         {
-            ShowInTaskbar = false;
             Dispatcher.BeginInvoke(new Action(() => _ = InitializeAsync()), DispatcherPriority.ApplicationIdle);
         }
         else
@@ -282,12 +280,6 @@ public partial class MainWindow : Window
 
     private void HandleNotificationAction(string action)
     {
-        if (!Dispatcher.CheckAccess())
-        {
-            _ = Dispatcher.BeginInvoke(() => HandleNotificationAction(action));
-            return;
-        }
-        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
         switch (action)
         {
             case "accounts": AccountsNav.IsChecked = true; break;
@@ -296,7 +288,6 @@ public partial class MainWindow : Window
             case "region": OpenRegion(); break;
             default: AccountsNav.IsChecked = true; break;
         }
-        ShowFromTray();
     }
 
     private void OnRegionSwitchCompleted(bool success, OverwatchRegion target, string detail)
@@ -503,12 +494,12 @@ public partial class MainWindow : Window
 
     private bool PersistSettingsBeforeUpdate()
     {
-        if (WindowState != WindowState.Maximized)
+        if (WindowState == WindowState.Normal)
         {
             if (ActualWidth >= MinWidth) _vm.Settings.WindowWidth = ActualWidth;
             if (ActualHeight >= MinHeight) _vm.Settings.WindowHeight = ActualHeight;
         }
-        _vm.Settings.WindowMaximized = WindowState == WindowState.Maximized;
+        _vm.Settings.WindowMaximized = _lastNonMinimizedState == WindowState.Maximized;
         return _vm.Settings.Save();
     }
 
@@ -639,49 +630,148 @@ public partial class MainWindow : Window
         try { var info = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")); return info?.Stream is { } stream ? new Icon(stream) : null; }
         catch { return null; }
     }
-    private void OnShowSignal(object? state, bool timedOut)
+    internal void StartWindow(bool startHidden, EventWaitHandle showEvent)
     {
-        if (_isClosing || _isExiting || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-        Dispatcher.BeginInvoke(new Action(ShowFromTray));
+        Dispatcher.VerifyAccess();
+        _showRegistration = ThreadPool.RegisterWaitForSingleObject(showEvent,
+            (_, _) => RequestWindowRestore("single instance"), null, Timeout.Infinite, false);
+        if (!startHidden) RequestWindowRestore("startup");
     }
 
-    private void OnTrayDoubleClick(object? sender, EventArgs e) => ShowFromTray();
-    private void OnTrayOpen(object? sender, EventArgs e) => ShowFromTray();
+    private void OnTrayDoubleClick(object? sender, EventArgs e) => RequestWindowRestore("tray double-click");
+    private void OnTrayOpen(object? sender, EventArgs e) => RequestWindowRestore("tray Open");
     private void OnTrayExit(object? sender, EventArgs e) => ExitApp();
 
-    private void ShowFromTray()
+    private bool WindowDispatcherStopping =>
+        Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished;
+
+    private void RequestWindowRestore(string source, string? notificationAction = null)
     {
-        if (_isClosing || _isExiting || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-        if (!Dispatcher.CheckAccess())
+        lock (_restoreLock)
         {
-            Dispatcher.BeginInvoke(new Action(ShowFromTray));
-            return;
+            if (_isExiting || WindowDispatcherStopping) return;
+            // Keep one dispatcher operation and coalesce requests into one pending
+            // wake. A notification destination takes precedence over a plain wake.
+            if (_pendingRestore is null || notificationAction is not null)
+                _pendingRestore = (source, notificationAction);
+            if (_restoreScheduled) return;
+            _restoreScheduled = true;
+            QueueWindowRestore();
         }
-        if (_isClosing || _isExiting) return;
-        if (!IsVisible) Show();
-        ShowInTaskbar = true;
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
     }
 
-    private void HideToTray()
+    // Always leave the WinForms native callback before touching WPF. Show can
+    // pump native messages before WPF finishes attaching the root Visual.
+    private void QueueWindowRestore() =>
+        Dispatcher.BeginInvoke(new Action(RestoreWindow), DispatcherPriority.Background);
+
+    private void RestoreWindow()
     {
-        if (_isExiting) return;
-        Hide();
-        ShowInTaskbar = false;
+        (string Source, string? NotificationAction)? pending;
+        lock (_restoreLock)
+        {
+            pending = _pendingRestore;
+            _pendingRestore = null;
+        }
+
+        try
+        {
+            if (pending is not { } request || _isClosing || _isExiting || WindowDispatcherStopping) return;
+            _restoringWindow = true;
+            try
+            {
+                if (!IsVisible) Show();
+                if (_isClosing || _isExiting || WindowDispatcherStopping) return;
+                if (WindowState == WindowState.Minimized) WindowState = _lastNonMinimizedState;
+                if (!IsActive) Activate();
+            }
+            catch (Exception ex)
+            {
+                ExitAfterWindowTransitionFailure(request.Source, ex);
+                return;
+            }
+
+            if (request.NotificationAction is { } action && !_isClosing && !_isExiting)
+            {
+                try { HandleNotificationAction(action); }
+                catch (Exception ex)
+                {
+                    RecordWindowTransitionError(request.Source, ex);
+                    MessageBox.Show(this, "无法打开通知对应的页面，请从左侧导航打开。", "CloudLight Blizzard",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+        }
+        finally
+        {
+            _restoringWindow = false;
+            if (_closeAfterRestore && !_isExiting && !WindowDispatcherStopping)
+            {
+                _closeAfterRestore = false;
+                Dispatcher.BeginInvoke(new Action(Close), DispatcherPriority.Normal);
+            }
+            lock (_restoreLock)
+            {
+                if (_pendingRestore is not null && !_isExiting && !WindowDispatcherStopping)
+                    QueueWindowRestore();
+                else
+                {
+                    _pendingRestore = null;
+                    _restoreScheduled = false;
+                }
+            }
+        }
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        if (WindowState != WindowState.Minimized) _lastNonMinimizedState = WindowState;
+        base.OnStateChanged(e);
+    }
+
+    private void ScheduleHideToTray(CancelEventArgs e)
+    {
+        e.Cancel = true;
+        _exitRequested = false;
+        // WPF must finish processing the cancelled Closing event before Hide.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                if (!_isExiting && !WindowDispatcherStopping) Hide();
+            }
+            catch (Exception ex) { ExitAfterWindowTransitionFailure("hide to tray", ex); }
+            finally
+            {
+                if (!_isExiting) _isClosing = false;
+            }
+        }), DispatcherPriority.Normal);
     }
 
     private void ExitApp()
     {
-        if (_isClosing || _isExiting) return;
-        if (!Dispatcher.CheckAccess())
+        if (_isClosing || _isExiting || WindowDispatcherStopping) return;
+        Dispatcher.BeginInvoke(new Action(() =>
         {
-            Dispatcher.BeginInvoke(new Action(ExitApp));
-            return;
-        }
-        if (_isClosing || _isExiting) return;
-        _exitRequested = true;
-        Close();
+            if (_isClosing || _isExiting || WindowDispatcherStopping) return;
+            _exitRequested = true;
+            if (_restoringWindow) _closeAfterRestore = true;
+            else Close();
+        }), DispatcherPriority.Normal);
+    }
+
+    private void RecordWindowTransitionError(string source, Exception error) =>
+        RecordExitError($"window transition ({source}); visible={IsVisible}; state={WindowState}; " +
+            $"closing={_isClosing}; exiting={_isExiting}; dispatcherAccess={Dispatcher.CheckAccess()}; " +
+            $"dispatcherStopping={WindowDispatcherStopping}", error);
+
+    private void ExitAfterWindowTransitionFailure(string source, Exception error)
+    {
+        RecordWindowTransitionError(source, error);
+        if (_isExiting) return;
+        _windowTransitionFailed = true;
+        BeginExit();
+        StartExitCleanup();
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -703,6 +793,14 @@ public partial class MainWindow : Window
             e.Cancel = true;
             return;
         }
+        // A newer close supersedes any wake already waiting on the dispatcher.
+        lock (_restoreLock) _pendingRestore = null;
+        if (_restoringWindow)
+        {
+            e.Cancel = true;
+            _closeAfterRestore = true;
+            return;
+        }
 
         _isClosing = true;
 
@@ -710,8 +808,7 @@ public partial class MainWindow : Window
         // 直接隐藏到托盘；只有明确执行“退出”时才检查正在运行的掉宝任务。
         if (!_exitRequested && _vm.Settings.CloseToTray)
         {
-            CancelClosing(e);
-            HideToTray();
+            ScheduleHideToTray(e);
             return;
         }
 
@@ -726,8 +823,7 @@ public partial class MainWindow : Window
             }
             if (dialog.Choice == ExitChoice.MinimizeToTray)
             {
-                CancelClosing(e);
-                HideToTray();
+                ScheduleHideToTray(e);
                 return;
             }
             BeginExit();
@@ -778,7 +874,14 @@ public partial class MainWindow : Window
         await Task.Yield(); // Leave the first synchronous Closing event first.
         await _exitLifecycleCoordinator.BeginAsync(CompleteExitCleanupAsync);
         if (_exitLifecycleCoordinator.Error is Exception error) RecordExitError("exit coordinator", error);
-        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        if (WindowDispatcherStopping) return;
+        if (_windowTransitionFailed)
+        {
+            MessageBox.Show("主窗口发生错误，后台任务已完成退出清理。请重新启动 CloudLight Blizzard。",
+                "CloudLight Blizzard", MessageBoxButton.OK, MessageBoxImage.Error);
+            Application.Current.Shutdown(1);
+            return;
+        }
         // The first Closing notification was cancelled.  Re-enter Closing
         // only after all cleanup has completed; this second notification is
         // deliberately the only one allowed to call base.OnClosing.
@@ -879,9 +982,7 @@ public partial class MainWindow : Window
 
     private void DisposeShowSignal()
     {
-        if (_showSignalDisposed) return;
-        _showSignalDisposed = true;
-        _showRegistration.Unregister(null);
-        _showEvent.Dispose();
+        _showRegistration?.Unregister(null);
+        _showRegistration = null;
     }
 }

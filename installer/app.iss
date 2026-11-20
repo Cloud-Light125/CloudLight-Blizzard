@@ -1,7 +1,7 @@
 ﻿#define AppName "CloudLight Blizzard"
 #define AppMajor 3
 #define AppMinor 0
-#define AppPatch 2
+#define AppPatch 3
 #define AppVer Str(AppMajor) + "." + Str(AppMinor) + "." + Str(AppPatch)
 #define AppVersionMS AppMajor * 65536 + AppMinor
 #define AppVersionLS AppPatch * 65536
